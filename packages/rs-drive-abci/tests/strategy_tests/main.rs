@@ -792,7 +792,7 @@ mod tests {
                 .index,
             0
         );
-        assert!(counter.get(&1).unwrap() > &240);
+        assert!(counter.get(&1).unwrap().unwrap() > &240);
     }
 
     #[test]
@@ -1144,7 +1144,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "e955d7935da01eb2ee8b1935a49ceb4b7021ffce1dec5bb401ce1de5cdf330b5".to_string()
+            "bb11d456206e85b3225ffbd35d915ab1c92e1a64057057b272fb3931325caa22".to_string()
         )
     }
 
@@ -1833,7 +1833,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "0d2ccf74932904c3463764528d34cc220dcb66cbbe8ea1a031367056aeda77c0".to_string()
+            "de45b3f20c8e9492ec82b236f856d2073d122b4b73be52d03b4439d5465fc035".to_string()
         )
     }
 
@@ -1958,7 +1958,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "bc0eee6f0d40ae9a2c8f2ae9f95874d403056349b99f96c11d4562be12fc5015".to_string()
+            "0a4caafbfbde56a4a98c067126c75c577e4ebd636085e5b74521ac1baed7bccb".to_string()
         )
     }
 

@@ -25,6 +25,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function will return an error if the version of the Drive is unknown.
+    // TODO: We should store it for epoch. Will be changed in upcoming PR
     pub fn set_next_protocol_version_operations(
         &self,
         protocol_version: ProtocolVersion,

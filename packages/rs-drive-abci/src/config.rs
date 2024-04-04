@@ -31,6 +31,7 @@ use std::path::PathBuf;
 
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
+use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::logging::LogConfigs;
@@ -238,8 +239,7 @@ impl ExecutionConfig {
 
 impl PlatformConfig {
     fn default_initial_protocol_version() -> ProtocolVersion {
-        //todo: versioning
-        1
+        INITIAL_PROTOCOL_VERSION
     }
 
     fn default_tokio_console_address() -> String {
@@ -346,7 +346,7 @@ impl PlatformConfig {
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
         }
@@ -366,7 +366,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             tokio_console_enabled: false,
@@ -389,7 +389,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             tokio_console_enabled: false,

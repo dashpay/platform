@@ -67,13 +67,13 @@ use crate::version::drive_versions::{
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::fee::v1::FEE_VERSION1;
-use crate::version::mocks::TEST_BYTES;
+use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
-pub const TEST_PROTOCOL_VERSION_3: u32 = (1 << TEST_BYTES) + 3;
+pub const TEST_PROTOCOL_VERSION_3: u32 = (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 3;
 
-pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
+pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
     protocol_version: TEST_PROTOCOL_VERSION_3,
     identity: FeatureVersionBounds {
         min_version: 0,
@@ -531,6 +531,8 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             },
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
                 check_for_desired_protocol_upgrade: 0,
+                upgrade_protocol_version_on_epoch_change: 0,
+                protocol_version_upgrade_percentage_needed: 75,
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,

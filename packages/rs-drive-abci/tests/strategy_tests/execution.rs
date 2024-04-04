@@ -577,9 +577,9 @@ pub(crate) fn run_chain_for_strategy(
                 }
             };
 
-            let block_hash = *core_blocks
-                .get(&block_height)
-                .unwrap_or_else(|| panic!("expected a block hash to be known for {}", core_height));
+            let Some(block_hash) = core_blocks.get(&block_height) else {
+                panic!("expected a block hash to be known for {}", block_height);
+            };
 
             let chain_lock = if sign_chain_locks {
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
@@ -594,7 +594,7 @@ pub(crate) fn run_chain_for_strategy(
                     .expect("expected to encode the prefix");
 
                 engine.input("clsig".as_bytes());
-                engine.input(core_height.to_le_bytes().as_slice());
+                engine.input(block_height.to_le_bytes().as_slice());
 
                 let request_id = QuorumSigningRequestId::from_engine(engine);
 
@@ -617,7 +617,7 @@ pub(crate) fn run_chain_for_strategy(
                 engine.input(&[chain_lock_quorum_type as u8]);
                 engine.input(quorum_hash.as_slice());
                 engine.input(request_id.as_byte_array());
-                engine.input(&block_hash);
+                engine.input(block_hash);
 
                 let message_digest = sha256d::Hash::from_engine(engine);
 
@@ -626,16 +626,16 @@ pub(crate) fn run_chain_for_strategy(
                         .expect("expected to have a valid private key");
                 let signature = quorum_private_key.sign(message_digest.as_byte_array());
                 let chain_lock = ChainLock {
-                    block_height: core_height,
-                    block_hash: BlockHash::from_byte_array(block_hash),
+                    block_height,
+                    block_hash: BlockHash::from_byte_array(*block_hash),
                     signature: (*signature.to_bytes()).into(),
                 };
 
                 Ok(chain_lock)
             } else {
                 let chain_lock = ChainLock {
-                    block_height: core_height,
-                    block_hash: BlockHash::from_byte_array(block_hash),
+                    block_height,
+                    block_hash: BlockHash::from_byte_array(*block_hash),
                     signature: [2; 96].into(),
                 };
 

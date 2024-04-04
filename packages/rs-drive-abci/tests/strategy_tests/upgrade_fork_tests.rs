@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use dpp::block::block_info::BlockInfo;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
@@ -8,14 +9,19 @@ mod tests {
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
-        ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
-        UpgradingInfo,
+        ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease,
+        MasternodeListChangesStrategy, NetworkStrategy, StrategyRandomness, UpgradingInfo,
     };
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::mimic::MimicExecuteBlockOptions;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
-    use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
+    use platform_version::version::mocks::v2_test::{TEST_PLATFORM_V2, TEST_PROTOCOL_VERSION_2};
+    use platform_version::version::mocks::v3_test::{TEST_PLATFORM_V3, TEST_PROTOCOL_VERSION_3};
+    use platform_version::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
+    use platform_version::version::v1::{PLATFORM_V1, PROTOCOL_VERSION_1};
+    use platform_version::version::PLATFORM_TEST_VERSIONS;
+    use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     #[test]
@@ -49,7 +55,6 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                         upgrade_three_quarters_life: 0.1,
                     }),
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -130,7 +135,10 @@ mod tests {
                     );
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&17), Some(&414))
                     );
                     //most nodes were hit (63 were not)
@@ -195,8 +203,8 @@ mod tests {
                     );
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&154));
+                    assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&154));
                 }
 
                 // we locked in
@@ -249,8 +257,8 @@ mod tests {
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&122));
+                    assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&123));
                 }
             })
             .expect("Failed to create thread with custom stack size");
@@ -277,7 +285,6 @@ mod tests {
                         operations: vec![],
                         start_identities: StartIdentities::default(),
                         identities_inserts: IdentityInsertInfo::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -290,7 +297,6 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                         upgrade_three_quarters_life: 0.2,
                     }),
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -366,10 +372,14 @@ mod tests {
                             .index,
                         0
                     );
+                    assert_eq!(state.last_committed_block_epoch().index, 0);
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), 1);
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&6), Some(&44))
                     );
                     //most nodes were hit (63 were not)
@@ -399,7 +409,7 @@ mod tests {
                     ChainExecutionParameters {
                         block_start,
                         core_height_start: 1,
-                        block_count: 2,
+                        block_count: 1,
                         proposers,
                         quorums,
                         current_quorum_hash,
@@ -427,10 +437,11 @@ mod tests {
                             .index,
                         1
                     );
+                    assert_eq!(state.last_committed_block_epoch().index, 1);
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&1));
+                    assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
                 }
 
                 // we locked in
@@ -479,15 +490,176 @@ mod tests {
                         state.current_protocol_version_in_consensus(),
                         TEST_PROTOCOL_VERSION_2
                     );
+                    assert_eq!(state.last_committed_block_epoch().index, 2);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&1));
+                    assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
                 }
             })
             .expect("Failed to create thread with custom stack size");
 
         // Wait for the thread to finish and assert that it didn't panic.
         handler.join().expect("Thread has panicked");
+    }
+
+    #[test]
+    fn run_chain_on_epoch_change_with_new_version_and_removing_votes() {
+        // Add a new version to upgrade to new protocol version only with one vote
+        const TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE: u32 =
+            (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 4;
+
+        let mut test_platform_v4 = PLATFORM_V1.clone();
+        test_platform_v4
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .protocol_version_upgrade_percentage_needed = 1;
+
+        PlatformVersion::replace_test_versions(vec![
+            TEST_PLATFORM_V2,
+            TEST_PLATFORM_V3,
+            test_platform_v4,
+        ]);
+
+        let strategy = NetworkStrategy {
+            total_hpmns: 50,
+            upgrading_info: Some(UpgradingInfo {
+                current_protocol_version: TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE,
+                proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
+                upgrade_three_quarters_life: 0.0,
+            }),
+            core_height_increase: CoreHeightIncrease::KnownCoreHeightIncreases(vec![1, 2, 3, 4, 5]),
+            // Remove HPMNs to trigger remove_validators_proposed_app_versions
+            proposer_strategy: MasternodeListChangesStrategy {
+                removed_hpmns: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // 1 block is 1 epoch
+        let epoch_time_length_s = 60;
+
+        let config = PlatformConfig {
+            validator_set_quorum_size: 30,
+            execution: ExecutionConfig {
+                epoch_time_length_s,
+                ..Default::default()
+            },
+            initial_protocol_version: TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE,
+            block_spacing_ms: epoch_time_length_s * 1000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 13);
+
+        let platform = abci_app.platform;
+
+        let state = platform.state.load();
+        let counter = platform.drive.cache.protocol_versions_counter.read();
+
+        assert_eq!(state.last_committed_block_epoch().index, 0);
+        assert_eq!(
+            state.current_protocol_version_in_consensus(),
+            TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE
+        );
+        assert_eq!(
+            state.next_epoch_protocol_version(),
+            TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE
+        );
+        assert_eq!(state.last_committed_core_height(), 2);
+        assert_eq!(counter.get(&1).unwrap(), None);
+        assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
+        assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_3).unwrap(), None);
+        assert_eq!(
+            counter
+                .get(&TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE)
+                .unwrap(),
+            None
+        );
+
+        drop(counter);
+
+        // Next bock is epoch change. We want to test our protocol
+        // upgrade logic. We will propose a new version and remove HPMN
+        // to make sure all protocol version count functions are called during block execution.
+
+        let last_committed_block_info = state
+            .last_committed_block_info()
+            .as_ref()
+            .unwrap()
+            .basic_info();
+
+        let proposer_pro_tx_hash = proposers
+            .first()
+            .expect("we should have proposers")
+            .masternode
+            .pro_tx_hash;
+
+        let current_quorum_with_test_info =
+            quorums.get(&current_quorum_hash).expect("expected quorum");
+
+        // We want to add proposal for a new version
+        let proposed_version = TEST_PROTOCOL_VERSION_3;
+
+        let block_info = BlockInfo {
+            time_ms: end_time_ms + epoch_time_length_s + 1,
+            height: last_committed_block_info.height + 1,
+            core_height: last_committed_block_info.core_height,
+            epoch: Default::default(),
+        };
+
+        abci_app
+            .mimic_execute_block(
+                proposer_pro_tx_hash.into(),
+                current_quorum_with_test_info,
+                proposed_version,
+                block_info,
+                0,
+                &[],
+                false,
+                Vec::new(),
+                MimicExecuteBlockOptions {
+                    dont_finalize_block: strategy.dont_finalize_block(),
+                    rounds_before_finalization: strategy
+                        .failure_testing
+                        .as_ref()
+                        .and_then(|failure_testing| failure_testing.rounds_before_successful_block),
+                    max_tx_bytes_per_block: strategy.max_tx_bytes_per_block,
+                    independent_process_proposal_verification: strategy
+                        .independent_process_proposal_verification,
+                },
+            )
+            .expect("expected to execute a block");
+
+        let state = platform.state.load();
+        let counter = platform.drive.cache.protocol_versions_counter.read();
+
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(
+            state.current_protocol_version_in_consensus(),
+            TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE
+        );
+        assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
+        assert_eq!(counter.get(&1).unwrap(), None);
+        assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), None);
+        assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_3).unwrap(), Some(&1));
+        assert_eq!(state.last_committed_core_height(), 3);
     }
 
     #[test]
@@ -595,7 +767,10 @@ mod tests {
                     assert_eq!(state.next_epoch_protocol_version(), 1);
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&35), Some(&64))
                     );
                 }
@@ -657,7 +832,10 @@ mod tests {
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     // the counter is for the current voting during that window
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&8), Some(&79))
                     );
                 }
@@ -877,8 +1055,11 @@ mod tests {
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
-                        (Some(&18), Some(&111))
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
+                        (Some(&18), Some(&112))
                     );
                     //not all nodes have upgraded
                 }
@@ -958,7 +1139,10 @@ mod tests {
                 {
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&172), Some(&24))
                     );
                     //a lot nodes reverted to previous version, however this won't impact things
@@ -1010,8 +1194,11 @@ mod tests {
                 {
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
-                        (Some(&23), Some(&2))
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
+                        (Some(&24), Some(&2))
                     );
                     assert_eq!(
                         state
@@ -1136,9 +1323,9 @@ mod tests {
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(
                         (
-                            counter.get(&1),
-                            counter.get(&TEST_PROTOCOL_VERSION_2),
-                            counter.get(&TEST_PROTOCOL_VERSION_3)
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_3).unwrap()
                         ),
                         (Some(&2), Some(&68), Some(&3))
                     ); //some nodes reverted to previous version
@@ -1224,9 +1411,9 @@ mod tests {
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_3);
                     assert_eq!(
                         (
-                            counter.get(&1),
-                            counter.get(&TEST_PROTOCOL_VERSION_2),
-                            counter.get(&TEST_PROTOCOL_VERSION_3)
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_3).unwrap()
                         ),
                         (None, Some(&3), Some(&143))
                     );

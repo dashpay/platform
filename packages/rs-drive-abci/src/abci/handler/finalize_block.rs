@@ -1,6 +1,7 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 use crate::rpc::core::CoreRPCLike;
 use std::sync::atomic::Ordering;
@@ -34,7 +35,9 @@ where
             "block execution context must be set in block begin handler for finalize block",
         )))?;
 
-    let platform_version = app.platform().state.load().current_platform_version()?;
+    let platform_version = block_execution_context
+        .block_platform_state()
+        .current_platform_version()?;
 
     let request_finalize_block: FinalizeBlockCleanedRequest = request.try_into()?;
 
@@ -68,8 +71,5 @@ where
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
 
-    Ok(proto::ResponseFinalizeBlock {
-        events: vec![],
-        retain_height: 0,
-    })
+    Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }
