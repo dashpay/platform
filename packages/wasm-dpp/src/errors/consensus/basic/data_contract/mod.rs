@@ -1,3 +1,4 @@
+mod data_contract_error;
 mod data_contract_empty_schema_error;
 mod data_contract_have_new_unique_index_error;
 mod data_contract_immutable_properties_update_error;
@@ -13,6 +14,7 @@ mod invalid_data_contract_version_error;
 mod invalid_document_type_name_error;
 mod invalid_json_schema_ref_error;
 
+pub use data_contract_error::*;
 pub use data_contract_empty_schema_error::*;
 pub use data_contract_have_new_unique_index_error::*;
 pub use data_contract_immutable_properties_update_error::*;

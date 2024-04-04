@@ -16,7 +16,7 @@ use dpp::consensus::basic::BasicError::{DuplicatedIdentityPublicKeyBasicError, D
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::basic::decode::{DecodingError, VersionError};
+use dpp::consensus::basic::decode::{VersionError};
 
 use dpp::consensus::state::data_trigger::DataTriggerError::{
     DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
@@ -28,9 +28,8 @@ use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, Disabli
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
-use dpp::data_contract::errors::DataContractError;
 
-use crate::errors::consensus::basic::data_contract::{DataContractEmptySchemaErrorWasm, DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm, DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm, IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm, InvalidDocumentTypeNameErrorWasm};
+use crate::errors::consensus::basic::data_contract::{DataContractEmptySchemaErrorWasm, DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm, DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm, IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm, InvalidDocumentTypeNameErrorWasm};
 use crate::errors::consensus::basic::document::{DocumentTransitionsAreAbsentErrorWasm, DuplicateDocumentTransitionsWithIdsErrorWasm, DuplicateDocumentTransitionsWithIndicesErrorWasm, IdentityContractNonceOutOfBoundsErrorWasm, InvalidDocumentTransitionActionErrorWasm, InvalidDocumentTransitionIdErrorWasm, MissingDataContractIdErrorWasm, MissingDocumentTypeErrorWasm};
 use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
@@ -360,17 +359,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         IncompatibleRe2PatternError(err) => IncompatibleRe2PatternErrorWasm::from(err).into(),
         BasicError::VersionError(err) => generic_wasm_error!(VersionError, err).into(),
         BasicError::ContractError(e) => {
-            match e {
-                DataContractError::DecodingContractError(err) |
-                DataContractError::DecodingDocumentError(err) => {
-                    generic_wasm_error!(DecodingError, err).into()
-                },
-                DataContractError::InvalidDocumentTypeError(err) => {
-                    InvalidDocumentTypeErrorWasm::from(err).into()
-                },
-                // Remaining errors do not have conversion to ConsensusError implemented
-                _ => todo!()
-            }
+            DataContractErrorWasm::from(e).into()
         }
         BasicError::UnknownSecurityLevelError(e) => {
             generic_wasm_error!(UnknownSecurityLevelError, e).into()
