@@ -14,5 +14,5 @@ pub mod protocol_error;
 pub mod data_contract_not_present_error;
 // pub mod dpp_error;
 pub mod value_error;
-mod generic_wasm_error;
+mod generic_consensus_error;
 // pub use compatible_protocol_version_is_not_defined_error::*;

@@ -1,5 +1,5 @@
 #[macro_export]
-macro_rules! generic_wasm_error {
+macro_rules! generic_consensus_error {
     ($error_type:ident, $error_instance:expr) => {
         {
             use wasm_bindgen::prelude::wasm_bindgen;
