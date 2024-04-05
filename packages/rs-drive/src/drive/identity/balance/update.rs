@@ -3,7 +3,7 @@ mod tests {
 
     use dpp::prelude::*;
 
-    use crate::common::identities::create_test_identity;
+    use crate::common::test_utils::identities::create_test_identity;
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;

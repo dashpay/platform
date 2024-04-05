@@ -12,8 +12,8 @@ authors = [
 ]
 
 [dependencies]
-anyhow = { version = "1.0.75" }
-async-trait = { version = "0.1.68" }
+anyhow = { version = "1.0.81" }
+async-trait = { version = "0.1.79" }
 base64 = "0.20.0"
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "v1.3.1", optional = true }
 bs58 = "0.4.0"
@@ -34,7 +34,7 @@ env_logger = { version = "0.9" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
-itertools = { version = "0.10" }
+itertools = { version = "0.12.1" }
 json-patch = "0.2.6"
 jsonptr = "0.1.5"
 jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "feat-unevaluated-properties", default-features = false, features = [
@@ -51,7 +51,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
 thiserror = { version = "1.0" }
-data-contracts = { path = "../data-contracts" }
+data-contracts = { path = "../data-contracts", optional = true }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
@@ -220,7 +220,7 @@ state-transition-json-conversion = [
 state-transition-validation = ["state-transitions", "message-signature-verification"]
 state-transition-signing = ["state-transitions", "message-signing", "state-transition-validation"]
 state-transitions = []
-system_contracts = ["factories"]
+system_contracts = ["factories", "data-contracts"]
 fixtures-and-mocks = ["system_contracts"]
 random-public-keys = ["bls-signatures"]
 random-identities = ["random-public-keys"]

@@ -1258,7 +1258,7 @@ dependencies = [
  "hex",
  "indexmap 2.2.6",
  "integer-encoding 4.0.0",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "json-patch",
  "jsonptr",
  "jsonschema",
@@ -1290,7 +1290,6 @@ dependencies = [
 name = "drive"
 version = "1.0.0-dev.10"
 dependencies = [
- "anyhow",
  "arc-swap",
  "base64 0.21.7",
  "bs58 0.5.1",
@@ -2244,6 +2243,15 @@ name = "itertools"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
 dependencies = [
  "either",
 ]
@@ -4015,7 +4023,6 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 name = "simple-signer"
 version = "1.0.0-dev.10"
 dependencies = [
- "anyhow",
  "bincode 2.0.0-rc.3",
  "dashcore-rpc",
  "dpp",

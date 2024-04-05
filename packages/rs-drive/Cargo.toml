@@ -11,6 +11,7 @@ authors = [
 edition = "2021"
 rust-version = "1.76"
 license = "MIT"
+resolver = "2"
 
 [dependencies]
 platform-version = { path = "../rs-platform-version" }
@@ -24,7 +25,7 @@ indexmap = { version = "2.0.2" }
 sqlparser = { version = "0.38.0" }
 # used for int maps and needed in the verifier
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = ["state-transitions", "fee-distribution"], optional = true }
+dpp = { path = "../rs-dpp", features = ["state-transitions", "fee-distribution"], default-features = false, optional = true }
 thiserror = { version = "1.0.30" }
 tracing = { version = "0.1.37", default-features = false, features = [] }
 derive_more = { version = "0.99.17", optional = true}
@@ -51,7 +52,6 @@ grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "9eae5457f18d
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "9eae5457f18d307d673767c8d772630a9d0ad66d", optional = true }
 
 [dev-dependencies]
-anyhow = { version = "1.0.75" }
 criterion = "0.3.5"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
@@ -67,7 +67,7 @@ dpp = { path = "../rs-dpp", features = [
   "system_contracts",
   "factories",
   "data-contract-json-conversion",
-] }
+], default-features = false }
 
 [[bench]]
 name = "benchmarks"
@@ -75,7 +75,7 @@ harness = false
 
 [features]
 default = ["full", "verify", "fixtures-and-mocks"]
-fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify"]
+fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify", "dpp/data-contract-json-conversion"]
 server = [
   "parking_lot",
   "arc-swap",

@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use platform_value::Value;
+#[cfg(feature = "document-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::document::document_methods::{

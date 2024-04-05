@@ -78,8 +78,6 @@ pub mod protocol_upgrade;
 mod shared_estimation_costs;
 #[cfg(feature = "server")]
 mod system;
-#[cfg(test)]
-mod test_utils;
 
 #[cfg(feature = "server")]
 mod asset_lock;

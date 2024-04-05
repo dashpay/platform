@@ -49,6 +49,7 @@ sanitize-filename = { version = "0.5.0" }
 
 [features]
 default = ["mocks", "offline-testing"]
+
 mocks = [
   "dep:serde_json",
   "rs-dapi-client/mocks",
@@ -86,6 +87,10 @@ network-testing = ["mocks"]
 # dump all requests and responses to `tests/vectors/`,
 # so that they can be used later for `offline-testing`.
 generate-test-vectors = ["network-testing"]
+
+# Have the system data contracts inside the dpp crate
+
+system-data-contracts = ["dpp/data-contracts"]
 
 
 [[example]]
