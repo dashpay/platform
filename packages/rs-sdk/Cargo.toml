@@ -53,6 +53,7 @@ default = ["mocks", "offline-testing", "drive/verify"]
 
 mocks = [
   "drive/verify",
+  "drive/serde",
   "dep:serde_json",
   "rs-dapi-client/mocks",
   "rs-dapi-client/dump",
