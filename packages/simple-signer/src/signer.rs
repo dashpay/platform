@@ -59,7 +59,9 @@ impl Signer for SimpleSigner {
             KeyType::BLS12_381 => {
                 let pk =
                     bls_signatures::PrivateKey::from_bytes(private_key, false).map_err(|_e| {
-                        ProtocolError::Generic("bls private key from bytes isn't correct".to_string())
+                        ProtocolError::Generic(
+                            "bls private key from bytes isn't correct".to_string(),
+                        )
                     })?;
                 Ok(pk.sign(data).to_bytes().to_vec().into())
             }
@@ -67,8 +69,8 @@ impl Signer for SimpleSigner {
                 let key: [u8; 32] = private_key.clone().try_into().expect("expected 32 bytes");
                 let pk = ed25519_dalek::SigningKey::try_from(&key).map_err(|_e| {
                     ProtocolError::Generic(
-                        "eddsa 25519 private key from bytes isn't correct"
-                            .to_string())
+                        "eddsa 25519 private key from bytes isn't correct".to_string(),
+                    )
                 })?;
                 Ok(pk.sign(data).to_vec().into())
             }

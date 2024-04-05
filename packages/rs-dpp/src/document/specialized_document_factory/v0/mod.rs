@@ -19,8 +19,7 @@ use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(feature = "extended-document")]
 use crate::document::{
     extended_document::v0::ExtendedDocumentV0,
-    serialization_traits::DocumentPlatformConversionMethodsV0,
-    ExtendedDocument,
+    serialization_traits::DocumentPlatformConversionMethodsV0, ExtendedDocument,
 };
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 #[cfg(feature = "state-transitions")]

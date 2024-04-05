@@ -13,6 +13,7 @@ impl StateTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::bls::native_bls::NativeBlsModule;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::core_script::CoreScript;
@@ -50,7 +51,6 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use crate::bls::native_bls::NativeBlsModule;
 
     #[test]
     #[cfg(feature = "random-identities")]

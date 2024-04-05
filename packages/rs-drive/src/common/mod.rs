@@ -8,7 +8,7 @@ pub mod decode;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod encode;
 
-#[cfg(any(test, feature= "fixtures-and-mocks"))]
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
 /// test utils
 pub mod test_utils;
 

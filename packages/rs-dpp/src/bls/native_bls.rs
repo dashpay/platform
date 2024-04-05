@@ -1,6 +1,6 @@
-use bls_signatures::{PrivateKey, PublicKey};
-use anyhow::anyhow;
 use crate::{BlsModule, ProtocolError, PublicKeyValidationError};
+use anyhow::anyhow;
+use bls_signatures::{PrivateKey, PublicKey};
 
 #[derive(Default)]
 pub struct NativeBlsModule;
