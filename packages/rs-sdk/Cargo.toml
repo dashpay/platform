@@ -9,7 +9,8 @@ dapi-grpc = { path = "../dapi-grpc", default-features = false, features = ["clie
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
-] }
+  "serde",
+], optional = true }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
@@ -48,9 +49,10 @@ clap = { version = "4.4.18", features = ["derive"] }
 sanitize-filename = { version = "0.5.0" }
 
 [features]
-default = ["mocks", "offline-testing"]
+default = ["mocks", "offline-testing", "drive/verify"]
 
 mocks = [
+  "drive/verify",
   "dep:serde_json",
   "rs-dapi-client/mocks",
   "rs-dapi-client/dump",
@@ -71,7 +73,7 @@ mocks = [
 # part of CI/CD workflows.
 #
 # If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
-offline-testing = ["mocks"]
+offline-testing = ["mocks", "drive/verify"]
 
 # Run integration tests using a live Dash Platform network.
 #
@@ -79,14 +81,14 @@ offline-testing = ["mocks"]
 # See [README.md] for more details.
 #
 # If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
-network-testing = ["mocks"]
+network-testing = ["mocks", "drive/verify"]
 
 # Generate test vectors for offline tests.
 #
 # This will run tests in `network-testing` mode and
 # dump all requests and responses to `tests/vectors/`,
 # so that they can be used later for `offline-testing`.
-generate-test-vectors = ["network-testing"]
+generate-test-vectors = ["network-testing", "drive/verify", "drive/serde"]
 
 # Have the system data contracts inside the dpp crate
 
