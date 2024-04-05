@@ -75,7 +75,7 @@ harness = false
 
 [features]
 default = ["full", "verify", "fixtures-and-mocks"]
-fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify", "dpp/data-contract-json-conversion"]
+fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify", "dpp/data-contract-json-conversion", "dpp/random-public-keys"]
 server = [
   "serde",
   "parking_lot",
