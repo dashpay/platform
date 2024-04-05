@@ -1709,31 +1709,6 @@ impl<'a> DriveQuery<'a> {
     }
 
     #[cfg(feature = "server")]
-    /// Executes a query with no proof and returns the items encoded in a map.
-    pub fn execute_serialized_as_result_no_proof(
-        &self,
-        drive: &Drive,
-        _block_info: Option<BlockInfo>,
-        query_result_encoding: QueryResultEncoding,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, Error> {
-        let mut drive_operations = vec![];
-        let (items, _) = self.execute_no_proof_internal(
-            drive,
-            QueryResultType::QueryKeyElementPairResultType,
-            transaction,
-            &mut drive_operations,
-            platform_version,
-        )?;
-        //todo: we could probably give better results depending on the query
-        let result = platform_value!({
-            "documents": items.to_key_elements()
-        });
-        query_result_encoding.encode_value(&result)
-    }
-
-    #[cfg(feature = "server")]
     /// Executes a query with no proof and returns the items, skipped items, and fee.
     pub fn execute_raw_results_no_proof(
         &self,

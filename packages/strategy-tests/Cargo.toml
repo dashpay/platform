@@ -44,4 +44,4 @@ platform-version = { path = "../rs-platform-version", features = [
 ] }
 
 # For tests of grovedb verify
-rocksdb = { version = "0.21.0" }
+rocksdb = { version = "0.22.0" }

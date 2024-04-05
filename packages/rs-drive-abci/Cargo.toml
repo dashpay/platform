@@ -100,7 +100,7 @@ drive = { path = "../rs-drive" }
 strategy-tests = { path = "../strategy-tests" }
 
 # For tests of grovedb verify
-rocksdb = { version = "0.21.0" }
+rocksdb = { version = "0.22.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
