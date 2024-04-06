@@ -106,6 +106,6 @@ full = [
   "base64",
   "chrono",
 ]
-cbor_query = ["ciborium", "dpp/cbor"]
+cbor_query = ["ciborium", "dpp/platform-value-cbor", "dpp/cbor"]
 grovedb_operations_logging = []
 verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions"]

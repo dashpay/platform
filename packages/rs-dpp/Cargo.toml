@@ -192,6 +192,7 @@ validation = [
   "ed25519-dalek"
 ]
 platform-value-json = ["platform-value/json"]
+platform-value-cbor = ["platform-value/cbor"]
 json-schema-validation = ["jsonschema", "platform-value-json"]
 json-object = ["platform-value"]
 platform-value = []
