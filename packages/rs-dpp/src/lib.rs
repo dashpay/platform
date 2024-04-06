@@ -82,7 +82,9 @@ pub use bincode;
 pub use bls_signatures;
 #[cfg(feature = "system_contracts")]
 pub use data_contracts;
+#[cfg(feature = "ed25519-dalek")]
 pub use ed25519_dalek;
+#[cfg(feature = "jsonschema")]
 pub use jsonschema;
 pub use platform_serialization;
 pub use platform_value;

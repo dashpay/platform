@@ -1,3 +1,5 @@
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use crate::{BinaryData, Bytes20, Bytes32, Bytes36, Error, Identifier, Value};
 
 impl Value {
@@ -117,7 +119,7 @@ impl Value {
     /// ```
     pub fn into_binary_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
-            Value::Text(text) => base64::decode(text).map_err(|_| {
+            Value::Text(text) => BASE64_STANDARD.decode(text).map_err(|_| {
                 Error::StructureError(
                     "value was a string, but could not be decoded from base 64".to_string(),
                 )
@@ -189,7 +191,7 @@ impl Value {
     /// ```
     pub fn to_binary_bytes(&self) -> Result<Vec<u8>, Error> {
         match self {
-            Value::Text(text) => base64::decode(text).map_err(|_| {
+            Value::Text(text) => BASE64_STANDARD.decode(text).map_err(|_| {
                 Error::StructureError(
                     "value was a string, but could not be decoded from base 64".to_string(),
                 )
@@ -354,7 +356,7 @@ impl Value {
     /// ```
     pub fn into_bytes_20(self) -> Result<Bytes20, Error> {
         match self {
-            Value::Text(text) => Bytes20::from_vec(base64::decode(text).map_err(|_| {
+            Value::Text(text) => Bytes20::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
                 Error::StructureError(
                     "value was a string, but could not be decoded from base 64".to_string(),
                 )
@@ -402,7 +404,7 @@ impl Value {
     /// ```
     pub fn to_bytes_20(&self) -> Result<Bytes20, Error> {
         match self {
-            Value::Text(text) => Bytes20::from_vec(base64::decode(text).map_err(|_| {
+            Value::Text(text) => Bytes20::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
                 Error::StructureError(
                     "value was a string, but could not be decoded from base 64".to_string(),
                 )
@@ -453,7 +455,7 @@ impl Value {
     /// ```
     pub fn into_bytes_32(self) -> Result<Bytes32, Error> {
         match self {
-            Value::Text(text) => Bytes32::from_vec(base64::decode(text).map_err(|_| {
+            Value::Text(text) => Bytes32::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
                 Error::StructureError(
                     "value was a string, but could not be decoded from base 64".to_string(),
                 )
@@ -504,7 +506,7 @@ impl Value {
     /// ```
     pub fn to_bytes_32(&self) -> Result<Bytes32, Error> {
         match self {
-            Value::Text(text) => Bytes32::from_vec(base64::decode(text).map_err(|_| {
+            Value::Text(text) => Bytes32::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
                 Error::StructureError(
                     "value was a string, but could not be decoded from base 64".to_string(),
                 )
@@ -553,7 +555,7 @@ impl Value {
     /// ```
     pub fn into_bytes_36(self) -> Result<Bytes36, Error> {
         match self {
-            Value::Text(text) => Bytes36::from_vec(base64::decode(text).map_err(|_| {
+            Value::Text(text) => Bytes36::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
                 Error::StructureError(
                     "value was a string, but could not be decoded from base 64".to_string(),
                 )
@@ -601,7 +603,7 @@ impl Value {
     /// ```
     pub fn to_bytes_36(&self) -> Result<Bytes36, Error> {
         match self {
-            Value::Text(text) => Bytes36::from_vec(base64::decode(text).map_err(|_| {
+            Value::Text(text) => Bytes36::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
                 Error::StructureError(
                     "value was a string, but could not be decoded from base 64".to_string(),
                 )

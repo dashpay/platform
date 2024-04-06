@@ -14,7 +14,7 @@ authors = [
 [dependencies]
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
-base64 = "0.20.0"
+base64 = "0.22.0"
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "v1.3.1", optional = true }
 bs58 = "0.4.0"
 byteorder = { version = "1.4" }
@@ -39,7 +39,7 @@ json-patch = "0.2.6"
 jsonptr = "0.1.5"
 jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "feat-unevaluated-properties", default-features = false, features = [
   "draft202012",
-] }
+], optional = true }
 lazy_static = { version = "1.4" }
 log = { version = "0.4.6" }
 num_enum = "0.5.7"
@@ -58,11 +58,11 @@ platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 derive_more = "0.99.17"
-ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"] }
+ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"], optional = true }
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
-indexmap = { version = "2.0.2", features = ["serde"] }
+indexmap = { version = "2.0.2"}
 strum = { version = "0.25.0", features = ["derive"] }
 
 [dev-dependencies]
@@ -185,10 +185,14 @@ abci = [
 ]
 cbor = ["ciborium"]
 validation = [
+  "json-schema-validation",
   "platform-value",
   "document-value-conversion",
   "state-transition-serde-conversion",
+  "ed25519-dalek"
 ]
+platform-value-json = ["platform-value/json"]
+json-schema-validation = ["jsonschema", "platform-value-json"]
 json-object = ["platform-value"]
 platform-value = []
 identity-hashing = ["identity-serialization"]
@@ -221,8 +225,8 @@ state-transition-validation = ["state-transitions", "message-signature-verificat
 state-transition-signing = ["state-transitions", "message-signing", "state-transition-validation"]
 state-transitions = []
 system_contracts = ["factories", "data-contracts"]
-fixtures-and-mocks = ["system_contracts"]
-random-public-keys = ["bls-signatures"]
+fixtures-and-mocks = ["system_contracts", "platform-value/json"]
+random-public-keys = ["bls-signatures", "ed25519-dalek"]
 random-identities = ["random-public-keys"]
 random-documents = []
 random-document-types = []

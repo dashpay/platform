@@ -25,7 +25,7 @@ indexmap = { version = "2.0.2" }
 sqlparser = { version = "0.38.0" }
 # used for int maps and needed in the verifier
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = ["state-transitions", "fee-distribution"], default-features = false, optional = true }
+dpp = { path = "../rs-dpp", features = ["state-transitions"], default-features = false, optional = true }
 thiserror = { version = "1.0.30" }
 tracing = { version = "0.1.37", default-features = false, features = [] }
 derive_more = { version = "0.99.17", optional = true}
@@ -41,7 +41,6 @@ bs58 = { version = "0.5.0", optional = true }
 base64 = { version = "0.21.0", optional = true }
 hex = { version = "0.4.3", optional = true }
 tempfile = { version = "3", optional = true }
-serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "2.0.0", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
@@ -52,22 +51,23 @@ grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "f5a3382c5537
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "f5a3382c5537de7417e983cdf2132792aa9fdc9d", optional = true }
 
 [dev-dependencies]
-criterion = "0.3.5"
-platform-version = { path = "../rs-platform-version", features = [
-  "mock-versions",
-] }
-dpp = { path = "../rs-dpp", features = [
-  "state-transitions",
-  "fee-distribution",
-  "document-cbor-conversion",
-  "random-documents",
-  "random-identities",
-  "random-public-keys",
-  "fixtures-and-mocks",
-  "system_contracts",
-  "factories",
-  "data-contract-json-conversion",
-], default-features = false }
+#criterion = "0.3.5"
+#platform-version = { path = "../rs-platform-version", features = [
+#  "mock-versions",
+#] }
+#dpp = { path = "../rs-dpp", features = [
+#  "state-transitions",
+#  "fee-distribution",
+#  "document-cbor-conversion",
+#  "random-documents",
+#  "random-identities",
+#  "random-public-keys",
+#  "fixtures-and-mocks",
+#  "system_contracts",
+#  "factories",
+#  "data-contract-json-conversion",
+#], default-features = false }
+#serde_json = { version = "1.0", features = ["preserve_order"] }
 
 [[bench]]
 name = "benchmarks"
@@ -75,14 +75,17 @@ harness = false
 
 [features]
 default = ["full", "verify", "fixtures-and-mocks"]
+fee-distribution = ["dpp/fee-distribution"]
 fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify", "dpp/data-contract-json-conversion", "dpp/random-public-keys"]
 server = [
   "serde",
   "parking_lot",
   "arc-swap",
   "moka",
+  "dpp/platform-value-json",
+  "dpp/system_contracts",
   "dpp/state-transitions",
-  "dpp/fee-distribution",
+  "fee-distribution",
   "grovedb/full",
   "grovedb/estimated_costs",
   "grovedb-storage",
@@ -98,11 +101,11 @@ full = [
   "server",
   "ciborium",
   "serde",
-  "serde_json",
   "bs58",
   "tempfile",
   "base64",
   "chrono",
 ]
+cbor_query = ["ciborium", "dpp/cbor"]
 grovedb_operations_logging = []
 verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions"]

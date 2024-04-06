@@ -5,6 +5,8 @@ use bincode::{Decode, Encode};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
 pub struct Bytes20(pub [u8; 20]);
@@ -75,7 +77,7 @@ impl Serialize for Bytes20 {
         S: serde::Serializer,
     {
         if serializer.is_human_readable() {
-            serializer.serialize_str(&base64::encode(self.0))
+            serializer.serialize_str(&BASE64_STANDARD.encode(self.0))
         } else {
             serializer.serialize_bytes(&self.0)
         }
@@ -101,7 +103,7 @@ impl<'de> Deserialize<'de> for Bytes20 {
                 where
                     E: serde::de::Error,
                 {
-                    let bytes = base64::decode(v).map_err(|e| E::custom(format!("{}", e)))?;
+                    let bytes = BASE64_STANDARD.decode(v).map_err(|e| E::custom(format!("{}", e)))?;
                     if bytes.len() != 20 {
                         return Err(E::invalid_length(bytes.len(), &self));
                     }

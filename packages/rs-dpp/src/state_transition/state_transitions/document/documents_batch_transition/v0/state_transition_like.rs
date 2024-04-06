@@ -1,3 +1,5 @@
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
@@ -54,8 +56,8 @@ impl StateTransitionLike for DocumentsBatchTransitionV0 {
             .map(|transition| {
                 format!(
                     "{}-{}-{:x}",
-                    base64::encode(self.owner_id),
-                    base64::encode(transition.data_contract_id()),
+                    BASE64_STANDARD.encode(self.owner_id),
+                    BASE64_STANDARD.encode(transition.data_contract_id()),
                     transition.identity_contract_nonce()
                 )
             })

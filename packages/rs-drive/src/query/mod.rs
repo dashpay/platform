@@ -52,7 +52,7 @@ use {
         error::Error::GroveDB,
         fee::op::LowLevelDriveOperation,
     },
-    dpp::{block::block_info::BlockInfo, platform_value::platform_value},
+    dpp::block::block_info::BlockInfo,
 };
 
 // Crate-local unconditional imports
@@ -307,7 +307,7 @@ impl<'a> DriveQuery<'a> {
                             == "$id")))
     }
 
-    #[cfg(feature = "ciborium")]
+    #[cfg(feature = "cbor_query")]
     /// Converts a query CBOR to a `DriveQuery`.
     pub fn from_cbor(
         query_cbor: &[u8],
@@ -747,7 +747,7 @@ impl<'a> DriveQuery<'a> {
     ///
     /// FIXME: The data contract is only refered as ID, and document type as its name.
     /// This can change in the future to include full data contract and document type.
-    #[cfg(feature = "ciborium")]
+    #[cfg(feature = "cbor_query")]
     pub fn to_cbor(&self) -> Result<Vec<u8>, Error> {
         let data: BTreeMap<String, Value> = self.into();
         let cbor: BTreeMap<String, ciborium::Value> = Value::convert_to_cbor_map(data)?;
@@ -1775,6 +1775,7 @@ impl<'a> DriveQuery<'a> {
     }
 
     #[cfg(feature = "server")]
+    #[allow(unused)]
     /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_no_proof_internal(
         &self,
