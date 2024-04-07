@@ -1,4 +1,3 @@
-use base64::engine::general_purpose::PAD;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use base64::{alphabet, Engine};
 

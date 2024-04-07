@@ -7,10 +7,24 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
+
+#[cfg(any(
+feature = "state-transition-validation",
+feature = "state-transition-signing"
+))]
+use crate::state_transition::errors::{
+    InvalidIdentityPublicKeyTypeError,
+};
+
+#[cfg(all(feature = "state-transitions", feature = "validation"))]
+use crate::state_transition::errors::{
+    StateTransitionError
+};
+
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
+    InvalidSignaturePublicKeyError, PublicKeyMismatchError,
+    PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError,
     WrongPublicKeyPurposeError,
 };
 use crate::{

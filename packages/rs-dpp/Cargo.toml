@@ -73,11 +73,8 @@ dpp = { path = ".", features = ["all_features_without_client"] }
 
 [features]
 default = [
-  "json-object",
   "platform-value",
-  "system_contracts",
   "state-transitions",
-  "extended-document",
 ]
 all_features = [
   "json-object",
@@ -194,24 +191,24 @@ validation = [
 platform-value-json = ["platform-value/json"]
 platform-value-cbor = ["platform-value/cbor"]
 json-schema-validation = ["jsonschema", "platform-value-json"]
-json-object = ["platform-value"]
+json-object = ["platform-value", "platform-value-json"]
 platform-value = []
 identity-hashing = ["identity-serialization"]
 message-signing = []
 message-signature-verification = ["bls-signatures"]
 document-serde-conversion = []
 document-value-conversion = ["document-serde-conversion"]
-document-json-conversion = ["document-value-conversion"]
+document-json-conversion = ["document-value-conversion", "platform-value-json"]
 document-cbor-conversion = ["document-value-conversion", "cbor", "platform-value-cbor"]
 data-contract-serde-conversion = []
 data-contract-value-conversion = ["data-contract-serde-conversion"]
-data-contract-json-conversion = ["data-contract-value-conversion"]
+data-contract-json-conversion = ["data-contract-value-conversion", "platform-value-json"]
 data-contract-cbor-conversion = ["data-contract-value-conversion", "cbor", "platform-value-cbor"]
 identity-serialization = []
 identity-serde-conversion = []
 identity-value-conversion = ["identity-serde-conversion"]
-identity-json-conversion = ["identity-value-conversion"]
-identity-cbor-conversion = ["identity-value-conversion", "cbor"]
+identity-json-conversion = ["identity-value-conversion", "platform-value-json"]
+identity-cbor-conversion = ["identity-value-conversion", "cbor", "platform-value-cbor"]
 state-transition-serde-conversion = ["data-contract-serde-conversion"]
 state-transition-value-conversion = [
   "platform-value",
@@ -220,17 +217,19 @@ state-transition-value-conversion = [
 ]
 state-transition-json-conversion = [
   "json-object",
+  "state-transition-value-conversion",
   "data-contract-json-conversion",
+  "platform-value-json",
 ]
 state-transition-validation = ["state-transitions", "message-signature-verification"]
 state-transition-signing = ["state-transitions", "message-signing", "state-transition-validation"]
 state-transitions = []
-system_contracts = ["factories", "data-contracts"]
+system_contracts = ["factories", "data-contracts", "platform-value-json"]
 fixtures-and-mocks = ["system_contracts", "platform-value/json"]
 random-public-keys = ["bls-signatures", "ed25519-dalek"]
 random-identities = ["random-public-keys"]
 random-documents = []
-random-document-types = []
+random-document-types = ["platform-value-json"]
 fee-distribution = []
 extended-document = [
   "document-serde-conversion",
