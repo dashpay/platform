@@ -1,24 +1,19 @@
 use crate::data_contract::DataContract;
 use bincode::{Decode, Encode};
 
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+use crate::prelude::IdentityNonce;
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::{
     data_contract::{
         conversion::value::v0::DataContractValueConversionMethodsV0,
-        created_data_contract::fields::property_names::{
-            DATA_CONTRACT, IDENTITY_NONCE,
-        }
+        created_data_contract::fields::property_names::{DATA_CONTRACT, IDENTITY_NONCE},
     },
     version::PlatformVersion,
     ProtocolError,
 };
 #[cfg(feature = "data-contract-value-conversion")]
-use platform_value::{
-    btreemap_extensions::BTreeValueRemoveFromMapHelper,
-    Error, Value
-};
-use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::prelude::IdentityNonce;
+use platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Error, Value};
 
 // TODO: Decide on what we need ExtendedDataContract with metadata or CreatedDataContract or both.
 #[derive(Clone, Debug, PartialEq)]

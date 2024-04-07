@@ -1,6 +1,12 @@
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
+use base64::engine::general_purpose::PAD;
+use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+use base64::{alphabet, Engine};
+
 use crate::{BinaryData, Bytes20, Bytes32, Bytes36, Error, Identifier, Value};
+
+pub const PADDING_INDIFFERENT: GeneralPurposeConfig = GeneralPurposeConfig::new()
+    .with_encode_padding(false)
+    .with_decode_padding_mode(DecodePaddingMode::Indifferent);
 
 impl Value {
     /// If the `Value` is a `Bytes`, a `Text` using base 58 or Vector of `U8`, returns the
@@ -119,9 +125,9 @@ impl Value {
     /// ```
     pub fn into_binary_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
-            Value::Text(text) => BASE64_STANDARD.decode(text).map_err(|_| {
+            Value::Text(text) => GeneralPurpose::new(&alphabet::STANDARD, PADDING_INDIFFERENT).decode(text).map_err(|e| {
                 Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
+                    format!("value was a string, but could not be decoded from base 64 into binary bytes, error: {}", e),
                 )
             }),
             Value::Array(array) => array
@@ -191,11 +197,14 @@ impl Value {
     /// ```
     pub fn to_binary_bytes(&self) -> Result<Vec<u8>, Error> {
         match self {
-            Value::Text(text) => BASE64_STANDARD.decode(text).map_err(|_| {
-                Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
-                )
-            }),
+            Value::Text(text) => GeneralPurpose::new(&alphabet::STANDARD, PADDING_INDIFFERENT)
+                .decode(text)
+                .map_err(|e| {
+                    Error::StructureError(format!(
+                        "value was a string, but could not be decoded from base 64, error: {}",
+                        e
+                    ))
+                }),
             Value::Array(array) => array
                 .iter()
                 .map(|byte| match byte {
@@ -346,7 +355,7 @@ impl Value {
     /// assert_eq!(value.into_bytes_20(), Err(Error::ByteLengthNot20BytesError("buffer was not 20 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.into_bytes_20(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
+    /// assert_eq!(value.into_bytes_20(), Err(Error::StructureError("value was a string, but could not be decoded from base 64 into bytes 20, error: Invalid last symbol 105, offset 5.".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104)]);
     /// assert_eq!(value.into_bytes_20(), Ok(Bytes20([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104])));
@@ -356,9 +365,9 @@ impl Value {
     /// ```
     pub fn into_bytes_20(self) -> Result<Bytes20, Error> {
         match self {
-            Value::Text(text) => Bytes20::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
+            Value::Text(text) => Bytes20::from_vec(GeneralPurpose::new(&alphabet::STANDARD, PADDING_INDIFFERENT).decode(text).map_err(|e| {
                 Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
+                    format!("value was a string, but could not be decoded from base 64 into bytes 20, error: {}", e),
                 )
             })?),
             Value::Array(array) => Bytes20::from_vec(
@@ -394,7 +403,7 @@ impl Value {
     /// assert_eq!(value.to_bytes_20(), Err(Error::ByteLengthNot20BytesError("buffer was not 20 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.to_bytes_20(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
+    /// assert_eq!(value.to_bytes_20(), Err(Error::StructureError("value was a string, but could not be decoded from base 64 to bytes 20, error: Invalid last symbol 105, offset 5.".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104)]);
     /// assert_eq!(value.to_bytes_20(), Ok(Bytes20([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104])));
@@ -404,9 +413,9 @@ impl Value {
     /// ```
     pub fn to_bytes_20(&self) -> Result<Bytes20, Error> {
         match self {
-            Value::Text(text) => Bytes20::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
+            Value::Text(text) => Bytes20::from_vec(GeneralPurpose::new(&alphabet::STANDARD, PADDING_INDIFFERENT).decode(text).map_err(|e| {
                 Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
+                    format!("value was a string, but could not be decoded from base 64 to bytes 20, error: {}", e),
                 )
             })?),
             Value::Array(array) => Bytes20::from_vec(
@@ -442,7 +451,7 @@ impl Value {
     /// assert_eq!(value.into_bytes_32(), Err(Error::ByteLengthNot32BytesError("buffer was not 32 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.into_bytes_32(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
+    /// assert_eq!(value.into_bytes_32(), Err(Error::StructureError("value was a string, but could not be decoded from base 64 into bytes 32, error: Invalid last symbol 105, offset 5.".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101)]);
     /// assert_eq!(value.into_bytes_32(), Ok(Bytes32([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101])));
@@ -455,9 +464,9 @@ impl Value {
     /// ```
     pub fn into_bytes_32(self) -> Result<Bytes32, Error> {
         match self {
-            Value::Text(text) => Bytes32::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
+            Value::Text(text) => Bytes32::from_vec(GeneralPurpose::new(&alphabet::STANDARD, PADDING_INDIFFERENT).decode(text).map_err(|e| {
                 Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
+                    format!("value was a string, but could not be decoded from base 64 into bytes 32, error: {}", e),
                 )
             })?),
             Value::Array(array) => Bytes32::from_vec(
@@ -493,7 +502,7 @@ impl Value {
     /// assert_eq!(value.to_bytes_32(), Err(Error::ByteLengthNot32BytesError("buffer was not 32 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.to_bytes_32(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
+    /// assert_eq!(value.to_bytes_32(), Err(Error::StructureError("value was a string, but could not be decoded from base 64 to bytes 32, error: Invalid last symbol 105, offset 5.".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101)]);
     /// assert_eq!(value.to_bytes_32(), Ok(Bytes32::new([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101])));
@@ -506,9 +515,9 @@ impl Value {
     /// ```
     pub fn to_bytes_32(&self) -> Result<Bytes32, Error> {
         match self {
-            Value::Text(text) => Bytes32::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
+            Value::Text(text) => Bytes32::from_vec(GeneralPurpose::new(&alphabet::STANDARD, PADDING_INDIFFERENT).decode(text).map_err(|e| {
                 Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
+                    format!("value was a string, but could not be decoded from base 64 to bytes 32, error: {}", e),
                 )
             })?),
             Value::Array(array) => Bytes32::from_vec(
@@ -545,7 +554,7 @@ impl Value {
     /// assert_eq!(value.into_bytes_36(), Err(Error::ByteLengthNot36BytesError("buffer was not 36 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.into_bytes_36(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
+    /// assert_eq!(value.into_bytes_36(), Err(Error::StructureError("value was a string, but could not be decoded from base 64 into bytes 36, error: Invalid last symbol 105, offset 5.".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(101), Value::U8(101), Value::U8(101), Value::U8(101)]);
     /// assert_eq!(value.into_bytes_36(), Ok(Bytes36([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 101, 101, 101, 101])));
@@ -555,9 +564,9 @@ impl Value {
     /// ```
     pub fn into_bytes_36(self) -> Result<Bytes36, Error> {
         match self {
-            Value::Text(text) => Bytes36::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
+            Value::Text(text) => Bytes36::from_vec(GeneralPurpose::new(&alphabet::STANDARD, PADDING_INDIFFERENT).decode(text).map_err(|e| {
                 Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
+                    format!("value was a string, but could not be decoded from base 64 into bytes 36, error: {}", e),
                 )
             })?),
             Value::Array(array) => Bytes36::from_vec(
@@ -593,7 +602,7 @@ impl Value {
     /// assert_eq!(value.to_bytes_36(), Err(Error::ByteLengthNot36BytesError("buffer was not 36 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.to_bytes_36(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
+    /// assert_eq!(value.to_bytes_36(), Err(Error::StructureError("value was a string, but could not be decoded from base 64 to bytes 36, error: Invalid last symbol 105, offset 5.".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(101), Value::U8(101), Value::U8(101), Value::U8(101)]);
     /// assert_eq!(value.to_bytes_36(), Ok(Bytes36([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 101, 101, 101, 101])));
@@ -603,9 +612,9 @@ impl Value {
     /// ```
     pub fn to_bytes_36(&self) -> Result<Bytes36, Error> {
         match self {
-            Value::Text(text) => Bytes36::from_vec(BASE64_STANDARD.decode(text).map_err(|_| {
+            Value::Text(text) => Bytes36::from_vec(GeneralPurpose::new(&alphabet::STANDARD, PADDING_INDIFFERENT).decode(text).map_err(|e| {
                 Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
+                    format!("value was a string, but could not be decoded from base 64 to bytes 36, error: {}", e),
                 )
             })?),
             Value::Array(array) => Bytes36::from_vec(

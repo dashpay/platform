@@ -1,11 +1,11 @@
 #[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
 use std::borrow::Borrow;
-use std::convert::TryFrom;
-use std::iter::FromIterator;
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 #[cfg(feature = "json")]
 use std::convert::TryInto;
+use std::iter::FromIterator;
 
 use crate::{BinaryData, Error, Identifier, Value, ValueMap};
 

@@ -1,6 +1,6 @@
-use std::convert::TryInto;
-use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
+use std::convert::TryInto;
 
 use ciborium::value::Value as CborValue;
 
@@ -98,6 +98,9 @@ mod tests {
 
         let result = convert_to(&cbor_value, FieldType::ArrayInt, FieldType::StringBase64)
             .expect("no error");
-        assert_eq!(CborValue::Text(BASE64_STANDARD.encode(vec![0_u8; 32])), result);
+        assert_eq!(
+            CborValue::Text(BASE64_STANDARD.encode(vec![0_u8; 32])),
+            result
+        );
     }
 }

@@ -1,7 +1,7 @@
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use core::{fmt, slice};
 use std::iter::Peekable;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 
 use serde::de::value::SeqDeserializer;
 use serde::de::{self, Deserializer as _, IntoDeserializer};

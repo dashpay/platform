@@ -2,10 +2,10 @@ use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
 use std::collections::BTreeMap;
 
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use std::iter::Peekable;
 use std::vec::IntoIter;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 
 #[derive(Debug, Clone, Copy)]
 pub enum IntegerReplacementType {

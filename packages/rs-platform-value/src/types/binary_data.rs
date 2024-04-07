@@ -1,12 +1,12 @@
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use bincode::{Decode, Encode};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
 pub struct BinaryData(pub Vec<u8>);
@@ -43,7 +43,9 @@ impl<'de> Deserialize<'de> for BinaryData {
                 where
                     E: serde::de::Error,
                 {
-                    let bytes = BASE64_STANDARD.decode(v).map_err(|e| E::custom(format!("{}", e)))?;
+                    let bytes = BASE64_STANDARD
+                        .decode(v)
+                        .map_err(|e| E::custom(format!("{}", e)))?;
                     Ok(BinaryData(bytes))
                 }
             }

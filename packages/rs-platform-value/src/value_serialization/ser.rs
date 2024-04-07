@@ -1,10 +1,10 @@
 use crate::error::Error;
 use crate::value_map::ValueMap;
 use crate::{to_value, Value};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use serde::ser::{Impossible, Serialize};
 use std::fmt::Display;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 
 // We only use our own error type; no need for From conversions provided by the
 // standard library's try! macro. This reduces lines of LLVM IR by 4%.

@@ -1,12 +1,12 @@
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use bincode::{Decode, Encode};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
 pub struct Bytes36(pub [u8; 36]);
@@ -99,7 +99,9 @@ impl<'de> Deserialize<'de> for Bytes36 {
                 where
                     E: serde::de::Error,
                 {
-                    let bytes = BASE64_STANDARD.decode(v).map_err(|e| E::custom(format!("{}", e)))?;
+                    let bytes = BASE64_STANDARD
+                        .decode(v)
+                        .map_err(|e| E::custom(format!("{}", e)))?;
                     if bytes.len() != 36 {
                         return Err(E::invalid_length(bytes.len(), &self));
                     }

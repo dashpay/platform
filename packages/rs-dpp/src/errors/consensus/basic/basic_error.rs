@@ -4,6 +4,8 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
+#[cfg(feature = "json-schema-validation")]
+use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::data_contract::{
     DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError,
     DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
@@ -11,12 +13,10 @@ use crate::consensus::basic::data_contract::{
     IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, UnknownSecurityLevelError,
+    UnknownStorageKeyRequirementsError,
 };
-#[cfg(feature = "json-schema-validation")]
-use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
@@ -58,13 +58,12 @@ use crate::consensus::basic::state_transition::{
 use crate::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
 use crate::consensus::ConsensusError;
 
-#[cfg(feature = "json-schema-validation")]
-use crate::consensus::basic::{
-    json_schema_compilation_error::JsonSchemaCompilationError,
-    json_schema_error::JsonSchemaError,
-};
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
+#[cfg(feature = "json-schema-validation")]
+use crate::consensus::basic::{
+    json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
+};
 use crate::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use crate::data_contract::errors::DataContractError;
 

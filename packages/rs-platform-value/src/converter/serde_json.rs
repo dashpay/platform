@@ -1,9 +1,9 @@
 use crate::value_map::ValueMap;
 use crate::{Error, Value};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use serde_json::{Map, Number, Value as JsonValue};
 use std::collections::BTreeMap;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 
 impl Value {
     pub fn convert_from_serde_json_map<I, R>(map: I) -> R

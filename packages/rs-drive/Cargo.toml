@@ -51,30 +51,30 @@ grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "f5a3382c5537
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "f5a3382c5537de7417e983cdf2132792aa9fdc9d", optional = true }
 
 [dev-dependencies]
-#criterion = "0.3.5"
-#platform-version = { path = "../rs-platform-version", features = [
-#  "mock-versions",
-#] }
-#dpp = { path = "../rs-dpp", features = [
-#  "state-transitions",
-#  "fee-distribution",
-#  "document-cbor-conversion",
-#  "random-documents",
-#  "random-identities",
-#  "random-public-keys",
-#  "fixtures-and-mocks",
-#  "system_contracts",
-#  "factories",
-#  "data-contract-json-conversion",
-#], default-features = false }
-#serde_json = { version = "1.0", features = ["preserve_order"] }
+criterion = "0.3.5"
+platform-version = { path = "../rs-platform-version", features = [
+  "mock-versions",
+] }
+dpp = { path = "../rs-dpp", features = [
+  "state-transitions",
+  "fee-distribution",
+  "document-cbor-conversion",
+  "random-documents",
+  "random-identities",
+  "random-public-keys",
+  "fixtures-and-mocks",
+  "system_contracts",
+  "factories",
+  "data-contract-json-conversion",
+], default-features = false }
+serde_json = { version = "1.0", features = ["preserve_order"] }
 
 [[bench]]
 name = "benchmarks"
 harness = false
 
 [features]
-default = ["full", "verify", "fixtures-and-mocks"]
+default = ["full", "verify", "fixtures-and-mocks", "cbor_query"]
 fee-distribution = ["dpp/fee-distribution"]
 fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify", "dpp/data-contract-json-conversion", "dpp/random-public-keys"]
 server = [
