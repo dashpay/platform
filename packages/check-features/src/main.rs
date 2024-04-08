@@ -3,7 +3,7 @@ use std::process::Command;
 use toml::Value;
 
 fn main() {
-    let crates = ["rs-drive-abci"];
+    let crates = ["rs-sdk", "rs-drive-abci", "rs-dpp", "rs-drive"];
 
     for specific_crate in crates {
         check_crate(specific_crate)

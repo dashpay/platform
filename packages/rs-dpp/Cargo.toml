@@ -135,6 +135,7 @@ rs-sdk-features = [
   "state-transitions",
   "fee-distribution",
   "client",
+  "platform-value-cbor"
 ]
 all_features_without_client = [
   "json-object",
