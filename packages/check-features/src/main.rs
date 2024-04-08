@@ -3,7 +3,13 @@ use std::process::Command;
 use toml::Value;
 
 fn main() {
-    let crates = ["rs-sdk", "rs-drive-abci", "rs-dpp", "rs-drive"];
+    let crates = [
+        "rs-sdk",
+        "rs-drive-abci",
+        "rs-dpp",
+        "rs-drive",
+        "rs-drive-proof-verifier",
+    ];
 
     for specific_crate in crates {
         check_crate(specific_crate)

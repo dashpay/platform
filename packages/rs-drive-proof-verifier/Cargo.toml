@@ -7,10 +7,9 @@ rust-version = "1.76"
 crate-type = ["cdylib"]
 
 [features]
-default = ["mocks", "json"]
-mocks = ["dep:serde"]
+default = ["mocks"]
+mocks = ["dep:serde", "json"]
 json = ["dep:serde_json"]
-
 
 [dependencies]
 
@@ -19,7 +18,7 @@ dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
-dpp = { path = "../rs-dpp", default-features = false }
+dpp = { path = "../rs-dpp", features = ["bls-signatures"], default-features = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.11", features = [
   "grpc",
 ] }
