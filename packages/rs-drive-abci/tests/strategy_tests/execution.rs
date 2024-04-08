@@ -24,7 +24,7 @@ use dpp::bls_signatures::PrivateKey;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
-use drive_abci::abci::AbciApplication;
+use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
@@ -577,9 +577,9 @@ pub(crate) fn run_chain_for_strategy(
                 }
             };
 
-            let block_hash = *core_blocks
-                .get(&block_height)
-                .unwrap_or_else(|| panic!("expected a block hash to be known for {}", core_height));
+            let Some(block_hash) = core_blocks.get(&block_height) else {
+                panic!("expected a block hash to be known for {}", block_height);
+            };
 
             let chain_lock = if sign_chain_locks {
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
@@ -594,7 +594,7 @@ pub(crate) fn run_chain_for_strategy(
                     .expect("expected to encode the prefix");
 
                 engine.input("clsig".as_bytes());
-                engine.input(core_height.to_le_bytes().as_slice());
+                engine.input(block_height.to_le_bytes().as_slice());
 
                 let request_id = QuorumSigningRequestId::from_engine(engine);
 
@@ -617,7 +617,7 @@ pub(crate) fn run_chain_for_strategy(
                 engine.input(&[chain_lock_quorum_type as u8]);
                 engine.input(quorum_hash.as_slice());
                 engine.input(request_id.as_byte_array());
-                engine.input(&block_hash);
+                engine.input(block_hash);
 
                 let message_digest = sha256d::Hash::from_engine(engine);
 
@@ -626,16 +626,16 @@ pub(crate) fn run_chain_for_strategy(
                         .expect("expected to have a valid private key");
                 let signature = quorum_private_key.sign(message_digest.as_byte_array());
                 let chain_lock = ChainLock {
-                    block_height: core_height,
-                    block_hash: BlockHash::from_byte_array(block_hash),
+                    block_height,
+                    block_hash: BlockHash::from_byte_array(*block_hash),
                     signature: (*signature.to_bytes()).into(),
                 };
 
                 Ok(chain_lock)
             } else {
                 let chain_lock = ChainLock {
-                    block_height: core_height,
-                    block_hash: BlockHash::from_byte_array(block_hash),
+                    block_height,
+                    block_hash: BlockHash::from_byte_array(*block_hash),
                     signature: [2; 96].into(),
                 };
 
@@ -676,7 +676,8 @@ pub(crate) fn create_chain_for_strategy(
     config: PlatformConfig,
     rng: StdRng,
 ) -> ChainExecutionOutcome {
-    let abci_application = AbciApplication::new(platform).expect("expected new abci application");
+    let abci_application = FullAbciApplication::new(platform);
+
     let seed = strategy
         .failure_testing
         .as_ref()
@@ -695,7 +696,7 @@ pub(crate) fn create_chain_for_strategy(
 }
 
 pub(crate) fn start_chain_for_strategy(
-    abci_application: AbciApplication<MockCoreRPCLike>,
+    abci_application: FullAbciApplication<MockCoreRPCLike>,
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
@@ -756,8 +757,7 @@ pub(crate) fn start_chain_for_strategy(
     current_quorum_hash = abci_application
         .platform
         .state
-        .read()
-        .unwrap()
+        .load()
         .current_validator_set_quorum_hash();
 
     continue_chain_for_strategy(
@@ -782,7 +782,7 @@ pub(crate) fn start_chain_for_strategy(
 }
 
 pub(crate) fn continue_chain_for_strategy(
-    abci_app: AbciApplication<MockCoreRPCLike>,
+    abci_app: FullAbciApplication<MockCoreRPCLike>,
     chain_execution_parameters: ChainExecutionParameters,
     mut strategy: NetworkStrategy,
     config: PlatformConfig,
@@ -791,7 +791,7 @@ pub(crate) fn continue_chain_for_strategy(
     let platform = abci_app.platform;
     let ChainExecutionParameters {
         block_start,
-        core_height_start,
+        core_height_start: _,
         block_count,
         proposers: proposers_with_updates,
         quorums,
@@ -827,8 +827,6 @@ pub(crate) fn continue_chain_for_strategy(
         }),
     );
 
-    let mut current_core_height = core_height_start;
-
     let mut total_withdrawals = UnsignedWithdrawalTxs::default();
 
     let mut current_quorum_with_test_info =
@@ -840,7 +838,7 @@ pub(crate) fn continue_chain_for_strategy(
     let mut state_transition_results_per_block = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
-        let state = platform.state.read().expect("lock is poisoned");
+        let state = platform.state.load();
         let epoch_info = EpochInfoV0::calculate(
             first_block_time,
             current_time_ms,
@@ -852,7 +850,7 @@ pub(crate) fn continue_chain_for_strategy(
         )
         .expect("should calculate epoch info");
 
-        current_core_height = state.last_committed_core_height();
+        let current_core_height = state.last_committed_core_height();
 
         drop(state);
 
@@ -871,16 +869,15 @@ pub(crate) fn continue_chain_for_strategy(
             .validator_set
             .get(i as usize)
             .unwrap();
-        let (state_transitions, finalize_block_operations) = strategy
-            .state_transitions_for_block_with_new_identities(
-                platform,
-                &block_info,
-                &mut current_identities,
-                &mut current_identity_nonce_counter,
-                &mut current_identity_contract_nonce_counter,
-                &mut signer,
-                &mut rng,
-            );
+        let (state_transitions, finalize_block_operations) = strategy.state_transitions_for_block(
+            platform,
+            &block_info,
+            &mut current_identities,
+            &mut current_identity_nonce_counter,
+            &mut current_identity_contract_nonce_counter,
+            &mut signer,
+            &mut rng,
+        );
 
         state_transitions_per_block.insert(block_height, state_transitions.clone());
 
@@ -976,7 +973,7 @@ pub(crate) fn continue_chain_for_strategy(
             continue;
         }
 
-        let platform_state = platform.state.read().expect("lock is poisoned");
+        let platform_state = platform.state.load();
 
         let platform_version = platform_state.current_platform_version().unwrap();
 
@@ -1005,7 +1002,6 @@ pub(crate) fn continue_chain_for_strategy(
                 &abci_app,
                 &root_app_hash,
                 &state_transaction_results,
-                &block_info,
                 &expected_validation_errors,
                 platform_version,
             );
@@ -1066,8 +1062,7 @@ pub(crate) fn continue_chain_for_strategy(
     } else {
         platform
             .state
-            .read()
-            .expect("lock is poisoned")
+            .load()
             .last_committed_block_info()
             .as_ref()
             .unwrap()

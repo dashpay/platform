@@ -35,12 +35,21 @@ pub enum PlatformState {
 
 /// Platform state
 #[derive(Clone, Debug, Encode, Decode, From)]
-enum PlatformStateForSaving {
+pub enum PlatformStateForSaving {
     /// Version 0
     V0(PlatformStateForSavingV0),
 }
 
 impl PlatformStateForSaving {
+    /// Retrieves the current protocol version used in consensus.
+    ///
+    /// Matches against `PlatformStateForSaving` variants to extract the protocol version.
+    ///
+    /// # Returns
+    /// A `ProtocolVersion` indicating the current consensus protocol version.
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         match self {
             PlatformStateForSaving::V0(v0) => v0.current_protocol_version_in_consensus,
@@ -193,15 +202,9 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
 }
 
 impl PlatformStateV0Methods for PlatformState {
-    fn last_committed_height(&self) -> u64 {
+    fn last_committed_known_block_height_or(&self, default: u64) -> u64 {
         match self {
-            PlatformState::V0(v0) => v0.last_committed_height(),
-        }
-    }
-
-    fn last_committed_known_height_or(&self, default: u64) -> u64 {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_known_height_or(default),
+            PlatformState::V0(v0) => v0.last_committed_known_block_height_or(default),
         }
     }
 
@@ -337,9 +340,9 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn any_block_info(&self) -> &BlockInfo {
+    fn last_block_info(&self) -> &BlockInfo {
         match self {
-            PlatformState::V0(v0) => v0.any_block_info(),
+            PlatformState::V0(v0) => v0.last_block_info(),
         }
     }
 

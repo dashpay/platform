@@ -11,7 +11,6 @@ pub struct DriveAbciVersion {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
-    pub base_query_structure: FeatureVersion,
     pub proofs_query: FeatureVersionBounds,
     pub document_query: FeatureVersionBounds,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
@@ -79,6 +78,15 @@ pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
+    pub penalties: PenaltyAmounts,
+}
+
+/// All of these penalty amounts are in credits
+#[derive(Clone, Debug, Default)]
+pub struct PenaltyAmounts {
+    pub identity_id_not_correct: u64,
+    pub validation_of_added_keys_structure_failure: u64,
+    pub validation_of_added_keys_proof_of_possession_failure: u64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -122,10 +130,10 @@ pub struct DriveAbciValidationDataTriggerVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersion {
-    pub base_structure: FeatureVersion,
+    pub basic_structure: OptionalFeatureVersion,
     pub advanced_structure: OptionalFeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
-    pub balance: OptionalFeatureVersion,
+    pub advanced_minimum_balance_pre_check: OptionalFeatureVersion,
     pub nonce: OptionalFeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
@@ -153,11 +161,14 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_identity_public_key_ids_exist_in_state: FeatureVersion,
     pub validate_state_transition_identity_signed: FeatureVersion,
     pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
+    pub validate_master_key_uniqueness: FeatureVersion,
+    pub validate_simple_pre_check_balance: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciAssetLockValidationVersions {
     pub fetch_asset_lock_transaction_output_sync: FeatureVersion,
+    pub verify_asset_lock_is_not_spent_and_has_enough_balance: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -266,11 +277,14 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciProtocolUpgradeMethodVersions {
     pub check_for_desired_protocol_upgrade: FeatureVersion,
+    pub upgrade_protocol_version_on_epoch_change: FeatureVersion,
+    pub protocol_version_upgrade_percentage_needed: u64,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionProcessingMethodVersions {
     pub execute_event: FeatureVersion,
     pub process_raw_state_transitions: FeatureVersion,
+    pub decode_raw_state_transitions: FeatureVersion,
     pub validate_fees_of_event: FeatureVersion,
 }

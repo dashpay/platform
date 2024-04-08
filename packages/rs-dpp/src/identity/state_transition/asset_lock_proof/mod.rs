@@ -8,11 +8,13 @@ pub use bincode::{Decode, Encode};
 
 pub use instant::*;
 use platform_value::Value;
+#[cfg(feature = "validation")]
 use platform_version::version::PlatformVersion;
 use serde::de::Error;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{ProtocolError, SerdeParsingError};
 
@@ -173,7 +175,7 @@ impl AssetLockProof {
     pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {
         match self {
             AssetLockProof::Instant(instant_proof) => instant_proof.create_identifier(),
-            AssetLockProof::Chain(chain_proof) => chain_proof.create_identifier(),
+            AssetLockProof::Chain(chain_proof) => Ok(chain_proof.create_identifier()),
         }
     }
 

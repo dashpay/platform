@@ -5,11 +5,13 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
+use dpp::prelude::UserFeeIncrease;
 
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
-use crate::platform::transition::put_document::PutSettings;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -26,6 +28,7 @@ pub trait WithdrawFromIdentity {
         address: Address,
         amount: u64,
         core_fee_per_byte: Option<u32>,
+        user_fee_increase: Option<UserFeeIncrease>,
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error>;
@@ -39,6 +42,7 @@ impl WithdrawFromIdentity for Identity {
         address: Address,
         amount: u64,
         core_fee_per_byte: Option<u32>,
+        user_fee_increase: Option<UserFeeIncrease>,
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
@@ -49,6 +53,7 @@ impl WithdrawFromIdentity for Identity {
             amount,
             Pooling::Never,
             core_fee_per_byte.unwrap_or(1),
+            user_fee_increase.unwrap_or_default(),
             signer,
             new_identity_nonce,
             sdk.version(),
@@ -66,10 +71,13 @@ impl WithdrawFromIdentity for Identity {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
+        let block_info = block_info_from_metadata(response.metadata()?)?;
+
         let proof = response.proof_owned()?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
+            &block_info,
             proof.grovedb_proof.as_slice(),
             &|_| Ok(None),
             sdk.version(),

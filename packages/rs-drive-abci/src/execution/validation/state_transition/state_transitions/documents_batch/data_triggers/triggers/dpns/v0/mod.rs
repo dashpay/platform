@@ -1,7 +1,7 @@
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::dpns_contract::v1::document_types::domain::properties::PARENT_DOMAIN_NAME;
-///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
+/// The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -44,7 +44,8 @@ pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_domain_data_trigger_v0(
+#[inline(always)]
+pub(super) fn create_domain_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
@@ -423,6 +424,7 @@ pub fn create_domain_data_trigger_v0(
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::Bytes32;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
@@ -444,15 +446,15 @@ mod test {
 
         let mut nonce_counter = BTreeMap::new();
 
-        let state_read_guard = platform.state.read().unwrap();
+        let state = platform.state.load();
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &state,
             config: &platform.config,
         };
 
-        let platform_version = state_read_guard
+        let platform_version = state
             .current_platform_version()
             .expect("should return a platform version");
 
@@ -465,11 +467,12 @@ mod test {
                 owner_id,
                 ..Default::default()
             },
-            state_read_guard.current_protocol_version_in_consensus(),
+            state.current_protocol_version_in_consensus(),
         );
         let data_contract = get_dpns_data_contract_fixture(
             Some(owner_id),
-            state_read_guard.current_protocol_version_in_consensus(),
+            0,
+            state.current_protocol_version_in_consensus(),
         )
         .data_contract_owned();
         let document_type = data_contract
@@ -499,7 +502,7 @@ mod test {
 
         let result = create_domain_data_trigger_v0(
             &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
-                document_create_transition,|_identifier| {
+                document_create_transition, &BlockInfo::default(), |_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
                 }).expect("expected to create action").into(),
             &data_trigger_context,

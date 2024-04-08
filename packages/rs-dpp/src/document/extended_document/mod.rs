@@ -7,6 +7,10 @@ pub(crate) mod v0;
 
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
+#[cfg(any(
+    feature = "document-json-conversion",
+    feature = "document-value-conversion"
+))]
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
@@ -14,11 +18,14 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 
 #[cfg(feature = "document-json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "document-json-conversion")]
 use serde_json::Value as JsonValue;
+#[cfg(feature = "document-value-conversion")]
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PlatformVersioned)]
@@ -480,6 +487,22 @@ mod test {
 
         assert_eq!(init_doc.created_at(), doc.created_at());
         assert_eq!(init_doc.updated_at(), doc.updated_at());
+        assert_eq!(
+            init_doc.created_at_block_height(),
+            doc.created_at_block_height()
+        );
+        assert_eq!(
+            init_doc.updated_at_block_height(),
+            doc.updated_at_block_height()
+        );
+        assert_eq!(
+            init_doc.created_at_core_block_height(),
+            doc.created_at_core_block_height()
+        );
+        assert_eq!(
+            init_doc.updated_at_core_block_height(),
+            doc.updated_at_core_block_height()
+        );
         assert_eq!(init_doc.id(), doc.id());
         assert_eq!(init_doc.data_contract_id(), doc.data_contract_id());
         assert_eq!(init_doc.owner_id(), doc.owner_id());
@@ -524,7 +547,7 @@ mod test {
         let string = serde_json::to_string(&document)?;
 
         assert_eq!(
-            "{\"version\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"document\":{\"$version\":\"0\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$protocolVersion\":0,\"$type\":\"domain\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null}}",
+            "{\"version\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"document\":{\"$version\":\"0\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$protocolVersion\":0,\"$type\":\"domain\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null,\"$createdAtBlockHeight\":null,\"$updatedAtBlockHeight\":null,\"$createdAtCoreBlockHeight\":null,\"$updatedAtCoreBlockHeight\":null}}",
             string
         );
 
@@ -604,7 +627,7 @@ mod test {
 
     fn new_example_document() -> ExtendedDocument {
         let data_contract =
-            get_dashpay_contract_fixture(None, LATEST_PLATFORM_VERSION.protocol_version)
+            get_dashpay_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version)
                 .data_contract_owned();
         let document_type = data_contract
             .document_type_for_name("profile")

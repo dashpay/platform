@@ -24,7 +24,7 @@ pub trait DriveHighLevelOperationConverter {
     ) -> Result<Vec<DriveOperation<'a>>, Error>;
 }
 
-impl<'s> DriveHighLevelOperationConverter for StateTransitionAction {
+impl DriveHighLevelOperationConverter for StateTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         epoch: &Epoch,
@@ -66,6 +66,10 @@ impl<'s> DriveHighLevelOperationConverter for StateTransitionAction {
             StateTransitionAction::BumpIdentityDataContractNonceAction(
                 bump_identity_data_contract_nonce_transition,
             ) => bump_identity_data_contract_nonce_transition
+                .into_high_level_drive_operations(epoch, platform_version),
+            StateTransitionAction::PartiallyUseAssetLockAction(
+                partially_used_asset_lock_action,
+            ) => partially_used_asset_lock_action
                 .into_high_level_drive_operations(epoch, platform_version),
         }
     }

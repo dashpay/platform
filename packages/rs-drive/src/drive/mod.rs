@@ -28,9 +28,6 @@
 //
 
 #[cfg(any(feature = "full", feature = "verify"))]
-use std::sync::RwLock;
-
-#[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::GroveDb;
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -45,7 +42,7 @@ pub mod balances;
 #[cfg(feature = "full")]
 pub mod batch;
 /// Drive Cache
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "full")]
 pub mod cache;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod config;
@@ -113,7 +110,7 @@ pub struct Drive {
     pub config: DriveConfig,
     /// Drive Cache
     #[cfg(feature = "full")]
-    pub cache: RwLock<DriveCache>,
+    pub cache: DriveCache,
 }
 
 // The root tree structure is very important!
@@ -121,13 +118,13 @@ pub struct Drive {
 // is at the top of the tree in order to reduce proof size
 // the most import tree is theDataContract Documents tree
 
-//                        DataContract_Documents 64
-//                  /                               \
-//             Identities 32                           Balances 96
-//             /        \                         /                   \
-//   Token_Balances 16    Pools 48      WithdrawalTransactions 80    Votes  112
-//       /      \                                /                    /       \
-//     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72   Misc 104   Versions 120
+//                                   DataContract_Documents 64
+//                      /                                            \
+//             Identities 32                                       Balances 96
+//             /        \                                  /                         \
+//   Token_Balances 16    Pools 48      WithdrawalTransactions 80                       Votes  112
+//       /      \                                /                              /                \
+//     NUPKH->I 8 UPKH->I 24    SpentAssetLockTransactions 72           Misc 104                  Versions 120
 
 /// Keys for the root tree.
 #[cfg(any(feature = "full", feature = "verify"))]

@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap};
 use std::sync::Arc;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
@@ -34,8 +36,10 @@ use crate::error::proof::ProofError;
 use crate::query::SingleDocumentDriveQuery;
 
 impl Drive {
+    #[inline(always)]
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
+        block_info: &BlockInfo,
         proof: &[u8],
         known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
         platform_version: &PlatformVersion,
@@ -124,12 +128,16 @@ impl Drive {
                         let expected_document = Document::try_from_create_transition(
                             create_transition,
                             documents_batch_transition.owner_id(),
-                            &contract,
+                            block_info,
+                            &document_type,
                             platform_version,
                         )?;
 
-                        if document != expected_document {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected document after create with id {}", create_transition.base().id()))));
+                        if !document.is_equal_ignoring_time_based_fields(
+                            &expected_document,
+                            platform_version,
+                        )? {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after create with id {}", create_transition.base().id()))));
                         }
                         Ok((
                             root_hash,
@@ -142,12 +150,20 @@ impl Drive {
                             replace_transition,
                             documents_batch_transition.owner_id(),
                             document.created_at(), //we can trust the created at (as we don't care)
+                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
+                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
+                            block_info,
+                            &document_type,
                             platform_version,
                         )?;
 
-                        if document != expected_document {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected document after replace with id {}", replace_transition.base().id()))));
+                        if !document.is_equal_ignoring_time_based_fields(
+                            &expected_document,
+                            platform_version,
+                        )? {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after replace with id {}", replace_transition.base().id()))));
                         }
+
                         Ok((
                             root_hash,
                             VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),

@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "1.0.0-dev.5",
+  "version": "1.0.0-dev.10",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -73,6 +73,7 @@
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
     "begoo": "^2.0.2",
+    "bs58": "^4.0.1",
     "chalk": "^4.1.0",
     "cron": "^2.1.0",
     "dockerode": "^3.3.5",

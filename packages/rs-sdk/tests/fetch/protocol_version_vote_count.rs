@@ -8,7 +8,7 @@ async fn test_protocol_version_vote_count() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_protocol_version_vote_count").await;
 
     let votings = ProtocolVersionVoteCount::fetch_many(&sdk, ())
         .await

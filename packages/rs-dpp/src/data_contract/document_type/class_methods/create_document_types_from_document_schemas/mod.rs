@@ -3,6 +3,7 @@ mod v0;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -39,6 +40,7 @@ impl DocumentType {
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         validate: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         match platform_version
@@ -55,6 +57,7 @@ impl DocumentType {
                 documents_keep_history_contract_default,
                 documents_mutable_contract_default,
                 validate,
+                validation_operations,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -82,13 +85,14 @@ mod test {
             false,
             false,
             false,
-            &crate::version::PlatformVersion::latest(),
+            &mut vec![],
+            crate::version::PlatformVersion::latest(),
         );
 
         match result {
             Err(crate::ProtocolError::ConsensusError(e)) => match e.deref() {
                 ConsensusError::BasicError(err) => match err {
-                    BasicError::DataContractEmptySchemaError(e) => {}
+                    BasicError::DataContractEmptySchemaError(_) => {}
                     _ => panic!("Expected DataContractEmptySchemaError"),
                 },
                 _ => panic!("Expected basic consensus error"),

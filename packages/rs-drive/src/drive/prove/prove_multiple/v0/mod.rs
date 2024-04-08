@@ -24,11 +24,12 @@ impl Drive {
     /// # Returns
     /// Returns a `Result` with a `Vec<u8>` containing the proof data if the function succeeds,
     /// or an `Error` if the function fails.
+    #[inline(always)]
     pub(super) fn prove_multiple_v0(
         &self,
-        identity_queries: &Vec<IdentityDriveQuery>,
+        identity_queries: &[IdentityDriveQuery],
         contract_ids: &[([u8; 32], Option<bool>)], //bool is history
-        document_queries: &Vec<SingleDocumentDriveQuery>,
+        document_queries: &[SingleDocumentDriveQuery],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -86,11 +87,11 @@ impl Drive {
             count += historical_contract_ids.len();
         }
         if !document_queries.is_empty() {
-            path_queries.extend(
-                document_queries
-                    .iter()
-                    .map(|drive_query| drive_query.construct_path_query()),
-            );
+            path_queries.extend(document_queries.iter().map(|drive_query| {
+                let mut path_query = drive_query.construct_path_query();
+                path_query.query.limit = None;
+                path_query
+            }));
             count += document_queries.len();
         }
         let verbose = match count {

@@ -1,9 +1,9 @@
 mod identity_contract_nonce;
 mod state;
-mod structure;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use dpp::validation::ConsensusValidationResult;
 
 use drive::grovedb::TransactionArg;
 
@@ -11,30 +11,26 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::version::PlatformVersion;
+
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::data_contract_update::structure::v0::DataContractUpdateStateTransitionStructureValidationV0;
-use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
-    StateTransitionStructureKnownInStateValidationV0,
-};
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _validate: bool,
-        _execution_context: &mut StateTransitionExecutionContext,
+        _block_info: &BlockInfo,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -42,7 +38,9 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform_version),
+            0 => {
+                self.transform_into_action_v0(validation_mode, execution_context, platform_version)
+            }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -93,7 +91,7 @@ mod tests {
 
     fn setup_test() -> TestData<MockCoreRPCLike> {
         let platform_version = PlatformVersion::latest();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
 
         let config = PlatformConfig {
@@ -128,6 +126,7 @@ mod tests {
 
         use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
+        use dpp::block::epoch::Epoch;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
@@ -138,6 +137,7 @@ mod tests {
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+        use crate::execution::validation::state_transition::ValidationMode;
         use dpp::version::TryFromPlatformVersioned;
         use platform_version::version::LATEST_PLATFORM_VERSION;
         use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
@@ -174,7 +174,13 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument", updated_document, true, platform_version)
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
                 .expect("to be able to set document schema");
 
             let state_transition = DataContractUpdateTransitionV0 {
@@ -184,16 +190,18 @@ mod tests {
                     platform_version,
                 )
                 .expect("to be able to convert data contract to serialization format"),
+                user_fee_increase: 0,
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
             };
 
+            let state = platform.state.load();
+
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
-                state: &platform.state.read().unwrap(),
+                state: &state,
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
-                block_info: &BlockInfo::default(),
             };
 
             let mut execution_context =
@@ -201,7 +209,14 @@ mod tests {
                     .expect("expected a platform version");
 
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(None, &platform_ref, &mut execution_context, None)
+                .validate_state(
+                    None,
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &Epoch::new(0).unwrap(),
+                    &mut execution_context,
+                    None,
+                )
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
@@ -252,7 +267,13 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument", updated_document, true, platform_version)
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
                 .expect("to be able to set document schema");
 
             // TODO: add a data contract stop transition
@@ -263,16 +284,18 @@ mod tests {
                     platform_version,
                 )
                 .expect("to be able to convert data contract to serialization format"),
+                user_fee_increase: 0,
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
             };
 
+            let state = platform.state.load();
+
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
-                state: &platform.state.read().unwrap(),
+                state: &state,
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
-                block_info: &BlockInfo::default(),
             };
 
             let mut execution_context =
@@ -280,7 +303,14 @@ mod tests {
                     .expect("expected a platform version");
 
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(None, &platform_ref, &mut execution_context, None)
+                .validate_state(
+                    None,
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &Epoch::new(0).unwrap(),
+                    &mut execution_context,
+                    None,
+                )
                 .expect("state transition to be validated");
 
             assert!(result.is_valid());
@@ -403,6 +433,7 @@ mod tests {
                     "niceDocument",
                     updated_document_type.into(),
                     true,
+                    &mut vec![],
                     LATEST_PLATFORM_VERSION,
                 )
                 .expect("to be able to set document schema");
@@ -416,12 +447,13 @@ mod tests {
 
             let state_transition: DataContractUpdateTransition = state_transition.into();
 
+            let state = platform.state.load();
+
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
-                state: &platform.state.read().unwrap(),
+                state: &state,
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
-                block_info: &BlockInfo::default(),
             };
 
             let mut execution_context =
@@ -429,7 +461,14 @@ mod tests {
                     .expect("expected a platform version");
 
             let result = state_transition
-                .validate_state(None, &platform_ref, &mut execution_context, None)
+                .validate_state(
+                    None,
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &Epoch::new(0).unwrap(),
+                    &mut execution_context,
+                    None,
+                )
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());

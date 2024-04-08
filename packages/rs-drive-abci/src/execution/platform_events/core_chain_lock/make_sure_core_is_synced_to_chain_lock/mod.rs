@@ -11,11 +11,11 @@ pub mod v0;
 /// As we ask to make sure that core is synced to the chain lock, we get back one of 3
 pub enum CoreSyncStatus {
     /// Core is synced
-    CoreIsSynced,
+    Done,
     /// Core is 1 or 2 blocks off, we should retry shortly
-    CoreAlmostSynced,
+    Almost,
     /// Core is more than 2 blocks off
-    CoreNotSynced,
+    Not,
 }
 
 impl<C> Platform<C>

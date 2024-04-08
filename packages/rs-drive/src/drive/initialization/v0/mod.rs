@@ -183,7 +183,11 @@ impl Drive {
         );
 
         // In Pools: initialize the pools with epochs
-        Drive::add_create_fee_pool_trees_operations(&mut batch, self.config.epochs_per_era)?;
+        Drive::add_create_fee_pool_trees_operations(
+            &mut batch,
+            self.config.epochs_per_era,
+            platform_version.protocol_version,
+        )?;
 
         // In Withdrawals
         Drive::add_initial_withdrawal_state_structure_operations(&mut batch);

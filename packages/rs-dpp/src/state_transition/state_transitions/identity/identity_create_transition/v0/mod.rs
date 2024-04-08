@@ -14,11 +14,12 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
 use platform_value::BinaryData;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::Identity;
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, UserFeeIncrease};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::state_transition::AssetLockProved;
@@ -45,6 +46,7 @@ pub struct IdentityCreateTransitionV0 {
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
     pub asset_lock_proof: AssetLockProof,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
@@ -62,7 +64,7 @@ struct IdentityCreateTransitionV0Inner {
     public_keys: Vec<IdentityPublicKeyInCreation>,
     asset_lock_proof: AssetLockProof,
     // Generic identity ST fields
-    // protocol_version: u32,
+    user_fee_increase: UserFeeIncrease,
     signature: BinaryData,
 }
 
@@ -73,12 +75,14 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
         let IdentityCreateTransitionV0Inner {
             public_keys,
             asset_lock_proof,
+            user_fee_increase,
             signature,
         } = value;
         let identity_id = asset_lock_proof.create_identifier()?;
         Ok(Self {
             public_keys,
             asset_lock_proof,
+            user_fee_increase,
             signature,
             identity_id,
         })

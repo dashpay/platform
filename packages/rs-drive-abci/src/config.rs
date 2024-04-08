@@ -31,6 +31,7 @@ use std::path::PathBuf;
 
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
+use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::logging::LogConfigs;
@@ -156,6 +157,19 @@ pub struct PlatformConfig {
     #[serde(flatten)]
     pub abci: AbciConfig,
 
+    /// Address to listen for Prometheus connection.
+    ///
+    /// Optional.
+    ///
+    /// /// Address should be an URL with scheme `http://`, for example:
+    /// - `http://127.0.0.1:29090`
+    ///
+    /// Port number defaults to [crate::metrics::DEFAULT_PROMETHEUS_PORT].
+    pub prometheus_bind_address: Option<String>,
+
+    /// Address to listen for gRPC connection.
+    pub grpc_bind_address: String,
+
     /// Execution config
     #[serde(flatten)]
     pub execution: ExecutionConfig,
@@ -192,6 +206,17 @@ pub struct PlatformConfig {
     /// This should be None, except in the case of Testing platform
     #[serde(skip)]
     pub testing_configs: PlatformTestConfig,
+
+    /// Enable tokio console (console feature must be enabled)
+    pub tokio_console_enabled: bool,
+
+    /// Tokio console address to connect to
+    #[serde(default = "PlatformConfig::default_tokio_console_address")]
+    pub tokio_console_address: String,
+
+    /// Number of seconds to store task information if there is no clients connected
+    #[serde(default = "PlatformConfig::default_tokio_console_retention_secs")]
+    pub tokio_console_retention_secs: u64,
 }
 
 impl ExecutionConfig {
@@ -214,8 +239,15 @@ impl ExecutionConfig {
 
 impl PlatformConfig {
     fn default_initial_protocol_version() -> ProtocolVersion {
-        //todo: versioning
-        1
+        INITIAL_PROTOCOL_VERSION
+    }
+
+    fn default_tokio_console_address() -> String {
+        String::from("127.0.0.1:6669")
+    }
+
+    fn default_tokio_console_retention_secs() -> u64 {
+        60 * 3
     }
 
     /// Return type of quorum
@@ -311,7 +343,12 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
+            initial_protocol_version: Self::default_initial_protocol_version(),
+            prometheus_bind_address: None,
+            grpc_bind_address: "0.0.0.0:26670".to_string(),
         }
     }
 
@@ -329,7 +366,12 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
+            prometheus_bind_address: None,
+            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
         }
     }
 
@@ -347,7 +389,12 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
+            prometheus_bind_address: None,
+            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
         }
     }
 }

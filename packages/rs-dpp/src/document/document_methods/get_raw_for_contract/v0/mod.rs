@@ -18,7 +18,7 @@ pub trait DocumentGetRawForContractV0: DocumentV0Getters + DocumentGetRawForDocu
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
         let document_type = contract.document_types().get(document_type_name).ok_or({
             ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
-                "document type should exist for name",
+                "document type should exist for name".to_string(),
             ))
         })?;
         self.get_raw_for_document_type_v0(key, document_type.as_ref(), owner_id, platform_version)

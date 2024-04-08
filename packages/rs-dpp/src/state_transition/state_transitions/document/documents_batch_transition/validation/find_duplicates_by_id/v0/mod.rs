@@ -71,8 +71,6 @@ mod test {
                     data_contract_id: Identifier::random(),
                 }),
                 entropy: Default::default(),
-                created_at: None,
-                updated_at: None,
                 data: Default::default(),
             }));
 
@@ -87,7 +85,6 @@ mod test {
                     data_contract_id: Identifier::random(),
                 }),
                 revision: Default::default(),
-                updated_at: None,
                 data: Default::default(),
             },
         ));

@@ -3,6 +3,8 @@ mod nonce;
 mod state;
 mod structure;
 
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -13,7 +15,7 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_credit_withdrawal::state::v0::IdentityCreditWithdrawalStateTransitionStateValidationV0;
@@ -21,21 +23,21 @@ use crate::execution::validation::state_transition::identity_credit_withdrawal::
 
 use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
-    StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::execution::validation::state_transition::ValidationMode;
 
 impl StateTransitionActionTransformerV0 for IdentityCreditWithdrawalTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _validate: bool,
+        _block_info: &BlockInfo,
+        _validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -63,14 +65,22 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreditWithdrawalTrans
             .validation_and_processing
             .state_transitions
             .identity_credit_withdrawal_state_transition
-            .base_structure
+            .basic_structure
         {
-            0 => self.validate_base_structure_v0(),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(0) => {
+                // There is nothing expensive here
+                self.validate_basic_structure_v0()
+            }
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: validate_basic_structure"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "identity credit withdrawal transition: validate_basic_structure"
+                    .to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -81,11 +91,13 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        _validation_mode: ValidationMode,
+        _epoch: &Epoch,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing

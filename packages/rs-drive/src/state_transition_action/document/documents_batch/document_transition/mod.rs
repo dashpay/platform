@@ -42,7 +42,7 @@ impl DocumentTransitionAction {
             DocumentTransitionAction::CreateAction(d) => Some(d.base()),
             DocumentTransitionAction::DeleteAction(d) => Some(d.base()),
             DocumentTransitionAction::ReplaceAction(d) => Some(d.base()),
-            DocumentTransitionAction::BumpIdentityDataContractNonce(d) => None,
+            DocumentTransitionAction::BumpIdentityDataContractNonce(_) => None,
         }
     }
 
@@ -52,7 +52,7 @@ impl DocumentTransitionAction {
             DocumentTransitionAction::CreateAction(d) => Some(d.base_owned()),
             DocumentTransitionAction::DeleteAction(d) => Some(d.base_owned()),
             DocumentTransitionAction::ReplaceAction(d) => Some(d.base_owned()),
-            DocumentTransitionAction::BumpIdentityDataContractNonce(d) => None,
+            DocumentTransitionAction::BumpIdentityDataContractNonce(_) => None,
         }
     }
 }

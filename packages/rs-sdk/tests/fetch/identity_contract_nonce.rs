@@ -1,12 +1,6 @@
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::prelude::{Identifier, IdentityPublicKey};
-use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
-use drive_proof_verifier::types::{
-    IdentityBalance, IdentityBalanceAndRevision, IdentityContractNonceFetcher,
-};
-use rs_sdk::platform::types::identity::PublicKeyHash;
-use rs_sdk::platform::{Fetch, FetchMany};
+use dpp::prelude::Identifier;
+use drive_proof_verifier::types::IdentityContractNonceFetcher;
+use rs_sdk::platform::Fetch;
 
 use super::{common::setup_logs, config::Config};
 
@@ -20,7 +14,7 @@ async fn test_identity_contract_no_nonce_read() {
     // We are putting a contract id that does not exist, hence we will never get a nonce
     let contract_id: dpp::prelude::Identifier = Identifier::from_bytes(&[5u8; 32]).unwrap();
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_contract_no_nonce_read").await;
 
     let identity_contract_nonce =
         IdentityContractNonceFetcher::fetch(&sdk, (identity_id, contract_id))

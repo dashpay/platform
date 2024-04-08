@@ -49,7 +49,7 @@ impl UnsignedWithdrawalTxs {
 
     /// Verifies that the collection of unsigned withdrawal transactions matches the given vote extensions
     /// created based on these transactions
-    pub fn are_matching_with_vote_extensions(&self, other: &Vec<VoteExtension>) -> bool {
+    pub fn are_matching_with_vote_extensions(&self, other: &[VoteExtension]) -> bool {
         if self.0.len() != other.len() {
             return false;
         };
@@ -84,8 +84,8 @@ impl Display for UnsignedWithdrawalTxs {
     }
 }
 
-impl PartialEq<Vec<ExtendVoteExtension>> for UnsignedWithdrawalTxs {
-    fn eq(&self, other: &Vec<ExtendVoteExtension>) -> bool {
+impl PartialEq<[ExtendVoteExtension]> for UnsignedWithdrawalTxs {
+    fn eq(&self, other: &[ExtendVoteExtension]) -> bool {
         if self.0.len() != other.len() {
             return false;
         };

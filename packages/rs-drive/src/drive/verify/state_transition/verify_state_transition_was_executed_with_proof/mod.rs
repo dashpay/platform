@@ -4,12 +4,14 @@ use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
+
 mod v0;
 
 impl Drive {
@@ -42,6 +44,7 @@ impl Drive {
     ///
     pub fn verify_state_transition_was_executed_with_proof(
         state_transition: &StateTransition,
+        block_info: &BlockInfo,
         proof: &[u8],
         known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
         platform_version: &PlatformVersion,
@@ -55,6 +58,7 @@ impl Drive {
         {
             0 => Drive::verify_state_transition_was_executed_with_proof_v0(
                 state_transition,
+                block_info,
                 proof,
                 known_contracts_provider_fn,
                 platform_version,

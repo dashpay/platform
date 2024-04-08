@@ -1,9 +1,10 @@
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::Identity;
-use dpp::prelude::AssetLockProof;
+use dpp::prelude::{AssetLockProof, UserFeeIncrease};
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -17,6 +18,7 @@ pub trait TopUpIdentity {
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
+        user_fee_increase: Option<UserFeeIncrease>,
     ) -> Result<u64, Error>;
 }
 
@@ -27,11 +29,13 @@ impl TopUpIdentity for Identity {
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
+        user_fee_increase: Option<UserFeeIncrease>,
     ) -> Result<u64, Error> {
         let state_transition = IdentityTopUpTransition::try_from_identity(
             self,
             asset_lock_proof,
             asset_lock_proof_private_key.inner.as_ref(),
+            user_fee_increase.unwrap_or_default(),
             sdk.version(),
             None,
         )?;
@@ -47,10 +51,13 @@ impl TopUpIdentity for Identity {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
+        let block_info = block_info_from_metadata(response.metadata()?)?;
+
         let proof = response.proof_owned()?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
+            &block_info,
             proof.grovedb_proof.as_slice(),
             &|_| Ok(None),
             sdk.version(),

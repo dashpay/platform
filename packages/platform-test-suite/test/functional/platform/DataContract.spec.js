@@ -25,12 +25,14 @@ describe('Platform', () => {
     let identity;
 
     before(async () => {
-      dataContractFixture = await getDataContractFixture();
       client = await createClientWithFundedWallet(35000000);
 
       // Looks like updating the contact and keeping history requires about
       // 7 million credits in fees. Investigate this further.
       identity = await client.platform.identities.register(30000000);
+      const nextNonce = await client.platform
+        .nonceManager.bumpIdentityNonce(identity.getId());
+      dataContractFixture = await getDataContractFixture(nextNonce);
     });
 
     after(async () => {
@@ -42,7 +44,7 @@ describe('Platform', () => {
     it('should fail to create new data contract with unknown owner', async () => {
       // if no identity is specified
       // random is generated within the function
-      dataContractFixture = await getDataContractFixture();
+      dataContractFixture = await getDataContractFixture(1);
 
       let broadcastError;
 
@@ -53,7 +55,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(2000);
+      expect(broadcastError.getCause().getCode()).to.equal(20000);
       expect(broadcastError.getCause()).to.be.an.instanceOf(IdentityNotFoundError);
     });
 
@@ -61,7 +63,9 @@ describe('Platform', () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      dataContractFixture = await getDataContractFixture(identity.getId());
+      const identityNonce = await client.platform.nonceManager
+        .bumpIdentityNonce(identity.getId());
+      dataContractFixture = await getDataContractFixture(identityNonce, identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
     });
@@ -97,7 +101,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1050);
+      expect(broadcastError.getCause().getCode()).to.equal(10212);
       expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDataContractVersionError);
     });
 
@@ -123,7 +127,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1051);
+      expect(broadcastError.getCause().getCode()).to.equal(10213);
       expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
     });
 

@@ -65,7 +65,8 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
-    pub fn create_genesis_state_v0(
+    #[inline(always)]
+    pub(super) fn create_genesis_state_v0(
         &self,
         genesis_time: TimestampMillis,
         system_identity_public_keys: SystemIdentityPublicKeys,
@@ -81,22 +82,22 @@ impl<C> Platform<C> {
 
         // Create system identities and contracts
 
-        let cache = self.drive.cache.read().unwrap();
+        let system_data_contracts = &self.drive.cache.system_data_contracts;
 
-        let dpns_data_contract = cache.system_data_contracts.dpns.clone();
+        let dpns_data_contract = system_data_contracts.load_dpns();
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
                 SystemDataContract::DPNS,
                 (
-                    cache.system_data_contracts.dpns.clone(),
+                    system_data_contracts.load_dpns(),
                     system_identity_public_keys.dpns_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Withdrawals,
                 (
-                    cache.system_data_contracts.withdrawals.clone(),
+                    system_data_contracts.load_withdrawals(),
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
@@ -114,22 +115,20 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::Dashpay,
                 (
-                    cache.system_data_contracts.dashpay.clone(),
+                    system_data_contracts.load_dashpay(),
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    cache.system_data_contracts.masternode_reward_shares.clone(),
+                    system_data_contracts.load_masternode_reward_shares(),
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),
         ]);
 
-        drop(cache);
-
-        for (_, (data_contract, identity_public_keys_set)) in system_data_contract_types {
+        for (data_contract, identity_public_keys_set) in system_data_contract_types.values() {
             let public_keys = [
                 (
                     0,
@@ -193,10 +192,10 @@ impl<C> Platform<C> {
         Ok(())
     }
 
-    fn register_system_data_contract_operations(
+    fn register_system_data_contract_operations<'a>(
         &self,
-        data_contract: DataContract,
-        operations: &mut Vec<DriveOperation>,
+        data_contract: &'a DataContract,
+        operations: &mut Vec<DriveOperation<'a>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let serialization =
@@ -204,7 +203,7 @@ impl<C> Platform<C> {
         operations.push(DriveOperation::DataContractOperation(
             //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
-                contract: Cow::Owned(data_contract),
+                contract: Cow::Borrowed(data_contract),
                 serialized_contract: serialization,
                 storage_flags: None,
             },
@@ -257,6 +256,10 @@ impl<C> Platform<C> {
             revision: None,
             created_at: None,
             updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
         }
         .into();
 
@@ -311,8 +314,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    48, 165, 165, 234, 103, 120, 205, 238, 156, 93, 195, 194, 17, 242, 245, 101,
-                    176, 129, 137, 59, 185, 249, 76, 104, 217, 226, 66, 115, 67, 226, 235, 180
+                    144, 123, 124, 62, 37, 243, 19, 45, 226, 49, 97, 251, 141, 197, 94, 69, 117,
+                    126, 182, 44, 148, 143, 41, 113, 245, 86, 229, 207, 100, 56, 17, 177
                 ]
             )
         }

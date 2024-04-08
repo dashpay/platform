@@ -9,9 +9,9 @@ use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
-use dpp::prelude::TimestampMillis;
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
@@ -40,6 +40,14 @@ pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequest<
     pub created_at: Option<TimestampMillis>,
     /// Optional timestamp indicating the last time the document was updated.
     pub updated_at: Option<TimestampMillis>,
+    /// Optional timestamp indicating the block height at which the document was created.
+    pub created_at_block_height: Option<BlockHeight>,
+    /// Optional timestamp indicating the last block height the document was updated.
+    pub updated_at_block_height: Option<BlockHeight>,
+    /// Optional timestamp indicating the core height at which the document was created.
+    pub created_at_core_block_height: Option<CoreBlockHeight>,
+    /// Optional timestamp indicating the last core block height the document was updated.
+    pub updated_at_core_block_height: Option<CoreBlockHeight>,
     /// The actual data to be checked for uniqueness, represented as a mapping.
     pub data: &'a BTreeMap<String, Value>,
 }

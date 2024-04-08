@@ -110,8 +110,7 @@ impl TempPlatform<MockCoreRPCLike> {
                 None,
                 self.platform
                     .state
-                    .read()
-                    .unwrap()
+                    .load()
                     .current_platform_version()
                     .expect("expected to get current platform version"),
             )
@@ -123,7 +122,7 @@ impl TempPlatform<MockCoreRPCLike> {
     /// Sets Platform to genesis state.
     pub fn set_genesis_state(self) -> Self {
         self.platform
-            .create_genesis_state_v0(
+            .create_genesis_state(
                 Default::default(),
                 static_system_identity_public_keys_v0().into(),
                 None,

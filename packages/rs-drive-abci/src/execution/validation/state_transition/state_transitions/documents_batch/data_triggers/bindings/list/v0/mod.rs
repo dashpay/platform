@@ -23,7 +23,8 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 /// # Errors
 ///
 /// Returns a `ProtocolError` if there was an error.
-pub fn data_trigger_bindings_list_v0() -> Result<Vec<DataTriggerBindingV0>, ProtocolError> {
+#[inline(always)]
+pub(super) fn data_trigger_bindings_list_v0() -> Result<Vec<DataTriggerBindingV0>, ProtocolError> {
     let data_triggers = vec![
         DataTriggerBindingV0 {
             data_contract_id: dpns_contract::ID,

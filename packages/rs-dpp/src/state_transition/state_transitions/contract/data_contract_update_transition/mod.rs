@@ -6,6 +6,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 
 use platform_versioning::PlatformVersioned;
 
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;
@@ -124,7 +125,7 @@ mod test {
 
     fn get_test_data() -> TestData {
         let platform_version = PlatformVersion::first();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
 
         let state_transition: DataContractUpdateTransition = (data_contract.clone(), 1)

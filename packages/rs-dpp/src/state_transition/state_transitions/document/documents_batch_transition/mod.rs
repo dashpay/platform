@@ -5,6 +5,7 @@ use std::convert::TryInto;
 use derive_more::From;
 
 use platform_value::Value;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::ProtocolError;

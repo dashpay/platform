@@ -1,15 +1,10 @@
-use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
-use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::convert::TryInto;
-
 use crate::consensus::basic::data_contract::{
     DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
+#[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::index::Index;
@@ -20,17 +15,31 @@ use crate::data_contract::document_type::schema::{
     byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
     traversal_validator, validate_max_depth,
 };
+use crate::data_contract::document_type::v0::DocumentTypeV0;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+use indexmap::IndexMap;
+#[cfg(feature = "validation")]
+use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::convert::TryInto;
 
+#[cfg(any(test, feature = "validation"))]
+use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
-use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
-use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -45,6 +54,36 @@ const MAX_INDEXED_STRING_PROPERTY_LENGTH: u16 = 63;
 const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: u16 = 255;
 const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
 
+#[inline]
+fn consensus_or_protocol_data_contract_error(
+    data_contract_error: DataContractError,
+) -> ProtocolError {
+    #[cfg(feature = "validation")]
+    {
+        ProtocolError::ConsensusError(
+            ConsensusError::BasicError(BasicError::ContractError(data_contract_error)).into(),
+        )
+    }
+    #[cfg(not(feature = "validation"))]
+    {
+        ProtocolError::DataContractError(data_contract_error)
+    }
+}
+
+#[inline]
+fn consensus_or_protocol_value_error(platform_value_error: platform_value::Error) -> ProtocolError {
+    #[cfg(feature = "validation")]
+    {
+        ProtocolError::ConsensusError(
+            ConsensusError::BasicError(BasicError::ValueError(platform_value_error.into())).into(),
+        )
+    }
+    #[cfg(not(feature = "validation"))]
+    {
+        ProtocolError::ValueError(platform_value_error.into())
+    }
+}
+
 impl DocumentTypeV0 {
     // TODO: Split into multiple functions
     pub(crate) fn try_from_schema_v0(
@@ -55,10 +94,11 @@ impl DocumentTypeV0 {
         default_keeps_history: bool,
         default_mutability: bool,
         validate: bool, // we don't need to validate if loaded from state
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
-        let root_schema = enrich_with_base_schema(
+        let root_schema = DocumentType::enrich_with_base_schema(
             schema.clone(),
             schema_defs.map(|defs| Value::from(defs.clone())),
             platform_version,
@@ -66,6 +106,8 @@ impl DocumentTypeV0 {
 
         #[cfg(not(feature = "validation"))]
         if validate {
+            // TODO we are silently dropping this error when we shouldn't be
+            // but returning this error causes tests to fail; investigate more.
             ProtocolError::CorruptedCodeExecution(
                 "validation is not enabled but is being called on try_from_schema_v0".to_string(),
             );
@@ -76,21 +118,17 @@ impl DocumentTypeV0 {
 
         #[cfg(feature = "validation")]
         if validate {
-            // Make sure JSON Schema is compilable
-            let root_json_schema = root_schema
-                .try_to_validating_json()
-                .map_err(ProtocolError::ValueError)?;
-
-            json_schema_validator.compile(&root_json_schema, platform_version)?;
-
-            // Validate against JSON Schema
-            DOCUMENT_META_SCHEMA_V0
-                .validate(
-                    &root_schema
-                        .try_to_validating_json()
-                        .map_err(ProtocolError::ValueError)?,
-                )
-                .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
+            // Make sure a document type name is compliant
+            if !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                || name.is_empty()
+                || name.len() > 64
+            {
+                return Err(ProtocolError::ConsensusError(Box::new(
+                    InvalidDocumentTypeNameError::new(name.to_string()).into(),
+                )));
+            }
 
             // Validate document schema depth
             let mut result = validate_max_depth(&root_schema, platform_version)?;
@@ -98,45 +136,76 @@ impl DocumentTypeV0 {
             if !result.is_valid() {
                 let error = result.errors.remove(0);
 
+                let schema_size = result.into_data()?.size;
+
+                validation_operations.push(
+                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
+                );
+
                 return Err(ProtocolError::ConsensusError(Box::new(error)));
             }
+
+            let schema_size = result.into_data()?.size;
+
+            validation_operations.push(
+                ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
+            );
+
+            // Make sure JSON Schema is compilable
+            let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
+                ProtocolError::ConsensusError(
+                    ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+                )
+            })?;
+
+            json_schema_validator.compile(&root_json_schema, platform_version)?;
+
+            // Validate against JSON Schema
+            DOCUMENT_META_SCHEMA_V0
+                .validate(&root_schema.try_to_validating_json().map_err(|e| {
+                    ProtocolError::ConsensusError(
+                        ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+                    )
+                })?)
+                .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
             // TODO: Are we still aiming to use RE2 with linear time complexity to protect from ReDoS attacks?
             //  If not we can remove this validation
             // Validate reg exp compatibility with RE2 and byteArray usage
-            result.merge(traversal_validator(
+            let mut traversal_validator_result = traversal_validator(
                 &root_schema,
                 &[
                     pattern_is_valid_regex_validator,
                     byte_array_has_no_items_as_parent_validator,
                 ],
                 platform_version,
-            )?);
+            )?;
 
-            if !result.is_valid() {
-                let error = result.errors.remove(0);
+            if !traversal_validator_result.is_valid() {
+                let error = traversal_validator_result.errors.remove(0);
 
                 return Err(ProtocolError::ConsensusError(Box::new(error)));
             }
         }
 
+        // This has already been validated, but we leave the map_err here for consistency
         let schema_map = schema.to_map().map_err(|err| {
-            ProtocolError::DataContractError(DataContractError::InvalidContractStructure(format!(
-                "document schema must be an object: {err}"
-            )))
+            consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+                format!("document schema must be an object: {err}"),
+            ))
         })?;
 
         // TODO: These properties aren't defined in JSON meta schema
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
             Value::inner_optional_bool_value(schema_map, "documentsKeepHistory")
-                .map_err(ProtocolError::ValueError)?
+                .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
             Value::inner_optional_bool_value(schema_map, "documentsMutable")
-                .map_err(ProtocolError::ValueError)?
+                .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_mutability);
 
         // Extract the properties
@@ -144,11 +213,18 @@ impl DocumentTypeV0 {
             schema_map,
             property_names::PROPERTIES,
             property_names::POSITION,
-        )?
+        )
+        .map_err(consensus_or_protocol_value_error)?
         .unwrap_or_default();
 
         #[cfg(feature = "validation")]
         if validate {
+            validation_operations.push(
+                ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
+                    property_values.values().len() as u64,
+                ),
+            );
+
             // We should validate that the positions are continuous
             for (pos, value) in property_values.values().enumerate() {
                 if value.get_integer::<u32>(property_names::POSITION)? != pos as u32 {
@@ -188,7 +264,8 @@ impl DocumentTypeV0 {
                 property_key.clone(),
                 property_value,
                 &root_schema,
-            )?;
+            )
+            .map_err(consensus_or_protocol_data_contract_error)?;
 
             insert_values_nested(
                 &mut document_properties,
@@ -196,14 +273,18 @@ impl DocumentTypeV0 {
                 property_key,
                 property_value,
                 &root_schema,
-            )?;
+            )
+            .map_err(consensus_or_protocol_data_contract_error)?;
         }
 
         // Initialize indices
         let index_values =
-            Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)?;
+            Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)
+                .map_err(consensus_or_protocol_value_error)?;
 
+        #[cfg(feature = "validation")]
         let mut index_names: HashSet<String> = HashSet::new();
+        #[cfg(feature = "validation")]
         let mut unique_indices_count = 0;
 
         let indices: Vec<Index> = index_values
@@ -212,17 +293,21 @@ impl DocumentTypeV0 {
                     .iter()
                     .map(|index_value| {
                         let index: Index = index_value
-                            .as_map()
-                            .ok_or(ProtocolError::DataContractError(
-                                DataContractError::InvalidContractStructure(
-                                    "index definition is not a map as expected".to_string(),
-                                ),
-                            ))?
+                            .to_map()
+                            .map_err(consensus_or_protocol_value_error)?
                             .as_slice()
-                            .try_into()?;
+                            .try_into()
+                            .map_err(consensus_or_protocol_data_contract_error)?;
 
                         #[cfg(feature = "validation")]
                         if validate {
+                            validation_operations.push(
+                                ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
+                                    index.properties.len() as u64,
+                                    index.unique,
+                                ),
+                            );
+
                             // Unique indices produces significant load on the system during state validation
                             // so we need to limit their number to prevent of spikes and DoS attacks
                             if index.unique {
@@ -361,18 +446,35 @@ impl DocumentTypeV0 {
         )?;
 
         let security_level_requirement = schema
-            .get_optional_integer::<u8>(property_names::SECURITY_LEVEL_REQUIREMENT)?
+            .get_optional_integer::<u8>(property_names::SECURITY_LEVEL_REQUIREMENT)
+            .map_err(consensus_or_protocol_value_error)?
             .map(SecurityLevel::try_from)
             .transpose()?
             .unwrap_or(SecurityLevel::HIGH);
 
+        #[cfg(feature = "validation")]
+        if validate && security_level_requirement == SecurityLevel::MASTER {
+            return Err(ConsensusError::BasicError(
+                BasicError::InvalidDocumentTypeRequiredSecurityLevelError(
+                    InvalidDocumentTypeRequiredSecurityLevelError::new(
+                        security_level_requirement,
+                        data_contract_id,
+                        name.to_string(),
+                    ),
+                ),
+            )
+            .into());
+        }
+
         let requires_identity_encryption_bounded_key = schema
-            .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)?
+            .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)
+            .map_err(consensus_or_protocol_value_error)?
             .map(StorageKeyRequirements::try_from)
             .transpose()?;
 
         let requires_identity_decryption_bounded_key = schema
-            .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY)?
+            .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY)
+            .map_err(consensus_or_protocol_value_error)?
             .map(StorageKeyRequirements::try_from)
             .transpose()?;
 
@@ -405,7 +507,7 @@ fn insert_values(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
-) -> Result<(), ProtocolError> {
+) -> Result<(), DataContractError> {
     let mut to_visit: Vec<(Option<String>, String, &Value)> =
         vec![(prefix, property_key, property_value)];
 
@@ -417,20 +519,13 @@ fn insert_values(
 
         let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
-        if let Some(schema_ref) = inner_properties
-            .get_optional_str(property_names::REF)
-            .map_err(ProtocolError::ValueError)?
-        {
-            let referenced_sub_schema = resolve_uri(root_schema, schema_ref).map_err(|err| {
-                ProtocolError::Generic(format!("invalid schema reference url: {err}"))
-            })?;
+        if let Some(schema_ref) = inner_properties.get_optional_str(property_names::REF)? {
+            let referenced_sub_schema = resolve_uri(root_schema, schema_ref)?;
 
             inner_properties = referenced_sub_schema.to_btree_ref_string_map()?
         }
 
-        let type_value = inner_properties
-            .get_str(property_names::TYPE)
-            .map_err(ProtocolError::ValueError)?;
+        let type_value = inner_properties.get_str(property_names::TYPE)?;
 
         let is_required = known_required.contains(&prefixed_property_key);
         let field_type: DocumentPropertyType;
@@ -456,10 +551,8 @@ fn insert_values(
                                 ),
                             }
                         } else {
-                            return Err(ProtocolError::DataContractError(
-                                DataContractError::InvalidContractStructure(
-                                    "byteArray should always be true if defined".to_string(),
-                                ),
+                            return Err(DataContractError::InvalidContractStructure(
+                                "byteArray should always be true if defined".to_string(),
                             ));
                         }
                     }
@@ -484,16 +577,16 @@ fn insert_values(
                     let properties =
                         properties_as_value
                             .as_map()
-                            .ok_or(ProtocolError::StructureError(
-                                StructureError::ValueWrongType("properties must be a map"),
+                            .ok_or(DataContractError::ValueWrongType(
+                                "properties must be a map".to_string(),
                             ))?;
 
                     for (object_property_key, object_property_value) in properties.iter() {
                         let object_property_string = object_property_key
                             .as_text()
-                            .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
-                                "property key must be a string",
-                            )))?
+                            .ok_or(DataContractError::KeyWrongType(
+                                "property key must be a string".to_string(),
+                            ))?
                             .to_string();
                         to_visit.push((
                             Some(prefixed_property_key.clone()),
@@ -540,23 +633,16 @@ fn insert_values_nested(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
-) -> Result<(), ProtocolError> {
+) -> Result<(), DataContractError> {
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
-    if let Some(schema_ref) = inner_properties
-        .get_optional_str(property_names::REF)
-        .map_err(ProtocolError::ValueError)?
-    {
-        let referenced_sub_schema = resolve_uri(root_schema, schema_ref).map_err(|err| {
-            ProtocolError::Generic(format!("invalid schema reference url: {err}"))
-        })?;
+    if let Some(schema_ref) = inner_properties.get_optional_str(property_names::REF)? {
+        let referenced_sub_schema = resolve_uri(root_schema, schema_ref)?;
 
         inner_properties = referenced_sub_schema.to_btree_ref_string_map()?;
     }
 
-    let type_value = inner_properties
-        .get_str(property_names::TYPE)
-        .map_err(ProtocolError::ValueError)?;
+    let type_value = inner_properties.get_str(property_names::TYPE)?;
 
     let is_required = known_required.contains(&property_key);
 
@@ -585,10 +671,8 @@ fn insert_values_nested(
                             ),
                         }
                     } else {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(
-                                "byteArray should always be true if defined".to_string(),
-                            ),
+                        return Err(DataContractError::InvalidContractStructure(
+                            "byteArray should always be true if defined".to_string(),
                         ));
                     }
                 }
@@ -605,8 +689,8 @@ fn insert_values_nested(
                 let properties =
                     properties_as_value
                         .as_map()
-                        .ok_or(ProtocolError::StructureError(
-                            StructureError::ValueWrongType("properties must be a map"),
+                        .ok_or(DataContractError::ValueWrongType(
+                            "properties must be a map".to_string(),
                         ))?;
 
                 let mut sorted_properties: Vec<_> = properties.iter().collect();
@@ -636,9 +720,9 @@ fn insert_values_nested(
                 for (object_property_key, object_property_value) in properties.iter() {
                     let object_property_string = object_property_key
                         .as_text()
-                        .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
-                            "property key must be a string",
-                        )))?
+                        .ok_or(DataContractError::KeyWrongType(
+                            "property key must be a string".to_string(),
+                        ))?
                         .to_string();
 
                     insert_values_nested(
@@ -671,4 +755,179 @@ fn insert_values_nested(
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_value::platform_value;
+
+    mod document_type_name {
+        use super::*;
+
+        #[test]
+        fn should_be_valid() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let _result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "valid_name-a-b-123",
+                schema,
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should be valid");
+        }
+
+        #[test]
+        fn should_no_be_empty() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "",
+                schema,
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+        }
+
+        #[test]
+        fn should_no_be_longer_than_64_chars() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                &"a".repeat(65),
+                schema,
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+        }
+
+        #[test]
+        fn should_no_be_alphanumeric() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "invalid name",
+                schema.clone(),
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "invalid&name",
+                schema,
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+        }
+    }
 }

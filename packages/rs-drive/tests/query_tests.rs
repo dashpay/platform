@@ -32,21 +32,6 @@
 
 use ciborium::cbor;
 #[cfg(feature = "full")]
-use grovedb::TransactionArg;
-#[cfg(feature = "full")]
-use std::borrow::Cow;
-#[cfg(feature = "full")]
-use std::collections::HashMap;
-#[cfg(feature = "full")]
-use std::fs::File;
-#[cfg(feature = "full")]
-use std::io::{self, BufRead};
-#[cfg(feature = "full")]
-use std::option::Option::None;
-#[cfg(feature = "full")]
-use std::sync::Arc;
-
-#[cfg(feature = "full")]
 use dpp::data_contract::DataContractFactory;
 #[cfg(feature = "full")]
 use drive::common;
@@ -69,6 +54,8 @@ use drive::query::DriveQuery;
 #[cfg(feature = "full")]
 #[cfg(test)]
 use drive::tests::helpers::setup::setup_drive;
+#[cfg(feature = "full")]
+use grovedb::TransactionArg;
 use rand::random;
 #[cfg(feature = "full")]
 use rand::seq::SliceRandom;
@@ -78,6 +65,18 @@ use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full")]
 use serde_json::json;
+#[cfg(feature = "full")]
+use std::borrow::Cow;
+#[cfg(feature = "full")]
+use std::collections::HashMap;
+#[cfg(feature = "full")]
+use std::fs::File;
+#[cfg(feature = "full")]
+use std::io::{self, BufRead};
+#[cfg(feature = "full")]
+use std::option::Option::None;
+#[cfg(feature = "full")]
+use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use dpp::document::Document;
@@ -85,6 +84,8 @@ use dpp::document::Document;
 use dpp::platform_value::Value;
 use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
+#[cfg(feature = "full")]
+use base64::Engine;
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -791,7 +792,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
 
     let file = File::open(path).expect("should read domains from file");
 
-    for domain_json in io::BufReader::new(file).lines().flatten() {
+    for domain_json in io::BufReader::new(file).lines().map_while(Result::ok) {
         let domain_json: serde_json::Value =
             serde_json::from_str(&domain_json).expect("should parse json");
 
@@ -992,8 +993,8 @@ fn test_family_basic_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        89, 169, 192, 133, 222, 85, 217, 165, 166, 122, 195, 124, 55, 108, 16, 158, 1, 80, 226, 24,
-        74, 1, 201, 200, 22, 166, 46, 239, 191, 250, 138, 149,
+        66, 138, 16, 202, 64, 147, 26, 115, 247, 29, 235, 148, 80, 154, 249, 204, 148, 59, 248, 83,
+        118, 140, 196, 38, 24, 59, 190, 48, 212, 130, 220, 215,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2304,8 +2305,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            193, 111, 116, 17, 191, 90, 126, 227, 215, 15, 15, 21, 221, 30, 4, 212, 128, 169, 25,
-            12, 86, 63, 246, 220, 225, 182, 234, 142, 99, 33, 154, 220
+            183, 156, 84, 144, 94, 45, 111, 118, 255, 200, 166, 248, 252, 127, 216, 105, 83, 124,
+            126, 241, 19, 191, 32, 188, 112, 101, 249, 194, 188, 224, 188, 162
         ],
     );
 }
@@ -2451,8 +2452,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        89, 169, 192, 133, 222, 85, 217, 165, 166, 122, 195, 124, 55, 108, 16, 158, 1, 80, 226, 24,
-        74, 1, 201, 200, 22, 166, 46, 239, 191, 250, 138, 149,
+        66, 138, 16, 202, 64, 147, 26, 115, 247, 29, 235, 148, 80, 154, 249, 204, 148, 59, 248, 83,
+        118, 140, 196, 38, 24, 59, 190, 48, 212, 130, 220, 215,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2893,8 +2894,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        100, 192, 55, 56, 28, 89, 114, 51, 246, 239, 246, 155, 157, 46, 242, 255, 61, 30, 111, 226,
-        252, 227, 130, 243, 99, 202, 83, 249, 253, 202, 142, 36,
+        120, 51, 207, 201, 227, 63, 44, 130, 175, 117, 220, 200, 56, 145, 137, 7, 203, 88, 178, 88,
+        211, 192, 197, 201, 253, 79, 18, 50, 43, 156, 204, 153,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2970,14 +2971,15 @@ fn test_family_with_nulls_query() {
             let document =
                 Document::from_bytes(result.as_slice(), person_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            base64::encode(document.id().as_slice())
+            base64::engine::general_purpose::STANDARD.encode(document.id().as_slice())
         })
         .collect();
 
     for i in 0..10 {
         drive
             .delete_document_for_contract(
-                base64::decode(ids.get(i).unwrap())
+                base64::engine::general_purpose::STANDARD
+                    .decode(ids.get(i).unwrap())
                     .expect("expected to decode from base64")
                     .try_into()
                     .expect("expected to get 32 bytes"),
@@ -3015,8 +3017,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        89, 169, 192, 133, 222, 85, 217, 165, 166, 122, 195, 124, 55, 108, 16, 158, 1, 80, 226, 24,
-        74, 1, 201, 200, 22, 166, 46, 239, 191, 250, 138, 149,
+        66, 138, 16, 202, 64, 147, 26, 115, 247, 29, 235, 148, 80, 154, 249, 204, 148, 59, 248, 83,
+        118, 140, 196, 38, 24, 59, 190, 48, 212, 130, 220, 215,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3164,8 +3166,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
-        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
+        104, 127, 253, 216, 170, 92, 9, 250, 226, 44, 134, 38, 89, 10, 135, 4, 121, 65, 255, 136,
+        149, 217, 217, 169, 108, 37, 241, 86, 57, 214, 131, 96,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3716,8 +3718,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
-        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
+        104, 127, 253, 216, 170, 92, 9, 250, 226, 44, 134, 38, 89, 10, 135, 4, 121, 65, 255, 136,
+        149, 217, 217, 169, 108, 37, 241, 86, 57, 214, 131, 96,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3810,8 +3812,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
-        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
+        104, 127, 253, 216, 170, 92, 9, 250, 226, 44, 134, 38, 89, 10, 135, 4, 121, 65, 255, 136,
+        149, 217, 217, 169, 108, 37, 241, 86, 57, 214, 131, 96,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3904,8 +3906,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
-        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
+        104, 127, 253, 216, 170, 92, 9, 250, 226, 44, 134, 38, 89, 10, 135, 4, 121, 65, 255, 136,
+        149, 217, 217, 169, 108, 37, 241, 86, 57, 214, 131, 96,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3998,8 +4000,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
-        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
+        104, 127, 253, 216, 170, 92, 9, 250, 226, 44, 134, 38, 89, 10, 135, 4, 121, 65, 255, 136,
+        149, 217, 217, 169, 108, 37, 241, 86, 57, 214, 131, 96,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4190,8 +4192,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        196, 88, 107, 126, 145, 188, 9, 93, 124, 49, 144, 228, 194, 46, 199, 188, 22, 167, 13, 218,
-        20, 0, 30, 204, 160, 186, 48, 189, 240, 106, 14, 108,
+        11, 19, 155, 212, 245, 198, 124, 117, 180, 86, 195, 68, 236, 38, 209, 25, 16, 186, 122, 12,
+        9, 73, 22, 156, 179, 16, 190, 94, 19, 60, 210, 82,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4391,8 +4393,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        196, 88, 107, 126, 145, 188, 9, 93, 124, 49, 144, 228, 194, 46, 199, 188, 22, 167, 13, 218,
-        20, 0, 30, 204, 160, 186, 48, 189, 240, 106, 14, 108,
+        11, 19, 155, 212, 245, 198, 124, 117, 180, 86, 195, 68, 236, 38, 209, 25, 16, 186, 122, 12,
+        9, 73, 22, 156, 179, 16, 190, 94, 19, 60, 210, 82,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4596,8 +4598,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        196, 88, 107, 126, 145, 188, 9, 93, 124, 49, 144, 228, 194, 46, 199, 188, 22, 167, 13, 218,
-        20, 0, 30, 204, 160, 186, 48, 189, 240, 106, 14, 108,
+        11, 19, 155, 212, 245, 198, 124, 117, 180, 86, 195, 68, 236, 38, 209, 25, 16, 186, 122, 12,
+        9, 73, 22, 156, 179, 16, 190, 94, 19, 60, 210, 82,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -4855,11 +4857,11 @@ fn test_query_a_b_c_d_e_contract() {
       }
     });
 
-    let factory = DataContractFactory::new(platform_version.protocol_version, None)
-        .expect("should create factory");
+    let factory =
+        DataContractFactory::new(platform_version.protocol_version).expect("should create factory");
 
     let contract = factory
-        .create_with_value_config(owner_id, documents, None, None)
+        .create_with_value_config(owner_id, 0, documents, None, None)
         .expect("data in fixture should be correct")
         .data_contract_owned();
 
@@ -4979,6 +4981,8 @@ fn test_query_documents_by_created_at() {
         .create_document_from_data(
             document_value,
             Identifier::random(),
+            random(),
+            random(),
             random(),
             platform_version,
         )

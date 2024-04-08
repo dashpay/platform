@@ -1,5 +1,6 @@
 import { Identity } from '@dashevo/wasm-dpp';
 import { Address, Script } from '@dashevo/dashcore-lib';
+import { Metadata } from '@dashevo/dapi-client/lib/methods/platform/response/Metadata';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
@@ -42,9 +43,9 @@ export async function creditWithdrawal(
   amount: number,
   to: string,
   options: WithdrawalOptions = {
-    signingKeyIndex: 2,
+    signingKeyIndex: 3,
   },
-): Promise<any> {
+): Promise<Metadata> {
   await this.initialize();
 
   const { dpp } = this;
@@ -79,8 +80,7 @@ export async function creditWithdrawal(
 
   const coreFeePerByte = nearestGreaterFibonacci(minRelayFeePerByte);
 
-  const identityNonce = await this.nonceManager
-    .getIdentityNonce(identity.getId()) + 1;
+  const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
 
   const identityCreditWithdrawalTransition = dpp.identity
     .createIdentityCreditWithdrawalTransition(
@@ -102,15 +102,18 @@ export async function creditWithdrawal(
     options.signingKeyIndex,
   );
 
-  this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
   // Skipping validation because it's already done above
-  await broadcastStateTransition(this, identityCreditWithdrawalTransition, {
-    skipValidation: true,
-  });
+  const stateTransitionResult = await broadcastStateTransition(
+    this,
+    identityCreditWithdrawalTransition,
+    {
+      skipValidation: true,
+    },
+  );
 
   this.logger.silly('[Identity#creditWithdrawal] Broadcasted IdentityCreditWithdrawalTransition');
 
-  return true;
+  return stateTransitionResult.metadata;
 }
 
 export default creditWithdrawal;

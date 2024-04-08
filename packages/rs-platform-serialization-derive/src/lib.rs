@@ -26,7 +26,9 @@ struct VersionAttributes {
     unversioned: bool,
     platform_serialize_into: Option<Path>,
     platform_version_path: Option<LitStr>,
+    #[allow(dead_code)] // TODO this is never read
     allow_prepend_version: bool,
+    #[allow(dead_code)] // TODO this is never read
     force_prepend_version: bool,
 }
 

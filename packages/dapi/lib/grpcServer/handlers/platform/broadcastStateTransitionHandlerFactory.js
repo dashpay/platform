@@ -38,23 +38,27 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
       throw new InvalidArgumentGrpcError('State Transition is not specified');
     }
 
-    const tx = Buffer.from(stByteArray).toString('base64');
+    const tx = Buffer.from(stByteArray)
+      .toString('base64');
 
     let response;
 
     try {
-      response = await rpcClient.request('broadcast_tx_sync', { tx });
+      response = await rpcClient.request('broadcast_tx', { tx });
     } catch (e) {
-      logger.error(`Failed broadcasting state transition: ${e}`);
-
       if (e.message === 'socket hang up') {
         throw new UnavailableGrpcError('Tenderdash is not available');
       }
 
+      e.message = `Failed broadcasting state transition: ${e.message}`;
+
       throw e;
     }
 
-    const { result, error: jsonRpcError } = response;
+    const {
+      result,
+      error: jsonRpcError,
+    } = response;
 
     if (jsonRpcError) {
       if (typeof jsonRpcError.data === 'string') {
@@ -69,6 +73,15 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
 
         if (jsonRpcError.data.startsWith('mempool is full')) {
           throw new ResourceExhaustedGrpcError(jsonRpcError.data);
+        }
+
+        // broadcasting is timed out
+        if (jsonRpcError.data.includes('context deadline exceeded')) {
+          throw new ResourceExhaustedGrpcError('broadcasting state transition is timed out');
+        }
+
+        if (jsonRpcError.data.includes('too_many_resets')) {
+          throw new ResourceExhaustedGrpcError('tenderdash is not responding: too many requests');
         }
 
         if (jsonRpcError.data.startsWith('broadcast confirmation not received:')) {

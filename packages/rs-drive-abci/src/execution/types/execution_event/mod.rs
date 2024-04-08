@@ -2,13 +2,12 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent::{
-    PaidDriveEvent, PaidFromAssetLockDriveEvent,
-};
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 
 use dpp::identity::PartialIdentity;
+use dpp::prelude::UserFeeIncrease;
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
@@ -19,12 +18,13 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
+use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
 
 /// An execution event
 #[derive(Clone)]
 pub(in crate::execution) enum ExecutionEvent<'a> {
     /// A drive event that is paid by an identity
-    PaidDriveEvent {
+    Paid {
         /// The identity requesting the event
         identity: PartialIdentity,
         /// The removed balance in the case of a transfer or withdrawal
@@ -33,9 +33,11 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
+        /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
+        user_fee_increase: UserFeeIncrease,
     },
     /// A drive event that is paid from an asset lock
-    PaidFromAssetLockDriveEvent {
+    PaidFromAssetLock {
         /// The identity requesting the event
         identity: PartialIdentity,
         /// The added balance
@@ -44,9 +46,19 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
+        /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
+        user_fee_increase: UserFeeIncrease,
+    },
+    /// A drive event that is paid from an asset lock
+    PaidFromAssetLockWithoutIdentity {
+        /// The processing fees that should be distributed to validators
+        processing_fees: Credits,
+        /// the operations that should be performed
+        operations: Vec<DriveOperation<'a>>,
     },
     /// A drive event that is free
-    FreeDriveEvent {
+    #[allow(dead_code)] // TODO investigate why `variant `Free` is never constructed`
+    Free {
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
     },
@@ -62,80 +74,102 @@ impl<'a> ExecutionEvent<'a> {
     ) -> Result<Self, Error> {
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
+                let user_fee_increase = identity_create_action.user_fee_increase();
                 let identity = identity_create_action.into();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
-                Ok(PaidFromAssetLockDriveEvent {
+                Ok(ExecutionEvent::PaidFromAssetLock {
                     identity,
                     added_balance: 0,
                     operations,
                     execution_operations: execution_context.operations_consume(),
+                    user_fee_increase,
                 })
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
-                let added_balance = identity_top_up_action.top_up_balance_amount();
+                let user_fee_increase = identity_top_up_action.user_fee_increase();
+                let added_balance = identity_top_up_action
+                    .top_up_asset_lock_value()
+                    .remaining_credit_value();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(PaidFromAssetLockDriveEvent {
+                    Ok(ExecutionEvent::PaidFromAssetLock {
                         identity,
                         added_balance,
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        user_fee_increase,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "partial identity should be present",
+                        "partial identity should be present for identity top up action",
                     )))
                 }
             }
+            StateTransitionAction::PartiallyUseAssetLockAction(partially_used_asset_lock) => {
+                let used_credits = partially_used_asset_lock.used_credits();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                // We mark it as a free operation because the event itself is paying for itself
+                Ok(ExecutionEvent::PaidFromAssetLockWithoutIdentity {
+                    processing_fees: used_credits,
+                    operations,
+                })
+            }
             StateTransitionAction::IdentityCreditWithdrawalAction(identity_credit_withdrawal) => {
+                let user_fee_increase = identity_credit_withdrawal.user_fee_increase();
                 let removed_balance = identity_credit_withdrawal.amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(PaidDriveEvent {
+                    Ok(ExecutionEvent::Paid {
                         identity,
                         removed_balance: Some(removed_balance),
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        user_fee_increase,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "partial identity should be present",
+                        "partial identity should be present for identity credit withdrawal action",
                     )))
                 }
             }
             StateTransitionAction::IdentityCreditTransferAction(identity_credit_transfer) => {
+                let user_fee_increase = identity_credit_transfer.user_fee_increase();
                 let removed_balance = identity_credit_transfer.transfer_amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(PaidDriveEvent {
+                    Ok(ExecutionEvent::Paid {
                         identity,
                         removed_balance: Some(removed_balance),
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        user_fee_increase,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "partial identity should be present",
+                        "partial identity should be present for identity credit transfer action",
                     )))
                 }
             }
             _ => {
+                let user_fee_increase = action.user_fee_increase();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(PaidDriveEvent {
+                    Ok(ExecutionEvent::Paid {
                         identity,
                         removed_balance: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        user_fee_increase,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "partial identity should be present",
+                        "partial identity should be present for other state transitions",
                     )))
                 }
             }

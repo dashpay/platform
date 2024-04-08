@@ -57,7 +57,8 @@
 //! To enable logging, you can use the `tracing_subscriber` crate which allows applications to customize how events are processed and recorded.
 //! An example can be found in `tests/common.rs:setup_logs()`.
 //!
-#![warn(missing_docs)]
+// TODO re-enable when docs are complete
+// #![warn(missing_docs)]
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
@@ -70,6 +71,9 @@ pub mod sdk;
 
 pub use error::Error;
 pub use sdk::{RequestSettings, Sdk, SdkBuilder};
+
+pub use dpp;
+pub use rs_dapi_client as dapi_client;
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

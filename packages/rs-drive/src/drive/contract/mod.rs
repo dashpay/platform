@@ -95,6 +95,9 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn setup_deep_nested_50_contract() -> (Drive, DataContract) {
         let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
@@ -118,6 +121,8 @@ mod tests {
     }
 
     #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn setup_deep_nested_10_contract() -> (Drive, DataContract) {
         let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
@@ -168,7 +173,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract = get_dashpay_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
         drive
             .apply_contract(
                 &contract,
@@ -189,7 +194,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract = get_dashpay_contract_with_generalized_encryption_key_fixture(None, 1)
+        let contract = get_dashpay_contract_with_generalized_encryption_key_fixture(None, 0, 1)
             .data_contract_owned();
         drive
             .apply_contract(
@@ -227,7 +232,7 @@ mod tests {
         });
 
         contract
-            .set_document_schema("note2", note2_schema, true, platform_version)
+            .set_document_schema("note2", note2_schema, true, &mut vec![], platform_version)
             .expect("should set a document schema");
 
         drive

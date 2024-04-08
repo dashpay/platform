@@ -1,4 +1,5 @@
 use super::broadcast_request::BroadcastRequestForStateTransition;
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -44,10 +45,12 @@ impl BroadcastStateTransition for StateTransition {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
+        let block_info = block_info_from_metadata(response.metadata()?)?;
         let proof = response.proof_owned()?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             self,
+            &block_info,
             proof.grovedb_proof.as_slice(),
             &|_| Ok(None),
             sdk.version(),

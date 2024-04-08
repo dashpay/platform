@@ -6,7 +6,6 @@ use dpp::consensus::basic::identity::{
     InvalidAssetLockProofTransactionHeightError,
 };
 use dpp::dashcore::secp256k1::ThirtyTwoByteHash;
-use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::TxOut;
 use dpp::identity::state_transition::asset_lock_proof::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
 use dpp::prelude::{AssetLockProof, ConsensusValidationResult};
@@ -41,6 +40,8 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
             let maybe_transaction_info = core_rpc
                 .get_optional_transaction_extended_info(&transaction_hash)
                 .map_err(|e| {
+                    //todo multiple errors are possible from core, some that
+                    // would lead to consensus errors, other execution errors
                     Error::Execution(ExecutionError::DashCoreBadResponseError(format!(
                         "can't fetch asset transaction for chain asset lock proof: {e}",
                     )))
@@ -95,32 +96,13 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
 
             // Validate asset lock transaction
 
-            let validate_asset_lock_transaction_result = validate_asset_lock_transaction_structure(
-                &transaction,
-                output_index,
-                platform_version,
-            )?;
-
-            if !validate_asset_lock_transaction_result.is_valid() {
-                return Ok(ConsensusValidationResult::new_with_errors(
-                    validate_asset_lock_transaction_result.errors,
-                ));
-            }
-
-            // Extract outpoint from the payload
-            if let Some(TransactionPayload::AssetLockPayloadType(mut payload)) =
-                transaction.special_transaction_payload
-            {
-                // We are dealing with old Rust edition so we can't use optional remove
-                if payload.credit_outputs.get(output_index as usize).is_some() {
-                    let output = payload.credit_outputs.remove(output_index as usize);
-                    return Ok(ValidationResult::new_with_data(output));
-                }
-            }
-
-            Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "transaction should have outpoint",
-            )))
+            // While we don't need this validation for recheck, we still need to get the tx_out
+            // To get the Tx_out we need some sanity checks, then this checks that we are p2pkh.
+            // The check for p2pkh is only marginally more expensive than the check to see if we are
+            // on a recheck, so there's no point making the code more complicated and stripping
+            // out a very cheap check on recheck tx
+            validate_asset_lock_transaction_structure(&transaction, output_index, platform_version)
+                .map_err(Error::Protocol)
         }
     }
 }

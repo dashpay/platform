@@ -29,6 +29,7 @@ impl<'a> DriveQuery<'a> {
     /// This function returns an Error in the following cases:
     /// * If the proof is corrupted (wrong path, wrong key, etc.).
     /// * If the provided proof has an incorrect number of elements.
+    #[inline(always)]
     pub(super) fn verify_start_at_document_in_proof_v0(
         &self,
         proof: &[u8],

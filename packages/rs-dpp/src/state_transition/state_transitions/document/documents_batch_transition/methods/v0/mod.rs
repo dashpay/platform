@@ -1,16 +1,25 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "state-transition-signing")]
 use crate::document::Document;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
-use crate::identity::{IdentityPublicKey, SecurityLevel};
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::IdentityPublicKey;
+use crate::identity::SecurityLevel;
 use crate::prelude::IdentityNonce;
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_value::Identifier;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::convert::TryFrom;
 
@@ -22,6 +31,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         entropy: [u8; 32],
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,
@@ -35,6 +45,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,

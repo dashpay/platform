@@ -104,6 +104,54 @@ describe('Withdrawals', function withdrawalsTest() {
       }, identity);
     });
 
+    it('should be able to query recent withdrawal updates', async () => {
+      const account = await client.getWalletAccount();
+      const withdrawTo = await account.getUnusedAddress();
+      const amountToWithdraw = 1000000;
+
+      const firstWithdrawalTime = Date.now();
+      const { height: withdrawalHeight } = await client.platform.identities.withdrawCredits(
+        identity,
+        BigInt(amountToWithdraw),
+        withdrawTo.address,
+      );
+
+      let withdrawalBroadcasted = false;
+      let blocksPassed = 0;
+
+      // Wait for first withdrawal to broadcast
+      while (!withdrawalBroadcasted && blocksPassed === 0) {
+        await waitForSTPropagated();
+
+        const withdrawals = await client.platform
+          .documents.get(
+            'withdrawals.withdrawal',
+            {
+              where: [
+                ['$ownerId', '==', identity.getId()],
+                ['$updatedAt', '>', firstWithdrawalTime],
+              ],
+              orderBy: [
+                ['$updatedAt', 'desc'],
+              ],
+            },
+          );
+
+        // We want to ensure that our index works properly with updatedAt
+        // condition, and we are not receiving the document from previous test
+        expect(withdrawals.length).to.equal(1);
+
+        const withdrawal = withdrawals[0];
+
+        withdrawalBroadcasted = withdrawal.get('status') === WITHDRAWAL_STATUSES.BROADCASTED;
+
+        blocksPassed = withdrawal.getMetadata()
+          .getBlockHeight() - withdrawalHeight;
+      }
+
+      expect(withdrawalBroadcasted).to.be.true();
+    });
+
     it('should not be able to withdraw more than balance available', async () => {
       const account = await client.getWalletAccount();
       const identityBalanceBefore = identity.getBalance();
@@ -154,7 +202,7 @@ describe('Withdrawals', function withdrawalsTest() {
         expect.fail('should throw broadcast error');
       } catch (e) {
         expect(e.message).to.be.equal('Action is not allowed');
-        expect(e.code).to.equal(4001);
+        expect(e.code).to.equal(40500);
       }
     });
 
@@ -196,7 +244,7 @@ describe('Withdrawals', function withdrawalsTest() {
         expect.fail('should throw broadcast error');
       } catch (e) {
         expect(e.message).to.be.equal('withdrawal deletion is allowed only for COMPLETE statuses');
-        expect(e.code).to.equal(4001);
+        expect(e.code).to.equal(40500);
       }
     });
 
@@ -219,7 +267,7 @@ describe('Withdrawals', function withdrawalsTest() {
         expect.fail('should throw broadcast error');
       } catch (e) {
         expect(e.message).to.be.equal('Action is not allowed');
-        expect(e.code).to.equal(4001);
+        expect(e.code).to.equal(40500);
       }
     });
   });

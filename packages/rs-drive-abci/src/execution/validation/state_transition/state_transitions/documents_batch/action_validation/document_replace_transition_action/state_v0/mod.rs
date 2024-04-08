@@ -1,3 +1,4 @@
+use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
@@ -7,6 +8,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(super) trait DocumentReplaceTransitionActionStateValidationV0 {
@@ -14,6 +16,8 @@ pub(super) trait DocumentReplaceTransitionActionStateValidationV0 {
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
@@ -23,6 +27,8 @@ impl DocumentReplaceTransitionActionStateValidationV0 for DocumentReplaceTransit
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
+        _epoch: &Epoch,
+        _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -38,6 +44,9 @@ impl DocumentReplaceTransitionActionStateValidationV0 for DocumentReplaceTransit
                 InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
             ));
         };
+
+        // There is no need to verify that the document already existed, since this is done when
+        // transforming into an action
 
         // The rest of state validation is actually happening in documents batch transition transformer
         // TODO: Think more about this architecture

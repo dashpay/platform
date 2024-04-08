@@ -12,6 +12,7 @@ use grovedb_path::SubtreePath;
 impl Drive {
     /// Verify that the sum tree identity credits + pool credits + refunds are equal to the
     /// Total credits in the system
+    #[inline(always)]
     pub(super) fn calculate_total_credits_balance_v0(
         &self,
         transaction: TransactionArg,

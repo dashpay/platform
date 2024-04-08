@@ -1,8 +1,15 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
-use crate::state_transition::{StateTransition, StateTransitionType};
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::StateTransition;
+use crate::state_transition::StateTransitionType;
+#[cfg(feature = "state-transition-signing")]
 use crate::{BlsModule, ProtocolError};
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 pub trait IdentityCreateTransitionMethodsV0 {

@@ -32,6 +32,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract fetching fails.
+    #[inline(always)]
     pub(super) fn get_contract_with_fetch_info_v0(
         &self,
         contract_id: [u8; 32],
@@ -73,6 +74,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract fetching or fee calculation fails.
+    #[inline(always)]
     pub(super) fn get_contract_with_fetch_info_and_fee_v0(
         &self,
         contract_id: [u8; 32],
@@ -105,6 +107,7 @@ impl Drive {
     }
 
     /// Returns the contract with fetch info and operations with the given ID.
+    #[inline(always)]
     pub(super) fn get_contract_with_fetch_info_and_add_to_operations_v0(
         &self,
         contract_id: [u8; 32],
@@ -114,10 +117,9 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
-        let cache = self.cache.read().unwrap();
-
-        match cache
-            .cached_contracts
+        match self
+            .cache
+            .data_contracts
             .get(contract_id, transaction.is_some())
         {
             None => {
@@ -132,10 +134,8 @@ impl Drive {
                 if add_to_cache_if_pulled {
                     // Store a contract in cache if present
                     if let Some(contract_fetch_info) = &maybe_contract_fetch_info {
-                        drop(cache);
-                        let mut cache = self.cache.write().unwrap();
-                        cache
-                            .cached_contracts
+                        self.cache
+                            .data_contracts
                             .insert(Arc::clone(contract_fetch_info), transaction.is_some());
                     };
                 }
@@ -163,11 +163,9 @@ impl Drive {
                             cost: contract_fetch_info.cost.clone(),
                             fee: Some(fee.clone()),
                         });
-                        drop(cache);
-                        let mut cache = self.cache.write().unwrap();
                         // we override the cache for the contract as the fee is now calculated
-                        cache
-                            .cached_contracts
+                        self.cache
+                            .data_contracts
                             .insert(updated_contract_fetch_info, transaction.is_some());
 
                         fee

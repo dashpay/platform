@@ -1,8 +1,11 @@
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
+#[cfg(all(feature = "state-transitions", feature = "client"))]
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::state_transition::AssetLockProved;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::identity::{IdentityV0, TimestampMillis};
+use crate::identity::IdentityV0;
 
 use crate::identity::{Identity, IdentityPublicKey, KeyID};
 
@@ -23,8 +26,10 @@ use crate::identity::accessors::IdentityGettersV0;
 
 #[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::core_script::CoreScript;
-use crate::prelude::{IdentityNonce, Revision};
+#[cfg(all(feature = "state-transitions", feature = "client"))]
+use crate::prelude::IdentityNonce;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -54,6 +59,7 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::PlatformVersion;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::withdrawal::Pooling;
 #[cfg(any(
     all(feature = "identity-serialization", feature = "client"),
@@ -194,7 +200,7 @@ impl IdentityFactory {
         let mut identity_topup_transition = IdentityTopUpTransitionV0::default();
 
         identity_topup_transition.set_identity_id(identity_id);
-        identity_topup_transition.set_asset_lock_proof(asset_lock_proof);
+        identity_topup_transition.set_asset_lock_proof(asset_lock_proof)?;
 
         Ok(IdentityTopUpTransition::V0(identity_topup_transition))
     }
@@ -230,14 +236,15 @@ impl IdentityFactory {
         output_script: CoreScript,
         identity_nonce: IdentityNonce,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
-        let mut identity_credit_withdrawal_transition =
-            IdentityCreditWithdrawalTransitionV0::default();
-        identity_credit_withdrawal_transition.identity_id = identity_id;
-        identity_credit_withdrawal_transition.amount = amount;
-        identity_credit_withdrawal_transition.core_fee_per_byte = core_fee_per_byte;
-        identity_credit_withdrawal_transition.pooling = pooling;
-        identity_credit_withdrawal_transition.output_script = output_script;
-        identity_credit_withdrawal_transition.nonce = identity_nonce;
+        let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransitionV0 {
+            identity_id,
+            amount,
+            core_fee_per_byte,
+            pooling,
+            output_script,
+            nonce: identity_nonce,
+            ..Default::default()
+        };
 
         Ok(IdentityCreditWithdrawalTransition::from(
             identity_credit_withdrawal_transition,
@@ -251,9 +258,6 @@ impl IdentityFactory {
         identity_nonce: u64,
         add_public_keys: Option<Vec<IdentityPublicKeyInCreation>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
-        // Pass disable time as argument because SystemTime::now() does not work for wasm target
-        // https://github.com/rust-lang/rust/issues/48564
-        disable_time: Option<TimestampMillis>,
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
         let mut identity_update_transition = IdentityUpdateTransitionV0::default();
         identity_update_transition.set_identity_id(identity.id().to_owned());
@@ -265,14 +269,7 @@ impl IdentityFactory {
         }
 
         if let Some(public_key_ids_to_disable) = public_key_ids_to_disable {
-            if disable_time.is_none() {
-                return Err(ProtocolError::Generic(
-                    "Public keys disabled at must be present".to_string(),
-                ));
-            }
-
             identity_update_transition.set_public_key_ids_to_disable(public_key_ids_to_disable);
-            identity_update_transition.set_public_keys_disabled_at(disable_time);
         }
 
         Ok(IdentityUpdateTransition::V0(identity_update_transition))

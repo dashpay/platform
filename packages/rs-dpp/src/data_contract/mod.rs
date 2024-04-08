@@ -141,6 +141,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
             validate,
+            &mut vec![],
             platform_version,
         )
     }
@@ -169,6 +170,7 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
             DataContract::try_from_platform_versioned(
                 data_contract_in_serialization_format,
                 validate,
+                &mut vec![],
                 platform_version,
             )?,
             len,
@@ -200,6 +202,7 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
             true,
+            &mut vec![],
             platform_version,
         )
     }
@@ -285,8 +288,9 @@ mod tests {
 
     #[test]
     fn test_contract_can_have_specialized_contract_encryption_decryption_keys() {
-        let data_contract = get_dashpay_contract_with_generalized_encryption_key_fixture(None, 1)
-            .data_contract_owned();
+        let data_contract =
+            get_dashpay_contract_with_generalized_encryption_key_fixture(None, 0, 1)
+                .data_contract_owned();
         assert_eq!(
             data_contract
                 .config()
@@ -303,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_contract_document_type_can_have_specialized_contract_encryption_decryption_keys() {
-        let data_contract = get_dashpay_contract_fixture(None, 1).data_contract_owned();
+        let data_contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
         assert_eq!(
             data_contract
                 .document_type_for_name("contactRequest")

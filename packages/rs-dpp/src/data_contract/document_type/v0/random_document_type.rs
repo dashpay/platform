@@ -191,10 +191,17 @@ impl DocumentTypeV0 {
             }
         };
 
-        let optional_field_count =
-            rng.gen_range(parameters.new_fields_optional_count_range.clone());
-        let required_field_count =
-            rng.gen_range(parameters.new_fields_required_count_range.clone());
+        let optional_field_count = if parameters.new_fields_optional_count_range.is_empty() {
+            0
+        } else {
+            rng.gen_range(parameters.new_fields_optional_count_range.clone())
+        };
+
+        let required_field_count = if parameters.new_fields_required_count_range.is_empty() {
+            0
+        } else {
+            rng.gen_range(parameters.new_fields_required_count_range.clone())
+        };
 
         let mut properties = IndexMap::new();
         let mut required_fields = BTreeSet::new();
@@ -210,7 +217,12 @@ impl DocumentTypeV0 {
             required_fields.insert(field_name);
         }
 
-        let index_count = rng.gen_range(parameters.new_indexes_count_range.clone());
+        let index_count = if parameters.new_indexes_count_range.is_empty() {
+            0
+        } else {
+            rng.gen_range(parameters.new_indexes_count_range.clone())
+        };
+
         let field_names: Vec<String> = properties.keys().cloned().collect();
         // DPP only allows 10 properties per index (v1.0-dev)
         let ten_field_names = field_names
@@ -333,7 +345,7 @@ impl DocumentTypeV0 {
                         },
                         ArrayItemType::Identifier => json!({"type": "array"}),
                         ArrayItemType::Boolean => json!({"type": "bool"}),
-                        ArrayItemType::Date => json!({"type": "date"}), 
+                        ArrayItemType::Date => json!({"type": "date"}),
                     };
 
                     json!({
@@ -390,12 +402,174 @@ impl DocumentTypeV0 {
 
         // Combine everything into the final schema
         let schema = json!({
-            "title": name,
             "type": "object",
             "properties": properties_json_schema,
             "required": required_fields.iter().cloned().collect::<Vec<_>>(),
             "indices": indices_json_schema,
             "additionalProperties": false,
+        });
+
+        // TODO: It might not work properly
+        Ok(DocumentTypeV0 {
+            name,
+            schema: schema.into(),
+            indices,
+            index_structure,
+            flattened_properties: properties.clone(),
+            properties,
+            identifier_paths,
+            binary_paths,
+            required_fields,
+            documents_keep_history,
+            documents_mutable,
+            data_contract_id,
+            requires_identity_encryption_bounded_key: None,
+            requires_identity_decryption_bounded_key: None,
+            security_level_requirement: SecurityLevel::HIGH,
+            #[cfg(feature = "validation")]
+            json_schema_validator: StatelessJsonSchemaLazyValidator::new(),
+        })
+    }
+
+    /// This is used to create an invalid random document type, often for testing
+    pub fn invalid_random_document_type(
+        parameters: RandomDocumentTypeParameters,
+        data_contract_id: Identifier,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        // Call the validation function at the beginning
+        parameters.validate_parameters()?;
+
+        let field_weights = &parameters.field_weights;
+
+        let total_weight = field_weights.string_weight
+            + field_weights.float_weight
+            + field_weights.integer_weight
+            + field_weights.date_weight
+            + field_weights.boolean_weight
+            + field_weights.byte_array_weight;
+
+        let random_field = |required: bool, rng: &mut StdRng| -> DocumentProperty {
+            let random_weight = rng.gen_range(0..total_weight);
+            let document_type = if random_weight < field_weights.string_weight {
+                let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);
+                let min_len = if has_min_len {
+                    Some(rng.gen_range(parameters.field_bounds.string_min_len.clone()))
+                } else {
+                    None
+                };
+                // If a string property is used in an index it must have maxLength 63 or less (v1.0-dev)
+                let max_len = Some(63);
+                DocumentPropertyType::String(min_len, max_len)
+            } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
+                DocumentPropertyType::Integer
+            } else if random_weight
+                < field_weights.string_weight
+                    + field_weights.integer_weight
+                    + field_weights.float_weight
+            {
+                DocumentPropertyType::Number
+            } else if random_weight
+                < field_weights.string_weight
+                    + field_weights.integer_weight
+                    + field_weights.float_weight
+                    + field_weights.date_weight
+            {
+                DocumentPropertyType::Date
+            } else if random_weight
+                < field_weights.string_weight
+                    + field_weights.integer_weight
+                    + field_weights.float_weight
+                    + field_weights.date_weight
+                    + field_weights.boolean_weight
+            {
+                DocumentPropertyType::Boolean
+            } else {
+                let has_min_len =
+                    rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
+                let min_len = if has_min_len {
+                    Some(rng.gen_range(parameters.field_bounds.byte_array_min_len.clone()))
+                } else {
+                    None
+                };
+                // Indexed arrays must have maxItems 255 or less (v1.0-dev)
+                let max_len = Some(255);
+                DocumentPropertyType::ByteArray(min_len, max_len)
+            };
+
+            DocumentProperty {
+                property_type: document_type,
+                required,
+            }
+        };
+
+        let optional_field_count = if parameters.new_fields_optional_count_range.is_empty() {
+            0
+        } else {
+            rng.gen_range(parameters.new_fields_optional_count_range.clone())
+        };
+
+        let required_field_count = if parameters.new_fields_required_count_range.is_empty() {
+            0
+        } else {
+            rng.gen_range(parameters.new_fields_required_count_range.clone())
+        };
+
+        let mut properties = IndexMap::new();
+        let mut required_fields = BTreeSet::new();
+
+        for _ in 0..optional_field_count {
+            let field_name = format!("field_{}", rng.gen::<u16>());
+            properties.insert(field_name, random_field(false, rng));
+        }
+
+        for _ in 0..required_field_count {
+            let field_name = format!("field_{}", rng.gen::<u16>());
+            properties.insert(field_name.clone(), random_field(true, rng));
+            required_fields.insert(field_name);
+        }
+
+        let index_count = if parameters.new_indexes_count_range.is_empty() {
+            0
+        } else {
+            rng.gen_range(parameters.new_indexes_count_range.clone())
+        };
+
+        let field_names: Vec<String> = properties.keys().cloned().collect();
+        // DPP only allows 10 properties per index (v1.0-dev)
+        let ten_field_names = field_names
+            .choose_multiple(&mut rand::thread_rng(), 10)
+            .cloned()
+            .collect_vec();
+
+        let mut indices = Vec::with_capacity(index_count as usize);
+
+        for _ in 0..index_count {
+            match Index::random(&ten_field_names, &indices, rng) {
+                Ok(index) => indices.push(index),
+                Err(_) => break,
+            }
+        }
+
+        let documents_keep_history = rng.gen_bool(parameters.keep_history_chance);
+        let documents_mutable = rng.gen_bool(parameters.documents_mutable_chance);
+
+        let name = format!("doc_type_{}", rng.gen::<u16>());
+
+        let index_structure =
+            IndexLevel::try_from_indices(indices.as_slice(), name.as_str(), platform_version)?;
+        let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
+            &properties,
+            &PlatformVersion::latest()
+                .dpp
+                .contract_versions
+                .document_type_versions,
+        )?;
+
+        // Combine everything into the final schema
+        let schema = json!({
+            "invalid": "yo",
         });
 
         // TODO: It might not work properly

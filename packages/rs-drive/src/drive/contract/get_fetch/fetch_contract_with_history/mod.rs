@@ -160,6 +160,7 @@ mod tests {
                     "niceDocument",
                     updated_document.clone(),
                     true,
+                    &mut vec![],
                     platform_version,
                 )
                 .expect("to be able to set document schema");
@@ -250,7 +251,7 @@ mod tests {
 
     fn setup_test() -> TestData {
         let data_contract =
-            get_data_contract_fixture(None, PlatformVersion::latest().protocol_version)
+            get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
                 .data_contract_owned();
 
         TestData {

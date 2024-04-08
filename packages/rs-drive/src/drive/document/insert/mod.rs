@@ -391,11 +391,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1303
+                storage_fee: 1304
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 1481210,
+                processing_fee: 1481610,
                 ..Default::default()
             }
         );
@@ -460,8 +460,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        assert_eq!(1303, added_bytes);
-        assert_eq!(142936000, processing_fee);
+        assert_eq!(1304, added_bytes);
+        assert_eq!(142936400, processing_fee);
     }
 
     #[test]
@@ -683,11 +683,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1761
+                storage_fee: 1760
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2069390,
+                processing_fee: 2068990,
                 ..Default::default()
             }
         );
@@ -881,7 +881,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let created_contract =
-            get_dpns_data_contract_fixture(None, platform_version.protocol_version);
+            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
 
         drive
             .apply_contract(

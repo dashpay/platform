@@ -16,7 +16,7 @@ use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
 };
-use dpp::block::epoch::EpochIndex;
+use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
@@ -30,6 +30,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
 
+use dpp::block::block_info::BlockInfo;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::DriveQuery;
@@ -371,16 +372,16 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                 .map(|(k, v)| {
                      let v = v.security_level_map
                             .iter()
-                            .map(|(level, kind)| {
-                                let kt = match GrpcKeyKind::from_i32(*kind) {
-                                    Some(GrpcKeyKind::CurrentKeyOfKindRequest) => {
+                            .map(|(level, &kind)| {
+                                let kt = match GrpcKeyKind::try_from(kind) {
+                                    Ok(GrpcKeyKind::CurrentKeyOfKindRequest) => {
                                         Ok(KeyKindRequestType::CurrentKeyOfKindRequest)
                                     }
-                                    Some(GrpcKeyKind::AllKeysOfKindRequest) => {
+                                    Ok(GrpcKeyKind::AllKeysOfKindRequest) => {
                                         Ok(KeyKindRequestType::AllKeysOfKindRequest)
                                     }
-                                    None => Err(Error::RequestDecodeError {
-                                        error: format!("missing requested key type: {}", *kind),
+                                    _ => Err(Error::RequestDecodeError {
+                                        error: format!("missing requested key type: {}", kind),
                                     }),
                                 };
                                 match kt  {
@@ -801,7 +802,18 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             error: e.to_string(),
         })?;
 
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        if metadata.epoch > MAX_EPOCH as u32 {
+            return Err(drive::error::Error::Proof(ProofError::InvalidMetadata(format!("platform returned an epoch {} that was higher that maximum of a 16 bit integer", metadata.epoch))).into());
+        }
+
+        let block_info = BlockInfo {
+            time_ms: metadata.time_ms,
+            height: metadata.height,
+            core_height: metadata.core_chain_locked_height,
+            epoch: (metadata.epoch as u16).try_into()?,
+        };
 
         let known_contracts_provider_fn =
             |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
@@ -812,6 +824,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
+            &block_info,
             &proof.grovedb_proof,
             &known_contracts_provider_fn,
             platform_version,
@@ -820,9 +833,9 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, metadata, &root_hash, provider)?;
 
-        Ok((Some(result), mtd.clone()))
+        Ok((Some(result), metadata.clone()))
     }
 }
 

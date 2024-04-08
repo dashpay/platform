@@ -43,11 +43,12 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
-            ExecutionEvent::PaidFromAssetLockDriveEvent {
+            ExecutionEvent::PaidFromAssetLock {
                 identity,
                 added_balance,
                 operations,
                 execution_operations,
+                user_fee_increase,
             } => {
                 let previous_balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
@@ -67,9 +68,10 @@ where
                 ValidationOperation::add_many_to_fee_result(
                     execution_operations,
                     &mut estimated_fee_result,
-                    &block_info.epoch,
                     platform_version,
                 )?;
+
+                estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
 
                 // TODO: Should take into account refunds as well
                 let total_fee = estimated_fee_result.total_base_fee();
@@ -91,11 +93,12 @@ where
                     ))
                 }
             }
-            ExecutionEvent::PaidDriveEvent {
+            ExecutionEvent::Paid {
                 identity,
                 removed_balance,
                 operations,
                 execution_operations,
+                user_fee_increase,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
@@ -116,9 +119,10 @@ where
                 ValidationOperation::add_many_to_fee_result(
                     execution_operations,
                     &mut estimated_fee_result,
-                    &block_info.epoch,
                     platform_version,
                 )?;
+
+                estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
 
                 // TODO: Should take into account refunds as well
                 let required_balance = estimated_fee_result.total_base_fee();
@@ -140,9 +144,10 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { .. } => Ok(ConsensusValidationResult::new_with_data(
-                FeeResult::default(),
-            )),
+            ExecutionEvent::Free { .. }
+            | ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. } => Ok(
+                ConsensusValidationResult::new_with_data(FeeResult::default()),
+            ),
         }
     }
 }

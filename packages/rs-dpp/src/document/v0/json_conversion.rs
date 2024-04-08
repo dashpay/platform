@@ -33,6 +33,33 @@ impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
                 JsonValue::Number(updated_at.into()),
             );
         }
+        if let Some(created_at_block_height) = self.created_at_block_height {
+            value_mut.insert(
+                property_names::CREATED_AT_BLOCK_HEIGHT.to_string(),
+                JsonValue::Number(created_at_block_height.into()),
+            );
+        }
+
+        if let Some(updated_at_block_height) = self.updated_at_block_height {
+            value_mut.insert(
+                property_names::UPDATED_AT_BLOCK_HEIGHT.to_string(),
+                JsonValue::Number(updated_at_block_height.into()),
+            );
+        }
+
+        if let Some(created_at_core_block_height) = self.created_at_core_block_height {
+            value_mut.insert(
+                property_names::CREATED_AT_CORE_BLOCK_HEIGHT.to_string(),
+                JsonValue::Number(created_at_core_block_height.into()),
+            );
+        }
+
+        if let Some(updated_at_core_block_height) = self.updated_at_core_block_height {
+            value_mut.insert(
+                property_names::UPDATED_AT_CORE_BLOCK_HEIGHT.to_string(),
+                JsonValue::Number(updated_at_core_block_height.into()),
+            );
+        }
         if let Some(revision) = self.revision {
             value_mut.insert(
                 property_names::REVISION.to_string(),
@@ -83,6 +110,18 @@ impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
         }
         if let Ok(value) = document_value.remove(property_names::UPDATED_AT) {
             document.updated_at = serde_json::from_value(value)?
+        }
+        if let Ok(value) = document_value.remove(property_names::CREATED_AT_BLOCK_HEIGHT) {
+            document.created_at_block_height = serde_json::from_value(value)?;
+        }
+        if let Ok(value) = document_value.remove(property_names::UPDATED_AT_BLOCK_HEIGHT) {
+            document.updated_at_block_height = serde_json::from_value(value)?;
+        }
+        if let Ok(value) = document_value.remove(property_names::CREATED_AT_CORE_BLOCK_HEIGHT) {
+            document.created_at_core_block_height = serde_json::from_value(value)?;
+        }
+        if let Ok(value) = document_value.remove(property_names::UPDATED_AT_CORE_BLOCK_HEIGHT) {
+            document.updated_at_core_block_height = serde_json::from_value(value)?;
         }
 
         let platform_value: Value = document_value.into();

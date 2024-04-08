@@ -8,7 +8,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("State transition size {actual_size_kbytes} KB is more than maximum {max_size_kbytes} KB")]
+#[error("State transition size {actual_size_bytes} is more than maximum {max_size_bytes}")]
 #[platform_serialize(unversioned)]
 pub struct StateTransitionMaxSizeExceededError {
     /*
@@ -16,23 +16,23 @@ pub struct StateTransitionMaxSizeExceededError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    actual_size_kbytes: usize,
-    max_size_kbytes: usize,
+    actual_size_bytes: u64,
+    max_size_bytes: u64,
 }
 
 impl StateTransitionMaxSizeExceededError {
-    pub fn new(actual_size_kbytes: usize, max_size_kbytes: usize) -> Self {
+    pub fn new(actual_size_bytes: u64, max_size_bytes: u64) -> Self {
         Self {
-            actual_size_kbytes,
-            max_size_kbytes,
+            actual_size_bytes,
+            max_size_bytes,
         }
     }
 
-    pub fn actual_size_kbytes(&self) -> usize {
-        self.actual_size_kbytes
+    pub fn actual_size_bytes(&self) -> u64 {
+        self.actual_size_bytes
     }
-    pub fn max_size_kbytes(&self) -> usize {
-        self.max_size_kbytes
+    pub fn max_size_bytes(&self) -> u64 {
+        self.max_size_bytes
     }
 }
 

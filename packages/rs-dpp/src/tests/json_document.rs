@@ -8,7 +8,7 @@ use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
-use crate::prelude::DataContract;
+use crate::prelude::{DataContract, IdentityNonce};
 #[cfg(feature = "data-contract-cbor-conversion")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
 use crate::version::PlatformVersion;
@@ -80,6 +80,7 @@ pub fn json_document_to_contract(
 /// Reads a JSON file and converts it a contract.
 pub fn json_document_to_created_contract(
     path: impl AsRef<Path>,
+    identity_nonce: IdentityNonce,
     validate: bool,
     platform_version: &PlatformVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
@@ -87,7 +88,7 @@ pub fn json_document_to_created_contract(
 
     Ok(CreatedDataContractV0 {
         data_contract,
-        entropy_used: Default::default(),
+        identity_nonce,
     }
     .into())
 }
@@ -139,6 +140,10 @@ pub fn json_document_to_document(
         revision: data.remove_optional_integer("$revision")?,
         created_at: data.remove_optional_integer("$createdAt")?,
         updated_at: data.remove_optional_integer("$updatedAt")?,
+        created_at_block_height: data.remove_optional_integer("$createdAtBlockHeight")?,
+        updated_at_block_height: data.remove_optional_integer("$updatedAtBlockHeight")?,
+        created_at_core_block_height: data.remove_optional_integer("$createdAtCoreBlockHeight")?,
+        updated_at_core_block_height: data.remove_optional_integer("$updatedAtCoreBlockHeight")?,
     };
 
     data.replace_at_paths(

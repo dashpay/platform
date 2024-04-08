@@ -7,8 +7,6 @@ use crate::drive::Drive;
 use crate::drive::RootTree;
 
 #[cfg(feature = "full")]
-mod change_to_new_version_and_clear_version_information;
-#[cfg(feature = "full")]
 mod clear_version_information;
 #[cfg(feature = "full")]
 mod fetch_proved_validator_version_votes;
@@ -22,7 +20,6 @@ mod fetch_versions_with_counter;
 mod remove_validators_proposed_app_versions;
 #[cfg(feature = "full")]
 mod update_validator_proposed_app_version;
-
 #[cfg(any(feature = "full", feature = "verify"))]
 /// constant id for various versions counter
 pub const VERSIONS_COUNTER: [u8; 1] = [0];

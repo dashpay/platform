@@ -1,8 +1,5 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
-use platform_value::Bytes32;
-use tracing::info;
-
 use crate::{data_contract::DataContract, identity::KeyID, NonConsensusError, ProtocolError};
 
 use crate::serialization::Signable;
@@ -12,6 +9,7 @@ use crate::data_contract::accessors::v0::DataContractV0Setters;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::PartialIdentity;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use platform_version::version::PlatformVersion;
@@ -23,7 +21,7 @@ use crate::version::FeatureVersion;
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
     fn new_from_data_contract<S: Signer>(
         mut data_contract: DataContract,
-        entropy: Bytes32,
+        identity_nonce: IdentityNonce,
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,
@@ -32,14 +30,15 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
     ) -> Result<StateTransition, ProtocolError> {
         data_contract.set_id(DataContract::generate_data_contract_id_v0(
             identity.id,
-            entropy,
+            identity_nonce,
         ));
 
         data_contract.set_owner_id(identity.id);
 
         let transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
-            entropy: entropy, // Why was this default before? It would produce a mismatched contract ID error
+            identity_nonce,
+            user_fee_increase: 0,
             signature_public_key_id: key_id,
             signature: Default::default(),
         });

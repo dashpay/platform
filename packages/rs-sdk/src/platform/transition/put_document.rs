@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use crate::{Error, Sdk};
 
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
+use crate::platform::transition::put_settings::PutSettings;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
@@ -16,13 +18,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
-
-/// The options when putting something to platform
-#[derive(Debug, Clone, Copy, Default)]
-pub struct PutSettings {
-    pub request_settings: RequestSettings,
-    pub identity_nonce_stale_time_s: Option<u64>,
-}
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform
@@ -78,12 +73,16 @@ impl<S: Signer> PutDocument<S> for Document {
                 settings,
             )
             .await?;
+
+        let settings = settings.unwrap_or_default();
+
         let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
             self.clone(),
             document_type.as_ref(),
             document_state_transition_entropy,
             &identity_public_key,
             new_identity_contract_nonce,
+            settings.user_fee_increase.unwrap_or_default(),
             signer,
             sdk.version(),
             None,
@@ -95,7 +94,7 @@ impl<S: Signer> PutDocument<S> for Document {
 
         request
             .clone()
-            .execute(sdk, settings.unwrap_or_default().request_settings)
+            .execute(sdk, settings.request_settings)
             .await?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
@@ -113,10 +112,13 @@ impl<S: Signer> PutDocument<S> for Document {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
+        let block_info = block_info_from_metadata(response.metadata()?)?;
+
         let proof = response.proof_owned()?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
+            &block_info,
             proof.grovedb_proof.as_slice(),
             &|_| Ok(Some(data_contract.clone())),
             sdk.version(),

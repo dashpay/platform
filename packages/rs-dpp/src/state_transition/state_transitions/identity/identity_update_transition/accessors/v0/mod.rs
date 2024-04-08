@@ -2,7 +2,7 @@ use crate::prelude::IdentityNonce;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::{
     identity::KeyID,
-    prelude::{Identifier, Revision, TimestampMillis},
+    prelude::{Identifier, Revision},
 };
 
 pub trait IdentityUpdateTransitionAccessorsV0 {
@@ -17,7 +17,5 @@ pub trait IdentityUpdateTransitionAccessorsV0 {
     fn public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreation];
     fn set_public_key_ids_to_disable(&mut self, disable_public_keys: Vec<KeyID>);
     fn public_key_ids_to_disable(&self) -> &[KeyID];
-    fn set_public_keys_disabled_at(&mut self, public_keys_disabled_at: Option<TimestampMillis>);
-    fn public_keys_disabled_at(&self) -> Option<TimestampMillis>;
     fn owner_id(&self) -> Identifier;
 }

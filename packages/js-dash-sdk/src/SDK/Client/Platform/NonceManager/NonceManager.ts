@@ -71,6 +71,12 @@ class NonceManager {
     return nonceState.value;
   }
 
+  public async bumpIdentityNonce(identityId: Identifier): Promise<number> {
+    const nextIdentityNonce = await this.getIdentityNonce(identityId) + 1;
+    this.setIdentityNonce(identityId, nextIdentityNonce);
+    return nextIdentityNonce;
+  }
+
   public setIdentityContractNonce(identityId: Identifier, contractId: Identifier, nonce: number) {
     const identityIdStr = identityId.toString();
     const contractIdStr = contractId.toString();
@@ -140,6 +146,16 @@ class NonceManager {
     }
 
     return nonceState.value;
+  }
+
+  public async bumpIdentityContractNonce(
+    identityId: Identifier,
+    contractId: Identifier,
+  ): Promise<number> {
+    const nextIdentityContractNonce = await this
+      .getIdentityContractNonce(identityId, contractId) + 1;
+    this.setIdentityContractNonce(identityId, contractId, nextIdentityContractNonce);
+    return nextIdentityContractNonce;
   }
 }
 

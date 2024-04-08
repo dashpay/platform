@@ -16,6 +16,7 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Validate that a document would be unique in the state
+    #[inline(always)]
     pub(super) fn validate_document_uniqueness_v0(
         &self,
         contract: &DataContract,
@@ -34,6 +35,10 @@ impl Drive {
             allow_original,
             created_at: document.created_at(),
             updated_at: document.updated_at(),
+            created_at_block_height: document.created_at_block_height(),
+            updated_at_block_height: document.updated_at_block_height(),
+            created_at_core_block_height: document.created_at_core_block_height(),
+            updated_at_core_block_height: document.updated_at_core_block_height(),
             data: document.properties(),
         };
         self.validate_uniqueness_of_data(request, transaction, platform_version)

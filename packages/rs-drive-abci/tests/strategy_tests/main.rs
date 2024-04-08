@@ -86,6 +86,7 @@ mod tests {
     use strategy_tests::operations::{
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
+    use strategy_tests::{IdentityInsertInfo, StartIdentities};
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use dpp::dashcore::bls_sig_utils::BLSSignature;
@@ -111,31 +112,12 @@ mod tests {
     use itertools::Itertools;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
+    use dpp::data_contract::document_type::v0::random_document_type::{
+        FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
+    };
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
     use tenderdash_abci::Application;
-
-    pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
-        let mut quorums = QuorumListExtendedInfo::new();
-
-        for i in 0..n {
-            let i_bytes = [i as u8; 32];
-
-            let hash = QuorumHash::from_byte_array(i_bytes);
-
-            let details = ExtendedQuorumDetails {
-                creation_height: i,
-                health_ratio: (i as f32) / (n as f32),
-                mined_block_hash: BlockHash::from_slice(&i_bytes).unwrap(),
-                num_valid_members: i,
-                quorum_index: Some(i),
-            };
-
-            if let Some(v) = quorums.insert(hash, details) {
-                panic!("duplicate record {:?}={:?}", hash, v)
-            }
-        }
-        quorums
-    }
 
     #[test]
     fn run_chain_nothing_happening() {
@@ -143,11 +125,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -189,11 +169,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -236,11 +214,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -297,10 +273,10 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
 
@@ -327,11 +303,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -366,11 +340,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -433,10 +405,10 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
 
@@ -463,11 +435,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -503,11 +473,15 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -555,7 +529,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864802180)
+        assert_eq!(balance, 99864825980)
     }
 
     #[test]
@@ -564,11 +538,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -614,11 +586,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -672,11 +642,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -735,11 +703,8 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -784,18 +749,16 @@ mod tests {
         // will be able to propose a block (and then get paid later on).
 
         let platform = abci_app.platform;
-        let drive_cache = platform.drive.cache.read().unwrap();
-        let counter = &drive_cache.protocol_versions_counter;
+        let counter = &platform.drive.cache.protocol_versions_counter.read();
         platform
             .drive
             .fetch_versions_with_counter(None, &platform_version.drive)
             .expect("expected to get versions");
 
+        let state = abci_app.platform.state.load();
+
         assert_eq!(
-            platform
-                .state
-                .read()
-                .unwrap()
+            state
                 .last_committed_block_info()
                 .as_ref()
                 .unwrap()
@@ -804,7 +767,7 @@ mod tests {
                 .index,
             0
         );
-        assert!(counter.get(&1).unwrap() > &240);
+        assert!(counter.get(&1).unwrap().unwrap() > &240);
     }
 
     #[test]
@@ -813,11 +776,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -867,7 +828,7 @@ mod tests {
         // can expect it to be much higher.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.load();
 
         assert!(platform_state.hpmn_masternode_list().len() > 100);
     }
@@ -878,11 +839,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -935,7 +894,7 @@ mod tests {
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.load();
 
         assert_ne!(platform_state.hpmn_masternode_list().len(), 100);
     }
@@ -946,11 +905,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1003,7 +960,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         let platform = abci_app.platform;
-        let _platform_state = platform.state.read().unwrap();
+        let _platform_state = platform.state.load();
 
         // We need to find if any masternode has ever had their keys disabled.
 
@@ -1041,11 +998,15 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1095,11 +1056,15 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1154,7 +1119,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "b91e7b8759189050aa92a00dc5fb240689bb0a58e3a2388c80f8d18156d4eb0b".to_string()
+            "2d950355e6d8ddc3a726b211d68f79cc2d5c77a3c190b640c4ac08a00920a9b3".to_string()
         )
     }
 
@@ -1163,6 +1128,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1172,11 +1138,15 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![(contract, None)],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1238,10 +1208,105 @@ mod tests {
     }
 
     #[test]
+    fn run_chain_insert_one_new_identity_and_many_big_contracts() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::ContractCreate(
+                        RandomDocumentTypeParameters {
+                            new_fields_optional_count_range: 1..30,
+                            new_fields_required_count_range: 1..40,
+                            new_indexes_count_range: 10..11,
+                            field_weights: FieldTypeWeights {
+                                string_weight: 50,
+                                float_weight: 50,
+                                integer_weight: 50,
+                                date_weight: 50,
+                                boolean_weight: 20,
+                                byte_array_weight: 70,
+                            },
+                            field_bounds: FieldMinMaxBounds {
+                                string_min_len: 1..10,
+                                string_has_min_len_chance: 0.5,
+                                string_max_len: 10..63,
+                                string_has_max_len_chance: 0.5,
+                                integer_min: 1..10,
+                                integer_has_min_chance: 0.5,
+                                integer_max: 10..10000,
+                                integer_has_max_chance: 0.5,
+                                float_min: 0.1..10.0,
+                                float_has_min_chance: 0.5,
+                                float_max: 10.0..1000.0,
+                                float_has_max_chance: 0.5,
+                                date_min: 0,
+                                date_max: 0,
+                                byte_array_min_len: 1..10,
+                                byte_array_has_min_len_chance: 0.0,
+                                byte_array_max_len: 10..255,
+                                byte_array_has_max_len_chance: 0.0,
+                            },
+                            keep_history_chance: 1.0,
+                            documents_mutable_chance: 1.0,
+                        },
+                        30..31,
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 30..31,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_rotation_block_count: 25,
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        run_chain_for_strategy(&mut platform, 30, strategy, config, 15);
+    }
+
+    #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1249,6 +1314,7 @@ mod tests {
 
         let mut contract_update_1 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
+            1,
             true,
             platform_version,
         )
@@ -1259,6 +1325,7 @@ mod tests {
 
         let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
+            1,
             true,
             platform_version,
         )
@@ -1276,11 +1343,15 @@ mod tests {
                     ])),
                 )],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1346,6 +1417,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1375,11 +1447,15 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1421,6 +1497,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1450,11 +1527,15 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1506,6 +1587,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1553,11 +1635,15 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1609,6 +1695,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1656,11 +1743,15 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1705,6 +1796,7 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
         assert_eq!(
             hex::encode(
                 outcome
@@ -1716,7 +1808,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "edf712041923f8707e2b9b21a876cdc70a26dca939a0a28bfdd1802bfba9ca6a".to_string()
+            "292700696d04d77de86c835b925d139c0bb606dc71c071c84e40303ea51d4986".to_string()
         )
     }
 
@@ -1726,6 +1818,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1773,11 +1866,15 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: Some(Frequency {
                     times_per_block_range: 1..3,
                     chance_per_block: Some(0.5),
@@ -1836,7 +1933,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "7e870501f9fa6d0d7794407c787c1017dfc97afc59dffa166a561335ff5043cc".to_string()
+            "03fdb219334b7786040ed2d55bdddef35a337426fa69f83d5671ddf400824309".to_string()
         )
     }
 
@@ -1846,6 +1943,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1893,11 +1991,15 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: Some(Frequency {
                     times_per_block_range: 24..25,
                     chance_per_block: Some(1.0),
@@ -1955,6 +2057,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -2002,11 +2105,15 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: Some(Frequency {
                     times_per_block_range: 25..26,
                     chance_per_block: Some(1.0),
@@ -2048,7 +2155,7 @@ mod tests {
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
-            for (state_transition, result) in tx_results_per_block {
+            for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
                 assert!(!matches!(
                     state_transition,
@@ -2064,6 +2171,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -2111,11 +2219,16 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..30,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..30,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -2155,7 +2268,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 421);
+        assert_eq!(outcome.identities.len() as u64, 470);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2171,6 +2284,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -2234,11 +2348,16 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..6,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..6,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -2278,7 +2397,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 86);
+        assert_eq!(outcome.identities.len() as u64, 90);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2302,11 +2421,15 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -2376,11 +2499,15 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -2417,7 +2544,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
-        let state = outcome.abci_app.platform.state.read().unwrap();
+        let state = outcome.abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
@@ -2457,11 +2584,15 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -2546,10 +2677,18 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    start_keys: 3,
+                    extra_keys: [(
+                        Purpose::TRANSFER,
+                        [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                    )]
+                    .into(),
                 },
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -2760,7 +2899,7 @@ mod tests {
 
         // Run block 4
         // Should change pooled status to broadcasted
-        let last_block_broadcased_withdrawals_amount = last_block_withdrawals.len();
+        let last_block_broadcasted_withdrawals_amount = last_block_withdrawals.len();
         let (
             ChainExecutionOutcome {
                 abci_app,
@@ -2825,7 +2964,7 @@ mod tests {
 
             // And extra withdrawals broadcasted
             let withdrawals_broadcasted_expected =
-                last_block_broadcased_withdrawals_amount + outcome.withdrawals.len();
+                last_block_broadcasted_withdrawals_amount + outcome.withdrawals.len();
             assert_eq!(
                 withdrawal_documents_broadcasted.len(),
                 withdrawals_broadcasted_expected
@@ -2848,7 +2987,7 @@ mod tests {
                     status_result.status = AssetUnlockStatus::Chainlocked;
                 });
 
-            // Then increase chainlocked height, so that withdrawals for chainlocked tranasctions
+            // Then increase chainlocked height, so that withdrawals for chainlocked transactions
             // could be completed in the next block
             // TODO: do we need this var?
             chain_locked_height += 1;
@@ -3102,12 +3241,17 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3262,12 +3406,17 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3393,12 +3542,17 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3525,11 +3679,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3579,9 +3731,9 @@ mod tests {
             ..
         } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let known_root_hash = abci_app
@@ -3615,11 +3767,9 @@ mod tests {
         assert_eq!(last_block_height, 100);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -3660,11 +3810,21 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 6..10,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    //we do this to create some paying transactions
+                    frequency: Frequency {
+                        times_per_block_range: 6..10,
+                        chance_per_block: None,
+                    },
+                    start_keys: 3,
+                    extra_keys: [(
+                        Purpose::TRANSFER,
+                        [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                    )]
+                    .into(),
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3716,7 +3876,7 @@ mod tests {
             )
             .expect("expected to fetch balances");
 
-        assert_eq!(outcome.identities.len(), 110);
+        assert_eq!(outcome.identities.len(), 106);
     }
 
     // Test should filter out transactions exceeding max tx bytes per block
@@ -3724,10 +3884,15 @@ mod tests {
     fn run_transactions_exceeding_max_block_size() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                identities_inserts: Frequency {
-                    times_per_block_range: 5..6,
-                    chance_per_block: None,
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 5..6,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
                 ..Default::default()
             },
             max_tx_bytes_per_block: 3500,
