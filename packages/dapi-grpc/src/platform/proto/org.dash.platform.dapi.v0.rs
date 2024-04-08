@@ -3386,6 +3386,27 @@ pub mod platform_server {
             tonic::Response<super::GetEpochsInfoResponse>,
             tonic::Status,
         >;
+        async fn get_contested_resources(
+            &self,
+            request: tonic::Request<super::GetContestedResourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetContestedResourcesResponse>,
+            tonic::Status,
+        >;
+        async fn get_contested_resource_vote_state(
+            &self,
+            request: tonic::Request<super::GetContestedResourceVoteStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetContestedResourceVoteStateResponse>,
+            tonic::Status,
+        >;
+        async fn get_contested_resource_vote_status(
+            &self,
+            request: tonic::Request<super::GetContestedResourceVoteStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetContestedResourceVoteStatusResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct PlatformServer<T: Platform> {
@@ -4395,6 +4416,150 @@ pub mod platform_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = getEpochsInfoSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Platform/getContestedResources" => {
+                    #[allow(non_camel_case_types)]
+                    struct getContestedResourcesSvc<T: Platform>(pub Arc<T>);
+                    impl<
+                        T: Platform,
+                    > tonic::server::UnaryService<super::GetContestedResourcesRequest>
+                    for getContestedResourcesSvc<T> {
+                        type Response = super::GetContestedResourcesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetContestedResourcesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_contested_resources(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getContestedResourcesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteState" => {
+                    #[allow(non_camel_case_types)]
+                    struct getContestedResourceVoteStateSvc<T: Platform>(pub Arc<T>);
+                    impl<
+                        T: Platform,
+                    > tonic::server::UnaryService<
+                        super::GetContestedResourceVoteStateRequest,
+                    > for getContestedResourceVoteStateSvc<T> {
+                        type Response = super::GetContestedResourceVoteStateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::GetContestedResourceVoteStateRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_contested_resource_vote_state(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getContestedResourceVoteStateSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct getContestedResourceVoteStatusSvc<T: Platform>(pub Arc<T>);
+                    impl<
+                        T: Platform,
+                    > tonic::server::UnaryService<
+                        super::GetContestedResourceVoteStatusRequest,
+                    > for getContestedResourceVoteStatusSvc<T> {
+                        type Response = super::GetContestedResourceVoteStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::GetContestedResourceVoteStatusRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_contested_resource_vote_status(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getContestedResourceVoteStatusSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
