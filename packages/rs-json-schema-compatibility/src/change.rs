@@ -1,0 +1,44 @@
+use crate::errors::{Error, UnexpectedPatchOperationError};
+use json_patch::{AddOperation, PatchOperation, RemoveOperation, ReplaceOperation};
+
+#[derive(Debug)]
+pub enum JsonSchemaChange {
+    Add(AddOperation),
+    Remove(RemoveOperation),
+    Replace(ReplaceOperation),
+}
+
+impl JsonSchemaChange {
+    /// Returns the name of the operation
+    pub fn name(&self) -> &str {
+        match self {
+            JsonSchemaChange::Add(_) => "add",
+            JsonSchemaChange::Remove(_) => "remove",
+            JsonSchemaChange::Replace(_) => "replace",
+        }
+    }
+
+    /// Returns the json path where the operation is applied
+    pub fn path(&self) -> &str {
+        match self {
+            JsonSchemaChange::Add(op) => &op.path,
+            JsonSchemaChange::Remove(op) => &op.path,
+            JsonSchemaChange::Replace(op) => &op.path,
+        }
+    }
+}
+
+impl TryFrom<PatchOperation> for JsonSchemaChange {
+    type Error = Error;
+
+    fn try_from(value: PatchOperation) -> Result<Self, Self::Error> {
+        match value {
+            PatchOperation::Add(o) => Ok(Self::Add(o)),
+            PatchOperation::Remove(o) => Ok(Self::Remove(o)),
+            PatchOperation::Replace(o) => Ok(Self::Replace(o)),
+            PatchOperation::Move(_) | PatchOperation::Copy(_) | PatchOperation::Test(_) => Err(
+                Error::UnexpectedPatchOperation(UnexpectedPatchOperationError(value)),
+            ),
+        }
+    }
+}

@@ -35,8 +35,8 @@ getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.10" }
-json-patch = "0.2.6"
-jsonptr = "0.1.5"
+json-patch = "1.2.0"
+jsonptr = "0.4.7"
 jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "feat-unevaluated-properties", default-features = false, features = [
   "draft202012",
 ] }

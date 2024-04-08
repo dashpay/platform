@@ -293,9 +293,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         if let Some(old_defs) = old_data_contract.schema_defs() {
             let Some(new_defs) = self.data_contract().schema_defs() else {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                ),
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    ),
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -347,9 +347,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     get_operation_and_property_name_json(&diffs[0]);
 
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                ),
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    ),
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -414,9 +414,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     get_operation_and_property_name_json(&diffs[0]);
 
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                ),
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    ),
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(

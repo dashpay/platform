@@ -1281,7 +1281,7 @@ dependencies = [
  "serde_repr",
  "sha2",
  "strum 0.25.0",
- "test-case",
+ "test-case 2.2.2",
  "thiserror",
  "tokio",
 ]
@@ -1640,6 +1640,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluent-uri"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17c704e9dbe1ddd863da1e6ff3567795087b1eb201ce80d8fa81162e1516500d"
+dependencies = [
+ "bitflags 1.3.2",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1767,6 +1776,12 @@ name = "futures-task"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38d84fa142264698cdce1a9f9172cf383a0c82de1bddcf3092901442c4097004"
+
+[[package]]
+name = "futures-timer"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f288b0a4f20f9a56b5d1da57e2227c661b7b16168e2f72365f57b63326e29b24"
 
 [[package]]
 name = "futures-util"
@@ -2274,25 +2289,38 @@ dependencies = [
 
 [[package]]
 name = "json-patch"
-version = "0.2.7"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb3fa5a61630976fc4c353c70297f2e93f1930e3ccee574d59d618ccbd5154ce"
+checksum = "55ff1e1486799e3f64129f8ccad108b38290df9cd7015cd31bed17239f0789d6"
 dependencies = [
  "serde",
  "serde_json",
- "treediff 3.0.2",
+ "thiserror",
+ "treediff",
+]
+
+[[package]]
+name = "json-schema-compatibility"
+version = "0.0.1"
+dependencies = [
+ "json-patch",
+ "jsonptr",
+ "once_cell",
+ "rstest",
+ "serde_json",
+ "test-case 3.3.1",
+ "thiserror",
 ]
 
 [[package]]
 name = "jsonptr"
-version = "0.1.5"
+version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04e7a1ae7fc3e87c05f7a3de7e51083f62cdafcd9fed52cffebca22819a8f799"
+checksum = "1c6e529149475ca0b2820835d3dce8fcc41c6b943ca608d32f35b449255e4627"
 dependencies = [
+ "fluent-uri",
  "serde",
  "serde_json",
- "uniresid",
- "url",
 ]
 
 [[package]]
@@ -2966,7 +2994,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "treediff 4.0.3",
+ "treediff",
 ]
 
 [[package]]
@@ -3456,6 +3484,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adad44e29e4c806119491a7f06f03de4d1af22c3a680dd47f1e6e179439d1f56"
 
 [[package]]
+name = "relative-path"
+version = "1.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e898588f33fdd5b9420719948f9f2a32c922a246964576f71ba7f24f80610fbc"
+
+[[package]]
 name = "rend"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3589,6 +3623,35 @@ dependencies = [
  "bindgen",
  "cc",
  "libc",
+]
+
+[[package]]
+name = "rstest"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97eeab2f3c0a199bc4be135c36c924b6590b88c377d416494288c14f2db30199"
+dependencies = [
+ "futures",
+ "futures-timer",
+ "rstest_macros",
+ "rustc_version",
+]
+
+[[package]]
+name = "rstest_macros"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d428f8247852f894ee1be110b375111b586d4fa431f6c46e64ba5a0dcccbe605"
+dependencies = [
+ "cfg-if",
+ "glob",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "relative-path",
+ "rustc_version",
+ "syn 2.0.55",
+ "unicode-ident",
 ]
 
 [[package]]
@@ -4344,7 +4407,28 @@ version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21d6cf5a7dffb3f9dceec8e6b8ca528d9bd71d36c9f074defb548ce161f598c0"
 dependencies = [
- "test-case-macros",
+ "test-case-macros 2.2.2",
+]
+
+[[package]]
+name = "test-case"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb2550dd13afcd286853192af8601920d959b14c401fcece38071d53bf0768a8"
+dependencies = [
+ "test-case-macros 3.3.1",
+]
+
+[[package]]
+name = "test-case-core"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adcb7fd841cd518e279be3d5a3eb0636409487998a4aff22f3de87b81e88384f"
+dependencies = [
+ "cfg-if",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -4358,6 +4442,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "test-case-macros"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c89e72a01ed4c579669add59014b9a524d609c0c88c6a585ce37485879f6ffb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.55",
+ "test-case-core",
 ]
 
 [[package]]
@@ -4765,18 +4861,12 @@ dependencies = [
 
 [[package]]
 name = "treediff"
-version = "3.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "761e8d5ad7ce14bb82b7e61ccc0ca961005a275a060b9644a2431aa11553c2ff"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
-name = "treediff"
 version = "4.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d127780145176e2b5d16611cc25a900150e86e9fd79d3bde6ff3a37359c9cb5"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "triomphe"
@@ -4837,18 +4927,6 @@ name = "unicode-xid"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
-
-[[package]]
-name = "uniresid"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "995a4007fbec4f43386ea1b1d81d42d986a0c9616378e9aa4a96f45ea661e1b0"
-dependencies = [
- "once_cell",
- "serde",
- "thiserror",
- "url",
-]
 
 [[package]]
 name = "untrusted"
