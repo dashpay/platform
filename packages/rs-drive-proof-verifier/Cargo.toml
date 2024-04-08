@@ -20,8 +20,8 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 dpp = { path = "../rs-dpp", features = ["bls-signatures"], default-features = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.11", features = [
-  "grpc",
-] }
+  "grpc", "crypto"
+], default-features = false }
 tracing = { version = "0.1.37" }
 serde = { version = "1.0.171", default-features = false, optional = true }
 serde_json = { version = "1.0.103", features = [
