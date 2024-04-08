@@ -634,7 +634,7 @@ pub fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
     extra_keys: &KeyMaps,
-    balance: u64,
+    _balance: u64,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
     asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,

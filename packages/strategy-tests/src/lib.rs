@@ -23,6 +23,7 @@ use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::data_contract::{DataContract, DataContractFactory};
 
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
@@ -399,6 +400,7 @@ impl Strategy {
         let mut finalize_block_operations = vec![];
 
         // Get identity state transitions
+        // Start identities are done on the 1st block, identity inserts are done on 3rd+ blocks
         let identity_state_transitions = match self.identity_state_transitions_for_block(
             block_info,
             self.start_identities.starting_balances,
@@ -419,8 +421,8 @@ impl Strategy {
         let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
 
-        // Add initial contracts for contracts_with_updates on first block of strategy
-        if block_info.height == config.start_block_height {
+        // Add initial contracts for contracts_with_updates on 2nd block of strategy
+        if block_info.height == config.start_block_height + 1 {
             let mut contract_state_transitions = self.initial_contract_state_transitions(
                 current_identities,
                 identity_nonce_counter,
@@ -429,8 +431,8 @@ impl Strategy {
                 platform_version,
             );
             state_transitions.append(&mut contract_state_transitions);
-        } else {
-            // Do operations and contract updates after the first block
+        } else if block_info.height > config.start_block_height + 1 {
+            // Do operations and contract updates after the first two blocks
             let (mut operations_state_transitions, mut add_to_finalize_block_operations) = self
                 .operations_based_transitions(
                     document_query_callback,
@@ -1191,7 +1193,7 @@ impl Strategy {
                             let public_key = identity
                                 .get_first_public_key_matching(
                                     Purpose::AUTHENTICATION,
-                                    HashSet::from([SecurityLevel::CRITICAL]),
+                                    HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
                                     HashSet::from([KeyType::ECDSA_SECP256K1]),
                                 )
                                 .expect("Expected to get identity public key in ContractCreate");
@@ -1355,8 +1357,8 @@ impl Strategy {
         }
 
         // Add identities_inserts
-        // Don't do this on first block because we need to skip utxo refresh
-        if block_info.height > config.start_block_height {
+        // Don't do this on first two blocks (per design but also we need to skip utxo refresh)
+        if block_info.height > config.start_block_height + 1 {
             let frequency = &self.identities_inserts.frequency;
             if frequency.check_hit(rng) {
                 let count = frequency.events(rng); // number of identities to create
@@ -1428,23 +1430,35 @@ impl Strategy {
             .map(|(created_contract, contract_updates)| {
                 // Select a random identity from current_identities to be the contract owner
                 let identity_num = rng.gen_range(0..current_identities.len());
+
                 let identity = current_identities
                     .get(identity_num)
-                    .unwrap()
-                    .clone()
-                    .into_partial_identity_info();
+                    .expect("Expected to find the identity in the current_identities");
+
+                let public_key = identity.get_first_public_key_matching(
+                    Purpose::AUTHENTICATION,
+                    HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
+                    HashSet::from([KeyType::ECDSA_SECP256K1]),
+                )
+                .expect("Expected to get identity public key in initial_contract_state_transitions");
+                let key_id = public_key.id();
+                
+                let partial_identity = identity.clone().into_partial_identity_info();
+                let partial_identity_public_key = partial_identity.loaded_public_keys.values()
+                    .find(|&public_key| public_key.id() == key_id)
+                    .expect("No public key with matching id found");
 
                 let contract = created_contract.data_contract_mut();
 
                 // Get and bump the identity nonce
-                let identity_nonce = identity_nonce_counter.entry(identity.id).or_default();
+                let identity_nonce = identity_nonce_counter.entry(partial_identity.id).or_default();
                 *identity_nonce += 1;
 
                 // Set the contract ID and owner ID with the random identity
-                contract.set_owner_id(identity.id);
+                contract.set_owner_id(partial_identity.id);
                 let old_id = contract.id();
                 let new_id =
-                    DataContract::generate_data_contract_id_v0(identity.id, *identity_nonce);
+                    DataContract::generate_data_contract_id_v0(partial_identity.id, *identity_nonce);
                 contract.set_id(new_id);
 
                 id_mapping.insert(old_id, new_id); // Store the mapping
@@ -1473,16 +1487,21 @@ impl Strategy {
                     }
                 }
 
-                DataContractCreateTransition::new_from_data_contract(
+                match DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
                     *identity_nonce,
-                    &identity,
-                    2,
+                    &partial_identity,
+                    partial_identity_public_key.id(),
                     signer,
                     platform_version,
                     None,
-                )
-                .expect("expected to create a create state transition from a data contract")
+                ) {
+                    Ok(transition) => transition,
+                    Err(e) => {
+                        tracing::error!("Error creating DataContractCreateTransition: {e}");
+                        panic!();
+                    }
+                }
             })
             .collect()
     }
