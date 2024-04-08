@@ -33,42 +33,42 @@
 //! Namely functions to return the paths to certain objects and the path sizes.
 //!
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::flags::StorageFlags;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::{defaults, RootTree};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::document::Document;
 use dpp::document::DocumentV0Getters;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::batch::KeyInfoPath;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::Element;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod delete;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod estimation_costs;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod index_uniqueness;
-#[cfg(any(feature = "full", feature = "fixtures-and-mocks"))]
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert;
-#[cfg(any(feature = "full", feature = "fixtures-and-mocks"))]
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
-#[cfg(any(feature = "full", feature = "fixtures-and-mocks"))]
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod update;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the path to a contract document type.
 pub(crate) fn contract_document_type_path<'a>(
     contract_id: &'a [u8; 32],
@@ -82,7 +82,7 @@ pub(crate) fn contract_document_type_path<'a>(
     ]
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "server")]
 /// Returns the path to a contract document type.
 pub(crate) fn contract_document_type_path_vec(
     contract_id: &[u8],
@@ -96,7 +96,7 @@ pub(crate) fn contract_document_type_path_vec(
     ]
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "server")]
 /// Returns the path to the primary keys of a contract document type.
 pub(crate) fn contract_documents_primary_key_path<'a>(
     contract_id: &'a [u8],
@@ -111,7 +111,7 @@ pub(crate) fn contract_documents_primary_key_path<'a>(
     ]
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "server")]
 /// Returns the path to a contract document.
 fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
     contract_id: &'a [u8],
@@ -128,7 +128,7 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
     ]
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Returns the path to a contract document when the document id isn't known.
 fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
     contract_id: &[u8],
@@ -145,7 +145,7 @@ fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
     key_info_path
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 #[allow(dead_code)]
 #[deprecated(note = "This function is marked as unused.")]
 #[allow(deprecated)]
@@ -157,7 +157,7 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
         + document_type_name_len
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "server")]
 /// Returns the size of the path to the time at which a document type was stored.
 fn contract_documents_keeping_history_storage_time_reference_path_size(
     document_type_name_len: u32,
@@ -166,7 +166,7 @@ fn contract_documents_keeping_history_storage_time_reference_path_size(
         + document_type_name_len
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Creates a reference to a document.
 fn make_document_reference(
     document: &Document,
@@ -201,7 +201,7 @@ fn make_document_reference(
     )
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// size of a document reference.
 fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     // we need to construct the reference from the split height of the contract document
@@ -226,13 +226,13 @@ fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     6 + reference_path_size
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn unique_event_id() -> [u8; 32] {
     rand::random::<[u8; 32]>()
 }
 
 /// Tests module
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 pub(crate) mod tests {
     use std::option::Option::None;

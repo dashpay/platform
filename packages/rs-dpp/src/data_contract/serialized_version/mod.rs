@@ -11,6 +11,7 @@ use derive_more::From;
 use platform_value::{Identifier, Value};
 use platform_version::TryFromPlatformVersioned;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "data-contract-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub(in crate::data_contract) mod v0;

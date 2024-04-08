@@ -1,74 +1,65 @@
-#[cfg(feature = "full")]
+// Grouping std imports
+use std::{
+    collections::{BTreeMap, HashSet},
+    ops::RangeFull,
+};
+
+// Conditional imports for the features "server" or "verify"
+#[cfg(any(feature = "server", feature = "verify"))]
+use {
+    crate::{
+        drive::identity::{
+            identity_contract_info_group_path_key_purpose_vec, identity_key_tree_path_vec,
+            identity_query_keys_tree_path_vec,
+            key::fetch::KeyKindRequestType::{AllKeysOfKindRequest, CurrentKeyOfKindRequest},
+            key::fetch::KeyRequestType::{
+                AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, SearchKey, SpecificKeys,
+            },
+        },
+        query::{Query, QueryItem},
+    },
+    dpp::{
+        identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
+        identity::{KeyID, Purpose},
+    },
+    grovedb::{PathQuery, SizedQuery},
+    integer_encoding::VarInt,
+};
+
+// Conditional imports for the feature "server"
+#[cfg(feature = "server")]
+use {
+    crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
+    dpp::{
+        block::epoch::Epoch,
+        fee::{
+            default_costs::{EpochCosts, KnownCostItem::FetchSingleIdentityKeyProcessingCost},
+            Credits,
+        },
+        identity::{IdentityPublicKey, SecurityLevel},
+        serialization::PlatformDeserializable,
+        version::PlatformVersion,
+    },
+    grovedb::{
+        query_result_type::{
+            Key, Path, PathKeyOptionalElementTrio, QueryResultElement, QueryResultElements,
+        },
+        Element,
+        Element::Item,
+    },
+};
+
+// Modules conditionally compiled for the feature "server"
+#[cfg(feature = "server")]
 mod fetch_all_current_identity_keys;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod fetch_all_identity_keys;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod fetch_identities_all_keys;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod fetch_identity_keys;
 
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::drive::identity::{identity_key_tree_path_vec, identity_query_keys_tree_path_vec};
-
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::drive::identity::key::fetch::KeyKindRequestType::{
-    AllKeysOfKindRequest, CurrentKeyOfKindRequest,
-};
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::drive::identity::key::fetch::KeyRequestType::{AllKeys, SearchKey, SpecificKeys};
-
-#[cfg(feature = "full")]
-use crate::error::drive::DriveError;
-#[cfg(feature = "full")]
-use crate::error::fee::FeeError;
-#[cfg(feature = "full")]
-use crate::error::identity::IdentityError;
-#[cfg(feature = "full")]
-use crate::error::Error;
-
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::query::{Query, QueryItem};
-#[cfg(feature = "full")]
-use dpp::block::epoch::Epoch;
-#[cfg(feature = "full")]
-use dpp::fee::default_costs::EpochCosts;
-#[cfg(feature = "full")]
-use dpp::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
-#[cfg(feature = "full")]
-use dpp::fee::Credits;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::identity::KeyID;
-
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::identity::{Purpose, SecurityLevel};
-#[cfg(feature = "full")]
-use dpp::prelude::IdentityPublicKey;
-use dpp::serialization::PlatformDeserializable;
-use dpp::version::PlatformVersion;
-
-use crate::drive::identity::identity_contract_info_group_path_key_purpose_vec;
-use crate::drive::identity::key::fetch::KeyRequestType::{
-    ContractBoundKey, ContractDocumentTypeBoundKey,
-};
-#[cfg(feature = "full")]
-use grovedb::query_result_type::{
-    Key, Path, PathKeyOptionalElementTrio, QueryResultElement, QueryResultElements,
-};
-#[cfg(feature = "full")]
-use grovedb::Element;
-#[cfg(feature = "full")]
-use grovedb::Element::Item;
-#[cfg(any(feature = "full", feature = "verify"))]
-use grovedb::{PathQuery, SizedQuery};
-#[cfg(any(feature = "full", feature = "verify"))]
-use integer_encoding::VarInt;
-#[cfg(any(feature = "full", feature = "verify"))]
-use std::collections::BTreeMap;
-use std::collections::HashSet;
-use std::ops::RangeFull;
-
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// The kind of keys you are requesting
 /// A kind is a purpose/security level pair
 /// Do you want to get all keys in that pair
@@ -81,7 +72,7 @@ pub enum KeyKindRequestType {
     AllKeysOfKindRequest,
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// The type of key request
 #[derive(Clone)]
 pub enum KeyRequestType {
@@ -97,63 +88,63 @@ pub enum KeyRequestType {
     ContractDocumentTypeBoundKey([u8; 32], String, Purpose, KeyKindRequestType),
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// The key purpose as u8.
 pub type PurposeU8 = u8;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// The key security level as u8.
 pub type SecurityLevelU8 = u8;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a hashset of IdentityPublicKey Ids as the outcome of the query.
 pub type KeyIDHashSet = HashSet<KeyID>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a vec of IdentityPublicKey Ids as the outcome of the query.
 pub type KeyIDVec = Vec<KeyID>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a vec of IdentityPublicKeys as the outcome of the query.
 pub type KeyVec = Vec<IdentityPublicKey>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a vec of serialized IdentityPublicKeys as the outcome of the query.
 pub type SerializedKeyVec = Vec<Vec<u8>>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a single IdentityPublicKey as the outcome of the query.
 pub type SingleIdentityPublicKeyOutcome = IdentityPublicKey;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for an optional single IdentityPublicKey as the outcome of the query.
 pub type OptionalSingleIdentityPublicKeyOutcome = Option<IdentityPublicKey>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a Vector for key id to identity public key pair common pattern.
 pub type KeyIDIdentityPublicKeyPairVec = Vec<(KeyID, IdentityPublicKey)>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a Vector for key id to optional identity public key pair common pattern.
 pub type KeyIDOptionalIdentityPublicKeyPairVec = Vec<(KeyID, Option<IdentityPublicKey>)>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a Vector for query key path to optional identity public key pair common pattern.
 pub type QueryKeyPathOptionalIdentityPublicKeyTrioVec = Vec<(Path, Key, Option<IdentityPublicKey>)>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a bTreemap for a key id to identity public key pair common pattern.
 pub type KeyIDIdentityPublicKeyPairBTreeMap = BTreeMap<KeyID, IdentityPublicKey>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a bTreemap for a key id to optional identity public key pair common pattern.
 pub type KeyIDOptionalIdentityPublicKeyPairBTreeMap = BTreeMap<KeyID, Option<IdentityPublicKey>>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Type alias for a bTreemap for a query key path to optional identity public key pair common pattern.
 pub type QueryKeyPathOptionalIdentityPublicKeyTrioBTreeMap =
     BTreeMap<(Path, Key), Option<IdentityPublicKey>>;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// A trait to get typed results from raw results from Drive
 pub trait IdentityPublicKeyResult {
     /// Get a typed result from a trio of path key elements
@@ -172,7 +163,7 @@ pub trait IdentityPublicKeyResult {
         Self: Sized;
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn element_to_serialized_identity_public_key(element: Element) -> Result<Vec<u8>, Error> {
     let Item(value, _) = element else {
         return Err(Error::Drive(DriveError::CorruptedElementType(
@@ -183,7 +174,7 @@ fn element_to_serialized_identity_public_key(element: Element) -> Result<Vec<u8>
     Ok(value)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey, Error> {
     let Item(value, _) = element else {
         return Err(Error::Drive(DriveError::CorruptedElementType(
@@ -194,14 +185,14 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
     IdentityPublicKey::deserialize_from_bytes(value.as_slice()).map_err(Error::Protocol)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn element_to_identity_public_key_id(element: Element) -> Result<KeyID, Error> {
     let public_key = element_to_identity_public_key(element)?;
 
     Ok(public_key.id())
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn element_to_identity_public_key_id_and_object_pair(
     element: Element,
 ) -> Result<(KeyID, IdentityPublicKey), Error> {
@@ -210,7 +201,7 @@ fn element_to_identity_public_key_id_and_object_pair(
     Ok((public_key.id(), public_key))
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
     (_path, key, maybe_element): (Path, Key, Option<Element>),
 ) -> Result<(KeyID, Option<IdentityPublicKey>), Error> {
@@ -229,7 +220,7 @@ fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
     Ok((key_id, None))
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn supported_query_result_element_to_identity_public_key(
     query_result_element: QueryResultElement,
 ) -> Result<IdentityPublicKey, Error> {
@@ -242,7 +233,7 @@ fn supported_query_result_element_to_identity_public_key(
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn supported_query_result_element_to_serialized_identity_public_key(
     query_result_element: QueryResultElement,
 ) -> Result<Vec<u8>, Error> {
@@ -255,7 +246,7 @@ fn supported_query_result_element_to_serialized_identity_public_key(
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn supported_query_result_element_to_identity_public_key_id(
     query_result_element: QueryResultElement,
 ) -> Result<KeyID, Error> {
@@ -268,7 +259,7 @@ fn supported_query_result_element_to_identity_public_key_id(
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 fn supported_query_result_element_to_identity_public_key_id_and_object_pair(
     query_result_element: QueryResultElement,
 ) -> Result<(KeyID, IdentityPublicKey), Error> {
@@ -281,7 +272,7 @@ fn supported_query_result_element_to_identity_public_key_id_and_object_pair(
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -335,7 +326,7 @@ impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -385,7 +376,7 @@ impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for KeyIDHashSet {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -411,7 +402,7 @@ impl IdentityPublicKeyResult for KeyIDHashSet {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for KeyIDVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -437,7 +428,7 @@ impl IdentityPublicKeyResult for KeyIDVec {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for KeyVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -463,7 +454,7 @@ impl IdentityPublicKeyResult for KeyVec {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for SerializedKeyVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -489,7 +480,7 @@ impl IdentityPublicKeyResult for SerializedKeyVec {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -515,7 +506,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -537,7 +528,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -567,7 +558,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioVec {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -593,7 +584,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -615,7 +606,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioBTreeMap {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
@@ -645,7 +636,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioBTreeM
     }
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// A request to get Keys from an Identity
 #[derive(Clone)]
 pub struct IdentityKeysRequest {
@@ -660,7 +651,7 @@ pub struct IdentityKeysRequest {
 }
 
 impl IdentityKeysRequest {
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Gets the processing cost of an identity keys request
     pub fn processing_cost(&self, epoch: &Epoch) -> Result<Credits, Error> {
         match &self.request_type {
@@ -683,7 +674,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Make a request for all current keys for the identity
     pub fn new_all_current_keys_query(identity_id: [u8; 32]) -> Self {
         let mut sec_btree_map = BTreeMap::new();
@@ -702,7 +693,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Make a request for an encryption key for a specific contract
     pub fn new_contract_encryption_keys_query(
         identity_id: [u8; 32],
@@ -720,7 +711,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Make a request for an decryption key for a specific contract
     pub fn new_contract_decryption_keys_query(
         identity_id: [u8; 32],
@@ -738,7 +729,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Make a request for an encryption key for a specific contract document type
     pub fn new_document_type_encryption_keys_query(
         identity_id: [u8; 32],
@@ -758,7 +749,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Make a request for an decryption key for a specific contract document type
     pub fn new_document_type_decryption_keys_query(
         identity_id: [u8; 32],
@@ -778,7 +769,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Make a request for all current keys for the identity
     pub fn new_all_keys_query(identity_id: &[u8; 32], limit: Option<u16>) -> Self {
         IdentityKeysRequest {
@@ -789,7 +780,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Make a request for specific keys for the identity
     pub fn new_specific_keys_query(identity_id: &[u8; 32], key_ids: Vec<KeyID>) -> Self {
         let limit = key_ids.len() as u16;
@@ -801,7 +792,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Make a request for specific keys for the identity
     pub fn new_specific_keys_query_without_limit(
         identity_id: &[u8; 32],
@@ -815,7 +806,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Make a request for a specific key for the identity without a limit
     /// Not have a limit is needed if you want to merge path queries
     pub fn new_specific_key_query_without_limit(identity_id: &[u8; 32], key_id: KeyID) -> Self {
@@ -827,7 +818,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Make a request for a specific key for the identity
     pub fn new_specific_key_query(identity_id: &[u8; 32], key_id: KeyID) -> Self {
         IdentityKeysRequest {
@@ -838,7 +829,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Create the path query for the request
     pub fn into_path_query(self) -> PathQuery {
         let IdentityKeysRequest {
@@ -940,7 +931,7 @@ impl IdentityKeysRequest {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// All keys
     fn all_keys_query() -> Query {
         let mut query = Query::new();
@@ -948,7 +939,7 @@ impl IdentityKeysRequest {
         query
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Fetch a specific key knowing the id
     fn specific_keys_query(key_ids: Vec<KeyID>) -> Query {
         let mut query = Query::new();
@@ -958,7 +949,7 @@ impl IdentityKeysRequest {
         query
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Construct the query for the request
     fn construct_search_query(
         key_requests: BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>,
@@ -1002,7 +993,7 @@ impl IdentityKeysRequest {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive;

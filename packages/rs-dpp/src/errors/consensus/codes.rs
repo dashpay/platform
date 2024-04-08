@@ -38,7 +38,9 @@ impl ErrorWithCode for BasicError {
             Self::VersionError(_) => 10005,
 
             // Structure Errors: 10100-10199
+            #[cfg(feature = "json-schema-validation")]
             Self::JsonSchemaCompilationError(..) => 10100,
+            #[cfg(feature = "json-schema-validation")]
             Self::JsonSchemaError(_) => 10101,
             Self::InvalidIdentifierError { .. } => 10102,
             Self::ValueError(_) => 10103,
@@ -51,6 +53,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDataContractIdError { .. } => 10204,
             Self::InvalidIndexedPropertyConstraintError { .. } => 10205,
             Self::InvalidIndexPropertyTypeError { .. } => 10206,
+            #[cfg(feature = "json-schema-validation")]
             Self::InvalidJsonSchemaRefError { .. } => 10207,
             Self::SystemPropertyIndexAlreadyPresentError { .. } => 10208,
             Self::UndefinedIndexPropertyError { .. } => 10209,

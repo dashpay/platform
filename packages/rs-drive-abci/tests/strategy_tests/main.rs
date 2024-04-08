@@ -108,7 +108,6 @@ mod tests {
 
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
@@ -1119,7 +1118,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "2d950355e6d8ddc3a726b211d68f79cc2d5c77a3c190b640c4ac08a00920a9b3".to_string()
+            "5dda9668d6efe6a481ec1d7ce3a1a77785aace12a853bea7eedcf37e9c5f8374".to_string()
         )
     }
 
@@ -1808,7 +1807,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "292700696d04d77de86c835b925d139c0bb606dc71c071c84e40303ea51d4986".to_string()
+            "909c3c0655fcb31a992899a1d2af59a8847f72126db56140ca91ac9591561ebe".to_string()
         )
     }
 
@@ -1933,7 +1932,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "03fdb219334b7786040ed2d55bdddef35a337426fa69f83d5671ddf400824309".to_string()
+            "58b6ae6a0468cb62d1947362cf92915ae046027a0501d808caa7bdcd2a23a10c".to_string()
         )
     }
 

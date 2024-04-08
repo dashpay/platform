@@ -1,10 +1,8 @@
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
-use serde::{Deserialize, Serialize};
 mod transformer;
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Default, Debug, Clone)]
 pub struct PartiallyUseAssetLockActionV0 {
     /// asset lock outpoint
     pub asset_lock_outpoint: Bytes36,

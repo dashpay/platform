@@ -18,10 +18,10 @@ use platform_value::{Bytes32, Identifier, Value};
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::document_methods::DocumentMethodsV0;
 #[cfg(feature = "extended-document")]
-use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-#[cfg(feature = "extended-document")]
-use crate::document::ExtendedDocument;
+use crate::document::{
+    extended_document::v0::ExtendedDocumentV0,
+    serialization_traits::DocumentPlatformConversionMethodsV0, ExtendedDocument,
+};
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::{
