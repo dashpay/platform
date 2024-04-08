@@ -1,3 +1,5 @@
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use platform_value::BinaryData;
 
 use crate::prelude::UserFeeIncrease;
@@ -45,8 +47,8 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
     fn unique_identifiers(&self) -> Vec<String> {
         vec![format!(
             "{}-{}-{:x}",
-            base64::encode(self.data_contract.owner_id()),
-            base64::encode(self.data_contract.id()),
+            BASE64_STANDARD.encode(self.data_contract.owner_id()),
+            BASE64_STANDARD.encode(self.data_contract.id()),
             self.identity_contract_nonce
         )]
     }

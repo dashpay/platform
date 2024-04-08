@@ -51,7 +51,7 @@ pub struct StartBlockInfo {
     pub start_block_core_height: u32,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -174,7 +174,7 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-        use drive::common::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+        use drive::common::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
         use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;

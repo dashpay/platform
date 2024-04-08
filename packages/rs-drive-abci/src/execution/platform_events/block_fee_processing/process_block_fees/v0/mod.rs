@@ -224,7 +224,7 @@ mod tests {
 
     use crate::config::ExecutionConfig;
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
-    use drive::common::identities::create_test_masternode_identities;
+    use drive::common::test_utils::identities::create_test_masternode_identities;
 
     mod helpers {
         use super::*;

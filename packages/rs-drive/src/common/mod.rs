@@ -1,64 +1,37 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Common functions
 //!
 //! This module defines general, commonly used functions in Drive.
 //!
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod decode;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod encode;
-#[cfg(feature = "full")]
-pub mod identities;
 
-#[cfg(feature = "full")]
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
+/// test utils
+pub mod test_utils;
+
+#[cfg(feature = "server")]
 use std::fs::File;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::io;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::io::BufRead;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::option::Option::None;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::path::Path;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::TransactionArg;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::Drive;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::data_contract::DataContract;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::prelude::Identifier;
@@ -108,7 +81,7 @@ pub fn cbor_from_hex(hex_string: String) -> Vec<u8> {
     hex::decode(hex_string).expect("Decoding failed")
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Takes a file and returns the lines as a list of strings.
 pub fn text_file_strings(path: impl AsRef<Path>) -> Vec<String> {
     let file = File::open(path).expect("file not found");

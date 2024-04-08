@@ -1,4 +1,4 @@
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod prove;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod update;

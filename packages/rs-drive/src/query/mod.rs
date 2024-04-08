@@ -1,139 +1,78 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use {
+    conditions::{WhereClause, WhereOperator},
+    grovedb::{PathQuery, Query, QueryItem, SizedQuery},
+    ordering::OrderClause,
+    single_document_drive_query::SingleDocumentDriveQuery,
+};
+// Imports available when either "server" or "verify" features are enabled
+#[cfg(any(feature = "server", feature = "verify"))]
+use {
+    crate::{
+        drive::contract::paths::DataContractPaths,
+        error::{drive::DriveError, query::QuerySyntaxError, Error},
+    },
+    dpp::{
+        data_contract::{
+            accessors::v0::DataContractV0Getters,
+            document_type::{accessors::DocumentTypeV0Getters, methods::DocumentTypeV0Methods},
+            document_type::{DocumentTypeRef, Index, IndexProperty},
+            DataContract,
+        },
+        document::{
+            document_methods::DocumentMethodsV0,
+            serialization_traits::DocumentPlatformConversionMethodsV0, Document, DocumentV0Getters,
+        },
+        platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Value},
+        version::PlatformVersion,
+        ProtocolError,
+    },
+    indexmap::IndexMap,
+    sqlparser::{
+        ast::{self, OrderByExpr, Select, Statement, TableFactor::Table, Value::Number},
+        dialect::MySqlDialect,
+        parser::Parser,
+    },
+    std::{collections::BTreeMap, ops::BitXor},
+};
 
-#[cfg(any(feature = "full", feature = "verify"))]
-use std::collections::BTreeMap;
-#[cfg(any(feature = "full", feature = "verify"))]
-use std::ops::BitXor;
+#[cfg(feature = "verify")]
+use crate::drive::verify::RootHash;
 
-#[cfg(feature = "full")]
-use grovedb::query_result_type::{QueryResultElements, QueryResultType};
-/// Import grovedb
-#[cfg(feature = "full")]
-pub use grovedb::{Element, Error as GroveError, GroveDb, TransactionArg};
-#[cfg(any(feature = "full", feature = "verify"))]
-pub use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
+#[cfg(feature = "server")]
+pub use grovedb::{
+    query_result_type::{QueryResultElements, QueryResultType},
+    Element, Error as GroveError, TransactionArg,
+};
 
-#[cfg(any(feature = "full", feature = "verify"))]
-use indexmap::IndexMap;
+#[cfg(feature = "server")]
+use {
+    crate::{
+        drive::{grove_operations::QueryType::StatefulQuery, Drive},
+        error::Error::GroveDB,
+        fee::op::LowLevelDriveOperation,
+    },
+    dpp::block::block_info::BlockInfo,
+};
 
-#[cfg(any(feature = "full", feature = "verify"))]
-use sqlparser::ast;
-#[cfg(any(feature = "full", feature = "verify"))]
-use sqlparser::ast::TableFactor::Table;
-#[cfg(any(feature = "full", feature = "verify"))]
-use sqlparser::ast::Value::Number;
-#[cfg(any(feature = "full", feature = "verify"))]
-use sqlparser::ast::{OrderByExpr, Select, Statement};
-#[cfg(any(feature = "full", feature = "verify"))]
-use sqlparser::dialect::MySqlDialect;
-#[cfg(any(feature = "full", feature = "verify"))]
-use sqlparser::parser::Parser;
+// Crate-local unconditional imports
+use crate::{common::encode::encode_u64, drive::config::DriveConfig};
 
-#[cfg(any(feature = "full", feature = "verify"))]
-pub use conditions::WhereClause;
-/// Import conditions
-#[cfg(any(feature = "full", feature = "verify"))]
-pub use conditions::WhereOperator;
-#[cfg(feature = "full")]
-use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::data_contract::document_type::DocumentTypeRef;
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::data_contract::document_type::{Index, IndexProperty};
-#[cfg(any(feature = "full", feature = "verify"))]
-
-/// Import ordering
-#[cfg(any(feature = "full", feature = "verify"))]
-pub use ordering::OrderClause;
-
-#[cfg(feature = "full")]
-#[cfg(feature = "full")]
-use crate::drive::grove_operations::QueryType::StatefulQuery;
-#[cfg(feature = "full")]
-use crate::drive::Drive;
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::error::drive::DriveError;
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::error::query::QuerySyntaxError;
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::error::Error;
-#[cfg(feature = "full")]
-use crate::fee::op::LowLevelDriveOperation;
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::data_contract::DataContract;
-
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::drive::contract::paths::DataContractPaths;
-
-use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::document::Document;
-
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use dpp::platform_value::platform_value;
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::platform_value::Value;
-
-use crate::common::encode::encode_u64;
-use crate::drive::config::DriveConfig;
-use crate::error::Error::GroveDB;
-
-use dpp::version::PlatformVersion;
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::ProtocolError;
-
-#[cfg(any(feature = "full", feature = "verify"))]
+// Module declarations that are conditional on either "server" or "verify" features
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 mod defaults;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod ordering;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 mod single_document_drive_query;
-#[cfg(feature = "full")]
+
+// Module declarations exclusively for "server" feature
+#[cfg(feature = "server")]
 mod test_index;
 
-#[cfg(any(feature = "full", feature = "verify"))]
-pub use single_document_drive_query::SingleDocumentDriveQuery;
-
-#[cfg(all(feature = "full", feature = "verify"))]
-use crate::drive::verify::RootHash;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::document::DocumentV0Getters;
-
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {
@@ -150,7 +89,7 @@ pub struct InternalClauses {
 }
 
 impl InternalClauses {
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if the clause is a valid format.
     pub fn verify(&self) -> bool {
         // There can only be 1 primary key clause, or many other clauses
@@ -168,13 +107,13 @@ impl InternalClauses {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if the query clause is for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.primary_key_in_clause.is_some() || self.primary_key_equal_clause.is_some()
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if self is empty.
     pub fn is_empty(&self) -> bool {
         self.in_clause.is_none()
@@ -184,7 +123,7 @@ impl InternalClauses {
             && self.primary_key_equal_clause.is_none()
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Extracts the `WhereClause`s and returns them as type `InternalClauses`.
     pub fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
         let primary_key_equal_clauses_array = all_where_clauses
@@ -280,22 +219,24 @@ impl From<InternalClauses> for Vec<WhereClause> {
     }
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// The encoding returned by queries
 #[derive(Debug, PartialEq)]
 pub enum QueryResultEncoding {
     /// Cbor encoding
+    #[cfg(feature = "ciborium")]
     CborEncodedQueryResult,
     /// Platform base encoding
     PlatformEncodedQueryResult,
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 impl QueryResultEncoding {
     /// Encode the value based on the encoding desired
     pub fn encode_value(&self, value: &Value) -> Result<Vec<u8>, Error> {
         let mut buffer = vec![];
         match self {
+            #[cfg(feature = "ciborium")]
             QueryResultEncoding::CborEncodedQueryResult => {
                 ciborium::ser::into_writer(value, &mut buffer)
                     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
@@ -306,7 +247,7 @@ impl QueryResultEncoding {
     }
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Drive query struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveQuery<'a> {
@@ -333,7 +274,7 @@ pub struct DriveQuery<'a> {
 // TODO: expose this also
 //  also figure out main export
 impl<'a> DriveQuery<'a> {
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Returns any item
     pub fn any_item_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>) -> Self {
         DriveQuery {
@@ -349,7 +290,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if the query clause if for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.internal_clauses.is_for_primary_key()
@@ -366,7 +307,7 @@ impl<'a> DriveQuery<'a> {
                             == "$id")))
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(feature = "cbor_query")]
     /// Converts a query CBOR to a `DriveQuery`.
     pub fn from_cbor(
         query_cbor: &[u8],
@@ -382,7 +323,7 @@ impl<'a> DriveQuery<'a> {
         Self::from_value(query_document_value, contract, document_type, config)
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Converts a query Value to a `DriveQuery`.
     pub fn from_value(
         query_value: Value,
@@ -394,7 +335,7 @@ impl<'a> DriveQuery<'a> {
         Self::from_btree_map_value(query_document, contract, document_type, config)
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Converts a query Value to a `DriveQuery`.
     pub fn from_btree_map_value(
         mut query_document: BTreeMap<String, Value>,
@@ -559,7 +500,7 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Converts a query Value to a `DriveQuery`.
     pub fn from_decomposed_values(
         where_clause: Value,
@@ -640,7 +581,7 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Converts a SQL expression to a `DriveQuery`.
     pub fn from_sql_expr(
         sql_string: &str,
@@ -806,7 +747,7 @@ impl<'a> DriveQuery<'a> {
     ///
     /// FIXME: The data contract is only refered as ID, and document type as its name.
     /// This can change in the future to include full data contract and document type.
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(feature = "cbor_query")]
     pub fn to_cbor(&self) -> Result<Vec<u8>, Error> {
         let data: BTreeMap<String, Value> = self.into();
         let cbor: BTreeMap<String, ciborium::Value> = Value::convert_to_cbor_map(data)?;
@@ -817,7 +758,7 @@ impl<'a> DriveQuery<'a> {
         Ok(output)
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Operations to construct a path query.
     pub fn start_at_document_path_and_key(&self, starts_at: &[u8; 32]) -> (Vec<Vec<u8>>, Vec<u8>) {
         if self.document_type.documents_keep_history() {
@@ -846,7 +787,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Operations to construct a path query.
     pub fn construct_path_query_operations(
         &self,
@@ -945,7 +886,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Operations to construct a path query.
     pub fn construct_path_query(
         &self,
@@ -976,7 +917,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a path query given a document type path and starting document.
     pub fn get_primary_key_path_query(
         &self,
@@ -1144,7 +1085,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Finds the best index for the query.
     pub fn find_best_index(&self, platform_version: &PlatformVersion) -> Result<&Index, Error> {
         let equal_fields = self
@@ -1205,7 +1146,7 @@ impl<'a> DriveQuery<'a> {
         Ok(index)
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a `QueryItem` given a start key and query direction.
     pub fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
         if left_to_right {
@@ -1215,7 +1156,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
         starts_at_document: &Option<(Document, DocumentTypeRef, &IndexProperty, bool)>,
@@ -1238,7 +1179,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given key.
     fn inner_query_starts_from_key(
         start_at_key: Vec<u8>,
@@ -1261,7 +1202,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given document if given.
     // We are passing in starts_at_document 4 parameters
     // The document
@@ -1307,7 +1248,7 @@ impl<'a> DriveQuery<'a> {
         Ok(inner_query)
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Recursively queries as long as there are leftover index properties.
     fn recursive_insert_on_query(
         query: Option<&mut Query>,
@@ -1445,7 +1386,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a path query for non-primary keys given a document type path and starting document.
     pub fn get_non_primary_key_path_query(
         &self,
@@ -1653,7 +1594,7 @@ impl<'a> DriveQuery<'a> {
         ))
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Executes a query with proof and returns the items and fee.
     pub fn execute_with_proof(
         self,
@@ -1684,7 +1625,7 @@ impl<'a> DriveQuery<'a> {
         Ok((items, cost))
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Executes an internal query with proof and returns the items.
     pub(crate) fn execute_with_proof_internal(
         self,
@@ -1709,7 +1650,7 @@ impl<'a> DriveQuery<'a> {
         )
     }
 
-    #[cfg(all(feature = "full", feature = "verify"))]
+    #[cfg(all(feature = "server", feature = "verify"))]
     /// Executes a query with proof and returns the root hash, items, and fee.
     pub fn execute_with_proof_only_get_elements(
         self,
@@ -1740,7 +1681,7 @@ impl<'a> DriveQuery<'a> {
         Ok((root_hash, items, cost))
     }
 
-    #[cfg(all(feature = "full", feature = "verify"))]
+    #[cfg(all(feature = "server", feature = "verify"))]
     /// Executes an internal query with proof and returns the root hash and values.
     pub(crate) fn execute_with_proof_only_get_elements_internal(
         self,
@@ -1767,32 +1708,7 @@ impl<'a> DriveQuery<'a> {
         self.verify_proof_keep_serialized(proof.as_slice(), platform_version)
     }
 
-    #[cfg(feature = "full")]
-    /// Executes a query with no proof and returns the items encoded in a map.
-    pub fn execute_serialized_as_result_no_proof(
-        &self,
-        drive: &Drive,
-        _block_info: Option<BlockInfo>,
-        query_result_encoding: QueryResultEncoding,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, Error> {
-        let mut drive_operations = vec![];
-        let (items, _) = self.execute_no_proof_internal(
-            drive,
-            QueryResultType::QueryKeyElementPairResultType,
-            transaction,
-            &mut drive_operations,
-            platform_version,
-        )?;
-        //todo: we could probably give better results depending on the query
-        let result = platform_value!({
-            "documents": items.to_key_elements()
-        });
-        query_result_encoding.encode_value(&result)
-    }
-
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Executes a query with no proof and returns the items, skipped items, and fee.
     pub fn execute_raw_results_no_proof(
         &self,
@@ -1823,7 +1739,7 @@ impl<'a> DriveQuery<'a> {
         Ok((items, skipped, cost))
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_raw_results_no_proof_internal(
         &self,
@@ -1858,7 +1774,8 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
+    #[allow(unused)]
     /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_no_proof_internal(
         &self,
@@ -1959,7 +1876,7 @@ impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
 

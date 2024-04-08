@@ -74,7 +74,7 @@ mod delete_document_for_contract_operations;
 
 mod internal;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use dpp::balances::credits::Creditable;
