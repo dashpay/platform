@@ -110,7 +110,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use platform_value::{Identifier, platform_value};
+use platform_value::{platform_value, Identifier};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;

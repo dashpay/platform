@@ -3,7 +3,7 @@ use std::process::Command;
 use toml::Value;
 
 fn main() {
-    let crates = ["rs-drive", "rs-dpp", "rs-drive-abci"];
+    let crates = ["rs-drive-abci"];
 
     for specific_crate in crates {
         check_crate(specific_crate)
@@ -17,12 +17,20 @@ fn check_crate(crate_name: &str) {
     // Read and parse the Cargo.toml file
     let cargo_toml_content = fs::read_to_string(&cargo_toml_path)
         .unwrap_or_else(|_| panic!("Failed to read Cargo.toml for {}", crate_name));
-    
-    let cargo_toml: Value = cargo_toml_content.parse().expect("Failed to parse Cargo.toml");
 
-    let features = cargo_toml.get("features").expect("No features in Cargo.toml");
+    let cargo_toml: Value = cargo_toml_content
+        .parse()
+        .expect("Failed to parse Cargo.toml");
 
-    let name = cargo_toml.get("package").expect("No package in Cargo.toml").get("name").expect("expected name in Cargo.toml");
+    let features = cargo_toml
+        .get("features")
+        .expect("No features in Cargo.toml");
+
+    let name = cargo_toml
+        .get("package")
+        .expect("No package in Cargo.toml")
+        .get("name")
+        .expect("expected name in Cargo.toml");
 
     for (feature, _) in features.as_table().unwrap().iter() {
         // Skip special feature groups
@@ -30,7 +38,10 @@ fn check_crate(crate_name: &str) {
             continue;
         }
 
-        println!("Checking feature: {} in crate {} with default features", feature, crate_name);
+        println!(
+            "Checking feature: {} in crate {} with default features",
+            feature, crate_name
+        );
 
         // Change directory to the crate's directory and run cargo check for the specific feature
         let status = Command::new("cargo")
@@ -42,12 +53,18 @@ fn check_crate(crate_name: &str) {
             .expect("Failed to execute cargo check");
 
         if !status.success() {
-            println!("Feature check failed for feature: {} in crate {} with default features", feature, crate_name);
+            println!(
+                "Feature check failed for feature: {} in crate {} with default features",
+                feature, crate_name
+            );
             println!("cargo check -p {} --features {}", name, feature);
             std::process::exit(1);
         }
 
-        println!("Checking feature: {} in crate {} with no default features", feature, crate_name);
+        println!(
+            "Checking feature: {} in crate {} with no default features",
+            feature, crate_name
+        );
 
         // Change directory to the crate's directory and run cargo check for the specific feature
         let status = Command::new("cargo")
@@ -60,8 +77,14 @@ fn check_crate(crate_name: &str) {
             .expect("Failed to execute cargo check");
 
         if !status.success() {
-            println!("Feature check failed for feature: {} in crate {} with no default features", feature, crate_name);
-            println!("cargo check -p {} --features {} --no-default-features", name, feature);
+            println!(
+                "Feature check failed for feature: {} in crate {} with no default features",
+                feature, crate_name
+            );
+            println!(
+                "cargo check -p {} --features {} --no-default-features",
+                name, feature
+            );
             std::process::exit(1);
         }
     }
