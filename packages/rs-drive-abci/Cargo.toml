@@ -106,8 +106,8 @@ integer-encoding = { version = "4.0.0" }
 [features]
 # TODO: Remove console for production
 default = ["mocks", "console"]
-mocks = ["mockall", "drive/fixtures-and-mocks", "dpp/platform-value-cbor"]
-console = ["console-subscriber", "tokio/tracing", "dpp/platform-value-cbor"]
+mocks = ["mockall", "drive/fixtures-and-mocks"]
+console = ["console-subscriber", "tokio/tracing"]
 
 
 [[bin]]

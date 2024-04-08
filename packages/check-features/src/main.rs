@@ -32,6 +32,43 @@ fn check_crate(crate_name: &str) {
         .get("name")
         .expect("expected name in Cargo.toml");
 
+    println!("Checking crate {} with default features", crate_name);
+
+    // Change directory to the crate's directory and run cargo check for the specific feature
+    let status = Command::new("cargo")
+        .current_dir(format!("packages/{}", crate_name)) // Set the current directory to the crate's directory
+        .arg("check")
+        .status()
+        .expect("Failed to execute cargo check");
+
+    if !status.success() {
+        println!(
+            "Feature check failed in crate {} with default features",
+            crate_name
+        );
+        println!("cargo check -p {}", name);
+        std::process::exit(1);
+    }
+
+    println!("Checking crate {} with no default features", crate_name);
+
+    // Change directory to the crate's directory and run cargo check for the specific feature
+    let status = Command::new("cargo")
+        .current_dir(format!("packages/{}", crate_name)) // Set the current directory to the crate's directory
+        .arg("check")
+        .arg("--no-default-features")
+        .status()
+        .expect("Failed to execute cargo check");
+
+    if !status.success() {
+        println!(
+            "Check failed in crate {} with no default features",
+            crate_name
+        );
+        println!("cargo check -p {} --no-default-features", name);
+        std::process::exit(1);
+    }
+
     for (feature, _) in features.as_table().unwrap().iter() {
         // Skip special feature groups
         if feature == "default" || feature.ends_with("features") {

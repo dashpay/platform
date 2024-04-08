@@ -179,6 +179,7 @@ abci = [
   "validation",
   "random-public-keys",
   "identity-serialization",
+  "platform-value-cbor",
 ]
 cbor = ["ciborium"]
 validation = [
