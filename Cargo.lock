@@ -3567,7 +3567,7 @@ name = "rs-sdk"
 version = "1.0.0-dev.10"
 dependencies = [
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.0",
  "bincode",
  "bip37-bloom-filter",
  "ciborium",
