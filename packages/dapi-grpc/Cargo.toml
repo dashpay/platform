@@ -29,6 +29,7 @@ mocks = ["dep:serde_json"]
 
 [dependencies]
 prost = { version = "0.12.3" }
+futures-core = "0.3.30"
 tonic = { version = "0.11", features = [
   "codegen",
   "prost",
