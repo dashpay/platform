@@ -423,8 +423,8 @@ mod tests {
             get_epochs_info_response::Version::V0(inner),
             inner
         )
-            .result
-            .expect("expected a result");
+        .result
+        .expect("expected a result");
 
         let epoch_infos = extract_variant_or_panic!(
             result,
@@ -521,8 +521,8 @@ mod tests {
             get_epochs_info_response::Version::V0(inner),
             inner
         )
-            .result
-            .expect("expected a result");
+        .result
+        .expect("expected a result");
 
         let epoch_infos = extract_variant_or_panic!(
             result,
@@ -622,8 +622,8 @@ mod tests {
             get_epochs_info_response::Version::V0(inner),
             inner
         )
-            .result
-            .expect("expected a result");
+        .result
+        .expect("expected a result");
 
         let epoch_infos_proof = extract_variant_or_panic!(
             result,
@@ -639,8 +639,8 @@ mod tests {
             true,
             platform_version,
         )
-            .expect("expected to verify current epochs")
-            .1;
+        .expect("expected to verify current epochs")
+        .1;
 
         // we should have 5 epochs worth of infos
 
@@ -684,8 +684,8 @@ mod tests {
             false,
             platform_version,
         )
-            .expect("expected to verify current epochs")
-            .1;
+        .expect("expected to verify current epochs")
+        .1;
 
         assert_eq!(epoch_infos.len(), 1);
         assert_eq!(epoch_infos.first().unwrap().index(), 4);

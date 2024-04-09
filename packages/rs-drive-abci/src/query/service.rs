@@ -8,7 +8,22 @@ use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
-use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest, GetConsensusParamsResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse, GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse, GetIdentitiesKeysRequest, GetIdentitiesKeysResponse};
+use dapi_grpc::platform::v0::{
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
+    GetConsensusParamsResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
+    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
+    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
+    GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
+    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
+    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
+    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
+    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, WaitForStateTransitionResultRequest,
+    WaitForStateTransitionResultResponse,
+};
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::sync::atomic::Ordering;
@@ -167,14 +182,14 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_identities_keys(
+    async fn get_identities_contract_keys(
         &self,
-        request: Request<GetIdentitiesKeysRequest>,
-    ) -> Result<Response<GetIdentitiesKeysResponse>, Status> {
+        request: Request<GetIdentitiesContractKeysRequest>,
+    ) -> Result<Response<GetIdentitiesContractKeysResponse>, Status> {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities_keys,
-            "get_identities_keys",
+            "get_identities_contract_keys",
         )
         .await
     }

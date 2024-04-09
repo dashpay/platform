@@ -1,32 +1,37 @@
-use std::collections::HashMap;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identities_keys_request::GetIdentitiesKeysRequestV0;
-use dapi_grpc::platform::v0::get_identities_keys_response::{get_identities_keys_response_v0, GetIdentitiesKeysResponseV0};
+use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+use dapi_grpc::platform::v0::get_identities_contract_keys_response::{
+    get_identities_contract_keys_response_v0, GetIdentitiesContractKeysResponseV0,
+};
+use dpp::identity::Purpose;
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
-use dpp::platform_value::string_encoding::Encoding;
+use std::collections::HashMap;
 
 impl<C> Platform<C> {
     pub(super) fn query_identities_v0(
         &self,
-        GetIdentitiesKeysRequestV0 { entries, prove }: GetIdentitiesKeysRequestV0,
+        GetIdentitiesContractKeysRequestV0 {
+            identities_ids,
+            contract_id,
+            purposes,
+            prove,
+        }: GetIdentitiesContractKeysRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetIdentitiesKeysResponseV0>, Error> {
-        let identities_keys_ids = check_validation_result_with_data!(entries
+    ) -> Result<QueryValidationResult<GetIdentitiesContractKeysResponseV0>, Error> {
+        let identities_ids = check_validation_result_with_data!(identities_ids
             .into_iter()
-            .map(|(identity_id, specific_keys)| {
-                let identity_id = Bytes32::from_string(
-                        &identity_id,
-                        Encoding::Hex
-                    )
+            .map(|identity_id| {
+                let identity_id = Bytes32::from_vec(identity_id)
                     .map(|bytes| bytes.0)
                     .map_err(|_| {
                         QueryError::InvalidArgument(
@@ -34,9 +39,17 @@ impl<C> Platform<C> {
                         )
                     })?;
 
-                Ok((identity_id, specific_keys.key_ids))
+                Ok(identity_id)
             })
-            .collect::<Result<HashMap<[u8; 32], Vec<u32>>, QueryError>>());
+            .collect::<Result<Vec<[u8; 32]>, QueryError>>());
+
+        let contract_id = check_validation_result_with_data!(Bytes32::from_vec(contract_id)
+            .map(|bytes| bytes.0)
+            .map_err(|_| {
+                QueryError::InvalidArgument(
+                    "contract_id must be a valid identifier (32 bytes long)".to_string(),
+                )
+            }));
 
         let response = if prove {
             todo!()
@@ -53,36 +66,37 @@ impl<C> Platform<C> {
             //     metadata: Some(self.response_metadata_v0(platform_state)),
             // }
         } else {
-            let identities_keys = self.drive.fetch_identities_keys(
-                &identities_keys_ids,
-                None,
-                platform_version,
-            )?;
-
-            use get_identities_keys_response_v0::Keys;
-
-            let identities_keys = identities_keys
-                .into_iter()
-                .map(|(key, identity_keys)| {
-                    let keys_bytes = identity_keys
-                        .into_iter()
-                        .map(|(_, key)| key.serialize_to_bytes())
-                        .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
-
-                    Ok((hex::encode(&key), Keys { keys_bytes }))
-                })
-                .collect::<Result<HashMap<String, Keys>, ProtocolError>>()?;
-
-            GetIdentitiesKeysResponseV0 {
-                result: Some(
-                    get_identities_keys_response_v0::Result::IdentitiesKeys(
-                        get_identities_keys_response_v0::IdentitiesKeys {
-                            entries: identities_keys
-                        }
-                    )
-                ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
-            }
+            todo!()
+            // let identities_keys = self.drive.fetch_identities_keys(
+            //     &identities_keys_ids,
+            //     None,
+            //     platform_version,
+            // )?;
+            //
+            // use get_identities_keys_response_v0::Keys;
+            //
+            // let identities_keys = identities_keys
+            //     .into_iter()
+            //     .map(|(key, identity_keys)| {
+            //         let keys_bytes = identity_keys
+            //             .into_iter()
+            //             .map(|(_, key)| key.serialize_to_bytes())
+            //             .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
+            //
+            //         Ok((hex::encode(&key), Keys { keys_bytes }))
+            //     })
+            //     .collect::<Result<HashMap<String, Keys>, ProtocolError>>()?;
+            //
+            // GetIdentitiesKeysResponseV0 {
+            //     result: Some(
+            //         get_identities_keys_response_v0::Result::IdentitiesKeys(
+            //             get_identities_keys_response_v0::IdentitiesKeys {
+            //                 entries: identities_keys
+            //             }
+            //         )
+            //     ),
+            //     metadata: Some(self.response_metadata_v0(platform_state)),
+            // }
         };
 
         Ok(QueryValidationResult::new_with_data(response))
