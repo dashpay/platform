@@ -1,8 +1,8 @@
 use crate::consensus::basic::decode::DecodingError;
+use crate::consensus::basic::BasicError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
-use crate::consensus::basic::BasicError;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::consensus::ConsensusError;
