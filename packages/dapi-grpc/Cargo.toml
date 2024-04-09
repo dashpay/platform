@@ -56,4 +56,4 @@ name = "platform_example"
 path = "clients/platform/v0/rust/platform_example.rs"
 
 [package.metadata.cargo-machete]
-ignored = ["platform-version", "serde_bytes"]
+ignored = ["platform-version", "serde_bytes", "futures-core"]
