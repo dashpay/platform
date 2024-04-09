@@ -1,3 +1,5 @@
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use platform_value::BinaryData;
 
 use crate::prelude::UserFeeIncrease;
@@ -57,7 +59,7 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
         let identifier = self.asset_lock_proof.create_identifier();
         match identifier {
             Ok(identifier) => {
-                vec![base64::encode(identifier)]
+                vec![BASE64_STANDARD.encode(identifier)]
             }
             Err(_) => {
                 // no unique identifier, this won't actually occur on Platform

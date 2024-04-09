@@ -133,7 +133,7 @@ impl Drive {
     //     })
     // }
 
-    #[cfg(feature = "fixtures-and-mocks")]
+    #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
         &self,
@@ -172,7 +172,7 @@ impl Drive {
         Ok((items, skipped, cost))
     }
 
-    #[cfg(feature = "fixtures-and-mocks")]
+    #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     /// Performs and returns the result of the specified query along with the fee.
     /// Proof is generated.
     pub fn query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost(
@@ -225,7 +225,7 @@ impl Drive {
         Ok((items, cost))
     }
 
-    #[cfg(feature = "fixtures-and-mocks")]
+    #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     /// Performs and returns the result of the specified query along with the fee.
     /// Proof is generated.
     pub fn query_proof_of_documents_using_cbor_encoded_query_with_cost(
@@ -263,7 +263,7 @@ impl Drive {
         Ok((items, cost))
     }
 
-    #[cfg(feature = "fixtures-and-mocks")]
+    #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     /// Performs and returns the result of the specified internal query.
     /// Proof is generated.
     pub(crate) fn query_proof_of_documents_using_cbor_encoded_query(
@@ -281,7 +281,7 @@ impl Drive {
         query.execute_with_proof_internal(self, transaction, drive_operations, platform_version)
     }
 
-    #[cfg(feature = "fixtures-and-mocks")]
+    #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     /// Performs the specified internal query and returns the root hash, values, and fee.
     pub fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
         &self,
@@ -320,7 +320,7 @@ impl Drive {
     }
 
     /// Performs the specified internal query and returns the root hash and values.
-    #[cfg(feature = "fixtures-and-mocks")]
+    #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     pub(crate) fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements_internal(
         &self,
         contract: &DataContract,
@@ -342,7 +342,7 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
-    #[cfg(feature = "fixtures-and-mocks")]
+    #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     pub fn query_documents_cbor_from_contract(
         &self,
         contract: &DataContract,
@@ -377,7 +377,7 @@ impl Drive {
         Ok((items, skipped, cost))
     }
 
-    #[cfg(feature = "fixtures-and-mocks")]
+    #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_documents_cbor_with_document_type_lookup(
         &self,
@@ -412,7 +412,7 @@ impl Drive {
         self.query_serialized_documents(query, epoch, transaction, platform_version)
     }
 
-    #[cfg(feature = "fixtures-and-mocks")]
+    #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     /// Performs and returns the result of the specified query along with skipped items.
     pub fn query_documents_for_cbor_query_internal(
         &self,

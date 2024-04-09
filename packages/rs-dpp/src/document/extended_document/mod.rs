@@ -338,6 +338,8 @@ mod test {
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
     use crate::tests::fixtures::get_dashpay_contract_fixture;
+    use base64::prelude::BASE64_STANDARD;
+    use base64::Engine;
 
     fn init() {
         let _ = env_logger::builder()
@@ -611,11 +613,11 @@ mod test {
         );
         assert_eq!(
             json_document["alphaBinary"],
-            JsonValue::String(base64::encode(&alpha_value))
+            JsonValue::String(BASE64_STANDARD.encode(&alpha_value))
         );
         assert_eq!(
             json_document["alphaIdentifier"],
-            JsonValue::String(base64::encode(&alpha_value))
+            JsonValue::String(BASE64_STANDARD.encode(&alpha_value))
         );
     }
 

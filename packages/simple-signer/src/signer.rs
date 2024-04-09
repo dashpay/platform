@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use dashcore_rpc::dashcore::signer;
 use dpp::bincode::{Decode, Encode};
 use dpp::ed25519_dalek::Signer as BlsSigner;
@@ -60,16 +59,18 @@ impl Signer for SimpleSigner {
             KeyType::BLS12_381 => {
                 let pk =
                     bls_signatures::PrivateKey::from_bytes(private_key, false).map_err(|_e| {
-                        ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
+                        ProtocolError::Generic(
+                            "bls private key from bytes isn't correct".to_string(),
+                        )
                     })?;
                 Ok(pk.sign(data).to_bytes().to_vec().into())
             }
             KeyType::EDDSA_25519_HASH160 => {
                 let key: [u8; 32] = private_key.clone().try_into().expect("expected 32 bytes");
                 let pk = ed25519_dalek::SigningKey::try_from(&key).map_err(|_e| {
-                    ProtocolError::Error(anyhow!(
-                        "eddsa 25519 private key from bytes isn't correct"
-                    ))
+                    ProtocolError::Generic(
+                        "eddsa 25519 private key from bytes isn't correct".to_string(),
+                    )
                 })?;
                 Ok(pk.sign(data).to_vec().into())
             }

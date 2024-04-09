@@ -1,9 +1,11 @@
+use crate::version::fee::data_contract::FeeDataContractValidationVersion;
 use crate::version::fee::hashing::FeeHashingVersion;
 use crate::version::fee::processing::FeeProcessingVersion;
 use crate::version::fee::signature::FeeSignatureVersion;
 use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
 use crate::version::fee::storage::FeeStorageVersion;
 
+mod data_contract;
 mod hashing;
 mod processing;
 pub mod signature;
@@ -17,5 +19,6 @@ pub struct FeeVersion {
     pub signature: FeeSignatureVersion,
     pub hashing: FeeHashingVersion,
     pub processing: FeeProcessingVersion,
+    pub data_contract: FeeDataContractValidationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
 }

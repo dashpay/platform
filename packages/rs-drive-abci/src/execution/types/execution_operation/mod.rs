@@ -4,6 +4,7 @@ use crate::execution::types::execution_operation::signature_verification_operati
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::identity::KeyCount;
+use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::version::PlatformVersion;
 
 pub mod signature_verification_operation;
@@ -47,6 +48,7 @@ pub const SHA256_BLOCK_SIZE: u16 = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationOperation {
+    Protocol(ProtocolValidationOperation),
     RetrieveIdentity(RetrieveIdentityInfo),
     DoubleSha256(HashBlockCount),
     ValidateKeyStructure(KeyCount), // This is extremely cheap
@@ -153,6 +155,14 @@ impl ValidationOperation {
                                 .validate_key_structure
                                 * (*key_count as u64),
                         )
+                        .ok_or(ExecutionError::Overflow(
+                            "execution processing fee overflow error",
+                        ))?;
+                }
+                ValidationOperation::Protocol(dpp_validation_operation) => {
+                    fee_result.processing_fee = fee_result
+                        .processing_fee
+                        .checked_add(dpp_validation_operation.processing_cost(platform_version))
                         .ok_or(ExecutionError::Overflow(
                             "execution processing fee overflow error",
                         ))?;

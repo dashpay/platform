@@ -191,6 +191,7 @@ pub struct DocumentTypeSchemaVersions {
     pub enrich_with_base_schema: FeatureVersion,
     pub find_identifier_and_binary_paths: FeatureVersion,
     pub validate_max_depth: FeatureVersion,
+    pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
     pub validate_schema_compatibility: FeatureVersion,
 }

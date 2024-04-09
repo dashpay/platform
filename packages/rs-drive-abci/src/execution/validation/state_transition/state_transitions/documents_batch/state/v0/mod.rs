@@ -1,4 +1,5 @@
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
@@ -30,6 +31,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
         &self,
         action: DocumentsBatchTransitionAction,
         platform: &PlatformStateRef,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -48,6 +51,8 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         &self,
         mut state_transition_action: DocumentsBatchTransitionAction,
         platform: &PlatformStateRef,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -70,11 +75,32 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         for transition in state_transition_action.transitions_take() {
             let transition_validation_result = match &transition {
                 DocumentTransitionAction::CreateAction(create_action) => create_action
-                    .validate_state(platform, owner_id, transaction, platform_version)?,
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        epoch,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
                 DocumentTransitionAction::ReplaceAction(replace_action) => replace_action
-                    .validate_state(platform, owner_id, transaction, platform_version)?,
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        epoch,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
                 DocumentTransitionAction::DeleteAction(delete_action) => delete_action
-                    .validate_state(platform, owner_id, transaction, platform_version)?,
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        epoch,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
                 DocumentTransitionAction::BumpIdentityDataContractNonce(..) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "we should never start with a bump identity data contract nonce",

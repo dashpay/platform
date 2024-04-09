@@ -4,13 +4,11 @@ use moka::sync::Cache;
 use std::sync::Arc;
 
 /// DataContract cache that handles both global and block data
-#[cfg(feature = "full")]
 pub struct DataContractCache {
     global_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
     block_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
 }
 
-#[cfg(feature = "full")]
 impl DataContractCache {
     /// Create a new DataContract cache instance
     pub fn new(global_cache_max_capacity: u64, block_cache_max_capacity: u64) -> Self {

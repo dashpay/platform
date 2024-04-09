@@ -32,57 +32,57 @@
 //! fetching identities from the subtree.
 //!
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::object_size_info::DriveKeyInfo;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::Purpose;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::identity::{KeyID, SecurityLevel};
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Everything related to withdrawals
 pub mod withdrawals;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::identity::Purpose::AUTHENTICATION;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use integer_encoding::VarInt;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 mod balance;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod contract_info;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod estimation_costs;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 mod fetch;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod insert;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Module related to Identity Keys
 pub mod key;
 /// Module related to updating of identity
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub mod update;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
 
 use crate::drive::identity::contract_info::ContractInfoStructure;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub use fetch::queries::*;
 
 /// Identity path
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn identity_path(identity_id: &[u8]) -> [&[u8]; 2] {
     [Into::<&[u8; 1]>::into(RootTree::Identities), identity_id]
 }
 
 /// Identity path vector
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
         Into::<&[u8; 1]>::into(RootTree::Identities).to_vec(),
@@ -90,7 +90,7 @@ pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     ]
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// The path for the contract info for an identity
 pub fn identity_contract_info_root_path(identity_id: &[u8; 32]) -> [&[u8]; 3] {
     [
@@ -100,7 +100,7 @@ pub fn identity_contract_info_root_path(identity_id: &[u8; 32]) -> [&[u8]; 3] {
     ]
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// The path for the contract info for an identity as a vec
 pub fn identity_contract_info_root_path_vec(identity_id: &[u8; 32]) -> Vec<Vec<u8>> {
     vec![
@@ -151,7 +151,7 @@ pub fn identity_contract_info_group_keys_path_vec(
 }
 
 /// The group is either a contract id or on a family of contracts owned by the same identity
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub fn identity_contract_info_group_path_key_purpose_vec(
     identity_id: &[u8; 32],
     group_id: &[u8],
@@ -167,7 +167,7 @@ pub fn identity_contract_info_group_path_key_purpose_vec(
     ]
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// The path for a specific contract info for an identity
 pub fn identity_contract_info_path<'a>(
     identity_id: &'a [u8],
@@ -181,7 +181,7 @@ pub fn identity_contract_info_path<'a>(
     ]
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// The path for a specific contract info for an identity as a vec
 pub fn identity_contract_info_path_vec(identity_id: &[u8], contract_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
@@ -193,7 +193,7 @@ pub fn identity_contract_info_path_vec(identity_id: &[u8], contract_id: &[u8]) -
 }
 
 /// identity key tree path
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Identity key tree path
 pub(crate) fn identity_key_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
     [
@@ -203,7 +203,7 @@ pub(crate) fn identity_key_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
     ]
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// The path for all identity keys as a vec
 pub fn identity_key_tree_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
@@ -213,7 +213,7 @@ pub fn identity_key_tree_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     ]
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// The path for a specific key as a vec
 pub fn identity_key_path_vec(identity_id: &[u8], key_id: KeyID) -> Vec<Vec<u8>> {
     vec![
@@ -225,7 +225,7 @@ pub fn identity_key_path_vec(identity_id: &[u8], key_id: KeyID) -> Vec<Vec<u8>> 
 }
 
 /// identity key location within identity vec
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Identity key location within identity vector
 pub(crate) fn identity_key_location_within_identity_vec(encoded_key_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
@@ -235,7 +235,7 @@ pub(crate) fn identity_key_location_within_identity_vec(encoded_key_id: &[u8]) -
 }
 
 /// identity query keys tree path
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Identity query keys tree path
 pub(crate) fn identity_query_keys_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
     [
@@ -246,7 +246,7 @@ pub(crate) fn identity_query_keys_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
 }
 
 /// identity query keys tree path vec
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Identity query keys tree path vector
 pub(crate) fn identity_query_keys_tree_path_vec(identity_id: [u8; 32]) -> Vec<Vec<u8>> {
     vec![
@@ -257,7 +257,7 @@ pub(crate) fn identity_query_keys_tree_path_vec(identity_id: [u8; 32]) -> Vec<Ve
 }
 
 /// identity query keys purpose tree path
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Identity query keys purpose tree path
 pub(crate) fn identity_query_keys_purpose_tree_path<'a>(
     identity_id: &'a [u8],
@@ -272,7 +272,7 @@ pub(crate) fn identity_query_keys_purpose_tree_path<'a>(
 }
 
 /// identity query keys purpose tree path vec
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Identity query keys purpose tree path vec
 pub(crate) fn identity_query_keys_purpose_tree_path_vec(
     identity_id: &[u8],
@@ -287,7 +287,7 @@ pub(crate) fn identity_query_keys_purpose_tree_path_vec(
 }
 
 /// identity query keys security level tree path vec
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Identity query keys security level tree path vec
 pub(crate) fn identity_query_keys_security_level_tree_path_vec(
     identity_id: &[u8],
@@ -303,7 +303,7 @@ pub(crate) fn identity_query_keys_security_level_tree_path_vec(
 }
 
 /// identity query keys full tree path
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Identity query keys full tree path
 pub(crate) fn identity_query_keys_for_transfer_full_tree_path(identity_id: &[u8]) -> [&[u8]; 4] {
     [
@@ -315,7 +315,7 @@ pub(crate) fn identity_query_keys_for_transfer_full_tree_path(identity_id: &[u8]
 }
 
 /// identity query keys full tree path
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Identity query keys full tree path
 pub(crate) fn identity_query_keys_for_authentication_full_tree_path<'a>(
     identity_id: &'a [u8],
@@ -331,7 +331,7 @@ pub(crate) fn identity_query_keys_for_authentication_full_tree_path<'a>(
 }
 
 /// The root structure of identities
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 #[repr(u8)]
 #[derive(Copy, Clone)]
 pub enum IdentityRootStructure {
@@ -349,28 +349,28 @@ pub enum IdentityRootStructure {
     IdentityContractInfo = 32,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl IdentityRootStructure {
     fn to_drive_key_info<'a>(self) -> DriveKeyInfo<'a> {
         DriveKeyInfo::Key(vec![self as u8])
     }
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 impl From<IdentityRootStructure> for u8 {
     fn from(root_tree: IdentityRootStructure) -> Self {
         root_tree as u8
     }
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 impl From<IdentityRootStructure> for [u8; 1] {
     fn from(root_tree: IdentityRootStructure) -> Self {
         [root_tree as u8]
     }
 }
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 impl From<IdentityRootStructure> for &'static [u8; 1] {
     fn from(identity_tree: IdentityRootStructure) -> Self {
         match identity_tree {

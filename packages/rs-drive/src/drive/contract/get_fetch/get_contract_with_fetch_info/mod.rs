@@ -181,7 +181,7 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::drive::contract::tests::setup_reference_contract;

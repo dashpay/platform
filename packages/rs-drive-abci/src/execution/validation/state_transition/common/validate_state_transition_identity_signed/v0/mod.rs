@@ -15,18 +15,16 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use dpp::consensus::ConsensusError;
 
+use dpp::consensus::signature::{
+    InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
+    SignatureError,
+};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::native_bls::NativeBlsModule;
 use dpp::state_transition::StateTransition;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use dpp::{
-    consensus::signature::{
-        InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
-        SignatureError,
-    },
-    NativeBlsModule,
-};
 use drive::dpp::identity::KeyType;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;

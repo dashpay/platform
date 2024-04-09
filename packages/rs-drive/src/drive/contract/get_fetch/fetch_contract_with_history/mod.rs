@@ -79,7 +79,7 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
 
@@ -160,6 +160,7 @@ mod tests {
                     "niceDocument",
                     updated_document.clone(),
                     true,
+                    &mut vec![],
                     platform_version,
                 )
                 .expect("to be able to set document schema");
