@@ -8,43 +8,43 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 extern crate core;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod common;
 /// Drive module
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive;
 /// Error module
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod error;
 /// Fee pools module
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod fee_pools;
 /// Query module
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod query;
 
 /// DPP module
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub use dpp;
 /// GroveDB module
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub use grovedb;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub use grovedb_path;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub use grovedb_costs;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub use grovedb_storage;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod fee;
 /// State transition action module
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub mod state_transition_action;
 /// Test helpers
 #[cfg(feature = "fixtures-and-mocks")]

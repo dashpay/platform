@@ -26,6 +26,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::v0::{
     IdentityCreditWithdrawalTransitionV0, MIN_CORE_FEE_PER_BYTE,
 };
 
+use dpp::native_bls::NativeBlsModule;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
@@ -33,7 +34,6 @@ use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
-use dpp::NativeBlsModule;
 use rand::prelude::{IteratorRandom, StdRng};
 use simple_signer::signer::SimpleSigner;
 

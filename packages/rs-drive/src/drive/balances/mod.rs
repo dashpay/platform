@@ -2,30 +2,30 @@
 //! Functions include inserting verifying balances between various trees.
 //!
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod add_to_system_credits;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod add_to_system_credits_operations;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod remove_from_system_credits;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod remove_from_system_credits_operations;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod calculate_total_credits_balance;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
 
 /// Storage fee pool key
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";
 
 /// The path for all the credits in the system
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub fn total_credits_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Misc),
@@ -34,18 +34,18 @@ pub fn total_credits_path() -> [&'static [u8]; 2] {
 }
 
 /// The path for the balances tree
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn balance_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(RootTree::Balances)]
 }
 
 /// The path for the balances tree
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
     vec![Into::<&[u8; 1]>::into(RootTree::Balances).to_vec()]
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;

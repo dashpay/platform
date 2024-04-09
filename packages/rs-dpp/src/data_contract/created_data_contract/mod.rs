@@ -16,6 +16,7 @@ use crate::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+#[cfg(feature = "data-contract-value-conversion")]
 use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;
 

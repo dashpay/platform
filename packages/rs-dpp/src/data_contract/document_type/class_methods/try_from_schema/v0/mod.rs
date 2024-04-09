@@ -86,6 +86,7 @@ fn consensus_or_protocol_value_error(platform_value_error: platform_value::Error
 
 impl DocumentTypeV0 {
     // TODO: Split into multiple functions
+    #[allow(unused_variables)]
     pub(crate) fn try_from_schema_v0(
         data_contract_id: Identifier,
         name: &str,

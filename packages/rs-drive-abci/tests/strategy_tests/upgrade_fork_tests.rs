@@ -20,8 +20,7 @@ mod tests {
     use platform_version::version::mocks::v2_test::{TEST_PLATFORM_V2, TEST_PROTOCOL_VERSION_2};
     use platform_version::version::mocks::v3_test::{TEST_PLATFORM_V3, TEST_PROTOCOL_VERSION_3};
     use platform_version::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
-    use platform_version::version::v1::{PLATFORM_V1, PROTOCOL_VERSION_1};
-    use platform_version::version::PLATFORM_TEST_VERSIONS;
+    use platform_version::version::v1::PLATFORM_V1;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
