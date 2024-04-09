@@ -1435,13 +1435,13 @@ impl Strategy {
                     .get(identity_num)
                     .expect("Expected to find the identity in the current_identities");
 
-                let public_key = identity.get_first_public_key_matching(
+                let identity_public_key = identity.get_first_public_key_matching(
                     Purpose::AUTHENTICATION,
                     HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
                     HashSet::from([KeyType::ECDSA_SECP256K1]),
                 )
                 .expect("Expected to get identity public key in initial_contract_state_transitions");
-                let key_id = public_key.id();
+                let key_id = identity_public_key.id();
                 
                 let partial_identity = identity.clone().into_partial_identity_info();
                 let partial_identity_public_key = partial_identity.loaded_public_keys.values()
