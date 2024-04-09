@@ -46,7 +46,7 @@ log = { version = "0.4.6" }
 wasm-logger = { version = "0.2.0" }
 num_enum = "0.5.7"
 hex = { version = "0.4" }
-
+paste = "1.0.14"
 anyhow = { version = "1.0.75" }
 # required, cargo-machete false positive
 wasm-bindgen-futures = "0.4.33"

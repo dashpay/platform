@@ -5093,6 +5093,7 @@ dependencies = [
  "js-sys",
  "log",
  "num_enum",
+ "paste",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
