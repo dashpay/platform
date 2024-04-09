@@ -3,11 +3,9 @@ mod transformer;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{IdentityNonce, Revision, UserFeeIncrease};
-use serde::{Deserialize, Serialize};
 
 /// action v0
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Default, Debug, Clone)]
 pub struct IdentityUpdateTransitionActionV0 {
     /// add public keys
     pub add_public_keys: Vec<IdentityPublicKey>,

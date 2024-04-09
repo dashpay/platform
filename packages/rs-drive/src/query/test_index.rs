@@ -1,4 +1,4 @@
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use dpp::data_contract::document_type::DocumentType;
@@ -85,6 +85,7 @@ mod tests {
             false,
             false,
             true,
+            &mut vec![],
             platform_version,
         )
         .expect("expected to create a document type")

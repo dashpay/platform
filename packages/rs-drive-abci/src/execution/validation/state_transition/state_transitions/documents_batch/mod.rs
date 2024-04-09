@@ -6,6 +6,7 @@ mod state;
 mod transformer;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -85,9 +86,11 @@ impl StateTransitionBasicStructureValidationV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .basic_structure
         {
-            0 => self
-                .validate_base_structure(platform_version)
-                .map_err(Error::Protocol),
+            0 => {
+                // There is nothing expensive here
+                self.validate_base_structure(platform_version)
+                    .map_err(Error::Protocol)
+            }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: base structure".to_string(),
                 known_versions: vec![0],
@@ -103,6 +106,7 @@ impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -116,6 +120,7 @@ impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
                 platform,
                 block_info,
                 tx,
+                execution_context,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
@@ -184,7 +189,8 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
-        _execution_context: &mut StateTransitionExecutionContext,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -211,6 +217,8 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
                 self.validate_state_v0(
                     documents_batch_transition_action,
                     &platform.into(),
+                    epoch,
+                    execution_context,
                     tx,
                     platform_version,
                 )

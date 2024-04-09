@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 edition = "2021"
 rust-version = "1.76"
 authors = [
@@ -12,10 +12,10 @@ authors = [
 ]
 
 [dependencies]
-anyhow = { version = "1.0.75" }
-async-trait = { version = "0.1.68" }
-base64 = "0.20.0"
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "v1.3.1" }
+anyhow = { version = "1.0.81" }
+async-trait = { version = "0.1.79" }
+base64 = "0.22.0"
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "v1.3.1", optional = true }
 bs58 = "0.4.0"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.35", default-features = false, features = [
@@ -34,12 +34,12 @@ env_logger = { version = "0.9" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
-itertools = { version = "0.10" }
+itertools = { version = "0.12.1" }
 json-patch = "0.2.6"
 jsonptr = "0.1.5"
 jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "feat-unevaluated-properties", default-features = false, features = [
   "draft202012",
-] }
+], optional = true }
 lazy_static = { version = "1.4" }
 log = { version = "0.4.6" }
 num_enum = "0.5.7"
@@ -51,18 +51,18 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
 thiserror = { version = "1.0" }
-data-contracts = { path = "../data-contracts" }
+data-contracts = { path = "../data-contracts", optional = true }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 derive_more = "0.99.17"
-ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"] }
+ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"], optional = true }
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
-indexmap = { version = "2.0.2", features = ["serde"] }
+indexmap = { version = "2.0.2"}
 strum = { version = "0.25.0", features = ["derive"] }
 
 [dev-dependencies]
@@ -73,11 +73,8 @@ dpp = { path = ".", features = ["all_features_without_client"] }
 
 [features]
 default = [
-  "json-object",
   "platform-value",
-  "system_contracts",
   "state-transitions",
-  "extended-document",
 ]
 all_features = [
   "json-object",
@@ -85,6 +82,7 @@ all_features = [
   "system_contracts",
   "state-transitions",
   "extended-document",
+  "bls-signatures",
   "cbor",
   "validation",
   "identity-hashing",
@@ -116,6 +114,28 @@ all_features = [
   "random-document-types",
   "fee-distribution",
   "client",
+]
+
+rs-sdk-features = [
+  "json-object",
+  "platform-value",
+  "system_contracts",
+  "state-transitions",
+  "validation",
+  "identity-hashing",
+  "identity-serialization",
+  "document-value-conversion",
+  "data-contract-value-conversion",
+  "identity-value-conversion",
+  "state-transition-serde-conversion",
+  "state-transition-value-conversion",
+  "state-transition-json-conversion",
+  "state-transition-validation",
+  "state-transition-signing",
+  "state-transitions",
+  "fee-distribution",
+  "client",
+  "platform-value-cbor"
 ]
 all_features_without_client = [
   "json-object",
@@ -154,38 +174,43 @@ all_features_without_client = [
   "random-document-types",
   "fee-distribution",
 ]
-drive = ["state-transitions", "fee-distribution", "system_contracts"]
 abci = [
   "state-transitions",
   "state-transition-validation",
   "validation",
   "random-public-keys",
   "identity-serialization",
+  "platform-value-cbor",
 ]
 cbor = ["ciborium"]
 validation = [
+  "json-schema-validation",
   "platform-value",
   "document-value-conversion",
   "state-transition-serde-conversion",
+  "ed25519-dalek"
 ]
-json-object = ["platform-value"]
+platform-value-json = ["platform-value/json"]
+platform-value-cbor = ["platform-value/cbor"]
+json-schema-validation = ["jsonschema", "platform-value-json"]
+json-object = ["platform-value", "platform-value-json"]
 platform-value = []
 identity-hashing = ["identity-serialization"]
 message-signing = []
-message-signature-verification = []
+message-signature-verification = ["bls-signatures"]
 document-serde-conversion = []
 document-value-conversion = ["document-serde-conversion"]
-document-json-conversion = ["document-value-conversion"]
-document-cbor-conversion = ["document-value-conversion", "cbor"]
+document-json-conversion = ["document-value-conversion", "platform-value-json"]
+document-cbor-conversion = ["document-value-conversion", "cbor", "platform-value-cbor"]
 data-contract-serde-conversion = []
 data-contract-value-conversion = ["data-contract-serde-conversion"]
-data-contract-json-conversion = ["data-contract-value-conversion"]
-data-contract-cbor-conversion = ["data-contract-value-conversion", "cbor"]
+data-contract-json-conversion = ["data-contract-value-conversion", "platform-value-json"]
+data-contract-cbor-conversion = ["data-contract-value-conversion", "cbor", "platform-value-cbor"]
 identity-serialization = []
 identity-serde-conversion = []
 identity-value-conversion = ["identity-serde-conversion"]
-identity-json-conversion = ["identity-value-conversion"]
-identity-cbor-conversion = ["identity-value-conversion", "cbor"]
+identity-json-conversion = ["identity-value-conversion", "platform-value-json"]
+identity-cbor-conversion = ["identity-value-conversion", "cbor", "platform-value-cbor"]
 state-transition-serde-conversion = ["data-contract-serde-conversion"]
 state-transition-value-conversion = [
   "platform-value",
@@ -194,17 +219,19 @@ state-transition-value-conversion = [
 ]
 state-transition-json-conversion = [
   "json-object",
+  "state-transition-value-conversion",
   "data-contract-json-conversion",
+  "platform-value-json",
 ]
 state-transition-validation = ["state-transitions", "message-signature-verification"]
 state-transition-signing = ["state-transitions", "message-signing", "state-transition-validation"]
 state-transitions = []
-system_contracts = ["factories"]
-fixtures-and-mocks = ["system_contracts"]
-random-public-keys = []
+system_contracts = ["factories", "data-contracts", "platform-value-json"]
+fixtures-and-mocks = ["system_contracts", "platform-value/json"]
+random-public-keys = ["bls-signatures", "ed25519-dalek"]
 random-identities = ["random-public-keys"]
 random-documents = []
-random-document-types = []
+random-document-types = ["platform-value-json"]
 fee-distribution = []
 extended-document = [
   "document-serde-conversion",

@@ -27,46 +27,48 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::batch::GroveDbOpBatch;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::credit_pools::paths::pools_vec_path;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::error::Error;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
 };
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::balances::credits::Creditable;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::block::epoch::{Epoch, EpochIndex};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::fee::Credits;
-#[cfg(feature = "full")]
+use dpp::util::deserializer::ProtocolVersion;
+#[cfg(feature = "server")]
 use grovedb::batch::GroveDbOp;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::Element;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Epochs module
 pub mod epochs;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Epochs root tree key constants module
 pub mod epochs_root_tree_key_constants;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Adds the operations to groveDB op batch to create the fee pool trees
 pub fn add_create_fee_pool_trees_operations(
     batch: &mut GroveDbOpBatch,
     epochs_per_era: u16,
+    protocol_version: ProtocolVersion,
 ) -> Result<(), Error> {
     // Init storage credit pool
     batch.push(update_storage_fee_distribution_pool_operation(0)?);
@@ -84,16 +86,21 @@ pub fn add_create_fee_pool_trees_operations(
         epoch.add_init_empty_operations(batch)?;
     }
 
+    let genesis_epoch = Epoch::new(GENESIS_EPOCH_INDEX)?;
+
+    // Initial protocol version for genesis epoch
+    batch.push(genesis_epoch.update_protocol_version_operation(protocol_version));
+
     Ok(())
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Adds operations to batch to create pending pool updates tree
 pub fn add_create_pending_epoch_refunds_tree_operations(batch: &mut GroveDbOpBatch) {
     batch.add_insert_empty_sum_tree(pools_vec_path(), KEY_PENDING_EPOCH_REFUNDS.to_vec());
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Updates the storage fee distribution pool with a new storage fee
 pub fn update_storage_fee_distribution_pool_operation(
     storage_fee: Credits,
@@ -105,7 +112,7 @@ pub fn update_storage_fee_distribution_pool_operation(
     ))
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Updates the unpaid epoch index
 pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> GroveDbOp {
     GroveDbOp::insert_op(

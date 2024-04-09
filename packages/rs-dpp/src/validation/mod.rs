@@ -16,6 +16,7 @@ pub(crate) mod byte_array_meta;
 mod json_schema_validator;
 #[cfg(feature = "validation")]
 pub(crate) mod meta_validators;
+pub mod operations;
 mod validation_result;
 
 #[cfg(feature = "validation")]

@@ -43,15 +43,15 @@ use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
 use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Methods,
 };
-use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::processed_block_fees_outcome;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
-use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
@@ -76,20 +76,21 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     #[inline(always)]
     pub(super) fn process_block_fees_v0(
         &self,
-        block_info: &BlockStateInfo,
-        epoch_info: &EpochInfo,
+        block_execution_context: &BlockExecutionContext,
         block_fees: BlockFees,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
+        let epoch_info = block_execution_context.epoch_info();
+        let block_info = block_execution_context.block_state_info();
+
         let current_epoch = Epoch::new(epoch_info.current_epoch_index())?;
 
         let mut batch = vec![];
 
         let storage_fee_distribution_outcome = if epoch_info.is_epoch_change() {
             self.add_process_epoch_change_operations(
-                block_info,
-                epoch_info,
+                block_execution_context,
                 &block_fees,
                 transaction,
                 &mut batch,
@@ -223,14 +224,18 @@ mod tests {
 
     use crate::config::ExecutionConfig;
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
-    use drive::common::identities::create_test_masternode_identities;
+    use drive::common::test_utils::identities::create_test_masternode_identities;
 
     mod helpers {
         use super::*;
+        use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
         use crate::execution::types::block_fees::v0::BlockFeesV0;
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
         use crate::platform_types::epoch_info::v0::EpochInfoV0;
+        use crate::platform_types::epoch_info::EpochInfo;
+        use crate::platform_types::platform_state::PlatformState;
         use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch, GENESIS_EPOCH_INDEX};
+        use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 
         /// Process and validate block fees
         pub fn process_and_validate_block_fees<C>(
@@ -260,7 +265,7 @@ mod tests {
                 app_hash: None,
             };
 
-            let epoch_info = EpochInfoV0::from_genesis_time_and_block_info(
+            let epoch_info: EpochInfo = EpochInfoV0::from_genesis_time_and_block_info(
                 genesis_time_ms,
                 &block_info,
                 platform.config.execution.epoch_time_length_s,
@@ -275,10 +280,23 @@ mod tests {
             }
             .into();
 
+            let block_platform_state = PlatformState::default_with_protocol_versions(
+                INITIAL_PROTOCOL_VERSION,
+                INITIAL_PROTOCOL_VERSION,
+            );
+
+            let block_execution_context = BlockExecutionContextV0 {
+                block_state_info: block_info.clone().into(),
+                epoch_info: epoch_info.clone(),
+                hpmn_count: 0,
+                unsigned_withdrawal_transactions: Default::default(),
+                block_platform_state,
+                proposer_results: None,
+            };
+
             let storage_fee_distribution_outcome = platform
                 .process_block_fees_v0(
-                    &block_info.clone().into(),
-                    &epoch_info,
+                    &block_execution_context.into(),
                     block_fees.clone(),
                     transaction,
                     platform_version,

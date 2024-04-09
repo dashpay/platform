@@ -1,28 +1,27 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+
 use dpp::version::PlatformVersion;
-
 use drive::dpp::util::deserializer::ProtocolVersion;
-use drive::grovedb::Transaction;
-
-/// The percentage needed of HPMNs to upgrade the protocol
-/// It always needs to be higher than the rounded amount after applying the percentage
-const PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED: u64 = 75;
 
 impl<C> Platform<C> {
     /// checks for a network upgrade and resets activation window
     /// this should only be called on epoch change
-    /// this will change backing state, but does not change drive cache
     pub(super) fn check_for_desired_protocol_upgrade_v0(
         &self,
         total_hpmns: u32,
-        current_protocol_version_in_consensus: ProtocolVersion,
-        transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<ProtocolVersion>, Error> {
-        let required_upgraded_hpns = 1
+        let upgrade_percentage_needed = platform_version
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .protocol_version_upgrade_percentage_needed;
+
+        let required_upgraded_hpmns = 1
             + (total_hpmns as u64)
-                .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
+                .checked_mul(upgrade_percentage_needed)
                 .and_then(|product| product.checked_div(100))
                 .ok_or(Error::Execution(ExecutionError::Overflow(
                     "overflow for required block count",
@@ -30,9 +29,9 @@ impl<C> Platform<C> {
 
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
-        let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
+        let protocol_versions_counter = self.drive.cache.protocol_versions_counter.read();
         let mut versions_passing_threshold =
-            protocol_versions_counter.versions_passing_threshold(required_upgraded_hpns);
+            protocol_versions_counter.versions_passing_threshold(required_upgraded_hpmns);
         drop(protocol_versions_counter);
 
         if versions_passing_threshold.len() > 1 {
@@ -45,26 +44,13 @@ impl<C> Platform<C> {
 
         if !versions_passing_threshold.is_empty() {
             // same as equals 1
-            let new_version = versions_passing_threshold.remove(0);
-            // Persist current and next epoch protocol versions
-            // we also drop all protocol version votes information
-            self.drive
-                .change_to_new_version_and_clear_version_information(
-                    current_protocol_version_in_consensus,
-                    new_version,
-                    Some(transaction),
-                )
-                .map_err(Error::Drive)?;
+            let next_version = versions_passing_threshold.remove(0);
 
-            Ok(Some(new_version))
+            // TODO: We stored next version here previously.
+            //  It was never used so we can temporary remove it from here and move it to Epoch trees in upcoming PR
+
+            Ok(Some(next_version))
         } else {
-            // we need to drop all version information
-            let current_platform_version =
-                PlatformVersion::get(current_protocol_version_in_consensus)?;
-            self.drive
-                .clear_version_information(Some(transaction), &current_platform_version.drive)
-                .map_err(Error::Drive)?;
-
             Ok(None)
         }
     }

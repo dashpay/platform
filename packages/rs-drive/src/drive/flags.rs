@@ -30,53 +30,53 @@
 //! Flags
 //!
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::defaults::DEFAULT_HASH_SIZE;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::flags::StorageFlags::{
     MultiEpoch, MultiEpochOwned, SingleEpoch, SingleEpochOwned,
 };
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::ElementFlags;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::SectionedStorageRemoval;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb_costs::storage_cost::removal::{
     StorageRemovalPerEpochByIdentifier, StorageRemovedBytes,
 };
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use integer_encoding::VarInt;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use intmap::IntMap;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::borrow::Cow;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::cmp::Ordering;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeMap;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::error::storage_flags::StorageFlagsError;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::error::Error;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 type EpochIndex = u16;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 type BaseEpoch = EpochIndex;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 type BytesAddedInEpoch = u32;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 type OwnerId = [u8; 32];
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// The size of single epoch flags
 pub const SINGLE_EPOCH_FLAGS_SIZE: u32 = 3;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Storage flags
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StorageFlags {
@@ -97,7 +97,7 @@ pub enum StorageFlags {
     MultiEpochOwned(BaseEpoch, BTreeMap<EpochIndex, BytesAddedInEpoch>, OwnerId),
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl StorageFlags {
     /// Create new single epoch storage flags
     pub fn new_single_epoch(epoch: BaseEpoch, maybe_owner_id: Option<OwnerId>) -> Self {

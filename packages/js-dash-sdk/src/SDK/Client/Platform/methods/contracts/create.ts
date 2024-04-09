@@ -17,7 +17,7 @@ export async function create(
 
   await this.initialize();
 
-  const identityNonce = await this.nonceManager.getIdentityNonce(identity.getId()) + 1;
+  const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
   const dataContract = this.dpp.dataContract.create(
     identity.getId(),
     BigInt(identityNonce),

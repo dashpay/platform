@@ -3082,6 +3082,9 @@ export namespace GetEpochsInfoResponse {
       getFeeMultiplier(): number;
       setFeeMultiplier(value: number): void;
 
+      getProtocolVersion(): number;
+      setProtocolVersion(value: number): void;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): EpochInfo.AsObject;
       static toObject(includeInstance: boolean, msg: EpochInfo): EpochInfo.AsObject;
@@ -3099,6 +3102,7 @@ export namespace GetEpochsInfoResponse {
         firstCoreBlockHeight: number,
         startTime: number,
         feeMultiplier: number,
+        protocolVersion: number,
       }
     }
 

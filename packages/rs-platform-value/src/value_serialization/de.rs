@@ -1,3 +1,5 @@
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use core::{fmt, slice};
 use std::iter::Peekable;
 
@@ -177,7 +179,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
         match self.0 {
             Value::Bytes(x) => {
                 if human_readable {
-                    visitor.visit_str(base64::encode(x).as_str())
+                    visitor.visit_str(BASE64_STANDARD.encode(x).as_str())
                 } else {
                     visitor.visit_bytes(&x)
                 }
@@ -200,21 +202,21 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
             Value::I8(x) => visitor.visit_i8(x),
             Value::Bytes20(x) => {
                 if human_readable {
-                    visitor.visit_str(base64::encode(x).as_str())
+                    visitor.visit_str(BASE64_STANDARD.encode(x).as_str())
                 } else {
                     visitor.visit_bytes(&x)
                 }
             }
             Value::Bytes32(x) => {
                 if human_readable {
-                    visitor.visit_str(base64::encode(x).as_str())
+                    visitor.visit_str(BASE64_STANDARD.encode(x).as_str())
                 } else {
                     visitor.visit_bytes(&x)
                 }
             }
             Value::Bytes36(x) => {
                 if human_readable {
-                    visitor.visit_str(base64::encode(x).as_str())
+                    visitor.visit_str(BASE64_STANDARD.encode(x).as_str())
                 } else {
                     visitor.visit_bytes(&x)
                 }

@@ -4,6 +4,7 @@ mod state;
 mod structure;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -66,7 +67,10 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreditWithdrawalTrans
             .identity_credit_withdrawal_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_basic_structure_v0(),
+            Some(0) => {
+                // There is nothing expensive here
+                self.validate_basic_structure_v0()
+            }
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: validate_basic_structure"
                     .to_string(),
@@ -88,6 +92,7 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
+        _epoch: &Epoch,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

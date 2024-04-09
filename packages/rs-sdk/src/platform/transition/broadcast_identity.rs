@@ -10,12 +10,12 @@ use std::fmt::Debug;
 use dapi_grpc::platform::v0::{self as proto, BroadcastStateTransitionRequest};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
+use dpp::native_bls::NativeBlsModule;
 use dpp::prelude::{AssetLockProof, Identity};
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
-use dpp::NativeBlsModule;
 use rs_dapi_client::transport::TransportRequest;
 
 use super::broadcast_request::BroadcastRequestForStateTransition;

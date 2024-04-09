@@ -1,9 +1,12 @@
+#[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 
-use std::{collections::BTreeMap, convert::TryInto};
+use std::collections::BTreeMap;
+#[cfg(feature = "json")]
+use std::convert::TryInto;
 
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Identifier, Value};
@@ -73,10 +76,12 @@ pub trait BTreeValueMapPathHelper {
         &'a self,
         path: &str,
     ) -> Result<I, Error>;
+    #[cfg(feature = "json")]
     fn get_optional_inner_str_json_value_map_at_path<I: FromIterator<(String, JsonValue)>>(
         &self,
         path: &str,
     ) -> Result<Option<I>, Error>;
+    #[cfg(feature = "json")]
     fn get_inner_str_json_value_map_at_path<I: FromIterator<(String, JsonValue)>>(
         &self,
         path: &str,
@@ -418,6 +423,7 @@ where
             })
     }
 
+    #[cfg(feature = "json")]
     fn get_optional_inner_str_json_value_map_at_path<I: FromIterator<(String, JsonValue)>>(
         &self,
         path: &str,
@@ -437,6 +443,7 @@ where
             .transpose()
     }
 
+    #[cfg(feature = "json")]
     fn get_inner_str_json_value_map_at_path<I: FromIterator<(String, JsonValue)>>(
         &self,
         path: &str,

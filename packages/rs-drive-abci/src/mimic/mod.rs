@@ -117,7 +117,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                     .unwrap()
             });
 
-        const APP_VERSION: u64 = 0;
+        const DEFAULT_APP_VERSION: u64 = 0;
 
         let mut rng = StdRng::seed_from_u64(block_info.height);
 
@@ -153,7 +153,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             proposed_app_version: proposed_version as u64,
             version: Some(Consensus {
                 block: 0,
-                app: APP_VERSION,
+                app: DEFAULT_APP_VERSION, // TODO: Prepare proposal should get 0 always
             }),
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
@@ -173,6 +173,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             consensus_param_updates: _,
             core_chain_lock_update,
             validator_set_update,
+            app_version,
         } = response_prepare_proposal;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
@@ -231,7 +232,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         let state_id = StateId {
             app_hash: app_hash.clone(),
-            app_version: APP_VERSION,
+            app_version,
             core_chain_locked_height: core_height,
             height,
             time: time.to_milis(),
@@ -271,7 +272,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             proposed_app_version: proposed_version as u64,
             version: Some(Consensus {
                 block: 0,
-                app: APP_VERSION,
+                app: app_version,
             }),
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
@@ -519,7 +520,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             header: Some(Header {
                 version: Some(Consensus {
                     block: 0, //todo
-                    app: APP_VERSION,
+                    app: app_version,
                 }),
                 chain_id: CHAIN_ID.to_string(),
                 height: height as i64,
@@ -590,7 +591,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         Ok(MimicExecuteBlockOutcome {
             state_transaction_results,
-            app_version: APP_VERSION,
+            app_version,
             withdrawal_transactions,
             validator_set_update,
             next_validator_set_hash,

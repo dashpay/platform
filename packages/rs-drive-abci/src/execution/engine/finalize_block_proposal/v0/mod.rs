@@ -64,21 +64,13 @@ where
         request_finalize_block: FinalizeBlockCleanedRequest,
         mut block_execution_context: BlockExecutionContext,
         transaction: &Transaction,
-        _last_committed_platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
         let block_state_info = block_execution_context.block_state_info();
         let epoch_info = block_execution_context.epoch_info();
         let block_platform_state = block_execution_context.block_platform_state();
-
-        // TODO: The block was processed with last committed platform version, it's wrong to call all functions
-        //  here with new version. Except probably state storage version.
-        //  Another problem that block was processed wit last committed version but we storing state with new version.
-        //  It means when we load the state we would expect this block to be processed with the new version.
-        let current_protocol_version = block_platform_state.current_protocol_version_in_consensus();
-
-        let platform_version = PlatformVersion::get(current_protocol_version)?;
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
@@ -247,6 +239,8 @@ where
         }
         .into();
 
+        self.update_drive_cache(&block_execution_context, platform_version)?;
+
         let block_platform_state = block_execution_context.block_platform_state_owned();
 
         self.update_state_cache(
@@ -255,8 +249,6 @@ where
             transaction,
             platform_version,
         )?;
-
-        self.update_drive_cache(platform_version)?;
 
         // Gather some metrics
         crate::metrics::abci_last_block_time(block_header.time.seconds as u64);

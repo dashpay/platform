@@ -207,6 +207,7 @@ mod tests {
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
 
+    use dpp::native_bls::NativeBlsModule;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
@@ -223,7 +224,6 @@ mod tests {
         instant_asset_lock_proof_fixture,
     };
     use dpp::version::PlatformVersion;
-    use dpp::NativeBlsModule;
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
     use dpp::consensus::state::state_error::StateError;
@@ -434,7 +434,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2796590);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2970480);
 
         let check_result = platform
             .check_tx(
@@ -625,7 +625,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 736520);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 909500);
 
         let check_result = platform
             .check_tx(
@@ -767,7 +767,7 @@ mod tests {
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            2796590 * 2
+            2970480 * 2
         );
 
         let check_result = platform
@@ -1005,7 +1005,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2796590);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2970480);
 
         platform
             .drive
@@ -1089,7 +1089,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            5704920
+            7066460
         );
 
         let check_result = platform
@@ -1201,7 +1201,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2796590);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2970480);
 
         platform
             .drive
@@ -1320,7 +1320,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1127060);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1231110);
 
         let check_result = platform
             .check_tx(

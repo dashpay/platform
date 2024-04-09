@@ -8,6 +8,7 @@ use std::fmt;
 
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
 
 use crate::string_encoding::Encoding;
@@ -191,6 +192,7 @@ impl Identifier {
         Ok(Identifier::new(vec.try_into().unwrap()))
     }
 
+    #[cfg(feature = "json")]
     pub fn to_json_value_vec(&self) -> Vec<JsonValue> {
         self.to_buffer()
             .iter()
