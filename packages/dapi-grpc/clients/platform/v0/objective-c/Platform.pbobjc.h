@@ -51,10 +51,10 @@ CF_EXTERN_C_BEGIN
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos;
-@class GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0;
-@class GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0;
-@class GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_IdentitiesKeys;
-@class GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Keys;
+@class GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0;
+@class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0;
+@class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys;
+@class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Keys;
 @class GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0;
 @class GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0;
 @class GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision;
@@ -95,6 +95,31 @@ CF_EXTERN_C_BEGIN
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
 
 NS_ASSUME_NONNULL_BEGIN
+
+#pragma mark - Enum KeyPurpose
+
+typedef GPB_ENUM(KeyPurpose) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  KeyPurpose_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  KeyPurpose_Authentication = 0,
+  KeyPurpose_Encryption = 1,
+  KeyPurpose_Decryption = 2,
+  KeyPurpose_Transfer = 3,
+  KeyPurpose_System = 4,
+  KeyPurpose_Voting = 5,
+};
+
+GPBEnumDescriptor *KeyPurpose_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL KeyPurpose_IsValidValue(int32_t value);
 
 #pragma mark - Enum SecurityLevelMap_KeyKindRequestType
 
@@ -949,90 +974,99 @@ GPB_FINAL @interface GetIdentityKeysResponse_GetIdentityKeysResponseV0_Keys : GP
 
 @end
 
-#pragma mark - GetIdentitiesKeysRequest
+#pragma mark - GetIdentitiesContractKeysRequest
 
-typedef GPB_ENUM(GetIdentitiesKeysRequest_FieldNumber) {
-  GetIdentitiesKeysRequest_FieldNumber_V0 = 1,
+typedef GPB_ENUM(GetIdentitiesContractKeysRequest_FieldNumber) {
+  GetIdentitiesContractKeysRequest_FieldNumber_V0 = 1,
 };
 
-typedef GPB_ENUM(GetIdentitiesKeysRequest_Version_OneOfCase) {
-  GetIdentitiesKeysRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetIdentitiesKeysRequest_Version_OneOfCase_V0 = 1,
+typedef GPB_ENUM(GetIdentitiesContractKeysRequest_Version_OneOfCase) {
+  GetIdentitiesContractKeysRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesContractKeysRequest_Version_OneOfCase_V0 = 1,
 };
 
-GPB_FINAL @interface GetIdentitiesKeysRequest : GPBMessage
+GPB_FINAL @interface GetIdentitiesContractKeysRequest : GPBMessage
 
-@property(nonatomic, readonly) GetIdentitiesKeysRequest_Version_OneOfCase versionOneOfCase;
+@property(nonatomic, readonly) GetIdentitiesContractKeysRequest_Version_OneOfCase versionOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0 *v0;
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0 *v0;
 
 @end
 
 /**
  * Clears whatever value was set for the oneof 'version'.
  **/
-void GetIdentitiesKeysRequest_ClearVersionOneOfCase(GetIdentitiesKeysRequest *message);
+void GetIdentitiesContractKeysRequest_ClearVersionOneOfCase(GetIdentitiesContractKeysRequest *message);
 
-#pragma mark - GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0
+#pragma mark - GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0
 
-typedef GPB_ENUM(GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0_FieldNumber) {
-  GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0_FieldNumber_Entries = 1,
-  GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0_FieldNumber_Prove = 2,
+typedef GPB_ENUM(GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber) {
+  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_IdentitiesIdsArray = 1,
+  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_ContractId = 2,
+  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_PurposesArray = 3,
+  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_Prove = 4,
 };
 
-GPB_FINAL @interface GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0 : GPBMessage
+GPB_FINAL @interface GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0 : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableDictionary<NSString*, SpecificKeys*> *entries;
-/** The number of items in @c entries without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger entries_Count;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesIdsArray;
+/** The number of items in @c identitiesIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identitiesIdsArray_Count;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+// |purposesArray| contains |KeyPurpose|
+@property(nonatomic, readwrite, strong, null_resettable) GPBEnumArray *purposesArray;
+/** The number of items in @c purposesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger purposesArray_Count;
 
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
 
-#pragma mark - GetIdentitiesKeysResponse
+#pragma mark - GetIdentitiesContractKeysResponse
 
-typedef GPB_ENUM(GetIdentitiesKeysResponse_FieldNumber) {
-  GetIdentitiesKeysResponse_FieldNumber_V0 = 1,
+typedef GPB_ENUM(GetIdentitiesContractKeysResponse_FieldNumber) {
+  GetIdentitiesContractKeysResponse_FieldNumber_V0 = 1,
 };
 
-typedef GPB_ENUM(GetIdentitiesKeysResponse_Version_OneOfCase) {
-  GetIdentitiesKeysResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetIdentitiesKeysResponse_Version_OneOfCase_V0 = 1,
+typedef GPB_ENUM(GetIdentitiesContractKeysResponse_Version_OneOfCase) {
+  GetIdentitiesContractKeysResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesContractKeysResponse_Version_OneOfCase_V0 = 1,
 };
 
-GPB_FINAL @interface GetIdentitiesKeysResponse : GPBMessage
+GPB_FINAL @interface GetIdentitiesContractKeysResponse : GPBMessage
 
-@property(nonatomic, readonly) GetIdentitiesKeysResponse_Version_OneOfCase versionOneOfCase;
+@property(nonatomic, readonly) GetIdentitiesContractKeysResponse_Version_OneOfCase versionOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0 *v0;
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0 *v0;
 
 @end
 
 /**
  * Clears whatever value was set for the oneof 'version'.
  **/
-void GetIdentitiesKeysResponse_ClearVersionOneOfCase(GetIdentitiesKeysResponse *message);
+void GetIdentitiesContractKeysResponse_ClearVersionOneOfCase(GetIdentitiesContractKeysResponse *message);
 
-#pragma mark - GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0
+#pragma mark - GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0
 
-typedef GPB_ENUM(GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_FieldNumber) {
-  GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_FieldNumber_IdentitiesKeys = 1,
-  GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_FieldNumber_Proof = 2,
-  GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_FieldNumber_Metadata = 3,
+typedef GPB_ENUM(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_FieldNumber) {
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_FieldNumber_IdentitiesKeys = 1,
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_FieldNumber_Proof = 2,
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_FieldNumber_Metadata = 3,
 };
 
-typedef GPB_ENUM(GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Result_OneOfCase) {
-  GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Result_OneOfCase_IdentitiesKeys = 1,
-  GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Result_OneOfCase_Proof = 2,
+typedef GPB_ENUM(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Result_OneOfCase) {
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Result_OneOfCase_IdentitiesKeys = 1,
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Result_OneOfCase_Proof = 2,
 };
 
-GPB_FINAL @interface GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0 : GPBMessage
+GPB_FINAL @interface GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0 : GPBMessage
 
-@property(nonatomic, readonly) GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Result_OneOfCase resultOneOfCase;
+@property(nonatomic, readonly) GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Result_OneOfCase resultOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_IdentitiesKeys *identitiesKeys;
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys *identitiesKeys;
 
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
@@ -1045,15 +1079,15 @@ GPB_FINAL @interface GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0 : GPB
 /**
  * Clears whatever value was set for the oneof 'result'.
  **/
-void GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_ClearResultOneOfCase(GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0 *message);
+void GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_ClearResultOneOfCase(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0 *message);
 
-#pragma mark - GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Keys
+#pragma mark - GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Keys
 
-typedef GPB_ENUM(GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Keys_FieldNumber) {
-  GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Keys_FieldNumber_KeysBytesArray = 1,
+typedef GPB_ENUM(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Keys_FieldNumber) {
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Keys_FieldNumber_KeysBytesArray = 1,
 };
 
-GPB_FINAL @interface GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Keys : GPBMessage
+GPB_FINAL @interface GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Keys : GPBMessage
 
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *keysBytesArray;
 /** The number of items in @c keysBytesArray without causing the array to be created. */
@@ -1061,20 +1095,17 @@ GPB_FINAL @interface GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Keys 
 
 @end
 
-#pragma mark - GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_IdentitiesKeys
+#pragma mark - GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys
 
-typedef GPB_ENUM(GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_IdentitiesKeys_FieldNumber) {
-  GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_IdentitiesKeys_FieldNumber_Entries = 1,
+typedef GPB_ENUM(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys_FieldNumber) {
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys_FieldNumber_EntriesArray = 1,
 };
 
-/**
- * Map of identity id to keys
- **/
-GPB_FINAL @interface GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_IdentitiesKeys : GPBMessage
+GPB_FINAL @interface GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableDictionary<NSString*, GetIdentitiesKeysResponse_GetIdentitiesKeysResponseV0_Keys*> *entries;
-/** The number of items in @c entries without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger entries_Count;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Keys*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
 
 @end
 

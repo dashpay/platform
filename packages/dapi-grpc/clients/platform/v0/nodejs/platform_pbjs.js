@@ -186,35 +186,35 @@ $root.org = (function() {
                          */
 
                         /**
-                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentitiesKeys}.
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentitiesContractKeys}.
                          * @memberof org.dash.platform.dapi.v0.Platform
-                         * @typedef getIdentitiesKeysCallback
+                         * @typedef getIdentitiesContractKeysCallback
                          * @type {function}
                          * @param {Error|null} error Error, if any
-                         * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse} [response] GetIdentitiesKeysResponse
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse} [response] GetIdentitiesContractKeysResponse
                          */
 
                         /**
-                         * Calls getIdentitiesKeys.
-                         * @function getIdentitiesKeys
+                         * Calls getIdentitiesContractKeys.
+                         * @function getIdentitiesContractKeys
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysRequest} request GetIdentitiesKeysRequest message or plain object
-                         * @param {org.dash.platform.dapi.v0.Platform.getIdentitiesKeysCallback} callback Node-style callback called with the error, if any, and GetIdentitiesKeysResponse
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysRequest} request GetIdentitiesContractKeysRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getIdentitiesContractKeysCallback} callback Node-style callback called with the error, if any, and GetIdentitiesContractKeysResponse
                          * @returns {undefined}
                          * @variation 1
                          */
-                        Object.defineProperty(Platform.prototype.getIdentitiesKeys = function getIdentitiesKeys(request, callback) {
-                            return this.rpcCall(getIdentitiesKeys, $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest, $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse, request, callback);
-                        }, "name", { value: "getIdentitiesKeys" });
+                        Object.defineProperty(Platform.prototype.getIdentitiesContractKeys = function getIdentitiesContractKeys(request, callback) {
+                            return this.rpcCall(getIdentitiesContractKeys, $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest, $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse, request, callback);
+                        }, "name", { value: "getIdentitiesContractKeys" });
 
                         /**
-                         * Calls getIdentitiesKeys.
-                         * @function getIdentitiesKeys
+                         * Calls getIdentitiesContractKeys.
+                         * @function getIdentitiesContractKeys
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysRequest} request GetIdentitiesKeysRequest message or plain object
-                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentitiesKeysResponse>} Promise
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysRequest} request GetIdentitiesContractKeysRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse>} Promise
                          * @variation 2
                          */
 
@@ -1615,6 +1615,28 @@ $root.org = (function() {
                         };
 
                         return StateTransitionBroadcastError;
+                    })();
+
+                    /**
+                     * KeyPurpose enum.
+                     * @name org.dash.platform.dapi.v0.KeyPurpose
+                     * @enum {number}
+                     * @property {number} AUTHENTICATION=0 AUTHENTICATION value
+                     * @property {number} ENCRYPTION=1 ENCRYPTION value
+                     * @property {number} DECRYPTION=2 DECRYPTION value
+                     * @property {number} TRANSFER=3 TRANSFER value
+                     * @property {number} SYSTEM=4 SYSTEM value
+                     * @property {number} VOTING=5 VOTING value
+                     */
+                    v0.KeyPurpose = (function() {
+                        var valuesById = {}, values = Object.create(valuesById);
+                        values[valuesById[0] = "AUTHENTICATION"] = 0;
+                        values[valuesById[1] = "ENCRYPTION"] = 1;
+                        values[valuesById[2] = "DECRYPTION"] = 2;
+                        values[valuesById[3] = "TRANSFER"] = 3;
+                        values[valuesById[4] = "SYSTEM"] = 4;
+                        values[valuesById[5] = "VOTING"] = 5;
+                        return values;
                     })();
 
                     v0.BroadcastStateTransitionRequest = (function() {
@@ -9158,24 +9180,24 @@ $root.org = (function() {
                         return GetIdentityKeysResponse;
                     })();
 
-                    v0.GetIdentitiesKeysRequest = (function() {
+                    v0.GetIdentitiesContractKeysRequest = (function() {
 
                         /**
-                         * Properties of a GetIdentitiesKeysRequest.
+                         * Properties of a GetIdentitiesContractKeysRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetIdentitiesKeysRequest
-                         * @property {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.IGetIdentitiesKeysRequestV0|null} [v0] GetIdentitiesKeysRequest v0
+                         * @interface IGetIdentitiesContractKeysRequest
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.IGetIdentitiesContractKeysRequestV0|null} [v0] GetIdentitiesContractKeysRequest v0
                          */
 
                         /**
-                         * Constructs a new GetIdentitiesKeysRequest.
+                         * Constructs a new GetIdentitiesContractKeysRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetIdentitiesKeysRequest.
-                         * @implements IGetIdentitiesKeysRequest
+                         * @classdesc Represents a GetIdentitiesContractKeysRequest.
+                         * @implements IGetIdentitiesContractKeysRequest
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysRequest=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysRequest=} [properties] Properties to set
                          */
-                        function GetIdentitiesKeysRequest(properties) {
+                        function GetIdentitiesContractKeysRequest(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -9183,89 +9205,89 @@ $root.org = (function() {
                         }
 
                         /**
-                         * GetIdentitiesKeysRequest v0.
-                         * @member {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.IGetIdentitiesKeysRequestV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * GetIdentitiesContractKeysRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.IGetIdentitiesContractKeysRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @instance
                          */
-                        GetIdentitiesKeysRequest.prototype.v0 = null;
+                        GetIdentitiesContractKeysRequest.prototype.v0 = null;
 
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
-                         * GetIdentitiesKeysRequest version.
+                         * GetIdentitiesContractKeysRequest version.
                          * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @instance
                          */
-                        Object.defineProperty(GetIdentitiesKeysRequest.prototype, "version", {
+                        Object.defineProperty(GetIdentitiesContractKeysRequest.prototype, "version", {
                             get: $util.oneOfGetter($oneOfFields = ["v0"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
                         /**
-                         * Creates a new GetIdentitiesKeysRequest instance using the specified properties.
+                         * Creates a new GetIdentitiesContractKeysRequest instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysRequest=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest} GetIdentitiesKeysRequest instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest} GetIdentitiesContractKeysRequest instance
                          */
-                        GetIdentitiesKeysRequest.create = function create(properties) {
-                            return new GetIdentitiesKeysRequest(properties);
+                        GetIdentitiesContractKeysRequest.create = function create(properties) {
+                            return new GetIdentitiesContractKeysRequest(properties);
                         };
 
                         /**
-                         * Encodes the specified GetIdentitiesKeysRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.verify|verify} messages.
+                         * Encodes the specified GetIdentitiesContractKeysRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysRequest} message GetIdentitiesKeysRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysRequest} message GetIdentitiesContractKeysRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetIdentitiesKeysRequest.encode = function encode(message, writer) {
+                        GetIdentitiesContractKeysRequest.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             return writer;
                         };
 
                         /**
-                         * Encodes the specified GetIdentitiesKeysRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.verify|verify} messages.
+                         * Encodes the specified GetIdentitiesContractKeysRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysRequest} message GetIdentitiesKeysRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysRequest} message GetIdentitiesContractKeysRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetIdentitiesKeysRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetIdentitiesContractKeysRequest.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a GetIdentitiesKeysRequest message from the specified reader or buffer.
+                         * Decodes a GetIdentitiesContractKeysRequest message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest} GetIdentitiesKeysRequest
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest} GetIdentitiesContractKeysRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetIdentitiesKeysRequest.decode = function decode(reader, length) {
+                        GetIdentitiesContractKeysRequest.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.decode(reader, reader.uint32());
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -9276,37 +9298,37 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a GetIdentitiesKeysRequest message from the specified reader or buffer, length delimited.
+                         * Decodes a GetIdentitiesContractKeysRequest message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest} GetIdentitiesKeysRequest
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest} GetIdentitiesContractKeysRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetIdentitiesKeysRequest.decodeDelimited = function decodeDelimited(reader) {
+                        GetIdentitiesContractKeysRequest.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a GetIdentitiesKeysRequest message.
+                         * Verifies a GetIdentitiesContractKeysRequest message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        GetIdentitiesKeysRequest.verify = function verify(message) {
+                        GetIdentitiesContractKeysRequest.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             var properties = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
                                 properties.version = 1;
                                 {
-                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.verify(message.v0);
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.verify(message.v0);
                                     if (error)
                                         return "v0." + error;
                                 }
@@ -9315,40 +9337,40 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Creates a GetIdentitiesKeysRequest message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetIdentitiesContractKeysRequest message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest} GetIdentitiesKeysRequest
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest} GetIdentitiesContractKeysRequest
                          */
-                        GetIdentitiesKeysRequest.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest)
+                        GetIdentitiesContractKeysRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest)
                                 return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest();
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest();
                             if (object.v0 != null) {
                                 if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.fromObject(object.v0);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.fromObject(object.v0);
                             }
                             return message;
                         };
 
                         /**
-                         * Creates a plain object from a GetIdentitiesKeysRequest message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetIdentitiesContractKeysRequest message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest} message GetIdentitiesKeysRequest
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest} message GetIdentitiesContractKeysRequest
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        GetIdentitiesKeysRequest.toObject = function toObject(message, options) {
+                        GetIdentitiesContractKeysRequest.toObject = function toObject(message, options) {
                             if (!options)
                                 options = {};
                             var object = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.toObject(message.v0, options);
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
                             }
@@ -9356,36 +9378,39 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Converts this GetIdentitiesKeysRequest to JSON.
+                         * Converts this GetIdentitiesContractKeysRequest to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        GetIdentitiesKeysRequest.prototype.toJSON = function toJSON() {
+                        GetIdentitiesContractKeysRequest.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0 = (function() {
+                        GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0 = (function() {
 
                             /**
-                             * Properties of a GetIdentitiesKeysRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
-                             * @interface IGetIdentitiesKeysRequestV0
-                             * @property {Object.<string,org.dash.platform.dapi.v0.ISpecificKeys>|null} [entries] GetIdentitiesKeysRequestV0 entries
-                             * @property {boolean|null} [prove] GetIdentitiesKeysRequestV0 prove
+                             * Properties of a GetIdentitiesContractKeysRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
+                             * @interface IGetIdentitiesContractKeysRequestV0
+                             * @property {Array.<Uint8Array>|null} [identitiesIds] GetIdentitiesContractKeysRequestV0 identitiesIds
+                             * @property {Uint8Array|null} [contractId] GetIdentitiesContractKeysRequestV0 contractId
+                             * @property {Array.<org.dash.platform.dapi.v0.KeyPurpose>|null} [purposes] GetIdentitiesContractKeysRequestV0 purposes
+                             * @property {boolean|null} [prove] GetIdentitiesContractKeysRequestV0 prove
                              */
 
                             /**
-                             * Constructs a new GetIdentitiesKeysRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
-                             * @classdesc Represents a GetIdentitiesKeysRequestV0.
-                             * @implements IGetIdentitiesKeysRequestV0
+                             * Constructs a new GetIdentitiesContractKeysRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest
+                             * @classdesc Represents a GetIdentitiesContractKeysRequestV0.
+                             * @implements IGetIdentitiesContractKeysRequestV0
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.IGetIdentitiesKeysRequestV0=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.IGetIdentitiesContractKeysRequestV0=} [properties] Properties to set
                              */
-                            function GetIdentitiesKeysRequestV0(properties) {
-                                this.entries = {};
+                            function GetIdentitiesContractKeysRequestV0(properties) {
+                                this.identitiesIds = [];
+                                this.purposes = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -9393,109 +9418,127 @@ $root.org = (function() {
                             }
 
                             /**
-                             * GetIdentitiesKeysRequestV0 entries.
-                             * @member {Object.<string,org.dash.platform.dapi.v0.ISpecificKeys>} entries
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * GetIdentitiesContractKeysRequestV0 identitiesIds.
+                             * @member {Array.<Uint8Array>} identitiesIds
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @instance
                              */
-                            GetIdentitiesKeysRequestV0.prototype.entries = $util.emptyObject;
+                            GetIdentitiesContractKeysRequestV0.prototype.identitiesIds = $util.emptyArray;
 
                             /**
-                             * GetIdentitiesKeysRequestV0 prove.
+                             * GetIdentitiesContractKeysRequestV0 contractId.
+                             * @member {Uint8Array} contractId
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
+                             * @instance
+                             */
+                            GetIdentitiesContractKeysRequestV0.prototype.contractId = $util.newBuffer([]);
+
+                            /**
+                             * GetIdentitiesContractKeysRequestV0 purposes.
+                             * @member {Array.<org.dash.platform.dapi.v0.KeyPurpose>} purposes
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
+                             * @instance
+                             */
+                            GetIdentitiesContractKeysRequestV0.prototype.purposes = $util.emptyArray;
+
+                            /**
+                             * GetIdentitiesContractKeysRequestV0 prove.
                              * @member {boolean} prove
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @instance
                              */
-                            GetIdentitiesKeysRequestV0.prototype.prove = false;
+                            GetIdentitiesContractKeysRequestV0.prototype.prove = false;
 
                             /**
-                             * Creates a new GetIdentitiesKeysRequestV0 instance using the specified properties.
+                             * Creates a new GetIdentitiesContractKeysRequestV0 instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.IGetIdentitiesKeysRequestV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0} GetIdentitiesKeysRequestV0 instance
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.IGetIdentitiesContractKeysRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0} GetIdentitiesContractKeysRequestV0 instance
                              */
-                            GetIdentitiesKeysRequestV0.create = function create(properties) {
-                                return new GetIdentitiesKeysRequestV0(properties);
+                            GetIdentitiesContractKeysRequestV0.create = function create(properties) {
+                                return new GetIdentitiesContractKeysRequestV0(properties);
                             };
 
                             /**
-                             * Encodes the specified GetIdentitiesKeysRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.verify|verify} messages.
+                             * Encodes the specified GetIdentitiesContractKeysRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.IGetIdentitiesKeysRequestV0} message GetIdentitiesKeysRequestV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.IGetIdentitiesContractKeysRequestV0} message GetIdentitiesContractKeysRequestV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetIdentitiesKeysRequestV0.encode = function encode(message, writer) {
+                            GetIdentitiesContractKeysRequestV0.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
-                                if (message.entries != null && Object.hasOwnProperty.call(message, "entries"))
-                                    for (var keys = Object.keys(message.entries), i = 0; i < keys.length; ++i) {
-                                        writer.uint32(/* id 1, wireType 2 =*/10).fork().uint32(/* id 1, wireType 2 =*/10).string(keys[i]);
-                                        $root.org.dash.platform.dapi.v0.SpecificKeys.encode(message.entries[keys[i]], writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim().ldelim();
-                                    }
+                                if (message.identitiesIds != null && message.identitiesIds.length)
+                                    for (var i = 0; i < message.identitiesIds.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identitiesIds[i]);
+                                if (message.contractId != null && Object.hasOwnProperty.call(message, "contractId"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.contractId);
+                                if (message.purposes != null && message.purposes.length) {
+                                    writer.uint32(/* id 3, wireType 2 =*/26).fork();
+                                    for (var i = 0; i < message.purposes.length; ++i)
+                                        writer.int32(message.purposes[i]);
+                                    writer.ldelim();
+                                }
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
-                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                    writer.uint32(/* id 4, wireType 0 =*/32).bool(message.prove);
                                 return writer;
                             };
 
                             /**
-                             * Encodes the specified GetIdentitiesKeysRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.verify|verify} messages.
+                             * Encodes the specified GetIdentitiesContractKeysRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.IGetIdentitiesKeysRequestV0} message GetIdentitiesKeysRequestV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.IGetIdentitiesContractKeysRequestV0} message GetIdentitiesContractKeysRequestV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetIdentitiesKeysRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                            GetIdentitiesContractKeysRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes a GetIdentitiesKeysRequestV0 message from the specified reader or buffer.
+                             * Decodes a GetIdentitiesContractKeysRequestV0 message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0} GetIdentitiesKeysRequestV0
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0} GetIdentitiesContractKeysRequestV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetIdentitiesKeysRequestV0.decode = function decode(reader, length) {
+                            GetIdentitiesContractKeysRequestV0.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0(), key, value;
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        if (message.entries === $util.emptyObject)
-                                            message.entries = {};
-                                        var end2 = reader.uint32() + reader.pos;
-                                        key = "";
-                                        value = null;
-                                        while (reader.pos < end2) {
-                                            var tag2 = reader.uint32();
-                                            switch (tag2 >>> 3) {
-                                            case 1:
-                                                key = reader.string();
-                                                break;
-                                            case 2:
-                                                value = $root.org.dash.platform.dapi.v0.SpecificKeys.decode(reader, reader.uint32());
-                                                break;
-                                            default:
-                                                reader.skipType(tag2 & 7);
-                                                break;
-                                            }
-                                        }
-                                        message.entries[key] = value;
+                                        if (!(message.identitiesIds && message.identitiesIds.length))
+                                            message.identitiesIds = [];
+                                        message.identitiesIds.push(reader.bytes());
                                         break;
                                     case 2:
+                                        message.contractId = reader.bytes();
+                                        break;
+                                    case 3:
+                                        if (!(message.purposes && message.purposes.length))
+                                            message.purposes = [];
+                                        if ((tag & 7) === 2) {
+                                            var end2 = reader.uint32() + reader.pos;
+                                            while (reader.pos < end2)
+                                                message.purposes.push(reader.int32());
+                                        } else
+                                            message.purposes.push(reader.int32());
+                                        break;
+                                    case 4:
                                         message.prove = reader.bool();
                                         break;
                                     default:
@@ -9507,41 +9550,57 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes a GetIdentitiesKeysRequestV0 message from the specified reader or buffer, length delimited.
+                             * Decodes a GetIdentitiesContractKeysRequestV0 message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0} GetIdentitiesKeysRequestV0
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0} GetIdentitiesContractKeysRequestV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetIdentitiesKeysRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                            GetIdentitiesContractKeysRequestV0.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies a GetIdentitiesKeysRequestV0 message.
+                             * Verifies a GetIdentitiesContractKeysRequestV0 message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            GetIdentitiesKeysRequestV0.verify = function verify(message) {
+                            GetIdentitiesContractKeysRequestV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
-                                if (message.entries != null && message.hasOwnProperty("entries")) {
-                                    if (!$util.isObject(message.entries))
-                                        return "entries: object expected";
-                                    var key = Object.keys(message.entries);
-                                    for (var i = 0; i < key.length; ++i) {
-                                        var error = $root.org.dash.platform.dapi.v0.SpecificKeys.verify(message.entries[key[i]]);
-                                        if (error)
-                                            return "entries." + error;
-                                    }
+                                if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds")) {
+                                    if (!Array.isArray(message.identitiesIds))
+                                        return "identitiesIds: array expected";
+                                    for (var i = 0; i < message.identitiesIds.length; ++i)
+                                        if (!(message.identitiesIds[i] && typeof message.identitiesIds[i].length === "number" || $util.isString(message.identitiesIds[i])))
+                                            return "identitiesIds: buffer[] expected";
+                                }
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    if (!(message.contractId && typeof message.contractId.length === "number" || $util.isString(message.contractId)))
+                                        return "contractId: buffer expected";
+                                if (message.purposes != null && message.hasOwnProperty("purposes")) {
+                                    if (!Array.isArray(message.purposes))
+                                        return "purposes: array expected";
+                                    for (var i = 0; i < message.purposes.length; ++i)
+                                        switch (message.purposes[i]) {
+                                        default:
+                                            return "purposes: enum value[] expected";
+                                        case 0:
+                                        case 1:
+                                        case 2:
+                                        case 3:
+                                        case 4:
+                                        case 5:
+                                            break;
+                                        }
                                 }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
@@ -9550,26 +9609,64 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates a GetIdentitiesKeysRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * Creates a GetIdentitiesContractKeysRequestV0 message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0} GetIdentitiesKeysRequestV0
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0} GetIdentitiesContractKeysRequestV0
                              */
-                            GetIdentitiesKeysRequestV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0)
+                            GetIdentitiesContractKeysRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0();
-                                if (object.entries) {
-                                    if (typeof object.entries !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.entries: object expected");
-                                    message.entries = {};
-                                    for (var keys = Object.keys(object.entries), i = 0; i < keys.length; ++i) {
-                                        if (typeof object.entries[keys[i]] !== "object")
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.entries: object expected");
-                                        message.entries[keys[i]] = $root.org.dash.platform.dapi.v0.SpecificKeys.fromObject(object.entries[keys[i]]);
-                                    }
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0();
+                                if (object.identitiesIds) {
+                                    if (!Array.isArray(object.identitiesIds))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.identitiesIds: array expected");
+                                    message.identitiesIds = [];
+                                    for (var i = 0; i < object.identitiesIds.length; ++i)
+                                        if (typeof object.identitiesIds[i] === "string")
+                                            $util.base64.decode(object.identitiesIds[i], message.identitiesIds[i] = $util.newBuffer($util.base64.length(object.identitiesIds[i])), 0);
+                                        else if (object.identitiesIds[i].length >= 0)
+                                            message.identitiesIds[i] = object.identitiesIds[i];
+                                }
+                                if (object.contractId != null)
+                                    if (typeof object.contractId === "string")
+                                        $util.base64.decode(object.contractId, message.contractId = $util.newBuffer($util.base64.length(object.contractId)), 0);
+                                    else if (object.contractId.length >= 0)
+                                        message.contractId = object.contractId;
+                                if (object.purposes) {
+                                    if (!Array.isArray(object.purposes))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.purposes: array expected");
+                                    message.purposes = [];
+                                    for (var i = 0; i < object.purposes.length; ++i)
+                                        switch (object.purposes[i]) {
+                                        default:
+                                        case "AUTHENTICATION":
+                                        case 0:
+                                            message.purposes[i] = 0;
+                                            break;
+                                        case "ENCRYPTION":
+                                        case 1:
+                                            message.purposes[i] = 1;
+                                            break;
+                                        case "DECRYPTION":
+                                        case 2:
+                                            message.purposes[i] = 2;
+                                            break;
+                                        case "TRANSFER":
+                                        case 3:
+                                            message.purposes[i] = 3;
+                                            break;
+                                        case "SYSTEM":
+                                        case 4:
+                                            message.purposes[i] = 4;
+                                            break;
+                                        case "VOTING":
+                                        case 5:
+                                            message.purposes[i] = 5;
+                                            break;
+                                        }
                                 }
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
@@ -9577,27 +9674,43 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates a plain object from a GetIdentitiesKeysRequestV0 message. Also converts values to other types if specified.
+                             * Creates a plain object from a GetIdentitiesContractKeysRequestV0 message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0} message GetIdentitiesKeysRequestV0
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0} message GetIdentitiesContractKeysRequestV0
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            GetIdentitiesKeysRequestV0.toObject = function toObject(message, options) {
+                            GetIdentitiesContractKeysRequestV0.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.objects || options.defaults)
-                                    object.entries = {};
-                                if (options.defaults)
+                                if (options.arrays || options.defaults) {
+                                    object.identitiesIds = [];
+                                    object.purposes = [];
+                                }
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.contractId = "";
+                                    else {
+                                        object.contractId = [];
+                                        if (options.bytes !== Array)
+                                            object.contractId = $util.newBuffer(object.contractId);
+                                    }
                                     object.prove = false;
-                                var keys2;
-                                if (message.entries && (keys2 = Object.keys(message.entries)).length) {
-                                    object.entries = {};
-                                    for (var j = 0; j < keys2.length; ++j)
-                                        object.entries[keys2[j]] = $root.org.dash.platform.dapi.v0.SpecificKeys.toObject(message.entries[keys2[j]], options);
+                                }
+                                if (message.identitiesIds && message.identitiesIds.length) {
+                                    object.identitiesIds = [];
+                                    for (var j = 0; j < message.identitiesIds.length; ++j)
+                                        object.identitiesIds[j] = options.bytes === String ? $util.base64.encode(message.identitiesIds[j], 0, message.identitiesIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identitiesIds[j]) : message.identitiesIds[j];
+                                }
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    object.contractId = options.bytes === String ? $util.base64.encode(message.contractId, 0, message.contractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.contractId) : message.contractId;
+                                if (message.purposes && message.purposes.length) {
+                                    object.purposes = [];
+                                    for (var j = 0; j < message.purposes.length; ++j)
+                                        object.purposes[j] = options.enums === String ? $root.org.dash.platform.dapi.v0.KeyPurpose[message.purposes[j]] : message.purposes[j];
                                 }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
@@ -9605,40 +9718,40 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Converts this GetIdentitiesKeysRequestV0 to JSON.
+                             * Converts this GetIdentitiesContractKeysRequestV0 to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            GetIdentitiesKeysRequestV0.prototype.toJSON = function toJSON() {
+                            GetIdentitiesContractKeysRequestV0.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return GetIdentitiesKeysRequestV0;
+                            return GetIdentitiesContractKeysRequestV0;
                         })();
 
-                        return GetIdentitiesKeysRequest;
+                        return GetIdentitiesContractKeysRequest;
                     })();
 
-                    v0.GetIdentitiesKeysResponse = (function() {
+                    v0.GetIdentitiesContractKeysResponse = (function() {
 
                         /**
-                         * Properties of a GetIdentitiesKeysResponse.
+                         * Properties of a GetIdentitiesContractKeysResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetIdentitiesKeysResponse
-                         * @property {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.IGetIdentitiesKeysResponseV0|null} [v0] GetIdentitiesKeysResponse v0
+                         * @interface IGetIdentitiesContractKeysResponse
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.IGetIdentitiesContractKeysResponseV0|null} [v0] GetIdentitiesContractKeysResponse v0
                          */
 
                         /**
-                         * Constructs a new GetIdentitiesKeysResponse.
+                         * Constructs a new GetIdentitiesContractKeysResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetIdentitiesKeysResponse.
-                         * @implements IGetIdentitiesKeysResponse
+                         * @classdesc Represents a GetIdentitiesContractKeysResponse.
+                         * @implements IGetIdentitiesContractKeysResponse
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysResponse=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysResponse=} [properties] Properties to set
                          */
-                        function GetIdentitiesKeysResponse(properties) {
+                        function GetIdentitiesContractKeysResponse(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -9646,89 +9759,89 @@ $root.org = (function() {
                         }
 
                         /**
-                         * GetIdentitiesKeysResponse v0.
-                         * @member {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.IGetIdentitiesKeysResponseV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * GetIdentitiesContractKeysResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.IGetIdentitiesContractKeysResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @instance
                          */
-                        GetIdentitiesKeysResponse.prototype.v0 = null;
+                        GetIdentitiesContractKeysResponse.prototype.v0 = null;
 
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
-                         * GetIdentitiesKeysResponse version.
+                         * GetIdentitiesContractKeysResponse version.
                          * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @instance
                          */
-                        Object.defineProperty(GetIdentitiesKeysResponse.prototype, "version", {
+                        Object.defineProperty(GetIdentitiesContractKeysResponse.prototype, "version", {
                             get: $util.oneOfGetter($oneOfFields = ["v0"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
                         /**
-                         * Creates a new GetIdentitiesKeysResponse instance using the specified properties.
+                         * Creates a new GetIdentitiesContractKeysResponse instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysResponse=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse} GetIdentitiesKeysResponse instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse} GetIdentitiesContractKeysResponse instance
                          */
-                        GetIdentitiesKeysResponse.create = function create(properties) {
-                            return new GetIdentitiesKeysResponse(properties);
+                        GetIdentitiesContractKeysResponse.create = function create(properties) {
+                            return new GetIdentitiesContractKeysResponse(properties);
                         };
 
                         /**
-                         * Encodes the specified GetIdentitiesKeysResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.verify|verify} messages.
+                         * Encodes the specified GetIdentitiesContractKeysResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysResponse} message GetIdentitiesKeysResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysResponse} message GetIdentitiesContractKeysResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetIdentitiesKeysResponse.encode = function encode(message, writer) {
+                        GetIdentitiesContractKeysResponse.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             return writer;
                         };
 
                         /**
-                         * Encodes the specified GetIdentitiesKeysResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.verify|verify} messages.
+                         * Encodes the specified GetIdentitiesContractKeysResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesKeysResponse} message GetIdentitiesKeysResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesContractKeysResponse} message GetIdentitiesContractKeysResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetIdentitiesKeysResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetIdentitiesContractKeysResponse.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a GetIdentitiesKeysResponse message from the specified reader or buffer.
+                         * Decodes a GetIdentitiesContractKeysResponse message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse} GetIdentitiesKeysResponse
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse} GetIdentitiesContractKeysResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetIdentitiesKeysResponse.decode = function decode(reader, length) {
+                        GetIdentitiesContractKeysResponse.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.decode(reader, reader.uint32());
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -9739,37 +9852,37 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a GetIdentitiesKeysResponse message from the specified reader or buffer, length delimited.
+                         * Decodes a GetIdentitiesContractKeysResponse message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse} GetIdentitiesKeysResponse
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse} GetIdentitiesContractKeysResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetIdentitiesKeysResponse.decodeDelimited = function decodeDelimited(reader) {
+                        GetIdentitiesContractKeysResponse.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a GetIdentitiesKeysResponse message.
+                         * Verifies a GetIdentitiesContractKeysResponse message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        GetIdentitiesKeysResponse.verify = function verify(message) {
+                        GetIdentitiesContractKeysResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             var properties = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
                                 properties.version = 1;
                                 {
-                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.verify(message.v0);
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.verify(message.v0);
                                     if (error)
                                         return "v0." + error;
                                 }
@@ -9778,40 +9891,40 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Creates a GetIdentitiesKeysResponse message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetIdentitiesContractKeysResponse message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse} GetIdentitiesKeysResponse
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse} GetIdentitiesContractKeysResponse
                          */
-                        GetIdentitiesKeysResponse.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse)
+                        GetIdentitiesContractKeysResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse)
                                 return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse();
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse();
                             if (object.v0 != null) {
                                 if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.fromObject(object.v0);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.fromObject(object.v0);
                             }
                             return message;
                         };
 
                         /**
-                         * Creates a plain object from a GetIdentitiesKeysResponse message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetIdentitiesContractKeysResponse message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse} message GetIdentitiesKeysResponse
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse} message GetIdentitiesContractKeysResponse
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        GetIdentitiesKeysResponse.toObject = function toObject(message, options) {
+                        GetIdentitiesContractKeysResponse.toObject = function toObject(message, options) {
                             if (!options)
                                 options = {};
                             var object = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.toObject(message.v0, options);
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
                             }
@@ -9819,36 +9932,36 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Converts this GetIdentitiesKeysResponse to JSON.
+                         * Converts this GetIdentitiesContractKeysResponse to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        GetIdentitiesKeysResponse.prototype.toJSON = function toJSON() {
+                        GetIdentitiesContractKeysResponse.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0 = (function() {
+                        GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0 = (function() {
 
                             /**
-                             * Properties of a GetIdentitiesKeysResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
-                             * @interface IGetIdentitiesKeysResponseV0
-                             * @property {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IIdentitiesKeys|null} [identitiesKeys] GetIdentitiesKeysResponseV0 identitiesKeys
-                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentitiesKeysResponseV0 proof
-                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentitiesKeysResponseV0 metadata
+                             * Properties of a GetIdentitiesContractKeysResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
+                             * @interface IGetIdentitiesContractKeysResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentitiesKeys|null} [identitiesKeys] GetIdentitiesContractKeysResponseV0 identitiesKeys
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentitiesContractKeysResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentitiesContractKeysResponseV0 metadata
                              */
 
                             /**
-                             * Constructs a new GetIdentitiesKeysResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse
-                             * @classdesc Represents a GetIdentitiesKeysResponseV0.
-                             * @implements IGetIdentitiesKeysResponseV0
+                             * Constructs a new GetIdentitiesContractKeysResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse
+                             * @classdesc Represents a GetIdentitiesContractKeysResponseV0.
+                             * @implements IGetIdentitiesContractKeysResponseV0
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.IGetIdentitiesKeysResponseV0=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.IGetIdentitiesContractKeysResponseV0=} [properties] Properties to set
                              */
-                            function GetIdentitiesKeysResponseV0(properties) {
+                            function GetIdentitiesContractKeysResponseV0(properties) {
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -9856,69 +9969,69 @@ $root.org = (function() {
                             }
 
                             /**
-                             * GetIdentitiesKeysResponseV0 identitiesKeys.
-                             * @member {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IIdentitiesKeys|null|undefined} identitiesKeys
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * GetIdentitiesContractKeysResponseV0 identitiesKeys.
+                             * @member {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentitiesKeys|null|undefined} identitiesKeys
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @instance
                              */
-                            GetIdentitiesKeysResponseV0.prototype.identitiesKeys = null;
+                            GetIdentitiesContractKeysResponseV0.prototype.identitiesKeys = null;
 
                             /**
-                             * GetIdentitiesKeysResponseV0 proof.
+                             * GetIdentitiesContractKeysResponseV0 proof.
                              * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @instance
                              */
-                            GetIdentitiesKeysResponseV0.prototype.proof = null;
+                            GetIdentitiesContractKeysResponseV0.prototype.proof = null;
 
                             /**
-                             * GetIdentitiesKeysResponseV0 metadata.
+                             * GetIdentitiesContractKeysResponseV0 metadata.
                              * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @instance
                              */
-                            GetIdentitiesKeysResponseV0.prototype.metadata = null;
+                            GetIdentitiesContractKeysResponseV0.prototype.metadata = null;
 
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
 
                             /**
-                             * GetIdentitiesKeysResponseV0 result.
+                             * GetIdentitiesContractKeysResponseV0 result.
                              * @member {"identitiesKeys"|"proof"|undefined} result
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @instance
                              */
-                            Object.defineProperty(GetIdentitiesKeysResponseV0.prototype, "result", {
+                            Object.defineProperty(GetIdentitiesContractKeysResponseV0.prototype, "result", {
                                 get: $util.oneOfGetter($oneOfFields = ["identitiesKeys", "proof"]),
                                 set: $util.oneOfSetter($oneOfFields)
                             });
 
                             /**
-                             * Creates a new GetIdentitiesKeysResponseV0 instance using the specified properties.
+                             * Creates a new GetIdentitiesContractKeysResponseV0 instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.IGetIdentitiesKeysResponseV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0} GetIdentitiesKeysResponseV0 instance
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.IGetIdentitiesContractKeysResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0} GetIdentitiesContractKeysResponseV0 instance
                              */
-                            GetIdentitiesKeysResponseV0.create = function create(properties) {
-                                return new GetIdentitiesKeysResponseV0(properties);
+                            GetIdentitiesContractKeysResponseV0.create = function create(properties) {
+                                return new GetIdentitiesContractKeysResponseV0(properties);
                             };
 
                             /**
-                             * Encodes the specified GetIdentitiesKeysResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.verify|verify} messages.
+                             * Encodes the specified GetIdentitiesContractKeysResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.IGetIdentitiesKeysResponseV0} message GetIdentitiesKeysResponseV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.IGetIdentitiesContractKeysResponseV0} message GetIdentitiesContractKeysResponseV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetIdentitiesKeysResponseV0.encode = function encode(message, writer) {
+                            GetIdentitiesContractKeysResponseV0.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
                                 if (message.identitiesKeys != null && Object.hasOwnProperty.call(message, "identitiesKeys"))
-                                    $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys.encode(message.identitiesKeys, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.encode(message.identitiesKeys, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                 if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
                                     $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
@@ -9927,38 +10040,38 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified GetIdentitiesKeysResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.verify|verify} messages.
+                             * Encodes the specified GetIdentitiesContractKeysResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.IGetIdentitiesKeysResponseV0} message GetIdentitiesKeysResponseV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.IGetIdentitiesContractKeysResponseV0} message GetIdentitiesContractKeysResponseV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetIdentitiesKeysResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                            GetIdentitiesContractKeysResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes a GetIdentitiesKeysResponseV0 message from the specified reader or buffer.
+                             * Decodes a GetIdentitiesContractKeysResponseV0 message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0} GetIdentitiesKeysResponseV0
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0} GetIdentitiesContractKeysResponseV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetIdentitiesKeysResponseV0.decode = function decode(reader, length) {
+                            GetIdentitiesContractKeysResponseV0.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        message.identitiesKeys = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys.decode(reader, reader.uint32());
+                                        message.identitiesKeys = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.decode(reader, reader.uint32());
                                         break;
                                     case 2:
                                         message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
@@ -9975,37 +10088,37 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes a GetIdentitiesKeysResponseV0 message from the specified reader or buffer, length delimited.
+                             * Decodes a GetIdentitiesContractKeysResponseV0 message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0} GetIdentitiesKeysResponseV0
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0} GetIdentitiesContractKeysResponseV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetIdentitiesKeysResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                            GetIdentitiesContractKeysResponseV0.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies a GetIdentitiesKeysResponseV0 message.
+                             * Verifies a GetIdentitiesContractKeysResponseV0 message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            GetIdentitiesKeysResponseV0.verify = function verify(message) {
+                            GetIdentitiesContractKeysResponseV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
                                 var properties = {};
                                 if (message.identitiesKeys != null && message.hasOwnProperty("identitiesKeys")) {
                                     properties.result = 1;
                                     {
-                                        var error = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys.verify(message.identitiesKeys);
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.verify(message.identitiesKeys);
                                         if (error)
                                             return "identitiesKeys." + error;
                                     }
@@ -10029,52 +10142,52 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates a GetIdentitiesKeysResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * Creates a GetIdentitiesContractKeysResponseV0 message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0} GetIdentitiesKeysResponseV0
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0} GetIdentitiesContractKeysResponseV0
                              */
-                            GetIdentitiesKeysResponseV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0)
+                            GetIdentitiesContractKeysResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0();
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0();
                                 if (object.identitiesKeys != null) {
                                     if (typeof object.identitiesKeys !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.identitiesKeys: object expected");
-                                    message.identitiesKeys = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys.fromObject(object.identitiesKeys);
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.identitiesKeys: object expected");
+                                    message.identitiesKeys = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.fromObject(object.identitiesKeys);
                                 }
                                 if (object.proof != null) {
                                     if (typeof object.proof !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.proof: object expected");
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.proof: object expected");
                                     message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
                                 }
                                 if (object.metadata != null) {
                                     if (typeof object.metadata !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.metadata: object expected");
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.metadata: object expected");
                                     message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
                                 }
                                 return message;
                             };
 
                             /**
-                             * Creates a plain object from a GetIdentitiesKeysResponseV0 message. Also converts values to other types if specified.
+                             * Creates a plain object from a GetIdentitiesContractKeysResponseV0 message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0} message GetIdentitiesKeysResponseV0
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0} message GetIdentitiesContractKeysResponseV0
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            GetIdentitiesKeysResponseV0.toObject = function toObject(message, options) {
+                            GetIdentitiesContractKeysResponseV0.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
                                 if (options.defaults)
                                     object.metadata = null;
                                 if (message.identitiesKeys != null && message.hasOwnProperty("identitiesKeys")) {
-                                    object.identitiesKeys = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys.toObject(message.identitiesKeys, options);
+                                    object.identitiesKeys = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.toObject(message.identitiesKeys, options);
                                     if (options.oneofs)
                                         object.result = "identitiesKeys";
                                 }
@@ -10089,32 +10202,32 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Converts this GetIdentitiesKeysResponseV0 to JSON.
+                             * Converts this GetIdentitiesContractKeysResponseV0 to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            GetIdentitiesKeysResponseV0.prototype.toJSON = function toJSON() {
+                            GetIdentitiesContractKeysResponseV0.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            GetIdentitiesKeysResponseV0.Keys = (function() {
+                            GetIdentitiesContractKeysResponseV0.Keys = (function() {
 
                                 /**
                                  * Properties of a Keys.
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                                  * @interface IKeys
                                  * @property {Array.<Uint8Array>|null} [keysBytes] Keys keysBytes
                                  */
 
                                 /**
                                  * Constructs a new Keys.
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                                  * @classdesc Represents a Keys.
                                  * @implements IKeys
                                  * @constructor
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IKeys=} [properties] Properties to set
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys=} [properties] Properties to set
                                  */
                                 function Keys(properties) {
                                     this.keysBytes = [];
@@ -10127,7 +10240,7 @@ $root.org = (function() {
                                 /**
                                  * Keys keysBytes.
                                  * @member {Array.<Uint8Array>} keysBytes
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @instance
                                  */
                                 Keys.prototype.keysBytes = $util.emptyArray;
@@ -10135,21 +10248,21 @@ $root.org = (function() {
                                 /**
                                  * Creates a new Keys instance using the specified properties.
                                  * @function create
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IKeys=} [properties] Properties to set
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys} Keys instance
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} Keys instance
                                  */
                                 Keys.create = function create(properties) {
                                     return new Keys(properties);
                                 };
 
                                 /**
-                                 * Encodes the specified Keys message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys.verify|verify} messages.
+                                 * Encodes the specified Keys message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.verify|verify} messages.
                                  * @function encode
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IKeys} message Keys message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys} message Keys message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
@@ -10163,11 +10276,11 @@ $root.org = (function() {
                                 };
 
                                 /**
-                                 * Encodes the specified Keys message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys.verify|verify} messages.
+                                 * Encodes the specified Keys message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.verify|verify} messages.
                                  * @function encodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IKeys} message Keys message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys} message Keys message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
@@ -10178,18 +10291,18 @@ $root.org = (function() {
                                 /**
                                  * Decodes a Keys message from the specified reader or buffer.
                                  * @function decode
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                                  * @param {number} [length] Message length if known beforehand
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys} Keys
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} Keys
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
                                 Keys.decode = function decode(reader, length) {
                                     if (!(reader instanceof $Reader))
                                         reader = $Reader.create(reader);
-                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys();
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys();
                                     while (reader.pos < end) {
                                         var tag = reader.uint32();
                                         switch (tag >>> 3) {
@@ -10209,10 +10322,10 @@ $root.org = (function() {
                                 /**
                                  * Decodes a Keys message from the specified reader or buffer, length delimited.
                                  * @function decodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys} Keys
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} Keys
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
@@ -10225,7 +10338,7 @@ $root.org = (function() {
                                 /**
                                  * Verifies a Keys message.
                                  * @function verify
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @static
                                  * @param {Object.<string,*>} message Plain object to verify
                                  * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -10246,18 +10359,18 @@ $root.org = (function() {
                                 /**
                                  * Creates a Keys message from a plain object. Also converts values to their respective internal types.
                                  * @function fromObject
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @static
                                  * @param {Object.<string,*>} object Plain object
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys} Keys
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} Keys
                                  */
                                 Keys.fromObject = function fromObject(object) {
-                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys)
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys)
                                         return object;
-                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys();
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys();
                                     if (object.keysBytes) {
                                         if (!Array.isArray(object.keysBytes))
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys.keysBytes: array expected");
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.keysBytes: array expected");
                                         message.keysBytes = [];
                                         for (var i = 0; i < object.keysBytes.length; ++i)
                                             if (typeof object.keysBytes[i] === "string")
@@ -10271,9 +10384,9 @@ $root.org = (function() {
                                 /**
                                  * Creates a plain object from a Keys message. Also converts values to other types if specified.
                                  * @function toObject
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys} message Keys
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} message Keys
                                  * @param {$protobuf.IConversionOptions} [options] Conversion options
                                  * @returns {Object.<string,*>} Plain object
                                  */
@@ -10294,7 +10407,7 @@ $root.org = (function() {
                                 /**
                                  * Converts this Keys to JSON.
                                  * @function toJSON
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
                                  * @instance
                                  * @returns {Object.<string,*>} JSON object
                                  */
@@ -10305,25 +10418,25 @@ $root.org = (function() {
                                 return Keys;
                             })();
 
-                            GetIdentitiesKeysResponseV0.IdentitiesKeys = (function() {
+                            GetIdentitiesContractKeysResponseV0.IdentitiesKeys = (function() {
 
                                 /**
                                  * Properties of an IdentitiesKeys.
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                                  * @interface IIdentitiesKeys
-                                 * @property {Object.<string,org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IKeys>|null} [entries] IdentitiesKeys entries
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys>|null} [entries] IdentitiesKeys entries
                                  */
 
                                 /**
                                  * Constructs a new IdentitiesKeys.
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                                  * @classdesc Represents an IdentitiesKeys.
                                  * @implements IIdentitiesKeys
                                  * @constructor
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IIdentitiesKeys=} [properties] Properties to set
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentitiesKeys=} [properties] Properties to set
                                  */
                                 function IdentitiesKeys(properties) {
-                                    this.entries = {};
+                                    this.entries = [];
                                     if (properties)
                                         for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                             if (properties[keys[i]] != null)
@@ -10332,50 +10445,48 @@ $root.org = (function() {
 
                                 /**
                                  * IdentitiesKeys entries.
-                                 * @member {Object.<string,org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IKeys>} entries
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @instance
                                  */
-                                IdentitiesKeys.prototype.entries = $util.emptyObject;
+                                IdentitiesKeys.prototype.entries = $util.emptyArray;
 
                                 /**
                                  * Creates a new IdentitiesKeys instance using the specified properties.
                                  * @function create
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IIdentitiesKeys=} [properties] Properties to set
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys} IdentitiesKeys instance
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentitiesKeys=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys} IdentitiesKeys instance
                                  */
                                 IdentitiesKeys.create = function create(properties) {
                                     return new IdentitiesKeys(properties);
                                 };
 
                                 /**
-                                 * Encodes the specified IdentitiesKeys message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys.verify|verify} messages.
+                                 * Encodes the specified IdentitiesKeys message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.verify|verify} messages.
                                  * @function encode
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IIdentitiesKeys} message IdentitiesKeys message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentitiesKeys} message IdentitiesKeys message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
                                 IdentitiesKeys.encode = function encode(message, writer) {
                                     if (!writer)
                                         writer = $Writer.create();
-                                    if (message.entries != null && Object.hasOwnProperty.call(message, "entries"))
-                                        for (var keys = Object.keys(message.entries), i = 0; i < keys.length; ++i) {
-                                            writer.uint32(/* id 1, wireType 2 =*/10).fork().uint32(/* id 1, wireType 2 =*/10).string(keys[i]);
-                                            $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys.encode(message.entries[keys[i]], writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim().ldelim();
-                                        }
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                     return writer;
                                 };
 
                                 /**
-                                 * Encodes the specified IdentitiesKeys message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys.verify|verify} messages.
+                                 * Encodes the specified IdentitiesKeys message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.verify|verify} messages.
                                  * @function encodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IIdentitiesKeys} message IdentitiesKeys message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentitiesKeys} message IdentitiesKeys message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
@@ -10386,42 +10497,25 @@ $root.org = (function() {
                                 /**
                                  * Decodes an IdentitiesKeys message from the specified reader or buffer.
                                  * @function decode
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                                  * @param {number} [length] Message length if known beforehand
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys} IdentitiesKeys
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys} IdentitiesKeys
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
                                 IdentitiesKeys.decode = function decode(reader, length) {
                                     if (!(reader instanceof $Reader))
                                         reader = $Reader.create(reader);
-                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys(), key, value;
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys();
                                     while (reader.pos < end) {
                                         var tag = reader.uint32();
                                         switch (tag >>> 3) {
                                         case 1:
-                                            if (message.entries === $util.emptyObject)
-                                                message.entries = {};
-                                            var end2 = reader.uint32() + reader.pos;
-                                            key = "";
-                                            value = null;
-                                            while (reader.pos < end2) {
-                                                var tag2 = reader.uint32();
-                                                switch (tag2 >>> 3) {
-                                                case 1:
-                                                    key = reader.string();
-                                                    break;
-                                                case 2:
-                                                    value = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys.decode(reader, reader.uint32());
-                                                    break;
-                                                default:
-                                                    reader.skipType(tag2 & 7);
-                                                    break;
-                                                }
-                                            }
-                                            message.entries[key] = value;
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.decode(reader, reader.uint32()));
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -10434,10 +10528,10 @@ $root.org = (function() {
                                 /**
                                  * Decodes an IdentitiesKeys message from the specified reader or buffer, length delimited.
                                  * @function decodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys} IdentitiesKeys
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys} IdentitiesKeys
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
@@ -10450,7 +10544,7 @@ $root.org = (function() {
                                 /**
                                  * Verifies an IdentitiesKeys message.
                                  * @function verify
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @static
                                  * @param {Object.<string,*>} message Plain object to verify
                                  * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -10459,11 +10553,10 @@ $root.org = (function() {
                                     if (typeof message !== "object" || message === null)
                                         return "object expected";
                                     if (message.entries != null && message.hasOwnProperty("entries")) {
-                                        if (!$util.isObject(message.entries))
-                                            return "entries: object expected";
-                                        var key = Object.keys(message.entries);
-                                        for (var i = 0; i < key.length; ++i) {
-                                            var error = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys.verify(message.entries[key[i]]);
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.verify(message.entries[i]);
                                             if (error)
                                                 return "entries." + error;
                                         }
@@ -10474,23 +10567,23 @@ $root.org = (function() {
                                 /**
                                  * Creates an IdentitiesKeys message from a plain object. Also converts values to their respective internal types.
                                  * @function fromObject
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @static
                                  * @param {Object.<string,*>} object Plain object
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys} IdentitiesKeys
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys} IdentitiesKeys
                                  */
                                 IdentitiesKeys.fromObject = function fromObject(object) {
-                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys)
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys)
                                         return object;
-                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys();
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys();
                                     if (object.entries) {
-                                        if (typeof object.entries !== "object")
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys.entries: object expected");
-                                        message.entries = {};
-                                        for (var keys = Object.keys(object.entries), i = 0; i < keys.length; ++i) {
-                                            if (typeof object.entries[keys[i]] !== "object")
-                                                throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys.entries: object expected");
-                                            message.entries[keys[i]] = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys.fromObject(object.entries[keys[i]]);
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.fromObject(object.entries[i]);
                                         }
                                     }
                                     return message;
@@ -10499,9 +10592,9 @@ $root.org = (function() {
                                 /**
                                  * Creates a plain object from an IdentitiesKeys message. Also converts values to other types if specified.
                                  * @function toObject
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys} message IdentitiesKeys
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys} message IdentitiesKeys
                                  * @param {$protobuf.IConversionOptions} [options] Conversion options
                                  * @returns {Object.<string,*>} Plain object
                                  */
@@ -10509,13 +10602,12 @@ $root.org = (function() {
                                     if (!options)
                                         options = {};
                                     var object = {};
-                                    if (options.objects || options.defaults)
-                                        object.entries = {};
-                                    var keys2;
-                                    if (message.entries && (keys2 = Object.keys(message.entries)).length) {
-                                        object.entries = {};
-                                        for (var j = 0; j < keys2.length; ++j)
-                                            object.entries[keys2[j]] = $root.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.Keys.toObject(message.entries[keys2[j]], options);
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.toObject(message.entries[j], options);
                                     }
                                     return object;
                                 };
@@ -10523,7 +10615,7 @@ $root.org = (function() {
                                 /**
                                  * Converts this IdentitiesKeys to JSON.
                                  * @function toJSON
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.GetIdentitiesKeysResponseV0.IdentitiesKeys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @instance
                                  * @returns {Object.<string,*>} JSON object
                                  */
@@ -10534,10 +10626,10 @@ $root.org = (function() {
                                 return IdentitiesKeys;
                             })();
 
-                            return GetIdentitiesKeysResponseV0;
+                            return GetIdentitiesContractKeysResponseV0;
                         })();
 
-                        return GetIdentitiesKeysResponse;
+                        return GetIdentitiesContractKeysResponse;
                     })();
 
                     v0.GetProofsRequest = (function() {

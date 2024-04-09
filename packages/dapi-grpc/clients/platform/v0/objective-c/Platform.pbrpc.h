@@ -28,8 +28,8 @@
 @class GetDocumentsResponse;
 @class GetEpochsInfoRequest;
 @class GetEpochsInfoResponse;
-@class GetIdentitiesKeysRequest;
-@class GetIdentitiesKeysResponse;
+@class GetIdentitiesContractKeysRequest;
+@class GetIdentitiesContractKeysResponse;
 @class GetIdentityBalanceAndRevisionRequest;
 @class GetIdentityBalanceAndRevisionResponse;
 @class GetIdentityBalanceRequest;
@@ -94,9 +94,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getIdentityKeysWithMessage:(GetIdentityKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentitiesKeys(GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse)
+#pragma mark getIdentitiesContractKeys(GetIdentitiesContractKeysRequest) returns (GetIdentitiesContractKeysResponse)
 
-- (GRPCUnaryProtoCall *)getIdentitiesKeysWithMessage:(GetIdentitiesKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getIdentitiesContractKeysWithMessage:(GetIdentitiesContractKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)
 
@@ -187,11 +187,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetIdentityKeysWithRequest:(GetIdentityKeysRequest *)request handler:(void(^)(GetIdentityKeysResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentitiesKeys(GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse)
+#pragma mark getIdentitiesContractKeys(GetIdentitiesContractKeysRequest) returns (GetIdentitiesContractKeysResponse)
 
-- (void)getIdentitiesKeysWithRequest:(GetIdentitiesKeysRequest *)request handler:(void(^)(GetIdentitiesKeysResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getIdentitiesContractKeysWithRequest:(GetIdentitiesContractKeysRequest *)request handler:(void(^)(GetIdentitiesContractKeysResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetIdentitiesKeysWithRequest:(GetIdentitiesKeysRequest *)request handler:(void(^)(GetIdentitiesKeysResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetIdentitiesContractKeysWithRequest:(GetIdentitiesContractKeysRequest *)request handler:(void(^)(GetIdentitiesContractKeysResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)

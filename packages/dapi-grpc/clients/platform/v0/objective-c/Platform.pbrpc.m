@@ -130,24 +130,24 @@
              responseClass:[GetIdentityKeysResponse class]];
 }
 
-#pragma mark getIdentitiesKeys(GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse)
+#pragma mark getIdentitiesContractKeys(GetIdentitiesContractKeysRequest) returns (GetIdentitiesContractKeysResponse)
 
-- (void)getIdentitiesKeysWithRequest:(GetIdentitiesKeysRequest *)request handler:(void(^)(GetIdentitiesKeysResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetIdentitiesKeysWithRequest:request handler:handler] start];
+- (void)getIdentitiesContractKeysWithRequest:(GetIdentitiesContractKeysRequest *)request handler:(void(^)(GetIdentitiesContractKeysResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentitiesContractKeysWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentitiesKeysWithRequest:(GetIdentitiesKeysRequest *)request handler:(void(^)(GetIdentitiesKeysResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getIdentitiesKeys"
+- (GRPCProtoCall *)RPCTogetIdentitiesContractKeysWithRequest:(GetIdentitiesContractKeysRequest *)request handler:(void(^)(GetIdentitiesContractKeysResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentitiesContractKeys"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetIdentitiesKeysResponse class]
+             responseClass:[GetIdentitiesContractKeysResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getIdentitiesKeysWithMessage:(GetIdentitiesKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getIdentitiesKeys"
+- (GRPCUnaryProtoCall *)getIdentitiesContractKeysWithMessage:(GetIdentitiesContractKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentitiesContractKeys"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[GetIdentitiesKeysResponse class]];
+             responseClass:[GetIdentitiesContractKeysResponse class]];
 }
 
 #pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)

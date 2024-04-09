@@ -37,13 +37,13 @@ Platform.getIdentityKeys = {
   responseType: platform_pb.GetIdentityKeysResponse
 };
 
-Platform.getIdentitiesKeys = {
-  methodName: "getIdentitiesKeys",
+Platform.getIdentitiesContractKeys = {
+  methodName: "getIdentitiesContractKeys",
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetIdentitiesKeysRequest,
-  responseType: platform_pb.GetIdentitiesKeysResponse
+  requestType: platform_pb.GetIdentitiesContractKeysRequest,
+  responseType: platform_pb.GetIdentitiesContractKeysResponse
 };
 
 Platform.getIdentityNonce = {
@@ -281,11 +281,11 @@ PlatformClient.prototype.getIdentityKeys = function getIdentityKeys(requestMessa
   };
 };
 
-PlatformClient.prototype.getIdentitiesKeys = function getIdentitiesKeys(requestMessage, metadata, callback) {
+PlatformClient.prototype.getIdentitiesContractKeys = function getIdentitiesContractKeys(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getIdentitiesKeys, {
+  var client = grpc.unary(Platform.getIdentitiesContractKeys, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

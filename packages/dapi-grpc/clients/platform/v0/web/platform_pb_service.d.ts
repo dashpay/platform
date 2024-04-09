@@ -31,13 +31,13 @@ type PlatformgetIdentityKeys = {
   readonly responseType: typeof platform_pb.GetIdentityKeysResponse;
 };
 
-type PlatformgetIdentitiesKeys = {
+type PlatformgetIdentitiesContractKeys = {
   readonly methodName: string;
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentitiesKeysRequest;
-  readonly responseType: typeof platform_pb.GetIdentitiesKeysResponse;
+  readonly requestType: typeof platform_pb.GetIdentitiesContractKeysRequest;
+  readonly responseType: typeof platform_pb.GetIdentitiesContractKeysResponse;
 };
 
 type PlatformgetIdentityNonce = {
@@ -180,7 +180,7 @@ export class Platform {
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
   static readonly getIdentity: PlatformgetIdentity;
   static readonly getIdentityKeys: PlatformgetIdentityKeys;
-  static readonly getIdentitiesKeys: PlatformgetIdentitiesKeys;
+  static readonly getIdentitiesContractKeys: PlatformgetIdentitiesContractKeys;
   static readonly getIdentityNonce: PlatformgetIdentityNonce;
   static readonly getIdentityContractNonce: PlatformgetIdentityContractNonce;
   static readonly getIdentityBalance: PlatformgetIdentityBalance;
@@ -257,14 +257,14 @@ export class PlatformClient {
     requestMessage: platform_pb.GetIdentityKeysRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysResponse|null) => void
   ): UnaryResponse;
-  getIdentitiesKeys(
-    requestMessage: platform_pb.GetIdentitiesKeysRequest,
+  getIdentitiesContractKeys(
+    requestMessage: platform_pb.GetIdentitiesContractKeysRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesKeysResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesContractKeysResponse|null) => void
   ): UnaryResponse;
-  getIdentitiesKeys(
-    requestMessage: platform_pb.GetIdentitiesKeysRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesKeysResponse|null) => void
+  getIdentitiesContractKeys(
+    requestMessage: platform_pb.GetIdentitiesContractKeysRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesContractKeysResponse|null) => void
   ): UnaryResponse;
   getIdentityNonce(
     requestMessage: platform_pb.GetIdentityNonceRequest,

@@ -11,7 +11,7 @@ service Platform {
       returns (BroadcastStateTransitionResponse);
   rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
   rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
-  rpc getIdentitiesKeys(GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
+  rpc getIdentitiesContractKeys(GetIdentitiesContractKeysRequest) returns (GetIdentitiesContractKeysResponse);
   rpc getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
@@ -58,6 +58,15 @@ message StateTransitionBroadcastError {
   uint32 code = 1;
   string message = 2;
   bytes data = 3;
+}
+
+enum KeyPurpose {
+  AUTHENTICATION = 0;
+  ENCRYPTION = 1;
+  DECRYPTION = 2;
+  TRANSFER = 3;
+  SYSTEM = 4;
+  VOTING = 5;
 }
 
 message BroadcastStateTransitionRequest {bytes state_transition = 1;}
@@ -236,22 +245,24 @@ message GetIdentityKeysResponse {
   oneof version {GetIdentityKeysResponseV0 v0 = 1;}
 }
 
-message GetIdentitiesKeysRequest {
-  message GetIdentitiesKeysRequestV0 {
-    map<string, SpecificKeys> entries = 1;
-    bool prove = 2;
+message GetIdentitiesContractKeysRequest {
+  message GetIdentitiesContractKeysRequestV0 {
+    repeated bytes identities_ids = 1;
+    bytes contract_id = 2;
+    repeated KeyPurpose purposes = 3;
+    bool prove = 4;
   }
 
-  oneof version {GetIdentitiesKeysRequestV0 v0 = 1;}
+  oneof version {
+    GetIdentitiesContractKeysRequestV0 v0 = 1;
+  }
 }
 
-message GetIdentitiesKeysResponse {
-
-  message GetIdentitiesKeysResponseV0 {
+message GetIdentitiesContractKeysResponse {
+  message GetIdentitiesContractKeysResponseV0 {
     message Keys {repeated bytes keys_bytes = 1;}
 
-    // Map of identity id to keys
-    message IdentitiesKeys {map<string, Keys> entries = 1;};
+    message IdentitiesKeys {repeated Keys entries = 1;};
 
     oneof result {
       IdentitiesKeys identities_keys = 1;
@@ -260,7 +271,7 @@ message GetIdentitiesKeysResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {GetIdentitiesKeysResponseV0 v0 = 1;}
+  oneof version {GetIdentitiesContractKeysResponseV0 v0 = 1;}
 }
 
 message GetProofsRequest {
