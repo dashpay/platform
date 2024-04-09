@@ -1013,7 +1013,6 @@ name = "dapi-grpc"
 version = "1.0.0-dev.10"
 dependencies = [
  "dapi-grpc-macros",
- "futures-core",
  "platform-version",
  "prost 0.12.3",
  "serde",
