@@ -1,8 +1,8 @@
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 
-use wasm_bindgen::prelude::*;
 use dpp::data_contract::errors::DataContractError;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractError)]
 pub struct DataContractErrorWasm {

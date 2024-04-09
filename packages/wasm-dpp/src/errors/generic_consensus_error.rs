@@ -2,7 +2,6 @@
 macro_rules! generic_consensus_error {
     ($error_type:ident, $error_instance:expr) => {{
         use {
-            $crate::buffer::Buffer,
             dpp::{
                 consensus::{codes::ErrorWithCode, ConsensusError},
                 serialization::PlatformSerializableWithPlatformVersion,
@@ -10,6 +9,7 @@ macro_rules! generic_consensus_error {
             },
             paste::paste,
             wasm_bindgen::prelude::wasm_bindgen,
+            $crate::buffer::Buffer,
         };
 
         paste! {
