@@ -1,18 +1,47 @@
+use crate::change::JsonSchemaChange;
+use json_patch::{AddOperation, RemoveOperation, ReplaceOperation};
 use once_cell::sync::Lazy;
+use serde_json::Value;
 #[cfg(test)]
-use serde_json::{Map as JsonMap, Value as JsonValue};
+use serde_json::{json, Map as ValueMap};
 use std::collections::HashMap;
+use std::sync::Arc;
 
-pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
-    HashMap::from_iter(vec![
+type ReplaceCallback = Option<Arc<dyn Fn(&Value, &Value) -> bool + Send + Sync>>;
+
+static FALSE_CALLBACK: Lazy<ReplaceCallback> = Lazy::new(|| Some(Arc::new(|_, _| false)));
+static TRUE_CALLBACK: Lazy<ReplaceCallback> = Lazy::new(|| Some(Arc::new(|_, _| true)));
+
+pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
+    HashMap::from_iter([
         (
             "$id",
             KeywordRule {
                 allow_adding: true,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new("foo", "bar", None),
+                examples: vec![
+                    (json!({}), json!({ "$id": "foo" }), None).into(),
+                    (
+                        json!({ "$id": "foo" }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/$id".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "$id": "foo" }),
+                        json!({ "$id": "bar" }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/$id".to_string(),
+                            value: json!("bar"),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -20,9 +49,37 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new("foo", "bar", None),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "$ref": "/foo" }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/$ref".to_string(),
+                            value: json!("/foo"),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "$ref": "/foo" }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/$ref".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "$ref": "/foo" }),
+                        json!({ "$ref": "/bar" }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/$ref".to_string(),
+                            value: json!("/bar"),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -30,9 +87,19 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: true,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: TRUE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new("foo", "bar", None),
+                examples: vec![
+                    (json!({}), json!({ "$comment": "foo" }), None).into(),
+                    (json!({ "$comment": "foo" }), json!({}), None).into(),
+                    (
+                        json!({ "$comment": "foo" }),
+                        json!({ "$comment": "bar" }),
+                        None,
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -40,9 +107,19 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: true,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: TRUE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new("foo", "bar", None),
+                examples: vec![
+                    (json!({}), json!({ "description": "foo" }), None).into(),
+                    (json!({ "description": "foo" }), json!({}), None).into(),
+                    (
+                        json!({ "description": "foo" }),
+                        json!({ "description": "bar" }),
+                        None,
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -50,16 +127,39 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: true,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: None,
+                inner: Some(Box::new(KeywordRule {
+                    allow_adding: true,
+                    allow_removing: true,
+                    allow_replacing: TRUE_CALLBACK.clone(),
+                    inner: None,
+                    #[cfg(test)]
+                    examples: vec![
+                        (
+                            json!({ "examples": ["foo"] }),
+                            json!({ "examples": ["foo","bar"] }),
+                            None,
+                        )
+                            .into(),
+                        (
+                            json!({ "examples": ["foo","bar"] }),
+                            json!({ "examples": ["foo"] }),
+                            None,
+                        )
+                            .into(),
+                        (
+                            json!({ "examples": ["foo"] }),
+                            json!({ "examples": ["bar"] }),
+                            None,
+                        )
+                            .into(),
+                    ],
+                })),
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    JsonValue::Array(vec![JsonValue::from("foo")]),
-                    JsonValue::Array(vec![JsonValue::from("foo")]),
-                    Some(JsonValue::Array(vec![
-                        JsonValue::from("foo"),
-                        JsonValue::from("boo"),
-                    ])),
-                ),
+                examples: vec![
+                    (json!({}), json!({ "examples": ["foo"] }), None).into(),
+                    (json!({ "examples": ["foo"] }), json!({}), None).into(),
+                ],
             },
         ),
         (
@@ -67,9 +167,37 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(123, 456, None),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "multiple_of": 1.0 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/multiple_of".to_string(),
+                            value: json!(1.0),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "multiple_of": 1.0 }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/multiple_of".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "multiple_of": 1.0 }),
+                        json!({ "multiple_of": 2.0 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/multiple_of".to_string(),
+                            value: json!(2.0),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -77,9 +205,31 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() < new.as_f64())),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(123, 122, Some(124)),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "maximum": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/maximum".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "maximum": 1 }), json!({}), None).into(),
+                    (json!({ "maximum": 1 }), json!({ "maximum": 2 }), None).into(),
+                    (
+                        json!({ "maximum": 2 }),
+                        json!({ "maximum": 1 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/maximum".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -87,9 +237,36 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() < new.as_f64())),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(123, 122, Some(124)),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "exclusiveMaximum": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/exclusiveMaximum".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "exclusiveMaximum": 1 }), json!({}), None).into(),
+                    (
+                        json!({ "exclusiveMaximum": 1 }),
+                        json!({ "exclusiveMaximum": 2 }),
+                        None,
+                    )
+                        .into(),
+                    (
+                        json!({ "exclusiveMaximum": 2 }),
+                        json!({ "exclusiveMaximum": 1 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/exclusiveMaximum".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -97,9 +274,31 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() > new.as_f64())),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(123, 124, Some(122)),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "minimum": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/minimum".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "minimum": 1 }), json!({}), None).into(),
+                    (
+                        json!({ "minimum": 1 }),
+                        json!({ "minimum": 2 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/minimum".to_string(),
+                            value: json!(2),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "minimum": 2 }), json!({ "minimum": 1 }), None).into(),
+                ],
             },
         ),
         (
@@ -107,9 +306,36 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() > new.as_f64())),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(123, 124, Some(122)),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "exclusiveMinimum": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/exclusiveMinimum".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "exclusiveMinimum": 1 }), json!({}), None).into(),
+                    (
+                        json!({ "exclusiveMinimum": 1 }),
+                        json!({ "exclusiveMinimum": 2 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/exclusiveMinimum".to_string(),
+                            value: json!(2),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "exclusiveMinimum": 2 }),
+                        json!({ "exclusiveMinimum": 1 }),
+                        None,
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -117,9 +343,31 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() < new.as_u64())),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(123, 122, Some(124)),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "maxLength": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/maxLength".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "maxLength": 1 }), json!({}), None).into(),
+                    (json!({ "maxLength": 1 }), json!({ "maxLength": 2 }), None).into(),
+                    (
+                        json!({ "maxLength": 2 }),
+                        json!({ "maxLength": 1 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/maxLength".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -127,9 +375,31 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() > new.as_u64())),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(123, 124, Some(122)),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "minLength": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/minLength".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "minLength": 1 }), json!({}), None).into(),
+                    (
+                        json!({ "minLength": 1 }),
+                        json!({ "minLength": 2 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/minLength".to_string(),
+                            value: json!(2),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "minLength": 2 }), json!({ "minLength": 1 }), None).into(),
+                ],
             },
         ),
         (
@@ -137,9 +407,30 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new("[a-z]", "[0-9]", None),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "pattern": "[a-z]" }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/pattern".to_string(),
+                            value: json!("[a-z]"),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "pattern": "[a-z]" }), json!({}), None).into(),
+                    (
+                        json!({ "pattern": "[a-z]" }),
+                        json!({ "pattern": "[0-9]" }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/pattern".to_string(),
+                            value: json!("[0-9]"),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -147,9 +438,31 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() < new.as_u64())),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(123, 122, Some(124)),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "maxItems": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/maxItems".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "maxItems": 1 }), json!({}), None).into(),
+                    (json!({ "maxItems": 1 }), json!({ "maxItems": 2 }), None).into(),
+                    (
+                        json!({ "maxItems": 2 }),
+                        json!({ "maxItems": 1 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/maxItems".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -157,9 +470,31 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() > new.as_u64())),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(123, 124, Some(122)),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "minItems": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/minItems".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "minItems": 1 }), json!({}), None).into(),
+                    (
+                        json!({ "minItems": 1 }),
+                        json!({ "minItems": 2 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/minItems".to_string(),
+                            value: json!(2),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "minItems": 2 }), json!({ "minItems": 1 }), None).into(),
+                ],
             },
         ),
         (
@@ -167,9 +502,40 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: Some(Arc::new(|previous, new| {
+                    previous.as_bool().expect("value must be boolean")
+                        && !new.as_bool().expect("value must be boolean")
+                })),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(true, false, Some(true)),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "uniqueItems": true }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/uniqueItems".to_string(),
+                            value: json!(true),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "uniqueItems": true }), json!({}), None).into(),
+                    (json!({ "uniqueItems": false }), json!({}), None).into(),
+                    (
+                        json!({ "uniqueItems": false }),
+                        json!({ "uniqueItems": true }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/uniqueItems".to_string(),
+                            value: json!(true),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "uniqueItems": true }),
+                        json!({ "uniqueItems": false }),
+                        None,
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -177,19 +543,37 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: false,
+                allow_replacing: None,
+                inner: None,
+                // inner: Some(Box::new(KeywordRule {
+                //     allow_adding: false,
+                //     allow_removing: true,
+                //     allow_replacing: None,
+                //     inner: None,
+                //     #[cfg(test)]
+                //     examples: KeywordRuleExamples::new_with_expectations(
+                //         json!({
+                //             "contains": {
+                //                 "type": "string"
+                //             }
+                //         }),
+                //         "/contains/",
+                //         json!({"type": "number"}),
+                //     ),
+                // })),
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("type"),
-                        JsonValue::from("string"),
-                    )])),
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("type"),
-                        JsonValue::from("number"),
-                    )])),
-                    None,
-                ),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "contains": { "type": "string" } }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/contains".to_string(),
+                            value: json!({ "type": "string" }),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "contains": { "type": "string" } }), json!({}), None).into(),
+                ],
             },
         ),
         (
@@ -197,16 +581,53 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: None,
+                inner: Some(Box::new(KeywordRule {
+                    allow_adding: false,
+                    allow_removing: true,
+                    allow_replacing: FALSE_CALLBACK.clone(),
+                    inner: None,
+                    #[cfg(test)]
+                    examples: vec![
+                        (
+                            json!({ "required": ["foo"] }),
+                            json!({ "required": ["foo", "bar"] }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/required/1".to_string(),
+                                value: json!("bar"),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "required": ["foo", "bar"] }),
+                            json!({ "required": ["foo"] }),
+                            None,
+                        )
+                            .into(),
+                        (
+                            json!({ "required": ["foo"] }),
+                            json!({ "required": ["bar"] }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/required/0".to_string(),
+                                value: json!("bar"),
+                            })),
+                        )
+                            .into(),
+                    ],
+                })),
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    JsonValue::Array(vec![JsonValue::from("property1")]),
-                    JsonValue::Array(vec![
-                        JsonValue::from("property1"),
-                        JsonValue::from("property2"),
-                    ]),
-                    Some(JsonValue::Array(Vec::new())),
-                ),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "required": ["foo"] }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/required".to_string(),
+                            value: json!(["foo"]),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "required": ["foo"] }), json!({}), None).into(),
+                ],
             },
         ),
         (
@@ -214,19 +635,57 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: None,
+                inner: Some(Box::new(KeywordRule {
+                    allow_adding: true,
+                    allow_removing: false,
+                    allow_replacing: None,
+                    inner: None,
+                    #[cfg(test)]
+                    examples: vec![
+                        (
+                            json!({ "properties": {"foo": {}} }),
+                            json!({ "properties": {"foo": {}, "bar": {}} }),
+                            None,
+                        )
+                            .into(),
+                        (
+                            json!({ "properties": {"foo": {}, "bar": {}} }),
+                            json!({ "properties": {"foo": {}} }),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/properties/bar".to_string(),
+                            })),
+                        )
+                            .into(),
+                        // TODO: We should handle property names that matches keywords
+                        // (
+                        //     json!({ "properties": {"foo": {}} }),
+                        //     json!({ "properties": {"foo": {}, "type": {}} }),
+                        //     None,
+                        // )
+                        //     .into(),
+                    ],
+                })),
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("property1"),
-                        JsonValue::Object(JsonMap::new()),
-                    )])),
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("property2"),
-                        JsonValue::Object(JsonMap::new()),
-                    )])),
-                    None,
-                ),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "properties": {"foo": {}} }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/properties".to_string(),
+                            value: json!({"foo": {}} ),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "properties": {"foo": {}} }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/properties".to_string(),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -234,29 +693,37 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(true, false, None),
-            },
-        ),
-        (
-            "dependentSchemas",
-            KeywordRule {
-                allow_adding: false,
-                allow_removing: true,
-                allow_replacing: false,
-                #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("property1"),
-                        JsonValue::Object(JsonMap::new()),
-                    )])),
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("property2"),
-                        JsonValue::Object(JsonMap::new()),
-                    )])),
-                    None,
-                ),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "additionalProperties": false }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/additionalProperties".to_string(),
+                            value: json!(false),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "additionalProperties": false }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/additionalProperties".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "additionalProperties": false }),
+                        json!({ "additionalProperties": true }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/additionalProperties".to_string(),
+                            value: json!(true),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -264,19 +731,60 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: false,
+                allow_replacing: None,
+                inner: None,
+                // TODO: The same problems as property name that matches keywords
+                // inner: Some(Box::new(KeywordRule {
+                //     allow_adding: false,
+                //     allow_removing: true,
+                //     allow_replacing: FALSE_CALLBACK.clone(),
+                //     inner: None,
+                //     #[cfg(test)]
+                //     examples: vec![
+                //         (
+                //             json!({ "dependentRequired": {"foo": ["bar"]} }),
+                //             json!({ "dependentRequired": {"foo": ["bar", "baz"]} }),
+                //             Some(JsonSchemaChange::Add(AddOperation {
+                //                 path: "/dependentRequired/foo/1".to_string(),
+                //                 value: json!("baz"),
+                //             })),
+                //         )
+                //             .into(),
+                //         (
+                //             json!({ "dependentRequired": {"foo": ["bar", "baz"]} }),
+                //             json!({ "dependentRequired": {"foo": ["bar"]} }),
+                //             None,
+                //         )
+                //             .into(),
+                //         (
+                //             json!({ "dependentRequired": {"foo": ["bar"]} }),
+                //             json!({ "dependentRequired": {"foo": ["baz"]} }),
+                //             Some(JsonSchemaChange::Replace(ReplaceOperation {
+                //                 path: "/dependentRequired/foo/0".to_string(),
+                //                 value: json!("baz"),
+                //             })),
+                //         )
+                //             .into(),
+                //     ],
+                // })),
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("property1"),
-                        JsonValue::Array(Vec::new()),
-                    )])),
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("property2"),
-                        JsonValue::Array(Vec::new()),
-                    )])),
-                    None,
-                ),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "dependentRequired": {"foo": ["bar"]} }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/dependentRequired".to_string(),
+                            value: json!({"foo": ["bar"]}),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "dependentRequired": {"foo": ["bar"]} }),
+                        json!({}),
+                        None,
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -284,9 +792,30 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new("foo", "boo", None),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "const": "foo" }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/const".to_string(),
+                            value: json!("foo"),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "const": "foo" }), json!({}), None).into(),
+                    (
+                        json!({ "const": "foo" }),
+                        json!({ "const": "bar" }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/const".to_string(),
+                            value: json!("bar"),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -294,17 +823,52 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: true,
+                allow_replacing: None,
+                inner: Some(Box::new(KeywordRule {
+                    allow_adding: true,
+                    allow_removing: false,
+                    allow_replacing: FALSE_CALLBACK.clone(),
+                    inner: None,
+                    #[cfg(test)]
+                    examples: vec![
+                        (
+                            json!({ "enum": ["foo"] }),
+                            json!({ "enum": ["foo", "bar"] }),
+                            None,
+                        )
+                            .into(),
+                        (
+                            json!({ "enum": ["foo", "bar"] }),
+                            json!({ "enum": ["foo"] }),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/enum/1".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "enum": ["foo"] }),
+                            json!({ "enum": ["bar"] }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/enum/0".to_string(),
+                                value: json!("bar"),
+                            })),
+                        )
+                            .into(),
+                    ],
+                })),
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    JsonValue::Array(vec![JsonValue::from(1), JsonValue::from(2)]),
-                    JsonValue::Array(vec![JsonValue::from(1)]),
-                    Some(JsonValue::Array(vec![
-                        JsonValue::from(1),
-                        JsonValue::from(2),
-                        JsonValue::from(3),
-                    ])),
-                ),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "enum": ["foo"] }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/enum".to_string(),
+                            value: json!(["foo"]),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "enum": ["foo"] }), json!({}), None).into(),
+                ],
             },
         ),
         (
@@ -312,9 +876,37 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new("string", "object", None),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "type": "string" }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/type".to_string(),
+                            value: json!("string"),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "type": "string" }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/type".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "type": "string" }),
+                        json!({ "type": "object" }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/type".to_string(),
+                            value: json!("object"),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -322,9 +914,30 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: true,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new("date", "time", None),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "format": "date" }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/format".to_string(),
+                            value: json!("date"),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "format": "date" }), json!({}), None).into(),
+                    (
+                        json!({ "format": "date" }),
+                        json!({ "format": "time" }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/format".to_string(),
+                            value: json!("time"),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -332,13 +945,37 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    "application/x.dash.dpp.identifier",
-                    "application/unknown",
-                    None,
-                ),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "contentMediaType": "application/x.dash.dpp.identifier" }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/contentMediaType".to_string(),
+                            value: json!("application/x.dash.dpp.identifier"),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "contentMediaType": "application/x.dash.dpp.identifier" }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/contentMediaType".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "contentMediaType": "application/x.dash.dpp.identifier" }),
+                        json!({ "contentMediaType": "application/unknown" }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/contentMediaType".to_string(),
+                            value: json!("application/unknown"),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -346,9 +983,37 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(true, false, None),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "byteArray": true }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/byteArray".to_string(),
+                            value: json!(true),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "byteArray": true }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/byteArray".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "byteArray": true }),
+                        json!({ "byteArray": false }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/byteArray".to_string(),
+                            value: json!(false),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -356,13 +1021,28 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: None,
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    JsonValue::Array(vec![]),
-                    JsonValue::Array(vec![JsonValue::Object(JsonMap::new())]),
-                    None,
-                ),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "prefixItems": [{ "type": "string" }] }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/prefixItems".to_string(),
+                            value: json!([{ "type": "string" }]),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "prefixItems": [{ "type": "string" }] }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/prefixItems".to_string(),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -370,19 +1050,37 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("type"),
-                        JsonValue::from("string"),
-                    )])),
-                    JsonValue::Object(JsonMap::from_iter(vec![(
-                        String::from("type"),
-                        JsonValue::from("object"),
-                    )])),
-                    None,
-                ),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "items": { "type": "string" } }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/items".to_string(),
+                            value: json!({ "type": "string" }),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "items": { "type": "string" } }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/items".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "items": { "type": "string" } }),
+                        json!({ "items": false }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/items".to_string(),
+                            value: json!(false),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
         (
@@ -390,39 +1088,152 @@ pub static KEYWORDS: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
             KeywordRule {
                 allow_adding: false,
                 allow_removing: false,
-                allow_replacing: false,
+                allow_replacing: FALSE_CALLBACK.clone(),
+                inner: None,
                 #[cfg(test)]
-                examples: KeywordRuleExamples::new(0, 1, None),
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "position": 0 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/position".to_string(),
+                            value: json!(0),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "position": 0 }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/position".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "position": 0 }),
+                        json!({ "position": 1 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/position".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                ],
             },
         ),
     ])
 });
+// TODO: Add inners
+//
+// pub(crate) static KEYWORD_INNER_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
+//     HashMap::from_iter([
+//         // (
+//         //     "prefixItems",
+//         //     KeywordRule {
+//         //         allow_adding: false,
+//         //         allow_removing: false,
+//         //         allow_replacing: *FALSE_CALLBACK,
+//         //         #[cfg(test)]
+//         //         examples: KeywordRuleExamples::new(
+//         //             Value::Array(vec![]),
+//         //             Value::Array(vec![Value::Object(ValueMap::new())]),
+//         //             None,
+//         //         ),
+//         //     },
+//         // ),
+//         // (
+//         //     "items",
+//         //     KeywordRule {
+//         //         allow_adding: false,
+//         //         allow_removing: false,
+//         //         allow_replacing: *FALSE_CALLBACK,
+//         //         #[cfg(test)]
+//         //         examples: KeywordRuleExamples::new(
+//         //             Value::Object(ValueMap::from_iter([(
+//         //                 String::from("type"),
+//         //                 Value::from("string"),
+//         //             )])),
+//         //             Value::Object(ValueMap::from_iter([(
+//         //                 String::from("type"),
+//         //                 Value::from("object"),
+//         //             )])),
+//         //             None,
+//         //         ),
+//         //     },
+//         // ),
+//     ])
+// });
 
-pub struct KeywordRule {
+pub(crate) struct KeywordRule {
     pub allow_adding: bool,
     pub allow_removing: bool,
-    pub allow_replacing: bool,
+    pub allow_replacing: ReplaceCallback,
+    pub inner: Option<Box<KeywordRule>>,
     #[cfg(test)]
-    pub examples: KeywordRuleExamples,
+    pub examples: Vec<KeywordRuleExample>,
 }
 
 #[cfg(test)]
-pub struct KeywordRuleExamples {
-    previous_value: JsonValue,
-    new_invalid_value: JsonValue,
-    new_valid_value: Option<JsonValue>,
+pub(crate) struct KeywordRuleExample {
+    pub original_schema: Value,
+    pub new_schema: Value,
+    pub incompatible_change: Option<JsonSchemaChange>,
 }
 
 #[cfg(test)]
-impl KeywordRuleExamples {
-    fn new<V>(previous_value: V, new_invalid_value: V, new_valid_value: Option<V>) -> Self
-    where
-        V: Into<JsonValue>,
-    {
+impl From<(Value, Value, Option<JsonSchemaChange>)> for KeywordRuleExample {
+    fn from(
+        (original_schema, new_schema, incompatible_change): (
+            Value,
+            Value,
+            Option<JsonSchemaChange>,
+        ),
+    ) -> Self {
         Self {
-            previous_value: previous_value.into(),
-            new_invalid_value: new_invalid_value.into(),
-            new_valid_value: new_valid_value.map(Into::into),
+            original_schema,
+            new_schema,
+            incompatible_change,
         }
     }
+}
+
+#[cfg(test)]
+impl KeywordRuleExample {
+    // fn new(keyword: &str, value: impl Into<Value>) -> Self {
+    //     Self {
+    //         original_schema: value.into(),
+    //         new_schema: Vec::new(),
+    //         expected_value: None,
+    //         expected_path: None,
+    //         is_compatible: false,
+    //     }
+    // }
+    //
+    // fn new_with_substitutions<V>(value: V, substitutions: Vec<(V, bool)>) -> Self
+    // where
+    //     V: Into<Value>,
+    // {
+    //     Self {
+    //         original_schema: value.into(),
+    //         new_schema: substitutions
+    //             .into_iter()
+    //             .map(|(v, b)| (v.into(), b))
+    //             .collect(),
+    //         expected_value: None,
+    //         expected_path: None,
+    //     }
+    // }
+    //
+    // fn new_with_expectations(
+    //     value: impl Into<Value>,
+    //     expected_path: &str,
+    //     expected_value: impl Into<Value>,
+    // ) -> Self {
+    //     Self {
+    //         original_schema: value.into(),
+    //         new_schema: Vec::new(),
+    //         expected_path: Some(expected_path.to_string()),
+    //         expected_value: Some(expected_value.into()),
+    //     }
+    // }
 }

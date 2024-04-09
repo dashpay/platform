@@ -1,7 +1,7 @@
 use crate::errors::{Error, UnexpectedPatchOperationError};
 use json_patch::{AddOperation, PatchOperation, RemoveOperation, ReplaceOperation};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum JsonSchemaChange {
     Add(AddOperation),
     Remove(RemoveOperation),

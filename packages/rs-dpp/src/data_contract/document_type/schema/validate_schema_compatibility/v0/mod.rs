@@ -5,8 +5,6 @@ use std::collections::{BTreeMap, HashSet};
 /// The functionality has been ported 'as is' without any logic improvements and optimizations
 use std::convert::TryFrom;
 
-use crate::consensus::basic::data_contract::IncompatibleDataContractSchemaError;
-use crate::data_contract::document_type::schema::IncompatibleSchemaChange;
 use crate::data_contract::DocumentName;
 use crate::validation::SimpleValidationResult;
 use crate::ProtocolError;
