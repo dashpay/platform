@@ -1,4 +1,4 @@
-use crate::errors::{Error, UnexpectedPatchOperationError};
+use crate::error::{Error, UnexpectedPatchOperationError};
 use json_patch::{AddOperation, PatchOperation, RemoveOperation, ReplaceOperation};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -37,7 +37,7 @@ impl TryFrom<PatchOperation> for JsonSchemaChange {
             PatchOperation::Remove(o) => Ok(Self::Remove(o)),
             PatchOperation::Replace(o) => Ok(Self::Replace(o)),
             PatchOperation::Move(_) | PatchOperation::Copy(_) | PatchOperation::Test(_) => Err(
-                Error::UnexpectedPatchOperation(UnexpectedPatchOperationError(value)),
+                Error::UnexpectedJsonPatchOperation(UnexpectedPatchOperationError(value)),
             ),
         }
     }

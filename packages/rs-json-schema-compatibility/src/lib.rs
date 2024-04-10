@@ -1,6 +1,6 @@
 mod change;
-mod errors;
-mod keywords;
+mod error;
+mod keyword;
 
 use std::collections::HashSet;
 /// The Schema compatibility validator is a port of a JavaScript version
@@ -10,8 +10,11 @@ use std::collections::HashSet;
 use std::convert::TryFrom;
 
 use crate::change::JsonSchemaChange;
-use crate::errors::{Error, InvalidJsonPointerPathError, JsonPointerPathNotFoundError};
-use crate::keywords::KEYWORD_RULES;
+use crate::error::{
+    Error, InvalidJsonPatchOperationPathError, InvalidJsonPointerPathError,
+    JsonPointerPathNotFoundError, UndefinedReplaceCallbackError, UnsupportedSchemaKeywordError,
+};
+use crate::keyword::{KeywordRule, KEYWORD_RULES};
 use json_patch::PatchOperation;
 pub use json_patch::{AddOperation, RemoveOperation, ReplaceOperation};
 use jsonptr::{Pointer, Resolve};
@@ -67,22 +70,14 @@ pub fn validate_schema_compatibility_with_options(
     let mut inserted: HashSet<String> = HashSet::new();
 
     for operation in patch.0.into_iter() {
-        match operation {
-            PatchOperation::Remove(ref op) => {
-                let is_compatible = is_operation_remove_compatible(&op.path)?;
+        let is_compatible = match &operation {
+            PatchOperation::Remove(op) => is_operation_remove_compatible(&op.path)?,
 
-                if !is_compatible {
-                    incompatible_changes.push(operation.try_into()?);
-                }
-            }
-
-            PatchOperation::Replace(ref op) => {
+            PatchOperation::Replace(op) => {
                 let is_compatible =
                     is_operation_replace_compatible(&op.path, original_schema, new_schema)?;
 
-                if !is_compatible {
-                    incompatible_changes.push(operation.try_into()?);
-                }
+                is_compatible
 
                 // if !opts.allow_reorder {
                 //     incompatible_changes.push(operation.try_into()?);
@@ -97,9 +92,7 @@ pub fn validate_schema_compatibility_with_options(
             PatchOperation::Add(ref op) => {
                 let is_compatible = is_operation_add_compatible(&op.path)?;
 
-                if !is_compatible {
-                    incompatible_changes.push(operation.try_into()?);
-                }
+                is_compatible
                 // let is_new_any_of_item = is_anyof_path(&op_add.path);
                 // let is_new_enum_value = is_enum_path(&op_add.path);
                 // let path_two_last_levels = get_second_last_sub_path(&op_add.path)
@@ -143,6 +136,10 @@ pub fn validate_schema_compatibility_with_options(
                     "json_patch diff doesn't return decorative operations test, copy, move"
                 )
             }
+        };
+
+        if !is_compatible {
+            incompatible_changes.push(operation.try_into()?);
         }
     }
 
@@ -166,57 +163,27 @@ pub fn validate_schema_compatibility_with_options(
 }
 
 fn is_operation_remove_compatible(path: &str) -> Result<bool, Error> {
-    let mut path_segments = path.split('/');
-
-    let Some(last_segment) = path_segments.next_back() else {
-        unreachable!("impossible to remove empty path");
+    let Some((_, rule)) = find_rule(path)? else {
+        return Err(Error::InvalidJsonPatchOperationPath(
+            InvalidJsonPatchOperationPathError {
+                path: path.to_string(),
+            },
+        ));
     };
 
-    if let Some(rule) = KEYWORD_RULES.get(last_segment) {
-        return Ok(rule.allow_removing);
-    };
-
-    // Then it probably removal of internal element of a keyword
-    let Some(second_last_segment) = path_segments.next_back() else {
-        unreachable!("unsupported keywords");
-    };
-
-    if let Some(rule) = KEYWORD_RULES.get(second_last_segment) {
-        let Some(inner_rule) = &rule.inner else {
-            unreachable!("{second_last_segment} must have the inner rule");
-        };
-
-        return Ok(inner_rule.allow_removing);
-    };
-
-    unreachable!("unsupported keyword '{}'", path);
+    Ok(rule.allow_removing)
 }
 
 fn is_operation_add_compatible(path: &str) -> Result<bool, Error> {
-    let mut path_segments = path.split('/');
-
-    let Some(last_segment) = path_segments.next_back() else {
-        unreachable!("impossible to remove empty path");
+    let Some((_, rule)) = find_rule(path)? else {
+        return Err(Error::InvalidJsonPatchOperationPath(
+            InvalidJsonPatchOperationPathError {
+                path: path.to_string(),
+            },
+        ));
     };
 
-    if let Some(rule) = KEYWORD_RULES.get(last_segment) {
-        return Ok(rule.allow_adding);
-    };
-
-    // Then it probably removal of internal element of a keyword
-    let Some(second_last_segment) = path_segments.next_back() else {
-        unreachable!("unsupported keywords");
-    };
-
-    if let Some(rule) = KEYWORD_RULES.get(second_last_segment) {
-        let Some(inner_rule) = &rule.inner else {
-            unreachable!("{second_last_segment} must have the inner rule");
-        };
-
-        return Ok(inner_rule.allow_adding);
-    };
-
-    unreachable!("unsupported keywords");
+    Ok(rule.allow_adding)
 }
 
 fn is_operation_replace_compatible(
@@ -224,10 +191,12 @@ fn is_operation_replace_compatible(
     previous_schema: &JsonValue,
     new_schema: &JsonValue,
 ) -> Result<bool, Error> {
-    let mut path_segments = path.split('/');
-
-    let Some(last_segment) = path_segments.next_back() else {
-        unreachable!("impossible to remove empty path");
+    let Some((keyword, rule)) = find_rule(path)? else {
+        return Err(Error::InvalidJsonPatchOperationPath(
+            InvalidJsonPatchOperationPathError {
+                path: path.to_string(),
+            },
+        ));
     };
 
     let pointer = Pointer::try_from(path).map_err(|error| InvalidJsonPointerPathError {
@@ -250,46 +219,102 @@ fn is_operation_replace_compatible(
             error,
         })?;
 
-    if let Some(rule) = KEYWORD_RULES.get(last_segment) {
-        let callback = rule.allow_replacing.as_ref().expect("must have a callback");
+    let callback = rule
+        .allow_replacing
+        .as_ref()
+        .ok_or(UndefinedReplaceCallbackError { keyword })?;
 
-        return Ok(callback(previous_value, new_value));
-    };
+    Ok(callback(previous_value, new_value))
+}
 
-    // Then it probably removal of internal element of a keyword
-    let Some(second_last_segment) = path_segments.next_back() else {
-        unreachable!("unsupported keywords");
-    };
+fn find_rule(path: &str) -> Result<Option<(String, &KeywordRule)>, Error> {
+    let mut path_segments = path.split('/');
 
-    if let Some(rule) = KEYWORD_RULES.get(second_last_segment) {
-        let Some(inner_rule) = &rule.inner else {
-            unreachable!("{second_last_segment} must have the inner rule");
-        };
+    // Remove the first empty segment
+    path_segments.next();
 
-        let callback = inner_rule
-            .allow_replacing
-            .as_ref()
-            .unwrap_or_else(|| panic!("{second_last_segment} must have the replace callback"));
+    let mut latest_keyword_rule: Option<(String, &KeywordRule)> = None;
+    let mut levels_to_subschema: Option<usize> = None;
+    for segment in path_segments {
+        // Switch to inner rule if it's present if we have more
+        // segments after the keyword
+        if let Some((keyword, rule)) = latest_keyword_rule.take() {
+            if let Some(inner_rule) = &rule.inner {
+                latest_keyword_rule = Some((keyword.clone(), inner_rule));
+            }
+        }
 
-        return Ok(callback(previous_value, new_value));
-    };
+        // Skip levels to next keyword if we have inner subschema
+        if let Some(levels) = levels_to_subschema {
+            if levels > 0 {
+                levels_to_subschema = levels.checked_sub(1);
 
-    unreachable!("unsupported keywords");
+                continue;
+            }
+        }
+
+        let rule = KEYWORD_RULES
+            .get(segment)
+            .ok_or(UnsupportedSchemaKeywordError {
+                keyword: segment.to_string(),
+                path: path.to_string(),
+            })?;
+
+        levels_to_subschema = rule.levels_to_subschema;
+
+        latest_keyword_rule = Some((segment.to_string(), rule));
+    }
+
+    Ok(latest_keyword_rule)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keywords::{KeywordRule, KeywordRuleExample};
+    use crate::keyword::KeywordRuleExample;
     use rstest::rstest;
     use serde_json::json;
     use test_case::{test_case, test_matrix};
 
     // TODO: validate
-    //  - Add more prefixItems and increase array size?
-    //  - Modify subschema inside `items`, `enum`, `dependentSchemas`, `prefixItems`
+    //  - Add more prefixItems and increase array size? Yes, we can
+    //  - Modify subschema inside `items`, `prefixItems`
     //  - we should be able to reorder fields
     //  - what about $ref and $defs?
+
+    #[test]
+    fn test_find_rule() {
+        let result = find_rule("/properties/prop1").expect("should find keyword without failure");
+
+        assert_eq!(
+            result,
+            Some((
+                "properties".to_string(),
+                KEYWORD_RULES
+                    .get("properties")
+                    .unwrap()
+                    .inner
+                    .as_deref()
+                    .unwrap()
+            ))
+        );
+
+        let result = find_rule("/properties/prop1/properties/type")
+            .expect("should find keyword without failure");
+
+        assert_eq!(
+            result,
+            Some((
+                "properties".to_string(),
+                KEYWORD_RULES
+                    .get("properties")
+                    .unwrap()
+                    .inner
+                    .as_deref()
+                    .unwrap()
+            ))
+        );
+    }
 
     #[test]
     fn test_schema_keyword_rules() {
@@ -298,7 +323,7 @@ mod tests {
 
             assert_examples(keyword, &rule.examples);
 
-            if let Some(inner_rule) = rule.inner.as_deref() {
+            if let Some(inner_rule) = &rule.inner {
                 assert_examples(keyword, &inner_rule.examples);
             }
         }

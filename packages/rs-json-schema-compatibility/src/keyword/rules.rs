@@ -1,13 +1,14 @@
+#[cfg(test)]
 use crate::change::JsonSchemaChange;
+use crate::keyword::keyword_rule::KeywordRule;
+use crate::keyword::ReplaceCallback;
+#[cfg(test)]
 use json_patch::{AddOperation, RemoveOperation, ReplaceOperation};
 use once_cell::sync::Lazy;
-use serde_json::Value;
 #[cfg(test)]
-use serde_json::{json, Map as ValueMap};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-type ReplaceCallback = Option<Arc<dyn Fn(&Value, &Value) -> bool + Send + Sync>>;
 
 static FALSE_CALLBACK: Lazy<ReplaceCallback> = Lazy::new(|| Some(Arc::new(|_, _| false)));
 static TRUE_CALLBACK: Lazy<ReplaceCallback> = Lazy::new(|| Some(Arc::new(|_, _| true)));
@@ -20,6 +21,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: true,
                 allow_removing: false,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -50,6 +52,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -88,6 +91,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: true,
                 allow_removing: true,
                 allow_replacing: TRUE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -108,6 +112,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: true,
                 allow_removing: true,
                 allow_replacing: TRUE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -128,10 +133,12 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: true,
                 allow_removing: true,
                 allow_replacing: None,
+                levels_to_subschema: None,
                 inner: Some(Box::new(KeywordRule {
                     allow_adding: true,
                     allow_removing: true,
                     allow_replacing: TRUE_CALLBACK.clone(),
+                    levels_to_subschema: None,
                     inner: None,
                     #[cfg(test)]
                     examples: vec![
@@ -168,6 +175,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -206,6 +214,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() < new.as_f64())),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -238,6 +247,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() < new.as_f64())),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -275,6 +285,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() > new.as_f64())),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -307,6 +318,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() > new.as_f64())),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -344,6 +356,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() < new.as_u64())),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -376,6 +389,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() > new.as_u64())),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -408,6 +422,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -439,6 +454,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() < new.as_u64())),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -471,6 +487,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() > new.as_u64())),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -506,6 +523,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                     previous.as_bool().expect("value must be boolean")
                         && !new.as_bool().expect("value must be boolean")
                 })),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -544,23 +562,8 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: None,
+                levels_to_subschema: Some(1),
                 inner: None,
-                // inner: Some(Box::new(KeywordRule {
-                //     allow_adding: false,
-                //     allow_removing: true,
-                //     allow_replacing: None,
-                //     inner: None,
-                //     #[cfg(test)]
-                //     examples: KeywordRuleExamples::new_with_expectations(
-                //         json!({
-                //             "contains": {
-                //                 "type": "string"
-                //             }
-                //         }),
-                //         "/contains/",
-                //         json!({"type": "number"}),
-                //     ),
-                // })),
                 #[cfg(test)]
                 examples: vec![
                     (
@@ -582,10 +585,12 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: None,
+                levels_to_subschema: None,
                 inner: Some(Box::new(KeywordRule {
                     allow_adding: false,
                     allow_removing: true,
                     allow_replacing: FALSE_CALLBACK.clone(),
+                    levels_to_subschema: None,
                     inner: None,
                     #[cfg(test)]
                     examples: vec![
@@ -636,10 +641,12 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: None,
+                levels_to_subschema: Some(2),
                 inner: Some(Box::new(KeywordRule {
                     allow_adding: true,
                     allow_removing: false,
                     allow_replacing: None,
+                    levels_to_subschema: None,
                     inner: None,
                     #[cfg(test)]
                     examples: vec![
@@ -694,6 +701,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -732,6 +740,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: None,
+                levels_to_subschema: None,
                 inner: None,
                 // TODO: The same problems as property name that matches keywords
                 // inner: Some(Box::new(KeywordRule {
@@ -793,6 +802,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: Some(1),
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -824,10 +834,12 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: None,
+                levels_to_subschema: Some(2),
                 inner: Some(Box::new(KeywordRule {
                     allow_adding: true,
                     allow_removing: false,
                     allow_replacing: FALSE_CALLBACK.clone(),
+                    levels_to_subschema: None,
                     inner: None,
                     #[cfg(test)]
                     examples: vec![
@@ -877,6 +889,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -915,6 +928,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -946,6 +960,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -984,6 +999,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -1022,6 +1038,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: None,
+                levels_to_subschema: Some(2),
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -1051,6 +1068,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: Some(1),
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -1089,6 +1107,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_adding: false,
                 allow_removing: false,
                 allow_replacing: FALSE_CALLBACK.clone(),
+                levels_to_subschema: None,
                 inner: None,
                 #[cfg(test)]
                 examples: vec![
@@ -1115,6 +1134,51 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                         Some(JsonSchemaChange::Replace(ReplaceOperation {
                             path: "/position".to_string(),
                             value: json!(1),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
+        (
+            "$defs",
+            KeywordRule {
+                allow_adding: true,
+                allow_removing: false,
+                allow_replacing: None,
+                levels_to_subschema: Some(2),
+                inner: Some(Box::new(KeywordRule {
+                    allow_adding: true,
+                    allow_removing: false,
+                    allow_replacing: None,
+                    levels_to_subschema: None,
+                    inner: None,
+                    #[cfg(test)]
+                    examples: vec![
+                        (
+                            json!({ "$defs": {"definition1": {}} }),
+                            json!({ "$defs": {"definition1": {}, "definition2": {}} }),
+                            None,
+                        )
+                            .into(),
+                        (
+                            json!({ "$defs": {"definition1": {}, "definition2": {}} }),
+                            json!({ "$defs": {"definition1": {}} }),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/$defs/definition2".to_string(),
+                            })),
+                        )
+                            .into(),
+                    ],
+                })),
+                #[cfg(test)]
+                examples: vec![
+                    (json!({}), json!({ "$defs": {"definition": {}} }), None).into(),
+                    (
+                        json!({ "$defs": {"definition": {}} }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/$defs".to_string(),
                         })),
                     )
                         .into(),
@@ -1163,77 +1227,3 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
 //         // ),
 //     ])
 // });
-
-pub(crate) struct KeywordRule {
-    pub allow_adding: bool,
-    pub allow_removing: bool,
-    pub allow_replacing: ReplaceCallback,
-    pub inner: Option<Box<KeywordRule>>,
-    #[cfg(test)]
-    pub examples: Vec<KeywordRuleExample>,
-}
-
-#[cfg(test)]
-pub(crate) struct KeywordRuleExample {
-    pub original_schema: Value,
-    pub new_schema: Value,
-    pub incompatible_change: Option<JsonSchemaChange>,
-}
-
-#[cfg(test)]
-impl From<(Value, Value, Option<JsonSchemaChange>)> for KeywordRuleExample {
-    fn from(
-        (original_schema, new_schema, incompatible_change): (
-            Value,
-            Value,
-            Option<JsonSchemaChange>,
-        ),
-    ) -> Self {
-        Self {
-            original_schema,
-            new_schema,
-            incompatible_change,
-        }
-    }
-}
-
-#[cfg(test)]
-impl KeywordRuleExample {
-    // fn new(keyword: &str, value: impl Into<Value>) -> Self {
-    //     Self {
-    //         original_schema: value.into(),
-    //         new_schema: Vec::new(),
-    //         expected_value: None,
-    //         expected_path: None,
-    //         is_compatible: false,
-    //     }
-    // }
-    //
-    // fn new_with_substitutions<V>(value: V, substitutions: Vec<(V, bool)>) -> Self
-    // where
-    //     V: Into<Value>,
-    // {
-    //     Self {
-    //         original_schema: value.into(),
-    //         new_schema: substitutions
-    //             .into_iter()
-    //             .map(|(v, b)| (v.into(), b))
-    //             .collect(),
-    //         expected_value: None,
-    //         expected_path: None,
-    //     }
-    // }
-    //
-    // fn new_with_expectations(
-    //     value: impl Into<Value>,
-    //     expected_path: &str,
-    //     expected_value: impl Into<Value>,
-    // ) -> Self {
-    //     Self {
-    //         original_schema: value.into(),
-    //         new_schema: Vec::new(),
-    //         expected_path: Some(expected_path.to_string()),
-    //         expected_value: Some(expected_value.into()),
-    //     }
-    // }
-}
