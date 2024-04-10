@@ -163,7 +163,7 @@ pub fn validate_schema_compatibility_with_options(
 }
 
 fn is_operation_remove_compatible(path: &str) -> Result<bool, Error> {
-    let Some((_, rule)) = find_rule(path)? else {
+    let Some((_, rule)) = find_keyword_rule(path)? else {
         return Err(Error::InvalidJsonPatchOperationPath(
             InvalidJsonPatchOperationPathError {
                 path: path.to_string(),
@@ -175,7 +175,7 @@ fn is_operation_remove_compatible(path: &str) -> Result<bool, Error> {
 }
 
 fn is_operation_add_compatible(path: &str) -> Result<bool, Error> {
-    let Some((_, rule)) = find_rule(path)? else {
+    let Some((_, rule)) = find_keyword_rule(path)? else {
         return Err(Error::InvalidJsonPatchOperationPath(
             InvalidJsonPatchOperationPathError {
                 path: path.to_string(),
@@ -191,7 +191,7 @@ fn is_operation_replace_compatible(
     previous_schema: &JsonValue,
     new_schema: &JsonValue,
 ) -> Result<bool, Error> {
-    let Some((keyword, rule)) = find_rule(path)? else {
+    let Some((keyword, rule)) = find_keyword_rule(path)? else {
         return Err(Error::InvalidJsonPatchOperationPath(
             InvalidJsonPatchOperationPathError {
                 path: path.to_string(),
@@ -227,7 +227,7 @@ fn is_operation_replace_compatible(
     Ok(callback(previous_value, new_value))
 }
 
-fn find_rule(path: &str) -> Result<Option<(String, &KeywordRule)>, Error> {
+fn find_keyword_rule(path: &str) -> Result<Option<(String, &KeywordRule)>, Error> {
     let mut path_segments = path.split('/');
 
     // Remove the first empty segment
@@ -238,16 +238,18 @@ fn find_rule(path: &str) -> Result<Option<(String, &KeywordRule)>, Error> {
     for segment in path_segments {
         // Switch to inner rule if it's present if we have more
         // segments after the keyword
-        if let Some((keyword, rule)) = latest_keyword_rule.take() {
+        if let Some((keyword, rule)) = &latest_keyword_rule {
             if let Some(inner_rule) = &rule.inner {
                 latest_keyword_rule = Some((keyword.clone(), inner_rule));
             }
         }
 
-        // Skip levels to next keyword if we have inner subschema
-        if let Some(levels) = levels_to_subschema {
+        // Skip levels to a next keyword if we expect to have an inner subschema
+        if let Some(mut levels) = levels_to_subschema {
+            levels -= 1;
+
             if levels > 0 {
-                levels_to_subschema = levels.checked_sub(1);
+                levels_to_subschema = Some(levels);
 
                 continue;
             }
@@ -284,7 +286,8 @@ mod tests {
 
     #[test]
     fn test_find_rule() {
-        let result = find_rule("/properties/prop1").expect("should find keyword without failure");
+        let result =
+            find_keyword_rule("/properties/prop1").expect("should find keyword without failure");
 
         assert_eq!(
             result,
@@ -299,7 +302,7 @@ mod tests {
             ))
         );
 
-        let result = find_rule("/properties/prop1/properties/type")
+        let result = find_keyword_rule("/properties/prop1/properties/type")
             .expect("should find keyword without failure");
 
         assert_eq!(
