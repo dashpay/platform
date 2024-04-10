@@ -2134,6 +2134,120 @@ pub mod get_epochs_info_response {
         V0(GetEpochsInfoResponseV0),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPathElementsRequest {
+    #[prost(oneof = "get_path_elements_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_path_elements_request::Version>,
+}
+/// Nested message and enum types in `GetPathElementsRequest`.
+pub mod get_path_elements_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetPathElementsRequestV0 {
+        #[prost(message, optional, tag = "1")]
+        pub path: ::core::option::Option<get_path_elements_request_v0::PathElement>,
+        #[prost(message, optional, tag = "2")]
+        pub keys: ::core::option::Option<get_path_elements_request_v0::Keys>,
+        #[prost(bool, tag = "3")]
+        pub prove: bool,
+    }
+    /// Nested message and enum types in `GetPathElementsRequestV0`.
+    pub mod get_path_elements_request_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct Keys {
+            #[prost(bytes = "vec", repeated, tag = "1")]
+            pub key: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct PathElement {
+            #[prost(bytes = "vec", repeated, tag = "1")]
+            pub path: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetPathElementsRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPathElementsResponse {
+    #[prost(oneof = "get_path_elements_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_path_elements_response::Version>,
+}
+/// Nested message and enum types in `GetPathElementsResponse`.
+pub mod get_path_elements_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetPathElementsResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(oneof = "get_path_elements_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<get_path_elements_response_v0::Result>,
+    }
+    /// Nested message and enum types in `GetPathElementsResponseV0`.
+    pub mod get_path_elements_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct Elements {
+            #[prost(bytes = "vec", repeated, tag = "1")]
+            pub elements: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            Elements(Elements),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetPathElementsResponseV0),
+    }
+}
 /// Generated client implementations.
 pub mod platform_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -2812,6 +2926,36 @@ pub mod platform_client {
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
                         "getEpochsInfo",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_path_elements(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetPathElementsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetPathElementsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getPathElements",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getPathElements",
                     ),
                 );
             self.inner.unary(req, path, codec).await
