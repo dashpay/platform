@@ -42,3 +42,20 @@ impl TryFrom<PatchOperation> for JsonSchemaChange {
         }
     }
 }
+
+pub trait PatchOperationPath {
+    fn path(&self) -> &str;
+}
+
+impl PatchOperationPath for PatchOperation {
+    fn path(&self) -> &str {
+        match self {
+            PatchOperation::Add(op) => &op.path,
+            PatchOperation::Remove(op) => &op.path,
+            PatchOperation::Replace(op) => &op.path,
+            PatchOperation::Move(op) => &op.path,
+            PatchOperation::Copy(op) => &op.path,
+            PatchOperation::Test(op) => &op.path,
+        }
+    }
+}

@@ -2,23 +2,17 @@ mod change;
 mod error;
 mod keyword;
 
-use std::collections::HashSet;
-/// The Schema compatibility validator is a port of a JavaScript version
-/// https://bitbucket.org/atlassian/json-schema-diff-validator/src/master/
-///
-/// The functionality has been ported 'as is' without any logic improvements and optimizations
-use std::convert::TryFrom;
-
-use crate::change::JsonSchemaChange;
+// TODO: Revisit visibility
+use crate::change::{JsonSchemaChange, PatchOperationPath};
 use crate::error::{
-    Error, InvalidJsonPatchOperationPathError, InvalidJsonPointerPathError,
-    JsonPointerPathNotFoundError, UndefinedReplaceCallbackError, UnsupportedSchemaKeywordError,
+    Error, InvalidJsonPatchOperationPathError, UndefinedReplaceCallbackError,
+    UnsupportedSchemaKeywordError,
 };
 pub use crate::keyword::*;
 use json_patch::PatchOperation;
 pub use json_patch::{AddOperation, RemoveOperation, ReplaceOperation};
-use jsonptr::{Pointer, Resolve};
 use serde_json::Value;
+use std::collections::HashSet;
 
 struct RemovedItem {
     name: String,
@@ -70,14 +64,26 @@ pub fn validate_schema_compatibility_with_options(
     let mut inserted: HashSet<String> = HashSet::new();
 
     for operation in patch.0.into_iter() {
+        let path = operation.path();
+
+        let Some((keyword, rule)) = find_keyword_rule(path)? else {
+            return Err(Error::InvalidJsonPatchOperationPath(
+                InvalidJsonPatchOperationPathError {
+                    path: path.to_string(),
+                },
+            ));
+        };
+
         let is_compatible = match &operation {
-            PatchOperation::Remove(op) => is_operation_remove_compatible(&op.path)?,
+            PatchOperation::Remove(_) => rule.allow_removing,
 
             PatchOperation::Replace(op) => {
-                let is_compatible =
-                    is_operation_replace_compatible(&op.path, original_schema, new_schema)?;
+                let callback = rule
+                    .allow_replacing
+                    .as_ref()
+                    .ok_or(UndefinedReplaceCallbackError { keyword })?;
 
-                is_compatible
+                callback(original_schema, op)?
 
                 // if !opts.allow_reorder {
                 //     incompatible_changes.push(operation.try_into()?);
@@ -90,9 +96,7 @@ pub fn validate_schema_compatibility_with_options(
                 // }
             }
             PatchOperation::Add(ref op) => {
-                let is_compatible = is_operation_add_compatible(&op.path)?;
-
-                is_compatible
+                rule.allow_adding
                 // let is_new_any_of_item = is_anyof_path(&op_add.path);
                 // let is_new_enum_value = is_enum_path(&op_add.path);
                 // let path_two_last_levels = get_second_last_sub_path(&op_add.path)
@@ -162,70 +166,47 @@ pub fn validate_schema_compatibility_with_options(
     })
 }
 
-fn is_operation_remove_compatible(path: &str) -> Result<bool, Error> {
-    let Some((_, rule)) = find_keyword_rule(path)? else {
-        return Err(Error::InvalidJsonPatchOperationPath(
-            InvalidJsonPatchOperationPathError {
-                path: path.to_string(),
-            },
-        ));
-    };
-
-    Ok(rule.allow_removing)
-}
-
-fn is_operation_add_compatible(path: &str) -> Result<bool, Error> {
-    let Some((_, rule)) = find_keyword_rule(path)? else {
-        return Err(Error::InvalidJsonPatchOperationPath(
-            InvalidJsonPatchOperationPathError {
-                path: path.to_string(),
-            },
-        ));
-    };
-
-    Ok(rule.allow_adding)
-}
-
-fn is_operation_replace_compatible(
-    path: &str,
-    previous_schema: &Value,
-    new_schema: &Value,
-) -> Result<bool, Error> {
-    let Some((keyword, rule)) = find_keyword_rule(path)? else {
-        return Err(Error::InvalidJsonPatchOperationPath(
-            InvalidJsonPatchOperationPathError {
-                path: path.to_string(),
-            },
-        ));
-    };
-
-    let pointer = Pointer::try_from(path).map_err(|error| InvalidJsonPointerPathError {
-        path: path.to_string(),
-        error,
-    })?;
-
-    let previous_value =
-        previous_schema
-            .resolve(&pointer)
-            .map_err(|error| JsonPointerPathNotFoundError {
-                path: path.to_string(),
-                error,
-            })?;
-
-    let new_value = new_schema
-        .resolve(&pointer)
-        .map_err(|error| JsonPointerPathNotFoundError {
-            path: path.to_string(),
-            error,
-        })?;
-
-    let callback = rule
-        .allow_replacing
-        .as_ref()
-        .ok_or(UndefinedReplaceCallbackError { keyword })?;
-
-    Ok(callback(previous_value, new_value))
-}
+//
+// fn is_operation_replace_compatible(
+//     path: &str,
+//     previous_schema: &Value,
+//     new_schema: &Value,
+// ) -> Result<bool, Error> {
+//     let Some((keyword, rule)) = find_keyword_rule(path)? else {
+//         return Err(Error::InvalidJsonPatchOperationPath(
+//             InvalidJsonPatchOperationPathError {
+//                 path: path.to_string(),
+//             },
+//         ));
+//     };
+//
+//     let pointer = Pointer::try_from(path).map_err(|error| InvalidJsonPointerPathError {
+//         path: path.to_string(),
+//         error,
+//     })?;
+//
+//     let previous_value =
+//         previous_schema
+//             .resolve(&pointer)
+//             .map_err(|error| JsonPointerPathNotFoundError {
+//                 path: path.to_string(),
+//                 error,
+//             })?;
+//
+//     let new_value = new_schema
+//         .resolve(&pointer)
+//         .map_err(|error| JsonPointerPathNotFoundError {
+//             path: path.to_string(),
+//             error,
+//         })?;
+//
+//     let callback = rule
+//         .allow_replacing
+//         .as_ref()
+//         .ok_or(UndefinedReplaceCallbackError { keyword })?;
+//
+//     Ok(callback(previous_value, new_value))
+// }
 
 fn find_keyword_rule(path: &str) -> Result<Option<(String, &KeywordRule)>, Error> {
     let mut path_segments = path.split('/');
@@ -250,8 +231,6 @@ fn find_keyword_rule(path: &str) -> Result<Option<(String, &KeywordRule)>, Error
                 levels_to_subschema = levels.checked_sub(1);
 
                 continue;
-            } else {
-                levels_to_subschema = None;
             }
         } else if latest_keyword_rule.is_some() {
             // Continue if we don't expect an inner subschema
@@ -276,10 +255,6 @@ fn find_keyword_rule(path: &str) -> Result<Option<(String, &KeywordRule)>, Error
 #[cfg(any(test, feature = "examples"))]
 mod tests {
     use super::*;
-    // use crate::keyword::KeywordRuleExample;
-    // use rstest::rstest;
-    // use serde_json::json;
-    // use test_case::{test_case, test_matrix};
 
     // TODO: validate
     //  - Add more prefixItems and increase array size? Yes, we can

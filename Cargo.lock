@@ -2305,7 +2305,6 @@ version = "0.25.16-rc.3"
 dependencies = [
  "json-patch",
  "json-schema-compatibility",
- "jsonptr",
  "once_cell",
  "rstest",
  "serde_json",

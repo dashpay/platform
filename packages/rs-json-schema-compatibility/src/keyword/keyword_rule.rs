@@ -1,11 +1,14 @@
 #[cfg(any(test, feature = "examples"))]
 use crate::change::JsonSchemaChange;
+use crate::error::Error;
+use json_patch::ReplaceOperation;
 use serde_json::Value;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
-pub type ReplaceCallback = Option<Arc<dyn Fn(&Value, &Value) -> bool + Send + Sync>>;
+pub type ReplaceCallback =
+    Option<Arc<dyn Fn(&Value, &ReplaceOperation) -> Result<bool, Error> + Send + Sync>>;
 
 pub struct KeywordRule {
     pub allow_adding: bool,
