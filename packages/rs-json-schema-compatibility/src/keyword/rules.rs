@@ -1,11 +1,11 @@
-#[cfg(test)]
+#[cfg(any(test, feature = "examples"))]
 use crate::change::JsonSchemaChange;
 use crate::keyword::keyword_rule::KeywordRule;
-use crate::keyword::ReplaceCallback;
-#[cfg(test)]
+pub use crate::keyword::ReplaceCallback;
+#[cfg(any(test, feature = "examples"))]
 use json_patch::{AddOperation, RemoveOperation, ReplaceOperation};
 use once_cell::sync::Lazy;
-#[cfg(test)]
+#[cfg(any(test, feature = "examples"))]
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use std::sync::Arc;
 static FALSE_CALLBACK: Lazy<ReplaceCallback> = Lazy::new(|| Some(Arc::new(|_, _| false)));
 static TRUE_CALLBACK: Lazy<ReplaceCallback> = Lazy::new(|| Some(Arc::new(|_, _| true)));
 
-pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
+pub static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|| {
     HashMap::from_iter([
         (
             "$id",
@@ -23,7 +23,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (json!({}), json!({ "$id": "foo" }), None).into(),
                     (
@@ -54,7 +54,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -93,7 +93,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: TRUE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (json!({}), json!({ "$comment": "foo" }), None).into(),
                     (json!({ "$comment": "foo" }), json!({}), None).into(),
@@ -114,7 +114,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: TRUE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (json!({}), json!({ "description": "foo" }), None).into(),
                     (json!({ "description": "foo" }), json!({}), None).into(),
@@ -140,7 +140,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                     allow_replacing: TRUE_CALLBACK.clone(),
                     levels_to_subschema: None,
                     inner: None,
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "examples"))]
                     examples: vec![
                         (
                             json!({ "examples": ["foo"] }),
@@ -162,7 +162,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                             .into(),
                     ],
                 })),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (json!({}), json!({ "examples": ["foo"] }), None).into(),
                     (json!({ "examples": ["foo"] }), json!({}), None).into(),
@@ -177,7 +177,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -216,7 +216,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() < new.as_f64())),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -249,7 +249,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() < new.as_f64())),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -287,7 +287,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() > new.as_f64())),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -320,7 +320,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_f64() > new.as_f64())),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -358,7 +358,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() < new.as_u64())),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -391,7 +391,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() > new.as_u64())),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -424,7 +424,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -456,7 +456,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() < new.as_u64())),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -489,7 +489,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: Some(Arc::new(|previous, new| previous.as_u64() > new.as_u64())),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -525,7 +525,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 })),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -564,7 +564,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: None,
                 levels_to_subschema: Some(1),
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -592,7 +592,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                     allow_replacing: FALSE_CALLBACK.clone(),
                     levels_to_subschema: None,
                     inner: None,
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "examples"))]
                     examples: vec![
                         (
                             json!({ "required": ["foo"] }),
@@ -620,7 +620,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                             .into(),
                     ],
                 })),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -648,7 +648,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                     allow_replacing: None,
                     levels_to_subschema: None,
                     inner: None,
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "examples"))]
                     examples: vec![
                         (
                             json!({ "properties": {"foo": {}} }),
@@ -672,7 +672,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                             .into(),
                     ],
                 })),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -702,7 +702,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -740,42 +740,56 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_removing: true,
                 allow_replacing: None,
                 levels_to_subschema: None,
-                inner: None,
-                // TODO: The same problems as property name that matches keywords
-                // inner: Some(Box::new(KeywordRule {
-                //     allow_adding: false,
-                //     allow_removing: true,
-                //     allow_replacing: FALSE_CALLBACK.clone(),
-                //     inner: None,
-                //     #[cfg(test)]
-                //     examples: vec![
-                //         (
-                //             json!({ "dependentRequired": {"foo": ["bar"]} }),
-                //             json!({ "dependentRequired": {"foo": ["bar", "baz"]} }),
-                //             Some(JsonSchemaChange::Add(AddOperation {
-                //                 path: "/dependentRequired/foo/1".to_string(),
-                //                 value: json!("baz"),
-                //             })),
-                //         )
-                //             .into(),
-                //         (
-                //             json!({ "dependentRequired": {"foo": ["bar", "baz"]} }),
-                //             json!({ "dependentRequired": {"foo": ["bar"]} }),
-                //             None,
-                //         )
-                //             .into(),
-                //         (
-                //             json!({ "dependentRequired": {"foo": ["bar"]} }),
-                //             json!({ "dependentRequired": {"foo": ["baz"]} }),
-                //             Some(JsonSchemaChange::Replace(ReplaceOperation {
-                //                 path: "/dependentRequired/foo/0".to_string(),
-                //                 value: json!("baz"),
-                //             })),
-                //         )
-                //             .into(),
-                //     ],
-                // })),
-                #[cfg(test)]
+                inner: Some(Box::new(KeywordRule {
+                    allow_adding: false,
+                    allow_removing: true,
+                    allow_replacing: FALSE_CALLBACK.clone(),
+                    levels_to_subschema: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({ "dependentRequired": {"foo": []} }),
+                            json!({ "dependentRequired": {"foo": [], "bar": []} }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/dependentRequired/bar".to_string(),
+                                value: json!([]),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "dependentRequired": {"foo": [], "bar": []} }),
+                            json!({ "dependentRequired": {"foo": []} }),
+                            None,
+                        )
+                            .into(),
+                        (
+                            json!({ "dependentRequired": {"foo": ["bar"]} }),
+                            json!({ "dependentRequired": {"foo": ["bar", "baz"]} }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/dependentRequired/foo/1".to_string(),
+                                value: json!("baz"),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "dependentRequired": {"foo": ["bar", "baz"]} }),
+                            json!({ "dependentRequired": {"foo": ["bar"]} }),
+                            None,
+                        )
+                            .into(),
+                        (
+                            json!({ "dependentRequired": {"foo": ["bar"]} }),
+                            json!({ "dependentRequired": {"foo": ["baz"]} }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/dependentRequired/foo/0".to_string(),
+                                value: json!("baz"),
+                            })),
+                        )
+                            .into(),
+                    ],
+                })),
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -803,7 +817,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: Some(1),
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -840,7 +854,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                     allow_replacing: FALSE_CALLBACK.clone(),
                     levels_to_subschema: None,
                     inner: None,
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "examples"))]
                     examples: vec![
                         (
                             json!({ "enum": ["foo"] }),
@@ -867,7 +881,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                             .into(),
                     ],
                 })),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -890,7 +904,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -929,7 +943,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -961,7 +975,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -1000,7 +1014,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -1039,7 +1053,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: None,
                 levels_to_subschema: Some(2),
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -1069,7 +1083,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: Some(1),
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -1108,7 +1122,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                 allow_replacing: FALSE_CALLBACK.clone(),
                 levels_to_subschema: None,
                 inner: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (
                         json!({}),
@@ -1152,7 +1166,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                     allow_replacing: None,
                     levels_to_subschema: None,
                     inner: None,
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "examples"))]
                     examples: vec![
                         (
                             json!({ "$defs": {"definition1": {}} }),
@@ -1170,7 +1184,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                             .into(),
                     ],
                 })),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "examples"))]
                 examples: vec![
                     (json!({}), json!({ "$defs": {"definition": {}} }), None).into(),
                     (
@@ -1196,7 +1210,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
 //         //         allow_adding: false,
 //         //         allow_removing: false,
 //         //         allow_replacing: *FALSE_CALLBACK,
-//         //         #[cfg(test)]
+//         //         #[cfg(any(test, feature = "examples"))]
 //         //         examples: KeywordRuleExamples::new(
 //         //             Value::Array(vec![]),
 //         //             Value::Array(vec![Value::Object(ValueMap::new())]),
@@ -1210,7 +1224,7 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
 //         //         allow_adding: false,
 //         //         allow_removing: false,
 //         //         allow_replacing: *FALSE_CALLBACK,
-//         //         #[cfg(test)]
+//         //         #[cfg(any(test, feature = "examples"))]
 //         //         examples: KeywordRuleExamples::new(
 //         //             Value::Object(ValueMap::from_iter([(
 //         //                 String::from("type"),

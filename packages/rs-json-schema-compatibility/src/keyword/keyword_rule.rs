@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(any(test, feature = "examples"))]
 use crate::change::JsonSchemaChange;
 use serde_json::Value;
 use std::fmt;
@@ -7,13 +7,13 @@ use std::sync::Arc;
 
 pub type ReplaceCallback = Option<Arc<dyn Fn(&Value, &Value) -> bool + Send + Sync>>;
 
-pub(crate) struct KeywordRule {
+pub struct KeywordRule {
     pub allow_adding: bool,
     pub allow_removing: bool,
     pub allow_replacing: ReplaceCallback,
     pub levels_to_subschema: Option<usize>,
     pub inner: Option<Box<KeywordRule>>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "examples"))]
     pub examples: Vec<KeywordRuleExample>,
 }
 
@@ -34,7 +34,7 @@ impl Debug for KeywordRule {
             .field("levels_to_subschema", &self.levels_to_subschema)
             .field("inner", &self.inner);
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "examples"))]
         let debug = debug.field("examples", &self.examples);
 
         debug.finish()
@@ -46,7 +46,7 @@ impl PartialEq for KeywordRule {
         #[allow(unused_mut, unused_assignments)]
         let mut examples = true;
 
-        #[cfg(test)]
+        #[cfg(any(test, feature = "examples"))]
         {
             examples = self.examples == other.examples;
         }
@@ -60,15 +60,15 @@ impl PartialEq for KeywordRule {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "examples"))]
 #[derive(Debug, PartialEq)]
-pub(crate) struct KeywordRuleExample {
+pub struct KeywordRuleExample {
     pub original_schema: Value,
     pub new_schema: Value,
     pub incompatible_change: Option<JsonSchemaChange>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "examples"))]
 impl From<(Value, Value, Option<JsonSchemaChange>)> for KeywordRuleExample {
     fn from(
         (original_schema, new_schema, incompatible_change): (

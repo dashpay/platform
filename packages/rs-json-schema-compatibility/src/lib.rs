@@ -14,11 +14,11 @@ use crate::error::{
     Error, InvalidJsonPatchOperationPathError, InvalidJsonPointerPathError,
     JsonPointerPathNotFoundError, UndefinedReplaceCallbackError, UnsupportedSchemaKeywordError,
 };
-use crate::keyword::{KeywordRule, KEYWORD_RULES};
+pub use crate::keyword::*;
 use json_patch::PatchOperation;
 pub use json_patch::{AddOperation, RemoveOperation, ReplaceOperation};
 use jsonptr::{Pointer, Resolve};
-use serde_json::Value as JsonValue;
+use serde_json::Value;
 
 struct RemovedItem {
     name: String,
@@ -30,15 +30,15 @@ pub struct CompatibilityValidationResult {
 }
 
 impl CompatibilityValidationResult {
-    fn is_compatible(&self) -> bool {
+    pub fn is_compatible(&self) -> bool {
         self.incompatible_changes.is_empty()
     }
 
-    fn incompatible_changes(&self) -> &[JsonSchemaChange] {
+    pub fn incompatible_changes(&self) -> &[JsonSchemaChange] {
         &self.incompatible_changes
     }
 
-    fn into_changes(self) -> Vec<JsonSchemaChange> {
+    pub fn into_changes(self) -> Vec<JsonSchemaChange> {
         self.incompatible_changes
     }
 }
@@ -49,8 +49,8 @@ pub struct ValidationOptions {
 }
 
 pub fn validate_schemas_compatibility(
-    original_schema: &JsonValue,
-    new_schema: &JsonValue,
+    original_schema: &Value,
+    new_schema: &Value,
 ) -> Result<CompatibilityValidationResult, Error> {
     validate_schema_compatibility_with_options(
         original_schema,
@@ -60,8 +60,8 @@ pub fn validate_schemas_compatibility(
 }
 
 pub fn validate_schema_compatibility_with_options(
-    original_schema: &JsonValue,
-    new_schema: &JsonValue,
+    original_schema: &Value,
+    new_schema: &Value,
     opts: ValidationOptions,
 ) -> Result<CompatibilityValidationResult, Error> {
     let patch = json_patch::diff(original_schema, new_schema);
@@ -188,8 +188,8 @@ fn is_operation_add_compatible(path: &str) -> Result<bool, Error> {
 
 fn is_operation_replace_compatible(
     path: &str,
-    previous_schema: &JsonValue,
-    new_schema: &JsonValue,
+    previous_schema: &Value,
+    new_schema: &Value,
 ) -> Result<bool, Error> {
     let Some((keyword, rule)) = find_keyword_rule(path)? else {
         return Err(Error::InvalidJsonPatchOperationPath(
@@ -273,13 +273,13 @@ fn find_keyword_rule(path: &str) -> Result<Option<(String, &KeywordRule)>, Error
     Ok(latest_keyword_rule)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "examples"))]
 mod tests {
     use super::*;
-    use crate::keyword::KeywordRuleExample;
-    use rstest::rstest;
-    use serde_json::json;
-    use test_case::{test_case, test_matrix};
+    // use crate::keyword::KeywordRuleExample;
+    // use rstest::rstest;
+    // use serde_json::json;
+    // use test_case::{test_case, test_matrix};
 
     // TODO: validate
     //  - Add more prefixItems and increase array size? Yes, we can
@@ -320,51 +320,5 @@ mod tests {
                     .unwrap()
             ))
         );
-    }
-
-    #[test]
-    fn test_schema_keyword_rules() {
-        for (keyword, rule) in KEYWORD_RULES.iter() {
-            println!("Testing `{}` keyword", keyword);
-
-            assert_examples(keyword, &rule.examples);
-
-            if let Some(inner_rule) = &rule.inner {
-                assert_examples(keyword, &inner_rule.examples);
-            }
-        }
-    }
-
-    fn assert_examples(keyword: &str, examples: &[KeywordRuleExample]) {
-        for example in examples {
-            let result =
-                validate_schemas_compatibility(&example.original_schema, &example.new_schema)
-                    .expect("should not fail");
-
-            if let Some(change) = &example.incompatible_change {
-                let expected_change = vec![change.clone()];
-
-                assert_eq!(
-                    result.incompatible_changes(),
-                    &expected_change,
-                    r"assertion failed: expected incompatible change of '{keyword}'
-
-From: {:?}
-To: {:?}",
-                    &example.original_schema,
-                    &example.new_schema
-                );
-            } else {
-                assert!(
-                    result.is_compatible(),
-                    r"assertion failed: '{keyword}' modification is not compatible: {:?}
-From: {:?}
-To: {:?}",
-                    result.incompatible_changes(),
-                    &example.original_schema,
-                    &example.new_schema
-                );
-            }
-        }
     }
 }
