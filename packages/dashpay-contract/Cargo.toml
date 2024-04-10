@@ -8,6 +8,6 @@ license = "MIT"
 
 [dependencies]
 platform-version = { path = "../rs-platform-version" }
-thiserror = "1.0.56"
+thiserror = "1.0.58"
 serde_json = { version = "1.0" }
 platform-value = { path = "../rs-platform-value" }

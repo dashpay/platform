@@ -13,17 +13,17 @@ json = ["dep:serde_json"]
 
 [dependencies]
 
-thiserror = { version = "1.0.39" }
-dapi-grpc = { path = "../dapi-grpc" }
+thiserror = { version = "1.0.58" }
+dapi-grpc = { path = "../dapi-grpc", features = ["core", "client", "serde"], default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
 dpp = { path = "../rs-dpp", features = ["bls-signatures"], default-features = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.11", features = [
-  "grpc", "crypto"
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.12", features = [
+  "crypto"
 ], default-features = false }
 tracing = { version = "0.1.37" }
-serde = { version = "1.0.171", default-features = false, optional = true }
+serde = { version = "1.0.197", default-features = false, optional = true }
 serde_json = { version = "1.0.103", features = [
   "preserve_order",
 ], optional = true }

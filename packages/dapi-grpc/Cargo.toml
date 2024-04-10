@@ -22,8 +22,8 @@ core = []
 platform = []
 # Re-export Dash Platform protobuf types as `dapi_grpc::platform::proto`
 tenderdash-proto = []
-client = ["tonic/channel", "tonic/tls", "tonic/tls-roots", "platform"]
-server = ["tonic/channel", "tonic/tls", "tonic/tls-roots", "platform"]
+client = ["tonic/channel", "tonic/transport", "platform"]
+server = ["tonic/channel", "tonic/transport", "platform"]
 serde = ["dep:serde", "dep:serde_bytes"]
 mocks = ["dep:serde_json"]
 
@@ -34,12 +34,10 @@ tonic = { version = "0.11", features = [
   "codegen",
   "prost",
 ], default-features = false }
-serde = { version = "1.0.171", optional = true, features = ["derive"] }
+serde = { version = "1.0.197", optional = true, features = ["derive"] }
 serde_bytes = { version = "0.11.12", optional = true }
 serde_json = { version = "1.0", optional = true }
-tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.11", features = [
-  "grpc",
-] }
+tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.12", default-features = false }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 platform-version = { path = "../rs-platform-version" }
 
@@ -58,4 +56,4 @@ name = "platform_example"
 path = "clients/platform/v0/rust/platform_example.rs"
 
 [package.metadata.cargo-machete]
-ignored = ["platform-version", "serde_bytes"]
+ignored = ["platform-version", "serde_bytes", "futures-core"]
