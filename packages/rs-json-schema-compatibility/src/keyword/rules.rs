@@ -664,13 +664,12 @@ pub(crate) static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy
                             })),
                         )
                             .into(),
-                        // TODO: We should handle property names that matches keywords
-                        // (
-                        //     json!({ "properties": {"foo": {}} }),
-                        //     json!({ "properties": {"foo": {}, "type": {}} }),
-                        //     None,
-                        // )
-                        //     .into(),
+                        (
+                            json!({ "properties": {"foo": {}} }),
+                            json!({ "properties": {"foo": {}, "type": {}} }),
+                            None,
+                        )
+                            .into(),
                     ],
                 })),
                 #[cfg(test)]

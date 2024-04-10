@@ -244,15 +244,18 @@ fn find_keyword_rule(path: &str) -> Result<Option<(String, &KeywordRule)>, Error
             }
         }
 
-        // Skip levels to a next keyword if we expect to have an inner subschema
-        if let Some(mut levels) = levels_to_subschema {
-            levels -= 1;
-
-            if levels > 0 {
-                levels_to_subschema = Some(levels);
+        // Skip levels to a next keyword if we expect an inner subschema
+        if let Some(levels) = levels_to_subschema {
+            if levels - 1 > 0 {
+                levels_to_subschema = levels.checked_sub(1);
 
                 continue;
+            } else {
+                levels_to_subschema = None;
             }
+        } else if latest_keyword_rule.is_some() {
+            // Continue if we don't expect an inner subschema
+            continue;
         }
 
         let rule = KEYWORD_RULES
