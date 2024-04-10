@@ -31,7 +31,7 @@ thiserror = "1.0.58"
 rand = "0.8.5"
 tempfile = "3.3.0"
 hex = "0.4.3"
-indexmap = { version = "1.9.3", features = ["serde"] }
+indexmap = { version = "2.2.6", features = ["serde"] }
 sha2 = "0.10.6"
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.2" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
