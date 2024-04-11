@@ -24,14 +24,9 @@ describe('getStatusFactory', () => {
 
     response.setStatus(GetStatusResponse.Status.READY);
 
-    const masternode = new GetStatusResponse.Masternode();
-
-    masternode.setStatus(GetStatusResponse.Masternode.Status.READY);
-
     const chain = new GetStatusResponse.Chain();
     chain.setBestBlockHash(Buffer.from('bestBlockHash'));
 
-    response.setMasternode(masternode);
     response.setChain(chain);
 
     grpcTransportMock.request.resolves(response);
@@ -56,10 +51,6 @@ describe('getStatusFactory', () => {
     const expectedResult = {
       ...response.toObject(),
       status: 'READY',
-      masternode: {
-        ...response.getMasternode().toObject(),
-        status: 'READY',
-      },
     };
 
     expectedResult.chain.bestBlockHash = Buffer.from(expectedResult.chain.bestBlockHash, 'base64');
