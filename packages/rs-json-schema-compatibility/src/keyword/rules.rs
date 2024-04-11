@@ -10,7 +10,7 @@ use json_patch::{AddOperation, RemoveOperation, ReplaceOperation};
 use once_cell::sync::Lazy;
 #[cfg(any(test, feature = "examples"))]
 use serde_json::json;
-use std::collections::HashMap;π
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -874,7 +874,6 @@ pub static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|
                     allow_replacing: FALSE_CALLBACK.clone(),
                     levels_to_subschema: None,
                     inner: None,
-                    // TODO: We need to test it with array and object
                     examples: vec![
                         (
                             json!({ "const": { "property": { "inner": true } }}),
