@@ -491,7 +491,6 @@ $root.org = (function() {
                          * @property {org.dash.platform.dapi.v0.GetStatusResponse.Status|null} [status] GetStatusResponse status
                          * @property {number|null} [syncProgress] GetStatusResponse syncProgress
                          * @property {org.dash.platform.dapi.v0.GetStatusResponse.IChain|null} [chain] GetStatusResponse chain
-                         * @property {org.dash.platform.dapi.v0.GetStatusResponse.IMasternode|null} [masternode] GetStatusResponse masternode
                          * @property {org.dash.platform.dapi.v0.GetStatusResponse.INetwork|null} [network] GetStatusResponse network
                          */
 
@@ -551,14 +550,6 @@ $root.org = (function() {
                         GetStatusResponse.prototype.chain = null;
 
                         /**
-                         * GetStatusResponse masternode.
-                         * @member {org.dash.platform.dapi.v0.GetStatusResponse.IMasternode|null|undefined} masternode
-                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
-                         * @instance
-                         */
-                        GetStatusResponse.prototype.masternode = null;
-
-                        /**
                          * GetStatusResponse network.
                          * @member {org.dash.platform.dapi.v0.GetStatusResponse.INetwork|null|undefined} network
                          * @memberof org.dash.platform.dapi.v0.GetStatusResponse
@@ -600,8 +591,6 @@ $root.org = (function() {
                                 writer.uint32(/* id 4, wireType 1 =*/33).double(message.syncProgress);
                             if (message.chain != null && Object.hasOwnProperty.call(message, "chain"))
                                 $root.org.dash.platform.dapi.v0.GetStatusResponse.Chain.encode(message.chain, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
-                            if (message.masternode != null && Object.hasOwnProperty.call(message, "masternode"))
-                                $root.org.dash.platform.dapi.v0.GetStatusResponse.Masternode.encode(message.masternode, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
                             if (message.network != null && Object.hasOwnProperty.call(message, "network"))
                                 $root.org.dash.platform.dapi.v0.GetStatusResponse.Network.encode(message.network, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
                             return writer;
@@ -652,9 +641,6 @@ $root.org = (function() {
                                     break;
                                 case 5:
                                     message.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.Chain.decode(reader, reader.uint32());
-                                    break;
-                                case 6:
-                                    message.masternode = $root.org.dash.platform.dapi.v0.GetStatusResponse.Masternode.decode(reader, reader.uint32());
                                     break;
                                 case 7:
                                     message.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.Network.decode(reader, reader.uint32());
@@ -722,11 +708,6 @@ $root.org = (function() {
                                 if (error)
                                     return "chain." + error;
                             }
-                            if (message.masternode != null && message.hasOwnProperty("masternode")) {
-                                var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.Masternode.verify(message.masternode);
-                                if (error)
-                                    return "masternode." + error;
-                            }
                             if (message.network != null && message.hasOwnProperty("network")) {
                                 var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.Network.verify(message.network);
                                 if (error)
@@ -782,11 +763,6 @@ $root.org = (function() {
                                     throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.chain: object expected");
                                 message.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.Chain.fromObject(object.chain);
                             }
-                            if (object.masternode != null) {
-                                if (typeof object.masternode !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.masternode: object expected");
-                                message.masternode = $root.org.dash.platform.dapi.v0.GetStatusResponse.Masternode.fromObject(object.masternode);
-                            }
                             if (object.network != null) {
                                 if (typeof object.network !== "object")
                                     throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.network: object expected");
@@ -814,7 +790,6 @@ $root.org = (function() {
                                 object.status = options.enums === String ? "NOT_STARTED" : 0;
                                 object.syncProgress = 0;
                                 object.chain = null;
-                                object.masternode = null;
                                 object.network = null;
                             }
                             if (message.version != null && message.hasOwnProperty("version"))
@@ -827,8 +802,6 @@ $root.org = (function() {
                                 object.syncProgress = options.json && !isFinite(message.syncProgress) ? String(message.syncProgress) : message.syncProgress;
                             if (message.chain != null && message.hasOwnProperty("chain"))
                                 object.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.Chain.toObject(message.chain, options);
-                            if (message.masternode != null && message.hasOwnProperty("masternode"))
-                                object.masternode = $root.org.dash.platform.dapi.v0.GetStatusResponse.Masternode.toObject(message.masternode, options);
                             if (message.network != null && message.hasOwnProperty("network"))
                                 object.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.Network.toObject(message.network, options);
                             return object;
@@ -1685,360 +1658,6 @@ $root.org = (function() {
                             };
 
                             return Chain;
-                        })();
-
-                        GetStatusResponse.Masternode = (function() {
-
-                            /**
-                             * Properties of a Masternode.
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse
-                             * @interface IMasternode
-                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.Masternode.Status|null} [status] Masternode status
-                             * @property {Uint8Array|null} [proTxHash] Masternode proTxHash
-                             * @property {number|null} [posePenalty] Masternode posePenalty
-                             * @property {boolean|null} [isSynced] Masternode isSynced
-                             * @property {number|null} [syncProgress] Masternode syncProgress
-                             */
-
-                            /**
-                             * Constructs a new Masternode.
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse
-                             * @classdesc Represents a Masternode.
-                             * @implements IMasternode
-                             * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IMasternode=} [properties] Properties to set
-                             */
-                            function Masternode(properties) {
-                                if (properties)
-                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                        if (properties[keys[i]] != null)
-                                            this[keys[i]] = properties[keys[i]];
-                            }
-
-                            /**
-                             * Masternode status.
-                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.Masternode.Status} status
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @instance
-                             */
-                            Masternode.prototype.status = 0;
-
-                            /**
-                             * Masternode proTxHash.
-                             * @member {Uint8Array} proTxHash
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @instance
-                             */
-                            Masternode.prototype.proTxHash = $util.newBuffer([]);
-
-                            /**
-                             * Masternode posePenalty.
-                             * @member {number} posePenalty
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @instance
-                             */
-                            Masternode.prototype.posePenalty = 0;
-
-                            /**
-                             * Masternode isSynced.
-                             * @member {boolean} isSynced
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @instance
-                             */
-                            Masternode.prototype.isSynced = false;
-
-                            /**
-                             * Masternode syncProgress.
-                             * @member {number} syncProgress
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @instance
-                             */
-                            Masternode.prototype.syncProgress = 0;
-
-                            /**
-                             * Creates a new Masternode instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IMasternode=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.Masternode} Masternode instance
-                             */
-                            Masternode.create = function create(properties) {
-                                return new Masternode(properties);
-                            };
-
-                            /**
-                             * Encodes the specified Masternode message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.Masternode.verify|verify} messages.
-                             * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IMasternode} message Masternode message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            Masternode.encode = function encode(message, writer) {
-                                if (!writer)
-                                    writer = $Writer.create();
-                                if (message.status != null && Object.hasOwnProperty.call(message, "status"))
-                                    writer.uint32(/* id 1, wireType 0 =*/8).int32(message.status);
-                                if (message.proTxHash != null && Object.hasOwnProperty.call(message, "proTxHash"))
-                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.proTxHash);
-                                if (message.posePenalty != null && Object.hasOwnProperty.call(message, "posePenalty"))
-                                    writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.posePenalty);
-                                if (message.isSynced != null && Object.hasOwnProperty.call(message, "isSynced"))
-                                    writer.uint32(/* id 4, wireType 0 =*/32).bool(message.isSynced);
-                                if (message.syncProgress != null && Object.hasOwnProperty.call(message, "syncProgress"))
-                                    writer.uint32(/* id 5, wireType 1 =*/41).double(message.syncProgress);
-                                return writer;
-                            };
-
-                            /**
-                             * Encodes the specified Masternode message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.Masternode.verify|verify} messages.
-                             * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IMasternode} message Masternode message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            Masternode.encodeDelimited = function encodeDelimited(message, writer) {
-                                return this.encode(message, writer).ldelim();
-                            };
-
-                            /**
-                             * Decodes a Masternode message from the specified reader or buffer.
-                             * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.Masternode} Masternode
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            Masternode.decode = function decode(reader, length) {
-                                if (!(reader instanceof $Reader))
-                                    reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.Masternode();
-                                while (reader.pos < end) {
-                                    var tag = reader.uint32();
-                                    switch (tag >>> 3) {
-                                    case 1:
-                                        message.status = reader.int32();
-                                        break;
-                                    case 2:
-                                        message.proTxHash = reader.bytes();
-                                        break;
-                                    case 3:
-                                        message.posePenalty = reader.uint32();
-                                        break;
-                                    case 4:
-                                        message.isSynced = reader.bool();
-                                        break;
-                                    case 5:
-                                        message.syncProgress = reader.double();
-                                        break;
-                                    default:
-                                        reader.skipType(tag & 7);
-                                        break;
-                                    }
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Decodes a Masternode message from the specified reader or buffer, length delimited.
-                             * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.Masternode} Masternode
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            Masternode.decodeDelimited = function decodeDelimited(reader) {
-                                if (!(reader instanceof $Reader))
-                                    reader = new $Reader(reader);
-                                return this.decode(reader, reader.uint32());
-                            };
-
-                            /**
-                             * Verifies a Masternode message.
-                             * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @static
-                             * @param {Object.<string,*>} message Plain object to verify
-                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                             */
-                            Masternode.verify = function verify(message) {
-                                if (typeof message !== "object" || message === null)
-                                    return "object expected";
-                                if (message.status != null && message.hasOwnProperty("status"))
-                                    switch (message.status) {
-                                    default:
-                                        return "status: enum value expected";
-                                    case 0:
-                                    case 1:
-                                    case 2:
-                                    case 3:
-                                    case 4:
-                                    case 5:
-                                    case 6:
-                                    case 7:
-                                        break;
-                                    }
-                                if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
-                                    if (!(message.proTxHash && typeof message.proTxHash.length === "number" || $util.isString(message.proTxHash)))
-                                        return "proTxHash: buffer expected";
-                                if (message.posePenalty != null && message.hasOwnProperty("posePenalty"))
-                                    if (!$util.isInteger(message.posePenalty))
-                                        return "posePenalty: integer expected";
-                                if (message.isSynced != null && message.hasOwnProperty("isSynced"))
-                                    if (typeof message.isSynced !== "boolean")
-                                        return "isSynced: boolean expected";
-                                if (message.syncProgress != null && message.hasOwnProperty("syncProgress"))
-                                    if (typeof message.syncProgress !== "number")
-                                        return "syncProgress: number expected";
-                                return null;
-                            };
-
-                            /**
-                             * Creates a Masternode message from a plain object. Also converts values to their respective internal types.
-                             * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @static
-                             * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.Masternode} Masternode
-                             */
-                            Masternode.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.Masternode)
-                                    return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.Masternode();
-                                switch (object.status) {
-                                case "UNKNOWN":
-                                case 0:
-                                    message.status = 0;
-                                    break;
-                                case "WAITING_FOR_PROTX":
-                                case 1:
-                                    message.status = 1;
-                                    break;
-                                case "POSE_BANNED":
-                                case 2:
-                                    message.status = 2;
-                                    break;
-                                case "REMOVED":
-                                case 3:
-                                    message.status = 3;
-                                    break;
-                                case "OPERATOR_KEY_CHANGED":
-                                case 4:
-                                    message.status = 4;
-                                    break;
-                                case "PROTX_IP_CHANGED":
-                                case 5:
-                                    message.status = 5;
-                                    break;
-                                case "READY":
-                                case 6:
-                                    message.status = 6;
-                                    break;
-                                case "ERROR":
-                                case 7:
-                                    message.status = 7;
-                                    break;
-                                }
-                                if (object.proTxHash != null)
-                                    if (typeof object.proTxHash === "string")
-                                        $util.base64.decode(object.proTxHash, message.proTxHash = $util.newBuffer($util.base64.length(object.proTxHash)), 0);
-                                    else if (object.proTxHash.length >= 0)
-                                        message.proTxHash = object.proTxHash;
-                                if (object.posePenalty != null)
-                                    message.posePenalty = object.posePenalty >>> 0;
-                                if (object.isSynced != null)
-                                    message.isSynced = Boolean(object.isSynced);
-                                if (object.syncProgress != null)
-                                    message.syncProgress = Number(object.syncProgress);
-                                return message;
-                            };
-
-                            /**
-                             * Creates a plain object from a Masternode message. Also converts values to other types if specified.
-                             * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.Masternode} message Masternode
-                             * @param {$protobuf.IConversionOptions} [options] Conversion options
-                             * @returns {Object.<string,*>} Plain object
-                             */
-                            Masternode.toObject = function toObject(message, options) {
-                                if (!options)
-                                    options = {};
-                                var object = {};
-                                if (options.defaults) {
-                                    object.status = options.enums === String ? "UNKNOWN" : 0;
-                                    if (options.bytes === String)
-                                        object.proTxHash = "";
-                                    else {
-                                        object.proTxHash = [];
-                                        if (options.bytes !== Array)
-                                            object.proTxHash = $util.newBuffer(object.proTxHash);
-                                    }
-                                    object.posePenalty = 0;
-                                    object.isSynced = false;
-                                    object.syncProgress = 0;
-                                }
-                                if (message.status != null && message.hasOwnProperty("status"))
-                                    object.status = options.enums === String ? $root.org.dash.platform.dapi.v0.GetStatusResponse.Masternode.Status[message.status] : message.status;
-                                if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
-                                    object.proTxHash = options.bytes === String ? $util.base64.encode(message.proTxHash, 0, message.proTxHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.proTxHash) : message.proTxHash;
-                                if (message.posePenalty != null && message.hasOwnProperty("posePenalty"))
-                                    object.posePenalty = message.posePenalty;
-                                if (message.isSynced != null && message.hasOwnProperty("isSynced"))
-                                    object.isSynced = message.isSynced;
-                                if (message.syncProgress != null && message.hasOwnProperty("syncProgress"))
-                                    object.syncProgress = options.json && !isFinite(message.syncProgress) ? String(message.syncProgress) : message.syncProgress;
-                                return object;
-                            };
-
-                            /**
-                             * Converts this Masternode to JSON.
-                             * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.Masternode
-                             * @instance
-                             * @returns {Object.<string,*>} JSON object
-                             */
-                            Masternode.prototype.toJSON = function toJSON() {
-                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                            };
-
-                            /**
-                             * Status enum.
-                             * @name org.dash.platform.dapi.v0.GetStatusResponse.Masternode.Status
-                             * @enum {number}
-                             * @property {number} UNKNOWN=0 UNKNOWN value
-                             * @property {number} WAITING_FOR_PROTX=1 WAITING_FOR_PROTX value
-                             * @property {number} POSE_BANNED=2 POSE_BANNED value
-                             * @property {number} REMOVED=3 REMOVED value
-                             * @property {number} OPERATOR_KEY_CHANGED=4 OPERATOR_KEY_CHANGED value
-                             * @property {number} PROTX_IP_CHANGED=5 PROTX_IP_CHANGED value
-                             * @property {number} READY=6 READY value
-                             * @property {number} ERROR=7 ERROR value
-                             */
-                            Masternode.Status = (function() {
-                                var valuesById = {}, values = Object.create(valuesById);
-                                values[valuesById[0] = "UNKNOWN"] = 0;
-                                values[valuesById[1] = "WAITING_FOR_PROTX"] = 1;
-                                values[valuesById[2] = "POSE_BANNED"] = 2;
-                                values[valuesById[3] = "REMOVED"] = 3;
-                                values[valuesById[4] = "OPERATOR_KEY_CHANGED"] = 4;
-                                values[valuesById[5] = "PROTX_IP_CHANGED"] = 5;
-                                values[valuesById[6] = "READY"] = 6;
-                                values[valuesById[7] = "ERROR"] = 7;
-                                return values;
-                            })();
-
-                            return Masternode;
                         })();
 
                         GetStatusResponse.NetworkFee = (function() {

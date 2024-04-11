@@ -31,7 +31,6 @@ GPBObjCClassDeclaration(BlockHeaders);
 GPBObjCClassDeclaration(BloomFilter);
 GPBObjCClassDeclaration(GetStatusResponse);
 GPBObjCClassDeclaration(GetStatusResponse_Chain);
-GPBObjCClassDeclaration(GetStatusResponse_Masternode);
 GPBObjCClassDeclaration(GetStatusResponse_Network);
 GPBObjCClassDeclaration(GetStatusResponse_NetworkFee);
 GPBObjCClassDeclaration(GetStatusResponse_Time);
@@ -103,7 +102,6 @@ typedef struct GetStatusRequest__storage_ {
 @dynamic status;
 @dynamic syncProgress;
 @dynamic hasChain, chain;
-@dynamic hasMasternode, masternode;
 @dynamic hasNetwork, network;
 
 typedef struct GetStatusResponse__storage_ {
@@ -112,7 +110,6 @@ typedef struct GetStatusResponse__storage_ {
   GetStatusResponse_Version *version;
   GetStatusResponse_Time *time;
   GetStatusResponse_Chain *chain;
-  GetStatusResponse_Masternode *masternode;
   GetStatusResponse_Network *network;
   double syncProgress;
 } GetStatusResponse__storage_;
@@ -169,19 +166,10 @@ typedef struct GetStatusResponse__storage_ {
         .dataType = GPBDataTypeMessage,
       },
       {
-        .name = "masternode",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_Masternode),
-        .number = GetStatusResponse_FieldNumber_Masternode,
-        .hasIndex = 5,
-        .offset = (uint32_t)offsetof(GetStatusResponse__storage_, masternode),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-      {
         .name = "network",
         .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_Network),
         .number = GetStatusResponse_FieldNumber_Network,
-        .hasIndex = 6,
+        .hasIndex = 5,
         .offset = (uint32_t)offsetof(GetStatusResponse__storage_, network),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
@@ -513,156 +501,6 @@ typedef struct GetStatusResponse_Chain__storage_ {
 }
 
 @end
-
-#pragma mark - GetStatusResponse_Masternode
-
-@implementation GetStatusResponse_Masternode
-
-@dynamic status;
-@dynamic proTxHash;
-@dynamic posePenalty;
-@dynamic isSynced;
-@dynamic syncProgress;
-
-typedef struct GetStatusResponse_Masternode__storage_ {
-  uint32_t _has_storage_[1];
-  GetStatusResponse_Masternode_Status status;
-  uint32_t posePenalty;
-  NSData *proTxHash;
-  double syncProgress;
-} GetStatusResponse_Masternode__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "status",
-        .dataTypeSpecific.enumDescFunc = GetStatusResponse_Masternode_Status_EnumDescriptor,
-        .number = GetStatusResponse_Masternode_FieldNumber_Status,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetStatusResponse_Masternode__storage_, status),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeEnum,
-      },
-      {
-        .name = "proTxHash",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetStatusResponse_Masternode_FieldNumber_ProTxHash,
-        .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetStatusResponse_Masternode__storage_, proTxHash),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBytes,
-      },
-      {
-        .name = "posePenalty",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetStatusResponse_Masternode_FieldNumber_PosePenalty,
-        .hasIndex = 2,
-        .offset = (uint32_t)offsetof(GetStatusResponse_Masternode__storage_, posePenalty),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeUInt32,
-      },
-      {
-        .name = "isSynced",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetStatusResponse_Masternode_FieldNumber_IsSynced,
-        .hasIndex = 3,
-        .offset = 4,  // Stored in _has_storage_ to save space.
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBool,
-      },
-      {
-        .name = "syncProgress",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetStatusResponse_Masternode_FieldNumber_SyncProgress,
-        .hasIndex = 5,
-        .offset = (uint32_t)offsetof(GetStatusResponse_Masternode__storage_, syncProgress),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeDouble,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetStatusResponse_Masternode class]
-                                     rootClass:[CoreRoot class]
-                                          file:CoreRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetStatusResponse_Masternode__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetStatusResponse)];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
-int32_t GetStatusResponse_Masternode_Status_RawValue(GetStatusResponse_Masternode *message) {
-  GPBDescriptor *descriptor = [GetStatusResponse_Masternode descriptor];
-  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetStatusResponse_Masternode_FieldNumber_Status];
-  return GPBGetMessageRawEnumField(message, field);
-}
-
-void SetGetStatusResponse_Masternode_Status_RawValue(GetStatusResponse_Masternode *message, int32_t value) {
-  GPBDescriptor *descriptor = [GetStatusResponse_Masternode descriptor];
-  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetStatusResponse_Masternode_FieldNumber_Status];
-  GPBSetMessageRawEnumField(message, field, value);
-}
-
-#pragma mark - Enum GetStatusResponse_Masternode_Status
-
-GPBEnumDescriptor *GetStatusResponse_Masternode_Status_EnumDescriptor(void) {
-  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
-  if (!descriptor) {
-    static const char *valueNames =
-        "Unknown\000WaitingForProtx\000PoseBanned\000Remov"
-        "ed\000OperatorKeyChanged\000ProtxIpChanged\000Rea"
-        "dy\000Error\000";
-    static const int32_t values[] = {
-        GetStatusResponse_Masternode_Status_Unknown,
-        GetStatusResponse_Masternode_Status_WaitingForProtx,
-        GetStatusResponse_Masternode_Status_PoseBanned,
-        GetStatusResponse_Masternode_Status_Removed,
-        GetStatusResponse_Masternode_Status_OperatorKeyChanged,
-        GetStatusResponse_Masternode_Status_ProtxIpChanged,
-        GetStatusResponse_Masternode_Status_Ready,
-        GetStatusResponse_Masternode_Status_Error,
-    };
-    GPBEnumDescriptor *worker =
-        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetStatusResponse_Masternode_Status)
-                                       valueNames:valueNames
-                                           values:values
-                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
-                                     enumVerifier:GetStatusResponse_Masternode_Status_IsValidValue];
-    GPBEnumDescriptor *expected = nil;
-    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
-      [worker release];
-    }
-  }
-  return descriptor;
-}
-
-BOOL GetStatusResponse_Masternode_Status_IsValidValue(int32_t value__) {
-  switch (value__) {
-    case GetStatusResponse_Masternode_Status_Unknown:
-    case GetStatusResponse_Masternode_Status_WaitingForProtx:
-    case GetStatusResponse_Masternode_Status_PoseBanned:
-    case GetStatusResponse_Masternode_Status_Removed:
-    case GetStatusResponse_Masternode_Status_OperatorKeyChanged:
-    case GetStatusResponse_Masternode_Status_ProtxIpChanged:
-    case GetStatusResponse_Masternode_Status_Ready:
-    case GetStatusResponse_Masternode_Status_Error:
-      return YES;
-    default:
-      return NO;
-  }
-}
 
 #pragma mark - GetStatusResponse_NetworkFee
 
