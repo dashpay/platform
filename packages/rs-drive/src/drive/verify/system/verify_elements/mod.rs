@@ -1,11 +1,9 @@
+use std::collections::BTreeMap;
 use grovedb::Element;
-use grovedb_path::SubtreePath;
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::block::epoch::EpochIndex;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::version::PlatformVersion;
 
 mod v0;
@@ -16,16 +14,14 @@ impl Drive {
     /// # Parameters
     ///
     /// - `proof`: A byte slice representing the proof to be verified.
-    /// - `current_epoch`: The current epoch index, can be acquired from metadata.
-    /// - `start_epoch`: The first epoch index.
-    /// - `count`: The amount of epochs to get.
-    /// - `ascending`: True if we want to get epochs from oldest to newest.
+    /// - `path`: The path where elements should be.
+    /// - `keys`: The requested keyes.
     /// - `platform_version`: the platform version,
     ///
     /// # Returns
     ///
-    /// Returns a `Result` with a tuple of `RootHash` and `Vec<Element>`. The `Vec<Element>`
-    /// is the array of elements we get back.
+    /// Returns a `Result` with a tuple of `RootHash` and `Vec<Element>`. The `BTreeMap<Vec<u8>, Option<Element>>`
+    /// is the map of elements we get back.
     ///
     /// # Errors
     ///
@@ -33,12 +29,12 @@ impl Drive {
     ///
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
-    pub fn verify_elements<B: AsRef<[u8]>>(
+    pub fn verify_elements(
         proof: &[u8],
-        path: SubtreePath<B>,
+        path: Vec<Vec<u8>>,
         keys: Vec<Vec<u8>>,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<Element>), Error> {
+    ) -> Result<(RootHash, BTreeMap<Vec<u8>, Option<Element>>), Error> {
         match platform_version
             .drive
             .methods

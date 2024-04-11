@@ -1070,49 +1070,20 @@ impl FromProof<GetPathElementsRequest> for Elements {
             None => return Err(Error::EmptyVersion),
         };
 
-        let start_pro_tx_hash: Option<[u8; 32]> =
-            if request_v0.start_pro_tx_hash.is_empty() {
-                None
-            } else {
-                Some(request_v0.start_pro_tx_hash[..].try_into().map_err(
-                    |e: TryFromSliceError| Error::RequestDecodeError {
-                        error: e.to_string(),
-                    },
-                )?)
-            };
+        let path = request_v0.path.ok_or(Error::RequestDecodeError { error: "the request path must be set".to_string() })?;
+        let keys = request_v0.keys.ok_or(Error::RequestDecodeError { error: "the request keys must be set".to_string() })?;
 
-        let (root_hash, objects) = Drive::verify_upgrade_vote_status(
+        
+        let (root_hash, objects) = Drive::verify_elements(
             &proof.grovedb_proof,
-            start_pro_tx_hash,
-            try_u32_to_u16(request_v0.count)?,
+            path.path,
+            keys.key,
             platform_version,
         )?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        if objects.is_empty() {
-            return Ok((None, mtd.clone()));
-        }
-        let votes: MasternodeProtocolVotes = objects
-            .into_iter()
-            .map(|(key, value)| {
-                ProTxHash::from_slice(&key)
-                    .map(|protxhash| {
-                        (
-                            protxhash,
-                            Some(MasternodeProtocolVote {
-                                pro_tx_hash: protxhash,
-                                voted_version: value,
-                            }),
-                        )
-                    })
-                    .map_err(|e| Error::ResultEncodingError {
-                        error: e.to_string(),
-                    })
-            })
-            .collect::<Result<MasternodeProtocolVotes, Error>>()?;
-
-        Ok((Some(votes), mtd.clone()))
+        Ok((Some(objects), mtd.clone()))
     }
 }
 
