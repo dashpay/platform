@@ -52,19 +52,18 @@ impl<C> Platform<C> {
             }));
 
         let response = if prove {
-            todo!()
-            // let proof = self.drive.prove_full_identities(
-            //     identity_ids.as_slice(),
-            //     None,
-            //     &platform_version.drive,
-            // )?;
-            //
-            // GetPartialIdentitiesResponseV0 {
-            //     result: Some(get_partial_identities_response_v0::Result::Proof(
-            //         self.response_proof_v0(platform_state, proof),
-            //     )),
-            //     metadata: Some(self.response_metadata_v0(platform_state)),
-            // }
+            let proof = self.drive.prove_full_identities(
+                identity_ids.as_slice(),
+                None,
+                &platform_version.drive,
+            )?;
+            
+            GetPartialIdentitiesResponseV0 {
+                result: Some(get_partial_identities_response_v0::Result::Proof(
+                    self.response_proof_v0(platform_state, proof),
+                )),
+                metadata: Some(self.response_metadata_v0(platform_state)),
+            }
         } else {
             todo!()
             // let identities_keys = self.drive.fetch_identities_keys(

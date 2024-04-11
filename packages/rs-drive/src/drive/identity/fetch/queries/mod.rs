@@ -1,14 +1,16 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
+use crate::drive::{unique_key_hashes_tree_path_vec, Drive, RootTree, identity_tree_path, identity_tree_path_vec};
 
 use crate::error::Error;
 
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeNonce, IdentityTreeRevision};
-use crate::drive::identity::{identity_contract_info_group_path_vec, identity_path_vec};
+use crate::drive::identity::{identity_contract_info_group_path_key_purpose_vec, identity_contract_info_group_path_vec, identity_path_vec, IdentityRootStructure};
 use crate::error::query::QuerySyntaxError;
 use grovedb::{PathQuery, Query, SizedQuery};
+use dpp::identity::Purpose;
+use crate::drive::identity::contract_info::ContractInfoStructure;
 
 /// An enumeration representing the types of identity prove requests.
 ///
@@ -169,6 +171,52 @@ impl Drive {
         query.insert_key(identity_id.to_vec());
         PathQuery {
             path: balance_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// The query for the identity contract bounded keys for multiple identities
+    pub fn identities_contract_keys_query(identity_ids: &[[u8; 32]], contract_id: &[u8;32], purposes: Vec<Purpose>) -> PathQuery {
+        let identities_path = identity_tree_path_vec();
+        let mut query = Query::new();
+        query.insert_keys(identity_ids.into_iter().map(|identity_id| identity_id.to_vec()).collect());
+        query.default_subquery_branch.subquery_path = Some(vec![vec![IdentityRootStructure::IdentityContractInfo as u8], contract_id.to_vec(), vec![ContractInfoStructure::ContractInfoKeysKey as u8]]);
+        
+        let mut sub_query = Query::new();
+
+        sub_query.insert_keys(purposes.into_iter().map(|purpose| vec![purpose as u8]).collect());
+        
+        query.default_subquery_branch.subquery = Some(sub_query.into());
+        PathQuery {
+            path: identities_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// The query for the identity contract document type bounded keys for multiple identities
+    pub fn identities_contract_document_type_keys_query(identity_ids: &[[u8; 32]], contract_id: [u8;32], document_type_name: &str, purposes: Vec<Purpose>) -> PathQuery {
+        let identities_path = identity_tree_path_vec();
+        let mut query = Query::new();
+        query.insert_keys(identity_ids.into_iter().map(|identity_id| identity_id.to_vec()).collect());
+        let mut group_id = contract_id.to_vec();
+        group_id.extend(document_type_name.as_bytes());
+        query.default_subquery_branch.subquery_path = Some(vec![vec![IdentityRootStructure::IdentityContractInfo as u8], contract_id.to_vec(), vec![ContractInfoStructure::ContractInfoKeysKey as u8]]);
+
+        let mut sub_query = Query::new();
+
+        sub_query.insert_keys(purposes.into_iter().map(|purpose| vec![purpose as u8]).collect());
+
+        query.default_subquery_branch.subquery = Some(sub_query.into());
+        PathQuery {
+            path: identities_path,
             query: SizedQuery {
                 query,
                 limit: None,

@@ -48,6 +48,7 @@ mod prove;
 pub(crate) mod queries;
 #[cfg(feature = "server")]
 mod revision;
+mod contract_keys;
 
 impl Drive {
     #[cfg(any(feature = "server", feature = "verify"))]
