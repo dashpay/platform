@@ -17,13 +17,9 @@ function getStatusHandlerFactory(coreRPCClient) {
     const [
       blockchainInfoResponse,
       networkInfoResponse,
-      mnSyncStatusResponse,
-      masternodeStatusResponse,
     ] = await Promise.all([
       coreRPCClient.getBlockchainInfo(),
       coreRPCClient.getNetworkInfo(),
-      coreRPCClient.getMnSync('status'),
-      coreRPCClient.getMasternode('status'),
     ]);
 
     const response = new GetStatusResponse();
@@ -45,44 +41,8 @@ function getStatusHandlerFactory(coreRPCClient) {
     chain.setBestBlockHash(Buffer.from(blockchainInfoResponse.bestblockhash, 'hex'));
     chain.setDifficulty(blockchainInfoResponse.difficulty);
     chain.setChainWork(Buffer.from(blockchainInfoResponse.chainwork, 'hex'));
-    chain.setIsSynced(mnSyncStatusResponse.IsBlockchainSynced);
+    chain.setIsSynced(blockchainInfoResponse.verificationprogress === 1);
     chain.setSyncProgress(blockchainInfoResponse.verificationprogress);
-
-    const masternode = new GetStatusResponse.Masternode();
-
-    const masternodeStatus = GetStatusResponse.Masternode.Status[masternodeStatusResponse.state];
-
-    masternode.setStatus(masternodeStatus);
-
-    if (masternodeStatusResponse.proTxHash) {
-      masternode.setProTxHash(Buffer.from(masternodeStatusResponse.proTxHash, 'hex'));
-    }
-
-    if (masternodeStatusResponse.dmnState) {
-      masternode.setPosePenalty(masternodeStatusResponse.dmnState.PoSePenalty);
-    }
-
-    masternode.setIsSynced(mnSyncStatusResponse.IsSynced);
-
-    let syncProgress;
-    switch (mnSyncStatusResponse.AssetID) {
-      case 999:
-        syncProgress = 1;
-        break;
-      case 0:
-        syncProgress = 0;
-        break;
-      case 1:
-        syncProgress = 1 / 3;
-        break;
-      case 4:
-        syncProgress = 2 / 3;
-        break;
-      default:
-        syncProgress = 0;
-    }
-
-    masternode.setSyncProgress(syncProgress);
 
     const network = new GetStatusResponse.Network();
     network.setPeersCount(networkInfoResponse.connections);
@@ -97,13 +57,12 @@ function getStatusHandlerFactory(coreRPCClient) {
     response.setTime(time);
     response.setSyncProgress(blockchainInfoResponse.verificationprogress);
     response.setChain(chain);
-    response.setMasternode(masternode);
     response.setNetwork(network);
 
     let status = GetStatusResponse.Status.NOT_STARTED;
-    if (mnSyncStatusResponse.IsBlockchainSynced && mnSyncStatusResponse.IsSynced) {
+    if (blockchainInfoResponse.verificationprogress === 1) {
       status = GetStatusResponse.Status.READY;
-    } else if (blockchainInfoResponse.verificationprogress > 0) {
+    } else {
       status = GetStatusResponse.Status.SYNCING;
     }
 
