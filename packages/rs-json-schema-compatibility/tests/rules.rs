@@ -1,10 +1,10 @@
 use json_schema_compatibility::{
-    validate_schemas_compatibility, KeywordRuleExample, KEYWORD_RULES,
+    validate_schemas_compatibility, CompatibilityRuleExample, KEYWORD_COMPATIBILITY_RULES,
 };
 
 #[test]
 fn test_schema_keyword_rules() {
-    for (keyword, rule) in KEYWORD_RULES.iter() {
+    for (keyword, rule) in KEYWORD_COMPATIBILITY_RULES.iter() {
         println!("Testing `{}` keyword", keyword);
 
         assert_examples(keyword, &rule.examples);
@@ -15,7 +15,7 @@ fn test_schema_keyword_rules() {
     }
 }
 
-fn assert_examples(keyword: &str, examples: &[KeywordRuleExample]) {
+fn assert_examples(keyword: &str, examples: &[CompatibilityRuleExample]) {
     for example in examples {
         let result = validate_schemas_compatibility(&example.original_schema, &example.new_schema)
             .expect("should not fail");

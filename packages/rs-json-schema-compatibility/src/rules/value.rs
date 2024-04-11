@@ -1,13 +1,38 @@
 use crate::error::{Error, JsonPointerPathNotFoundError, UnexpectedJsonValueTypeError};
 use serde_json::Value;
 
+/// Trait that provides methods for trying to convert a `Value` into different types.
 pub trait ValueTryMethods {
+    /// Tries to get a reference to a `Value` at a given JSON Pointer path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - A JSON Pointer path as a string.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<&Self, Error>` - A result that contains a reference to the `Value` at the given path, or an error if the path does not exist.
     fn try_pointer(&self, path: &str) -> Result<&Self, Error>;
 
+    /// Tries to convert the `Value` into a `f64`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<f64, Error>` - A result that contains the `Value` as a `f64`, or an error if the `Value` is not a `f64`.
     fn try_to_f64(&self) -> Result<f64, Error>;
 
+    /// Tries to convert the `Value` into a `u64`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<u64, Error>` - A result that contains the `Value` as a `u64`, or an error if the `Value` is not a `u64`.
     fn try_to_u64(&self) -> Result<u64, Error>;
 
+    /// Tries to convert the `Value` into a `bool`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<bool, Error>` - A result that contains the `Value` as a `bool`, or an error if the `Value` is not a `bool`.
     fn try_to_bool(&self) -> Result<bool, Error>;
 }
 

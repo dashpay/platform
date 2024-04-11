@@ -1,10 +1,15 @@
 use crate::error::{Error, UnexpectedPatchOperationError};
 use json_patch::{AddOperation, PatchOperation, RemoveOperation, ReplaceOperation};
 
+/// This structure represents a change in a JSON schema
+/// It contains corresponding [PatchOperation]
 #[derive(Debug, PartialEq, Clone)]
 pub enum JsonSchemaChange {
+    /// Addition of JSON Schema element
     Add(AddOperation),
+    /// Removal of JSON Schema element
     Remove(RemoveOperation),
+    /// Replacement of JSON Schema element
     Replace(ReplaceOperation),
 }
 
@@ -28,6 +33,9 @@ impl JsonSchemaChange {
     }
 }
 
+/// Converts a [PatchOperation] into a [JsonSchemaChange]
+/// Since [PatchOperation] goes from the [json_patch::diff] function,
+/// we don't expect [PatchOperation::Move], [PatchOperation::Copy] and [PatchOperation::Test] operations.
 impl TryFrom<PatchOperation> for JsonSchemaChange {
     type Error = Error;
 
@@ -43,6 +51,7 @@ impl TryFrom<PatchOperation> for JsonSchemaChange {
     }
 }
 
+/// The trait that provides a method to get the path of the [PatchOperation]
 pub trait PatchOperationPath {
     fn path(&self) -> &str;
 }
