@@ -7,7 +7,6 @@ use crate::consensus::ConsensusError;
 use crate::prelude::Identifier;
 
 use bincode::{Decode, Encode};
-use platform_value::Value;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,

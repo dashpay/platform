@@ -1,3 +1,4 @@
+#[cfg(any(test, feature = "examples"))]
 use crate::change::JsonSchemaChange;
 use crate::error::Error;
 use json_patch::ReplaceOperation;
