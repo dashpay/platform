@@ -32,18 +32,16 @@ function getStatusFactory(grpcTransport) {
     // Respond with Buffers instead of base64 for binary fields
 
     if (response.getChain()) {
-      if (response.getChain().getBestBlockHash()) {
-        responseObject.chain.bestBlockHash = Buffer.from(response.getChain().getBestBlockHash());
+      if (response.getChain()
+        .getBestBlockHash()) {
+        responseObject.chain.bestBlockHash = Buffer.from(response.getChain()
+          .getBestBlockHash());
       }
 
-      if (response.getChain().getChainWork()) {
-        responseObject.chain.chainWork = Buffer.from(response.getChain().getChainWork());
-      }
-    }
-
-    if (response.getMasternode()) {
-      if (response.getMasternode().getProTxHash()) {
-        responseObject.masternode.proTxHash = Buffer.from(response.getMasternode().getProTxHash());
+      if (response.getChain()
+        .getChainWork()) {
+        responseObject.chain.chainWork = Buffer.from(response.getChain()
+          .getChainWork());
       }
     }
 
@@ -51,13 +49,6 @@ function getStatusFactory(grpcTransport) {
 
     responseObject.status = Object.keys(GetStatusResponse.Status)
       .find((key) => GetStatusResponse.Status[key] === responseObject.status);
-
-    if (responseObject.masternode) {
-      responseObject.masternode.status = Object.keys(GetStatusResponse.Masternode.Status)
-        .find((key) => (
-          GetStatusResponse.Masternode.Status[key] === responseObject.masternode.status
-        ));
-    }
 
     return responseObject;
   }
