@@ -13,6 +13,7 @@ impl StateTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::bls::native_bls::NativeBlsModule;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::core_script::CoreScript;
@@ -44,7 +45,7 @@ mod tests {
     };
     use crate::version::PlatformVersion;
     use crate::withdrawal::Pooling;
-    use crate::{NativeBlsModule, ProtocolError};
+    use crate::ProtocolError;
     use platform_version::version::LATEST_PLATFORM_VERSION;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;

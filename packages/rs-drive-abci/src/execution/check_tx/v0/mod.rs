@@ -207,6 +207,7 @@ mod tests {
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
 
+    use dpp::native_bls::NativeBlsModule;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
@@ -223,7 +224,6 @@ mod tests {
         instant_asset_lock_proof_fixture,
     };
     use dpp::version::PlatformVersion;
-    use dpp::NativeBlsModule;
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
     use dpp::consensus::state::state_error::StateError;

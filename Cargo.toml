@@ -27,4 +27,10 @@ members = [
     "packages/strategy-tests",
     "packages/simple-signer",
     "packages/rs-json-schema-compatibility-validator"
+    "packages/check-features",
 ]
+
+[patch.crates-io]
+tower-service = { git = "https://github.com/QuantumExplorer/tower", branch = "fix/indexMap2OnV0413" }
+tower-layer = { git = "https://github.com/QuantumExplorer/tower", branch = "fix/indexMap2OnV0413" }
+tower = { git = "https://github.com/QuantumExplorer/tower", branch = "fix/indexMap2OnV0413" }

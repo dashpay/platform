@@ -7,11 +7,31 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
+
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
+use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+
+#[cfg(any(
+    all(feature = "state-transitions", feature = "validation"),
+    feature = "state-transition-validation"
+))]
+use crate::state_transition::errors::StateTransitionError;
+
+#[cfg(any(
+    all(feature = "state-transitions", feature = "validation"),
+    feature = "state-transition-validation",
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
+use crate::state_transition::errors::WrongPublicKeyPurposeError;
+
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
-    WrongPublicKeyPurposeError,
+    InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
+    StateTransitionIsNotSignedError,
 };
 use crate::{
     CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
@@ -128,7 +148,12 @@ pub enum ProtocolError {
     #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
-    #[cfg(feature = "state-transition-validation")]
+    #[cfg(any(
+        all(feature = "state-transitions", feature = "validation"),
+        feature = "state-transition-validation",
+        feature = "state-transition-signing",
+        feature = "state-transition-validation"
+    ))]
     #[error(transparent)]
     WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
     #[cfg(feature = "state-transition-validation")]

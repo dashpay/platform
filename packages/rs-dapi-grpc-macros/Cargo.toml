@@ -11,8 +11,8 @@ proc-macro = true
 [dependencies]
 quote = "1.0.33"
 syn = "2.0.38"
-heck = "0.4.1"
+heck = "0.5.0"
 
 [dev-dependencies]
 
-dapi-grpc = { path = "../dapi-grpc" }
+dapi-grpc = { path = "../dapi-grpc" , features = ["client", "serde"], default-features = false}

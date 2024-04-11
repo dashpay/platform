@@ -75,7 +75,8 @@ fn sql_value_to_platform_value(sql_value: ast::Value) -> Option<Value> {
 }
 
 /// Where operator arguments
-#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum WhereOperator {
     /// Equal
     Equal,
@@ -228,7 +229,8 @@ impl From<WhereOperator> for Value {
 }
 
 /// Where clause struct
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WhereClause {
     /// Field
     pub field: String,
@@ -1289,7 +1291,7 @@ impl From<WhereClause> for Value {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::query::conditions::WhereClause;
