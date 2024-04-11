@@ -127,12 +127,6 @@ describe('CoreMethodsFacade', () => {
 
       response.setStatus(GetStatusResponse.Status.READY);
 
-      const masternode = new GetStatusResponse.Masternode();
-
-      masternode.setStatus(GetStatusResponse.Masternode.Status.READY);
-
-      response.setMasternode(masternode);
-
       grpcTransportMock.request.resolves(response);
 
       await coreMethods.getStatus();
