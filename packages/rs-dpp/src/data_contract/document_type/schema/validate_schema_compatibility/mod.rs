@@ -1,7 +1,5 @@
 use crate::data_contract::JsonValue;
 use crate::ProtocolError;
-use json_patch::PatchOperation;
-use json_schema_compatibility::JsonSchemaChange;
 use platform_version::version::PlatformVersion;
 
 mod v0;

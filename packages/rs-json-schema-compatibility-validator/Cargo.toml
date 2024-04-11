@@ -1,5 +1,5 @@
 [package]
-name = "json-schema-compatibility"
+name = "json-schema-compatibility-validator"
 version = "0.25.16-rc.3"
 edition = "2021"
 rust-version = "1.76"
@@ -12,12 +12,10 @@ json-patch = "1.2.0"
 serde_json = "1.0.115"
 thiserror = "1.0.58"
 once_cell = "1.19.0"
-test-case = "3.3.1"
 
 [dev-dependencies]
-rstest = "0.19.0"
-# enable examples for integration tests
-json-schema-compatibility = { path = ".", features = ["examples"] }
+# enable "examples" for integration tests
+json-schema-compatibility-validator = { path = ".", features = ["examples"] }
 
 [features]
 examples = []

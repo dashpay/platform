@@ -1,6 +1,5 @@
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
-use json_schema_compatibility::error::Error as CompatibilityError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 

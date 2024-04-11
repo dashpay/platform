@@ -1,4 +1,4 @@
-use json_schema_compatibility::validate_schemas_compatibility;
+use json_schema_compatibility_validator::validate_schemas_compatibility;
 use serde_json::json;
 
 #[test]

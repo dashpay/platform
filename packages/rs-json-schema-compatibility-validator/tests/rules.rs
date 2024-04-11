@@ -1,4 +1,4 @@
-use json_schema_compatibility::{
+use json_schema_compatibility_validator::{
     validate_schemas_compatibility, CompatibilityRuleExample, KEYWORD_COMPATIBILITY_RULES,
 };
 

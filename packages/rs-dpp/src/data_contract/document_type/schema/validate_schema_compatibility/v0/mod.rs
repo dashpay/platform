@@ -3,7 +3,7 @@ use crate::data_contract::errors::{DataContractError, JsonSchemaError};
 use crate::data_contract::JsonValue;
 use crate::validation::SimpleValidationResult;
 use crate::ProtocolError;
-use json_schema_compatibility::validate_schemas_compatibility;
+use json_schema_compatibility_validator::validate_schemas_compatibility;
 
 pub(super) fn validate_schema_compatibility_v0(
     original_schema: &JsonValue,

@@ -26,5 +26,5 @@ members = [
     "packages/rs-sdk",
     "packages/strategy-tests",
     "packages/simple-signer",
-    "packages/rs-json-schema-compatibility"
+    "packages/rs-json-schema-compatibility-validator"
 ]
