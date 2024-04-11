@@ -64,6 +64,7 @@ rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
 indexmap = { version = "2.0.2", features = ["serde"] }
 strum = { version = "0.25.0", features = ["derive"] }
+json-schema-compatibility = { path = '../rs-json-schema-compatibility' }
 
 [dev-dependencies]
 test-case = { version = "2.0" }

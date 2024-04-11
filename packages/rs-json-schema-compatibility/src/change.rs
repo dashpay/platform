@@ -52,7 +52,7 @@ impl TryFrom<PatchOperation> for JsonSchemaChange {
 }
 
 /// The trait that provides a method to get the path of the [PatchOperation]
-pub trait PatchOperationPath {
+pub(crate) trait PatchOperationPath {
     fn path(&self) -> &str;
 }
 

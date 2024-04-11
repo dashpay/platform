@@ -1,18 +1,24 @@
 use crate::data_contract::JsonValue;
 use crate::ProtocolError;
 use json_patch::PatchOperation;
+use json_schema_compatibility::JsonSchemaChange;
 use platform_version::version::PlatformVersion;
 
 mod v0;
 
 use crate::validation::SimpleValidationResult;
-pub use v0::EMPTY_JSON;
+
+#[derive(Debug, Clone)]
+pub struct IncompatibleJsonSchemaOperation {
+    pub name: String,
+    pub path: String,
+}
 
 pub fn validate_schema_compatibility(
     original_schema: &JsonValue,
     new_schema: &JsonValue,
     platform_version: &PlatformVersion,
-) -> Result<SimpleValidationResult<IncompatibleSchemaChange>, ProtocolError> {
+) -> Result<SimpleValidationResult<IncompatibleJsonSchemaOperation>, ProtocolError> {
     match platform_version
         .dpp
         .contract_versions

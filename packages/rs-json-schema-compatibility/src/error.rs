@@ -3,7 +3,7 @@ use json_patch::PatchOperation;
 use serde_json::Value;
 
 /// Compatibility validation errors.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum Error {
     /// An unexpected patch operation was encountered.
     #[error(transparent)]
@@ -26,7 +26,7 @@ pub enum Error {
 }
 
 /// An unexpected patch operation was encountered.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 #[error("unexpected patch operation: {0}")]
 pub struct UnexpectedPatchOperationError(pub PatchOperation);
 
@@ -37,7 +37,7 @@ impl From<UnexpectedPatchOperationError> for Error {
 }
 
 /// The JSON Pointer path doesn't exist in the JSON value.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 #[error("JSON Pointer path '{path}' doesn't exist in JSON value")]
 pub struct JsonPointerPathNotFoundError {
     pub path: String,
@@ -51,7 +51,7 @@ impl From<JsonPointerPathNotFoundError> for Error {
 }
 
 /// There is no compatibility rules are defined for the encountered schema keyword
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 #[error("schema keyword '{keyword}' at path '{path}' is not supported")]
 pub struct UnsupportedSchemaKeywordError {
     pub keyword: String,
@@ -65,7 +65,7 @@ impl From<UnsupportedSchemaKeywordError> for Error {
 }
 
 /// The JSON patch operation path is too small and doesn't contain keywords.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 #[error("json patch operation path '{path}' is too small and doesn't contain keywords")]
 pub struct InvalidJsonPatchOperationPathError {
     pub path: String,
@@ -78,7 +78,7 @@ impl From<InvalidJsonPatchOperationPathError> for Error {
 }
 
 /// The [IsReplacementAllowedCallback] is not defined for the encountered keyword and [ReplaceOperation].
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 #[error("undefined allow replacement callback for path '{path}'")]
 pub struct UndefinedReplacementAllowedCallbackError {
     pub path: String,
@@ -92,7 +92,7 @@ impl From<UndefinedReplacementAllowedCallbackError> for Error {
 }
 
 /// The JSON value type is not as expected.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 #[error("expected JSON value type '{expected_type}', but got '{value}'")]
 pub struct UnexpectedJsonValueTypeError {
     pub expected_type: String,

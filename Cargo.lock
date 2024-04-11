@@ -1260,6 +1260,7 @@ dependencies = [
  "integer-encoding 4.0.0",
  "itertools 0.10.5",
  "json-patch",
+ "json-schema-compatibility",
  "jsonptr",
  "jsonschema",
  "lazy_static",

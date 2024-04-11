@@ -1,5 +1,4 @@
 use super::compatibility_rules::CompatibilityRules;
-#[cfg(any(test, feature = "examples"))]
 use super::value::ValueTryMethods;
 use super::IsReplacementAllowedCallback;
 #[cfg(any(test, feature = "examples"))]
@@ -888,6 +887,7 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<HashMap<&'static str, Compatibility
                         allow_replacement_callback: FALSE_CALLBACK.clone(),
                         subschema_levels_depth: None,
                         inner: None,
+                        #[cfg(any(test, feature = "examples"))]
                         examples: vec![
                         (
                             json!({ "const": { "property": { "inner": true } }}),
