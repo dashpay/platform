@@ -6,9 +6,8 @@ use std::fmt::Debug;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    KeyRequestType,
+    AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, KeyRequestType,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};

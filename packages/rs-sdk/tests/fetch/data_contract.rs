@@ -1,5 +1,5 @@
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use super::config::Config;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
 use drive_proof_verifier::types::DataContractHistory;
