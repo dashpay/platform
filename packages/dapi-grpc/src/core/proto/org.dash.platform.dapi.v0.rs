@@ -719,3 +719,525 @@ pub mod core_client {
         }
     }
 }
+/// Generated server implementations.
+pub mod core_server {
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with CoreServer.
+    #[async_trait]
+    pub trait Core: Send + Sync + 'static {
+        async fn get_status(
+            &self,
+            request: tonic::Request<super::GetStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetStatusResponse>,
+            tonic::Status,
+        >;
+        async fn get_block(
+            &self,
+            request: tonic::Request<super::GetBlockRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetBlockResponse>,
+            tonic::Status,
+        >;
+        async fn broadcast_transaction(
+            &self,
+            request: tonic::Request<super::BroadcastTransactionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BroadcastTransactionResponse>,
+            tonic::Status,
+        >;
+        async fn get_transaction(
+            &self,
+            request: tonic::Request<super::GetTransactionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetTransactionResponse>,
+            tonic::Status,
+        >;
+        async fn get_estimated_transaction_fee(
+            &self,
+            request: tonic::Request<super::GetEstimatedTransactionFeeRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetEstimatedTransactionFeeResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the subscribeToBlockHeadersWithChainLocks method.
+        type subscribeToBlockHeadersWithChainLocksStream: futures_core::Stream<
+                Item = std::result::Result<
+                    super::BlockHeadersWithChainLocksResponse,
+                    tonic::Status,
+                >,
+            >
+            + Send
+            + 'static;
+        async fn subscribe_to_block_headers_with_chain_locks(
+            &self,
+            request: tonic::Request<super::BlockHeadersWithChainLocksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::subscribeToBlockHeadersWithChainLocksStream>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the subscribeToTransactionsWithProofs method.
+        type subscribeToTransactionsWithProofsStream: futures_core::Stream<
+                Item = std::result::Result<
+                    super::TransactionsWithProofsResponse,
+                    tonic::Status,
+                >,
+            >
+            + Send
+            + 'static;
+        async fn subscribe_to_transactions_with_proofs(
+            &self,
+            request: tonic::Request<super::TransactionsWithProofsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::subscribeToTransactionsWithProofsStream>,
+            tonic::Status,
+        >;
+    }
+    #[derive(Debug)]
+    pub struct CoreServer<T: Core> {
+        inner: _Inner<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    struct _Inner<T>(Arc<T>);
+    impl<T: Core> CoreServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            let inner = _Inner(inner);
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for CoreServer<T>
+    where
+        T: Core,
+        B: Body + Send + 'static,
+        B::Error: Into<StdError> + Send + 'static,
+    {
+        type Response = http::Response<tonic::body::BoxBody>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            let inner = self.inner.clone();
+            match req.uri().path() {
+                "/org.dash.platform.dapi.v0.Core/getStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct getStatusSvc<T: Core>(pub Arc<T>);
+                    impl<T: Core> tonic::server::UnaryService<super::GetStatusRequest>
+                    for getStatusSvc<T> {
+                        type Response = super::GetStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetStatusRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).get_status(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getStatusSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Core/getBlock" => {
+                    #[allow(non_camel_case_types)]
+                    struct getBlockSvc<T: Core>(pub Arc<T>);
+                    impl<T: Core> tonic::server::UnaryService<super::GetBlockRequest>
+                    for getBlockSvc<T> {
+                        type Response = super::GetBlockResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetBlockRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).get_block(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getBlockSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Core/broadcastTransaction" => {
+                    #[allow(non_camel_case_types)]
+                    struct broadcastTransactionSvc<T: Core>(pub Arc<T>);
+                    impl<
+                        T: Core,
+                    > tonic::server::UnaryService<super::BroadcastTransactionRequest>
+                    for broadcastTransactionSvc<T> {
+                        type Response = super::BroadcastTransactionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::BroadcastTransactionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).broadcast_transaction(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = broadcastTransactionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Core/getTransaction" => {
+                    #[allow(non_camel_case_types)]
+                    struct getTransactionSvc<T: Core>(pub Arc<T>);
+                    impl<
+                        T: Core,
+                    > tonic::server::UnaryService<super::GetTransactionRequest>
+                    for getTransactionSvc<T> {
+                        type Response = super::GetTransactionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetTransactionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_transaction(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getTransactionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Core/getEstimatedTransactionFee" => {
+                    #[allow(non_camel_case_types)]
+                    struct getEstimatedTransactionFeeSvc<T: Core>(pub Arc<T>);
+                    impl<
+                        T: Core,
+                    > tonic::server::UnaryService<
+                        super::GetEstimatedTransactionFeeRequest,
+                    > for getEstimatedTransactionFeeSvc<T> {
+                        type Response = super::GetEstimatedTransactionFeeResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::GetEstimatedTransactionFeeRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_estimated_transaction_fee(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getEstimatedTransactionFeeSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks" => {
+                    #[allow(non_camel_case_types)]
+                    struct subscribeToBlockHeadersWithChainLocksSvc<T: Core>(pub Arc<T>);
+                    impl<
+                        T: Core,
+                    > tonic::server::ServerStreamingService<
+                        super::BlockHeadersWithChainLocksRequest,
+                    > for subscribeToBlockHeadersWithChainLocksSvc<T> {
+                        type Response = super::BlockHeadersWithChainLocksResponse;
+                        type ResponseStream = T::subscribeToBlockHeadersWithChainLocksStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::BlockHeadersWithChainLocksRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner)
+                                    .subscribe_to_block_headers_with_chain_locks(request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = subscribeToBlockHeadersWithChainLocksSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs" => {
+                    #[allow(non_camel_case_types)]
+                    struct subscribeToTransactionsWithProofsSvc<T: Core>(pub Arc<T>);
+                    impl<
+                        T: Core,
+                    > tonic::server::ServerStreamingService<
+                        super::TransactionsWithProofsRequest,
+                    > for subscribeToTransactionsWithProofsSvc<T> {
+                        type Response = super::TransactionsWithProofsResponse;
+                        type ResponseStream = T::subscribeToTransactionsWithProofsStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::TransactionsWithProofsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner)
+                                    .subscribe_to_transactions_with_proofs(request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = subscribeToTransactionsWithProofsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        Ok(
+                            http::Response::builder()
+                                .status(200)
+                                .header("grpc-status", "12")
+                                .header("content-type", "application/grpc")
+                                .body(empty_body())
+                                .unwrap(),
+                        )
+                    })
+                }
+            }
+        }
+    }
+    impl<T: Core> Clone for CoreServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    impl<T: Core> Clone for _Inner<T> {
+        fn clone(&self) -> Self {
+            Self(Arc::clone(&self.0))
+        }
+    }
+    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.0)
+        }
+    }
+    impl<T: Core> tonic::server::NamedService for CoreServer<T> {
+        const NAME: &'static str = "org.dash.platform.dapi.v0.Core";
+    }
+}
