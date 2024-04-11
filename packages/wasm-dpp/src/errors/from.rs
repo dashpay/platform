@@ -38,7 +38,6 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
 pub fn from_dpp_init_error(e: DashPlatformProtocolInitError) -> JsValue {
     match e {
         DashPlatformProtocolInitError::SchemaDeserializationError(e) => e.to_string().into(),
-        DashPlatformProtocolInitError::ValidationError(e) => e.to_string().into(),
         DashPlatformProtocolInitError::InvalidSchemaError(e) => e.to_string().into(),
         // TODO(versioning): add rest erros
         _ => JsValue::from_str(&format!("Error conversion not implemented: {e:#}",)),

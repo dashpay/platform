@@ -203,7 +203,6 @@ pub struct DriveContractCostsMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DrivePlatformSystemMethodVersions {
-    pub protocol_version: DriveSystemProtocolVersionMethodVersions,
     pub estimation_costs: DriveSystemEstimationCostsMethodVersions,
 }
 
@@ -222,12 +221,6 @@ pub struct DriveOperationsMethodVersion {
 pub struct DriveBatchOperationsMethodVersion {
     pub convert_drive_operations_to_grove_operations: FeatureVersion,
     pub apply_drive_operations: FeatureVersion,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DriveSystemProtocolVersionMethodVersions {
-    pub fetch_next_protocol_version: FeatureVersion,
-    pub set_next_protocol_version_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -404,7 +397,6 @@ pub struct DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveProtocolUpgradeVersions {
     pub clear_version_information: FeatureVersion,
-    pub change_to_new_version_and_clear_version_information: FeatureVersion,
     pub fetch_versions_with_counter: FeatureVersion,
     pub fetch_proved_versions_with_counter: FeatureVersion,
     pub fetch_validator_version_votes: FeatureVersion,

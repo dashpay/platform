@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::epoch::Epoch;
 
 use dpp::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, IncompatibleDataContractSchemaError,
@@ -35,6 +36,10 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {
@@ -42,6 +47,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
         &self,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -49,6 +56,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
     fn transform_into_action_v0(
         &self,
         validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -58,10 +66,13 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         &self,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let action = self.transform_into_action_v0(validation_mode, platform_version)?;
+        let action =
+            self.transform_into_action_v0(validation_mode, execution_context, platform_version)?;
 
         if !action.is_valid() {
             return Ok(action);
@@ -92,17 +103,26 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         // Data contract should exist
         let add_to_cache_if_pulled = validation_mode.can_alter_cache();
+
+        let data_contract_fetch_info = drive.get_contract_with_fetch_info_and_fee(
+            new_data_contract.id().to_buffer(),
+            Some(epoch),
+            add_to_cache_if_pulled,
+            tx,
+            platform_version,
+        )?;
+
+        let fee = data_contract_fetch_info.0.ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution(
+                "fee must exist in validate state for data contract update transition",
+            ),
+        ))?;
+
+        // We add the cost for fetching the contract even if the contract doesn't exist or was in cache
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
         // Data contract should exist
-        let Some(contract_fetch_info) = drive
-            .get_contract_with_fetch_info_and_fee(
-                new_data_contract.id().to_buffer(),
-                None,
-                add_to_cache_if_pulled,
-                tx,
-                platform_version,
-            )?
-            .1
-        else {
+        let Some(contract_fetch_info) = data_contract_fetch_info.1 else {
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                     self,
@@ -421,13 +441,19 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     fn transform_into_action_v0(
         &self,
         validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut validation_operations = vec![];
+
         let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
             self,
             validation_mode.should_validate_contract_on_transform_into_action(),
+            &mut validation_operations,
             platform_version,
         );
+
+        execution_context.add_dpp_operations(validation_operations);
 
         // Return validation result if any consensus errors happened
         // during data contract validation

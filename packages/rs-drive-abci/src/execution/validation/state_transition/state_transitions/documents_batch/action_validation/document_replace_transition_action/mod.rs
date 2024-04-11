@@ -1,3 +1,4 @@
+use dpp::block::epoch::Epoch;
 use dpp::identifier::Identifier;
 
 use dpp::validation::SimpleConsensusValidationResult;
@@ -6,6 +7,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_replace_transition_action::state_v0::DocumentReplaceTransitionActionStateValidationV0;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_replace_transition_action::structure_v0::DocumentReplaceTransitionActionStructureValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
@@ -23,6 +25,8 @@ pub trait DocumentReplaceTransitionActionValidation {
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
@@ -53,6 +57,8 @@ impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionActi
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -63,7 +69,14 @@ impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionActi
             .documents_batch_state_transition
             .document_replace_transition_state_validation
         {
-            0 => self.validate_state_v0(platform, owner_id, transaction, platform_version),
+            0 => self.validate_state_v0(
+                platform,
+                owner_id,
+                epoch,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentReplaceTransitionAction::validate_state".to_string(),
                 known_versions: vec![0],

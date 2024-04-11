@@ -107,7 +107,6 @@ mod tests {
 
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
@@ -117,32 +116,6 @@ mod tests {
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
     use tenderdash_abci::Application;
-
-    #[allow(dead_code)]
-    #[deprecated(note = "This function is marked as unused.")]
-    #[allow(deprecated)]
-    pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
-        let mut quorums = QuorumListExtendedInfo::new();
-
-        for i in 0..n {
-            let i_bytes = [i as u8; 32];
-
-            let hash = QuorumHash::from_byte_array(i_bytes);
-
-            let details = ExtendedQuorumDetails {
-                creation_height: i,
-                health_ratio: (i as f32) / (n as f32),
-                mined_block_hash: BlockHash::from_slice(&i_bytes).unwrap(),
-                num_valid_members: i,
-                quorum_index: Some(i),
-            };
-
-            if let Some(v) = quorums.insert(hash, details) {
-                panic!("duplicate record {:?}={:?}", hash, v)
-            }
-        }
-        quorums
-    }
 
     #[test]
     fn run_chain_nothing_happening() {
@@ -554,7 +527,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864796380)
+        assert_eq!(balance, 99864825980)
     }
 
     #[test]
@@ -792,7 +765,7 @@ mod tests {
                 .index,
             0
         );
-        assert!(counter.get(&1).unwrap() > &240);
+        assert!(counter.get(&1).unwrap().unwrap() > &240);
     }
 
     #[test]
@@ -1144,7 +1117,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "e955d7935da01eb2ee8b1935a49ceb4b7021ffce1dec5bb401ce1de5cdf330b5".to_string()
+            "5dda9668d6efe6a481ec1d7ce3a1a77785aace12a853bea7eedcf37e9c5f8374".to_string()
         )
     }
 
@@ -1833,7 +1806,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "0d2ccf74932904c3463764528d34cc220dcb66cbbe8ea1a031367056aeda77c0".to_string()
+            "909c3c0655fcb31a992899a1d2af59a8847f72126db56140ca91ac9591561ebe".to_string()
         )
     }
 
@@ -1958,7 +1931,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "bc0eee6f0d40ae9a2c8f2ae9f95874d403056349b99f96c11d4562be12fc5015".to_string()
+            "58b6ae6a0468cb62d1947362cf92915ae046027a0501d808caa7bdcd2a23a10c".to_string()
         )
     }
 

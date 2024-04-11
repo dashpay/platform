@@ -7,6 +7,8 @@ use crate::state_transition::documents_batch_transition::{
 use crate::state_transition::StateTransitionType::DocumentsBatch;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use platform_value::{BinaryData, Identifier};
 
 impl From<DocumentsBatchTransitionV0> for StateTransition {
@@ -54,8 +56,8 @@ impl StateTransitionLike for DocumentsBatchTransitionV0 {
             .map(|transition| {
                 format!(
                     "{}-{}-{:x}",
-                    base64::encode(self.owner_id),
-                    base64::encode(transition.data_contract_id()),
+                    BASE64_STANDARD.encode(self.owner_id),
+                    BASE64_STANDARD.encode(transition.data_contract_id()),
                     transition.identity_contract_nonce()
                 )
             })

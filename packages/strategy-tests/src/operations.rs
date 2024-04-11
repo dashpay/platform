@@ -113,8 +113,12 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Doc
             document_type_name,
             action,
         } = document_op_in_serialization_format;
-        let data_contract =
-            DataContract::try_from_platform_versioned(contract, validate, platform_version)?;
+        let data_contract = DataContract::try_from_platform_versioned(
+            contract,
+            validate,
+            &mut vec![],
+            platform_version,
+        )?;
         let document_type =
             data_contract.document_type_cloned_for_name(document_type_name.as_str())?;
         Ok(DocumentOp {
@@ -295,6 +299,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
         let contract = DataContract::try_from_platform_versioned(
             deserialized.contract,
             validate,
+            &mut vec![],
             platform_version,
         )?;
 
@@ -318,6 +323,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                                 true,
                                 true,
                                 validate,
+                                &mut vec![],
                                 platform_version,
                             )
                             .expect("Failed to reconstruct DocumentType from schema")

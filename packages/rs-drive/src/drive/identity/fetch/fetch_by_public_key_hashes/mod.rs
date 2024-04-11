@@ -8,7 +8,7 @@ mod has_non_unique_public_key_hash;
 mod has_non_unique_public_key_hash_already_for_identity;
 mod has_unique_public_key_hash;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive;

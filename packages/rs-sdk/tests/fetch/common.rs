@@ -30,6 +30,7 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
         false,
         false,
         true,
+        &mut vec![],
         platform_version,
     )
     .expect("expected to create a document type")

@@ -5,6 +5,7 @@ use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
@@ -216,6 +217,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         action,
         platform,
         ValidationMode::Validator,
+        &block_info.epoch,
         &mut state_transition_execution_context,
         transaction,
     )?;
@@ -429,6 +431,7 @@ pub(crate) trait StateTransitionStateValidationV0:
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
+        epoch: &Epoch,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -750,18 +753,29 @@ impl StateTransitionStateValidationV0 for StateTransition {
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
+        epoch: &Epoch,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
             // The replay attack is prevented by checking if a data contract exists with this id first
-            StateTransition::DataContractCreate(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::DataContractCreate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                epoch,
+                execution_context,
+                tx,
+            ),
             // The replay attack is prevented by identity data contract nonce
-            StateTransition::DataContractUpdate(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::DataContractUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                epoch,
+                execution_context,
+                tx,
+            ),
             StateTransition::IdentityCreate(st) => {
                 let action =
                     action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -779,9 +793,14 @@ impl StateTransitionStateValidationV0 for StateTransition {
                     tx,
                 )
             }
-            StateTransition::IdentityUpdate(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::IdentityUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                epoch,
+                execution_context,
+                tx,
+            ),
             StateTransition::IdentityTopUp(st) => {
                 // Nothing to validate from state
                 if let Some(action) = action {
@@ -797,16 +816,31 @@ impl StateTransitionStateValidationV0 for StateTransition {
                     )
                 }
             }
-            StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::IdentityCreditWithdrawal(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                epoch,
+                execution_context,
+                tx,
+            ),
             // The replay attack is prevented by identity data contract nonce
-            StateTransition::DocumentsBatch(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
-            StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::DocumentsBatch(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                epoch,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreditTransfer(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                epoch,
+                execution_context,
+                tx,
+            ),
         }
     }
 }

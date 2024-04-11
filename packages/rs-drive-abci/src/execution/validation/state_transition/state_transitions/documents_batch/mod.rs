@@ -6,6 +6,7 @@ mod state;
 mod transformer;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -188,7 +189,8 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
-        _execution_context: &mut StateTransitionExecutionContext,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -215,6 +217,8 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
                 self.validate_state_v0(
                     documents_batch_transition_action,
                     &platform.into(),
+                    epoch,
+                    execution_context,
                     tx,
                     platform_version,
                 )

@@ -3,6 +3,7 @@ pub use v0::*;
 
 use crate::data_contract::{DefinitionName, DocumentName};
 use crate::prelude::DataContract;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
@@ -14,12 +15,17 @@ impl DataContractSchemaMethodsV0 for DataContract {
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
         validate: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => {
-                v0.set_document_schemas(schemas, defs, validate, platform_version)
-            }
+            DataContract::V0(v0) => v0.set_document_schemas(
+                schemas,
+                defs,
+                validate,
+                validation_operations,
+                platform_version,
+            ),
         }
     }
 
@@ -28,12 +34,17 @@ impl DataContractSchemaMethodsV0 for DataContract {
         name: &str,
         schema: Value,
         validate: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => {
-                v0.set_document_schema(name, schema, validate, platform_version)
-            }
+            DataContract::V0(v0) => v0.set_document_schema(
+                name,
+                schema,
+                validate,
+                validation_operations,
+                platform_version,
+            ),
         }
     }
 
@@ -53,10 +64,13 @@ impl DataContractSchemaMethodsV0 for DataContract {
         &mut self,
         defs: Option<BTreeMap<DefinitionName, Value>>,
         validate: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.set_schema_defs(defs, validate, platform_version),
+            DataContract::V0(v0) => {
+                v0.set_schema_defs(defs, validate, validation_operations, platform_version)
+            }
         }
     }
 }

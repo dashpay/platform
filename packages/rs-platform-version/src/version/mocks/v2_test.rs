@@ -61,19 +61,19 @@ use crate::version::drive_versions::{
     DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
     DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
     DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
-    DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
-    DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
-    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
-    DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
+    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
+    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::fee::v1::FEE_VERSION1;
-use crate::version::mocks::TEST_BYTES;
+use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
-pub const TEST_PROTOCOL_VERSION_2: u32 = (1 << TEST_BYTES) + 2;
+pub const TEST_PROTOCOL_VERSION_2: u32 = (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 2;
 
-pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
+pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     protocol_version: TEST_PROTOCOL_VERSION_2,
     identity: FeatureVersionBounds {
         min_version: 0,
@@ -141,7 +141,6 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
             protocol_upgrade: DriveProtocolUpgradeVersions {
                 clear_version_information: 0,
-                change_to_new_version_and_clear_version_information: 0,
                 fetch_versions_with_counter: 0,
                 fetch_proved_versions_with_counter: 0,
                 fetch_validator_version_votes: 0,
@@ -400,10 +399,6 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
             },
             platform_system: DrivePlatformSystemMethodVersions {
-                protocol_version: DriveSystemProtocolVersionMethodVersions {
-                    fetch_next_protocol_version: 0,
-                    set_next_protocol_version_operations: 0,
-                },
                 estimation_costs: DriveSystemEstimationCostsMethodVersions {
                     for_total_system_credits_update: 0,
                 },
@@ -531,6 +526,8 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
                 check_for_desired_protocol_upgrade: 0,
+                upgrade_protocol_version_on_epoch_change: 0,
+                protocol_version_upgrade_percentage_needed: 75,
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,
@@ -958,6 +955,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     enrich_with_base_schema: 0,
                     find_identifier_and_binary_paths: 0,
                     validate_max_depth: 0,
+                    max_depth: 256,
                     recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
                         traversal_validator: 0,
                         byte_array_has_no_items_as_parent_validator: 0,

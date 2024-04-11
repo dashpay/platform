@@ -128,6 +128,7 @@ impl MockContextProvider {
     }
 }
 
+#[cfg(feature = "mocks")]
 impl Default for MockContextProvider {
     fn default() -> Self {
         Self::new()

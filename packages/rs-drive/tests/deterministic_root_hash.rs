@@ -31,36 +31,36 @@
 
 use grovedb_path::SubtreePath;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::borrow::Cow;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::option::Option::None;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::document::Document;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::common;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::{Element, Transaction, TransactionArg};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use rand::seq::SliceRandom;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use rand::{Rng, SeedableRng};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::flags::StorageFlags;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::{Drive, RootTree};
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -71,7 +71,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::tests::helpers::setup::setup_drive;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Contains the unique ID for a Dash identity.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,7 +79,7 @@ struct Records {
     dash_unique_identity_id: Vec<u8>,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Info about a DPNS name.
 // In the real dpns label is required, we make it optional here for a test
 #[derive(Serialize, Deserialize)]
@@ -97,7 +97,7 @@ struct Domain {
     subdomain_rules: bool,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl Domain {
     /// Creates domains with random data for a given normalized parent domain name.
     fn random_domains_in_parent(
@@ -130,7 +130,7 @@ impl Domain {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Creates and adds to a contract domains with random data.
 pub fn add_domains_to_contract(
     drive: &Drive,
@@ -173,7 +173,7 @@ pub fn add_domains_to_contract(
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Tests that the root hash is being calculated correctly after inserting empty subtrees into
 /// the root tree and the DPNS contract.
 fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
@@ -446,12 +446,12 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         .unwrap()
         .expect("should return app hash");
 
-    let expected_app_hash = "6b8bbf1f069858abf57573f43a62e27d60e6139c4d23e1fe572fa3fe34057973";
+    let expected_app_hash = "8880c628746348b09621b00589ccf856f75634388436a105473eb4506bb7e85e";
 
     assert_eq!(hex::encode(app_hash), expected_app_hash);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Runs `test_root_hash_with_batches` 10 times.
 #[test]
 fn test_deterministic_root_hash_with_batches() {

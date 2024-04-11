@@ -96,7 +96,7 @@ pub enum DocumentsBatchTransition {
 //         let maybe_signature = json_value.get_string(property_names::SIGNATURE).ok();
 //         let signature = if let Some(signature) = maybe_signature {
 //             Some(BinaryData(
-//                 base64::decode(signature).context("signature exists but isn't valid base64")?,
+//                 BASE64_STANDARD.decode(signature).context("signature exists but isn't valid base64")?,
 //             ))
 //         } else {
 //             None
@@ -561,7 +561,7 @@ pub fn get_security_level_requirement(v: &Value, default: SecurityLevel) -> Secu
 //         let data_contract_id =
 //             Identifier::from_string(data_contract_id_base58, Encoding::Base58).unwrap();
 //         let owner_id = Identifier::from_string(owner_id_base58, Encoding::Base58).unwrap();
-//         let entropy_bytes: [u8; 32] = base64::decode(entropy_base64).unwrap().try_into().unwrap();
+//         let entropy_bytes: [u8; 32] = BASE64_STANDARD.decode(entropy_base64).unwrap().try_into().unwrap();
 //
 //         let mut data_contract = get_data_contract_fixture(Some(owner_id)).data_contract;
 //         data_contract.id = data_contract_id;

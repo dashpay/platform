@@ -16,6 +16,7 @@ use crate::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+#[cfg(feature = "data-contract-value-conversion")]
 use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;
 
@@ -104,6 +105,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Cre
         let data_contract = DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
             validate,
+            &mut vec![],
             platform_version,
         )?;
         match platform_version

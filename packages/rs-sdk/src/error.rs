@@ -2,7 +2,6 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
-use dpp::bls_signatures::BlsError;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
@@ -56,10 +55,6 @@ pub enum Error {
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
     Generic(String),
-
-    /// Cryptographic error
-    #[error("Cryptographic error: {0}")]
-    CryptoError(#[from] BlsError),
 
     /// Context provider error
     #[error("Context provider error: {0}")]

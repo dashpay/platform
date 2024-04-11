@@ -2,13 +2,13 @@
 name = "platform-version"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Bincode based serialization and deserialization"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 edition = "2021"
 rust-version = "1.76"
 license = "MIT"
 
 [dependencies]
-thiserror = { version = "1.0" }
+thiserror = { version = "1.0.58" }
 
 [features]
 mock-versions = []
