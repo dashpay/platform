@@ -238,7 +238,7 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<HashMap<&'static str, Compatibility
                 },
             ),
             (
-                "multiple_of",
+                "multipleOf",
                 CompatibilityRules {
                     allow_addition: false,
                     allow_removal: false,
@@ -249,26 +249,26 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<HashMap<&'static str, Compatibility
                     examples: vec![
                         (
                             json!({}),
-                            json!({ "multiple_of": 1.0 }),
+                            json!({ "multipleOf": 1.0 }),
                             Some(JsonSchemaChange::Add(AddOperation {
-                                path: "/multiple_of".to_string(),
+                                path: "/multipleOf".to_string(),
                                 value: json!(1.0),
                             })),
                         )
                             .into(),
                         (
-                            json!({ "multiple_of": 1.0 }),
+                            json!({ "multipleOf": 1.0 }),
                             json!({}),
                             Some(JsonSchemaChange::Remove(RemoveOperation {
-                                path: "/multiple_of".to_string(),
+                                path: "/multipleOf".to_string(),
                             })),
                         )
                             .into(),
                         (
-                            json!({ "multiple_of": 1.0 }),
-                            json!({ "multiple_of": 2.0 }),
+                            json!({ "multipleOf": 1.0 }),
+                            json!({ "multipleOf": 2.0 }),
                             Some(JsonSchemaChange::Replace(ReplaceOperation {
-                                path: "/multiple_of".to_string(),
+                                path: "/multipleOf".to_string(),
                                 value: json!(2.0),
                             })),
                         )
