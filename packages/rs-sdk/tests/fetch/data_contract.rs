@@ -1,4 +1,6 @@
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use super::config::Config;
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
 use drive_proof_verifier::types::DataContractHistory;
 use rs_sdk::platform::{Fetch, FetchMany, LimitQuery};
@@ -93,22 +95,17 @@ async fn test_data_contracts_2_nx() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_data_contract_history_read() {
     let cfg = Config::new();
-    let id = cfg.existing_data_contract_id;
+    let id = Identifier::from_string(
+        "3c71ba2d0b655ac3d231c4411d3c3fad43451d3f48213537ff9da331b24e5dea",
+        Encoding::Hex,
+    )
+    .unwrap();
 
     let sdk = cfg.setup_api("test_data_contract_history_read").await;
 
-    let result = DataContractHistory::fetch(
-        &sdk,
-        LimitQuery::from((id, 0)),
-    ).await;
+    let result = DataContractHistory::fetch(&sdk, LimitQuery::from((id, 10))).await;
 
-    if let Err(e) = result {
-        panic!("error {:?}", e);
-    }
-
-    // println!("res {:?}", result);
-    // let result = DataContract::fetch_by_identifier(&sdk, id).await;
-    //
-    // assert!(matches!(result, Ok(Some(_))), "result: {:?}", result);
-    // assert_eq!(result.unwrap().unwrap().id(), id);
+    assert!(matches!(result, Ok(Some(_))), "result: {:?}", result);
+    let (_, contract) = result.unwrap().unwrap().pop_first().unwrap();
+    assert_eq!(contract.id(), id);
 }
