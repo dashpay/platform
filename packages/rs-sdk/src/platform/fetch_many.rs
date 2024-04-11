@@ -54,7 +54,7 @@ use super::LimitQuery;
 /// * call [DataContract::fetch_many()](FetchMany::fetch_many()) with the query and an instance of [Sdk].
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
+/// use dash_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
 ///
 /// # const SOME_IDENTIFIER_1 : [u8; 32] = [1; 32];
 /// # const SOME_IDENTIFIER_2 : [u8; 32] = [2; 32];
@@ -272,7 +272,7 @@ impl FetchMany<EpochIndex> for ExtendedEpochInfo {
 /// ## Example
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::FetchMany};
+/// use dash_sdk::{Sdk, platform::FetchMany};
 /// use drive_proof_verifier::types::ProtocolVersionVoteCount;
 ///
 /// # tokio_test::block_on(async {
