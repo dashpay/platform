@@ -10,7 +10,7 @@ use json_patch::{AddOperation, RemoveOperation, ReplaceOperation};
 use once_cell::sync::Lazy;
 #[cfg(any(test, feature = "examples"))]
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::HashMap;π
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -875,7 +875,52 @@ pub static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|
                     levels_to_subschema: None,
                     inner: None,
                     // TODO: We need to test it with array and object
-                    examples: vec![],
+                    examples: vec![
+                        (
+                            json!({ "const": { "property": { "inner": true } }}),
+                            json!({ "const": { "property": { "inner": true, "second": true } }}),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/const/property/second".to_string(),
+                                value: json!(true),
+                            })),
+                        )
+                            .into(),
+                        (json!({ "const": "foo" }), json!({}), None).into(),
+                        (
+                            json!({ "const": { "property": { "inner": true, "second": true } }}),
+                            json!({ "const": { "property": { "inner": true } }}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/const/property/second".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "const": [ "item1" ]}),
+                            json!({ "const": [ "item1", "item2" ]}),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/const/1".to_string(),
+                                value: json!("item2"),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "const": [ "item1", "item2" ]}),
+                            json!({ "const": [ "item1" ]}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/const/1".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "const": [ "item1" ]}),
+                            json!({ "const": [ "item2" ]}),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/const/0".to_string(),
+                                value: json!("item2"),
+                            })),
+                        )
+                            .into(),
+                    ],
                 })),
                 #[cfg(any(test, feature = "examples"))]
                 examples: vec![
@@ -907,13 +952,48 @@ pub static KEYWORD_RULES: Lazy<HashMap<&'static str, KeywordRule>> = Lazy::new(|
                 allow_adding: false,
                 allow_removing: true,
                 allow_replacing: None,
-                levels_to_subschema: Some(2),
+                levels_to_subschema: None,
                 inner: Some(Box::new(KeywordRule {
                     allow_adding: true,
                     allow_removing: false,
-                    allow_replacing: FALSE_CALLBACK.clone(),
+                    allow_replacing: EXISTING_ELEMENT_CALLBACK.clone(),
                     levels_to_subschema: None,
-                    inner: None,
+                    inner: Some(Box::new(KeywordRule {
+                        allow_adding: false,
+                        allow_removing: false,
+                        allow_replacing: FALSE_CALLBACK.clone(),
+                        levels_to_subschema: None,
+                        inner: None,
+                        #[cfg(any(test, feature = "examples"))]
+                        examples: vec![
+                            (
+                                json!({ "enum": [{ "property": ["foo"]}] }),
+                                json!({ "enum": [{ "property": ["foo", "bar"]}] }),
+                                Some(JsonSchemaChange::Add(AddOperation {
+                                    path: "/enum/0/property/1".to_string(),
+                                    value: json!("bar"),
+                                })),
+                            )
+                                .into(),
+                            (
+                                json!({ "enum": [{ "property": ["foo", "bar"]}] }),
+                                json!({ "enum": [{ "property": ["foo"]}] }),
+                                Some(JsonSchemaChange::Remove(RemoveOperation {
+                                    path: "/enum/0/property/bar".to_string(),
+                                })),
+                            )
+                                .into(),
+                            (
+                                json!({ "enum": [{ "property": ["foo"]}] }),
+                                json!({ "enum": [{ "property": ["bar"]}] }),
+                                Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                    path: "/enum/0/property/0".to_string(),
+                                    value: json!("bar"),
+                                })),
+                            )
+                                .into(),
+                        ],
+                    })),
                     #[cfg(any(test, feature = "examples"))]
                     examples: vec![
                         (
