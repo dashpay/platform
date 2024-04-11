@@ -22,7 +22,7 @@ describe('Core', () => {
       const result = await client.getDAPIClient().core.getStatus();
 
       const {
-        version, time, status, syncProgress, chain, masternode, network,
+        version, time, status, syncProgress, chain, network,
       } = result;
 
       expect(version.protocol).to.be.a('number');
@@ -45,12 +45,6 @@ describe('Core', () => {
       expect(chain.chainWork).to.be.an.instanceOf(Buffer);
       expect(chain.isSynced).to.be.a('boolean');
       expect(chain.syncProgress).to.be.a('number');
-
-      expect(masternode.status).to.be.a('string');
-      expect(masternode.proTxHash).to.be.an.instanceOf(Buffer);
-      expect(masternode.posePenalty).to.be.a('number');
-      expect(masternode.isSynced).to.be.a('boolean');
-      expect(masternode.syncProgress).to.be.a('number');
 
       expect(network.peersCount).to.be.a('number');
       expect(network.fee.relay).to.be.a('number');
