@@ -34,6 +34,36 @@ impl CompatibilityValidationResult {
 /// the [CompatibilityValidationResult]. If two schemas are compatible,
 /// it means that data that valid for the original schema is also valid
 /// for the new schema.
+///
+/// ```
+/// use serde_json::json;
+/// use json_schema_compatibility_validator::validate_schemas_compatibility;
+///
+/// let original_schema = json!({
+///     "type": "object",
+///     "properties": {
+///         "name": { "type": "string" },
+///         "age": { "type": "integer" }
+///     },
+///     "required": ["name"]
+/// });
+///
+/// let new_schema = json!({
+///     "type": "object",
+///     "properties": {
+///         "name": { "type": "string" },
+///         "age": { "type": "integer" },
+///         "email": { "type": "string" }
+///     },
+///     "required": ["name"]
+/// });
+///
+/// let result = validate_schemas_compatibility(&original_schema, &new_schema)
+///  .expect("compatibility validation failed");
+///
+/// assert!(result.is_compatible());
+/// ```
+///
 pub fn validate_schemas_compatibility(
     original_schema: &Value,
     new_schema: &Value,
