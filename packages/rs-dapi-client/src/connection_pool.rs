@@ -95,7 +95,7 @@ impl From<PoolItem> for PlatformGrpcClient {
     fn from(client: PoolItem) -> Self {
         match client {
             PoolItem::Platform(client) => client,
-            _ => panic!("ClientType is not Platform"),
+            _ => panic!("ClientType is not Platform: {:?}", client),
         }
     }
 }
@@ -104,7 +104,7 @@ impl From<PoolItem> for CoreGrpcClient {
     fn from(client: PoolItem) -> Self {
         match client {
             PoolItem::Core(client) => client,
-            _ => panic!("ClientType is not Core"),
+            _ => panic!("ClientType is not Core: {:?}", client),
         }
     }
 }
