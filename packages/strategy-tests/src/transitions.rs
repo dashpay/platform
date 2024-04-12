@@ -42,6 +42,7 @@ use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayloa
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
+use dpp::identity::contract_bounds::ContractBounds;
 
 /// Constructs an `AssetLockProof` representing an instant asset lock proof.
 ///
@@ -659,6 +660,7 @@ pub fn create_identities_state_transitions(
                         *purpose,
                         *security_level,
                         *key_type,
+                        None,
                         platform_version,
                     )?;
                     identity.add_public_key(key.clone());

@@ -297,7 +297,6 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         fetch_identity_balance_with_keys: 0,
                         fetch_identity_balance_with_keys_and_revision: 0,
                         fetch_identity_with_balance: 0,
-                        fetch_identities_keys: 0,
                     },
                     full_identity: DriveIdentityFetchFullIdentityMethodVersions {
                         fetch_full_identity: Some(0),

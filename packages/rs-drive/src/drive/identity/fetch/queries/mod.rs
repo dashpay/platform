@@ -218,7 +218,7 @@ impl Drive {
             path: identities_path,
             query: SizedQuery {
                 query,
-                limit: None,
+                limit: Some(10),
                 offset: None,
             },
         }

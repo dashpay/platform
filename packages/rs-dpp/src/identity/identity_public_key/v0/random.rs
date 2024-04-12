@@ -10,6 +10,7 @@ use rand::rngs::StdRng;
 use rand::Rng;
 use std::convert::TryFrom;
 use std::ops::{Div, Rem};
+use crate::identity::contract_bounds::ContractBounds;
 
 pub type UsedKeyMatrix = Vec<bool>;
 
@@ -121,6 +122,7 @@ impl IdentityPublicKeyV0 {
         purpose: Purpose,
         security_level: SecurityLevel,
         key_type: KeyType,
+        contract_bounds: Option<ContractBounds>,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, Vec<u8>), ProtocolError> {
         let read_only = false;
@@ -135,7 +137,7 @@ impl IdentityPublicKeyV0 {
             read_only,
             disabled_at: None,
             data,
-            contract_bounds: None,
+            contract_bounds
         };
         Ok((identity_public_key, private_data))
     }

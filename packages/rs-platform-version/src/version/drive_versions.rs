@@ -518,7 +518,6 @@ pub struct DriveIdentityFetchPartialIdentityMethodVersions {
     pub fetch_identity_balance_with_keys: FeatureVersion,
     pub fetch_identity_balance_with_keys_and_revision: FeatureVersion,
     pub fetch_identity_with_balance: FeatureVersion,
-    pub fetch_identities_keys: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

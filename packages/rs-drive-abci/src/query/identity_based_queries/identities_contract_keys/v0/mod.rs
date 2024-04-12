@@ -116,66 +116,134 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use rand::prelude::StdRng;
+    use rand::{Rng, SeedableRng};
+    use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+    use dapi_grpc::platform::v0::get_identities_contract_keys_response::{get_identities_contract_keys_response_v0, GetIdentitiesContractKeysResponseV0};
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::{KeyID, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::prelude::IdentityPublicKey;
+    use drive::common::test_utils::identities::create_test_identity_with_rng;
+    use crate::query::tests::setup_platform;
 
     #[test]
-    fn test_invalid_identity_id() {
+    fn test_identities_contract_keys_proof() {
         let (platform, state, version) = setup_platform();
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
-        let request = GetIdentitiesRequestV0 {
-            ids: vec![vec![0; 8]],
-            prove: false,
+        let (alice, bob) = {
+            let mut rng = StdRng::seed_from_u64(10);
+
+            let alice_id = rng.gen::<[u8; 32]>();
+            let bob_id = rng.gen::<[u8; 32]>();
+            let alice = create_test_identity_with_rng(&platform.drive, alice_id, &mut rng, None, version)
+                .expect("expected to create a test identity");
+
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
+
+            let (alice_enc_key, _) = IdentityPublicKey::random_key_with_known_attributes(
+                2,
+                &mut rng,
+                Purpose::ENCRYPTION,
+                SecurityLevel::CRITICAL,
+                KeyType::ECDSA_SECP256K1,
+                Some(ContractBounds::SingleContract {
+                    id: dashpay.id()
+                }),
+                version
+            ).unwrap();
+
+            let db_transaction = platform.drive.grove.start_transaction();
+
+            let _ = platform.drive
+                .add_new_unique_keys_to_identity(
+                    alice.id().to_buffer(),
+                    vec![alice_enc_key],
+                    &block,
+                    true,
+                    Some(&db_transaction),
+                    version
+                );
+            platform.drive
+                .grove
+                .commit_transaction(db_transaction)
+                .unwrap()
+                .expect("expected to be able to commit a transaction");
+
+            let identity_keys = platform.drive
+                .fetch_all_identity_keys(alice.id().to_buffer(), None, version)
+                .expect("expected to get balance");
+
+            println!("{:?}", identity_keys.len());
+
+            let bob = create_test_identity_with_rng(&platform.drive, bob_id, &mut rng, None, version)
+                .expect("expected to create a test identity");
+            (alice, bob)
         };
+        // println!("{:?}", alice.id());
+        // println!("{:?}", bob.id());
 
-        let result = platform
-            .query_identities_v0(request, &state, version)
-            .expect("should query identities");
-
-        assert_invalid_identifier(result);
-    }
-
-    #[test]
-    fn test_identities_not_found() {
-        let (platform, state, version) = setup_platform();
-
-        let id = vec![0; 32];
-
-        let request = GetIdentitiesRequestV0 {
-            ids: vec![id.clone()],
-            prove: false,
-        };
-
-        let result = platform
-            .query_identities_v0(request, &state, version)
-            .expect("should query identities");
-
-        assert!(matches!(result.data, Some(GetIdentitiesResponseV0 {
-            result: Some(get_identities_response_v0::Result::Identities(identites)),
-            metadata: Some(_)
-        }) if identites.identity_entries.len() == 1 && identites.identity_entries[0].value.is_none()));
-    }
-
-    #[test]
-    fn test_identities_absence_proof() {
-        let (platform, state, version) = setup_platform();
-
-        let id = vec![0; 32];
-        let request = GetIdentitiesRequestV0 {
-            ids: vec![id.clone()],
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![alice.id().to_vec()],
+            contract_id: dashpay.id().to_vec(),
+            purposes: vec![Purpose::ENCRYPTION as i32, Purpose::DECRYPTION as i32],
             prove: true,
         };
 
         let result = platform
-            .query_identities_v0(request, &state, version)
-            .expect("should query identities");
+            .query_identities_contract_keys_v0(request, &state, &version)
+            .expect("query failed");
 
-        assert!(matches!(
-            result.data,
-            Some(GetIdentitiesResponseV0 {
-                result: Some(get_identities_response_v0::Result::Proof(_)),
-                metadata: Some(_)
-            })
-        ));
+        let GetIdentitiesContractKeysResponseV0{
+            result,
+            ..
+        } = result.data.unwrap();
+
+        let get_identities_contract_keys_response_v0::Result::Proof(proof)
+            = result.unwrap() else { todo!()};
+
+        println!("{:?}", proof.grovedb_proof.len());
+    }
+
+    #[test]
+    fn test_identities_contract_keys_absence_proof() {
+        let (platform, state, version) = setup_platform();
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![vec![0; 32]],
+            contract_id: dashpay.id().to_vec(),
+            purposes: vec![Purpose::ENCRYPTION as i32, Purpose::DECRYPTION as i32],
+            prove: true,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, &version)
+            .expect("query failed");
+
+        let GetIdentitiesContractKeysResponseV0{
+            result,
+            ..
+        } = result.data.unwrap();
+
+        let get_identities_contract_keys_response_v0::Result::Proof(proof)
+            = result.unwrap() else { todo!()};
+
+        // 181
+        // println!("{:?}", proof.grovedb_proof.len());
+
+        // assert!(result.is_valid());
+        //
+        // assert!(matches!(
+        //     result.data,
+        //     Some(GetIdentitiesContractKeysResponseV0 {
+        //         result: Some(get_identities_contract_keys_response_v0::Result::Proof(_)),
+        //         metadata: Some(_),
+        //     })
+        // ));
     }
 }
