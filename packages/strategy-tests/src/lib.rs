@@ -74,13 +74,13 @@ pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 /// The strategy allows for the specification of initial conditions, such as contracts to be created and identities to be registered, as well as dynamic actions that unfold over the simulation's lifespan, including contract updates and identity transactions. This versatile structure supports a broad spectrum of blockchain-related activities, from simple transfer operations to complex contract lifecycle management.
 ///
 /// # Fields
-/// - `contracts_with_updates`: Maps each created data contract to potential updates, enabling the simulation of contract evolution. Each tuple consists of a `CreatedDataContract` and an optional mapping of block heights to subsequent contract versions, facilitating time-sensitive contract transformations.
+/// - `start_identities`: Specifies identities to be established at the simulation's outset, including their initial attributes and balances. This setup allows for immediate participation of these identities in the blockchain's simulated activities.
+/// 
+/// - `start_contracts`: Maps each created data contract to potential updates, enabling the simulation of contract evolution. Each tuple consists of a `CreatedDataContract` and an optional mapping of block heights to subsequent contract versions, facilitating time-sensitive contract transformations.
 ///
 /// - `operations`: Enumerates discrete operations to be executed within the strategy. These operations represent individual actions or sequences of actions, such as document manipulations, identity updates, or contract interactions, each contributing to the overarching simulation narrative.
 ///
-/// - `start_identities`: Specifies identities to be established at the simulation's outset, including their initial attributes and balances. This setup allows for immediate participation of these identities in the blockchain's simulated activities.
-///
-/// - `identities_inserts`: Controls the stochastic introduction of new identities into the simulation, based on a defined frequency distribution. This field allows the strategy to dynamically expand the set of participants, reflecting organic growth or specific testing requirements.
+/// - `identity_inserts`: Controls the stochastic introduction of new identities into the simulation, based on a defined frequency distribution. This field allows the strategy to dynamically expand the set of participants, reflecting organic growth or specific testing requirements.
 ///
 /// - `identity_contract_nonce_gaps`: Optionally defines intervals at which nonce values for identities and contracts may be artificially incremented, introducing realistic entropy or testing specific edge cases.
 ///
@@ -102,13 +102,13 @@ pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 /// It's imperative to maintain coherence among the specified operations, identities, and contracts within the `Strategy` to ensure the simulated scenarios accurately reflect intended behaviors or test conditions. Discrepancies or inconsistencies may result in unexpected outcomes or hinder the simulation's effectiveness in achieving its objectives.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Strategy {
-    pub contracts_with_updates: Vec<(
+    pub start_identities: StartIdentities,
+    pub start_contracts: Vec<(
         CreatedDataContract,
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
     pub operations: Vec<Operation>,
-    pub start_identities: StartIdentities,
-    pub identities_inserts: IdentityInsertInfo,
+    pub identity_inserts: IdentityInsertInfo,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
@@ -184,10 +184,10 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         let Strategy {
-            contracts_with_updates,
+            start_contracts: contracts_with_updates,
             operations,
             start_identities,
-            identities_inserts,
+            identity_inserts: identities_inserts,
             identity_contract_nonce_gaps,
             signer,
         } = self;
@@ -308,10 +308,10 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             .collect::<Result<Vec<Operation>, ProtocolError>>()?;
 
         Ok(Strategy {
-            contracts_with_updates,
+            start_contracts: contracts_with_updates,
             operations,
             start_identities,
-            identities_inserts,
+            identity_inserts: identities_inserts,
             identity_contract_nonce_gaps,
             signer,
         })
@@ -1359,14 +1359,14 @@ impl Strategy {
         // Add identities_inserts
         // Don't do this on first two blocks (per design but also we need to skip utxo refresh)
         if block_info.height > config.start_block_height + 1 {
-            let frequency = &self.identities_inserts.frequency;
+            let frequency = &self.identity_inserts.frequency;
             if frequency.check_hit(rng) {
                 let count = frequency.events(rng); // number of identities to create
 
                 let mut new_transitions = crate::transitions::create_identities_state_transitions(
                     count,
-                    self.identities_inserts.start_keys as KeyID,
-                    &self.identities_inserts.extra_keys,
+                    self.identity_inserts.start_keys as KeyID,
+                    &self.identity_inserts.extra_keys,
                     200000, // 0.002 dash
                     signer,
                     rng,
@@ -1425,7 +1425,7 @@ impl Strategy {
     ) -> Vec<StateTransition> {
         let mut id_mapping = HashMap::new(); // Maps old IDs to new IDs
 
-        self.contracts_with_updates
+        self.start_contracts
             .iter_mut()
             .map(|(created_contract, contract_updates)| {
                 // Select a random identity from current_identities to be the contract owner
@@ -1552,7 +1552,7 @@ impl Strategy {
     ) -> Vec<StateTransition> {
         // Collect updates
         let updates: Vec<_> = self
-            .contracts_with_updates
+            .start_contracts
             .iter()
             .flat_map(|(_, contract_updates_option)| {
                 contract_updates_option
@@ -1740,7 +1740,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![],
+            start_contracts: vec![],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_op_1),
@@ -1763,7 +1763,7 @@ mod tests {
                 starting_balances: 100_000_000,
                 extra_keys: BTreeMap::new(),
             },
-            identities_inserts: Default::default(),
+            identity_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
             signer: Some(simple_signer),
         };
