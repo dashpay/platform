@@ -1267,8 +1267,7 @@ dependencies = [
  "indexmap 2.2.6",
  "integer-encoding",
  "itertools 0.12.1",
- "json-patch",
- "jsonptr",
+ "json-schema-compatibility-validator",
  "jsonschema",
  "lazy_static",
  "log",
@@ -2283,25 +2282,25 @@ dependencies = [
 
 [[package]]
 name = "json-patch"
-version = "0.2.7"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb3fa5a61630976fc4c353c70297f2e93f1930e3ccee574d59d618ccbd5154ce"
+checksum = "55ff1e1486799e3f64129f8ccad108b38290df9cd7015cd31bed17239f0789d6"
 dependencies = [
  "serde",
  "serde_json",
- "treediff 3.0.2",
+ "thiserror",
+ "treediff 4.0.3",
 ]
 
 [[package]]
-name = "jsonptr"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04e7a1ae7fc3e87c05f7a3de7e51083f62cdafcd9fed52cffebca22819a8f799"
+name = "json-schema-compatibility-validator"
+version = "0.25.16-rc.3"
 dependencies = [
- "serde",
+ "json-patch",
+ "json-schema-compatibility-validator",
+ "once_cell",
  "serde_json",
- "uniresid",
- "url",
+ "thiserror",
 ]
 
 [[package]]
@@ -4736,9 +4735,9 @@ dependencies = [
 
 [[package]]
 name = "treediff"
-version = "3.0.2"
+version = "4.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "761e8d5ad7ce14bb82b7e61ccc0ca961005a275a060b9644a2431aa11553c2ff"
+checksum = "4d127780145176e2b5d16611cc25a900150e86e9fd79d3bde6ff3a37359c9cb5"
 dependencies = [
  "serde_json",
 ]
@@ -4808,18 +4807,6 @@ name = "unicode-xid"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
-
-[[package]]
-name = "uniresid"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "995a4007fbec4f43386ea1b1d81d42d986a0c9616378e9aa4a96f45ea661e1b0"
-dependencies = [
- "once_cell",
- "serde",
- "thiserror",
- "url",
-]
 
 [[package]]
 name = "untrusted"
