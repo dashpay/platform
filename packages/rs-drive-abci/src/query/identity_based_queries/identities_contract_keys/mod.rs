@@ -14,7 +14,7 @@ mod v0;
 
 impl<C> Platform<C> {
     /// Querying of an identity by a public key hash
-    pub fn query_identities_keys(
+    pub fn query_identities_contract_keys(
         &self,
         GetIdentitiesContractKeysRequest { version }: GetIdentitiesContractKeysRequest,
         platform_state: &PlatformState,
@@ -30,7 +30,7 @@ impl<C> Platform<C> {
             .drive_abci
             .query
             .identity_based_queries
-            .identities_keys;
+            .identities_contract_keys;
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,
@@ -49,7 +49,7 @@ impl<C> Platform<C> {
         match version {
             RequestVersion::V0(request_v0) => {
                 let result =
-                    self.query_identities_v0(request_v0, platform_state, platform_version)?;
+                    self.query_identities_contract_keys_v0(request_v0, platform_state, platform_version)?;
 
                 Ok(result.map(|response_v0| GetIdentitiesContractKeysResponse {
                     version: Some(ResponseVersion::V0(response_v0)),

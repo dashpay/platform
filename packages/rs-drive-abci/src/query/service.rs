@@ -188,7 +188,7 @@ impl PlatformService for QueryService {
     ) -> Result<Response<GetIdentitiesContractKeysResponse>, Status> {
         self.handle_blocking_query(
             request,
-            Platform::<DefaultCoreRPC>::query_identities_keys,
+            Platform::<DefaultCoreRPC>::query_identities_contract_keys,
             "get_identities_contract_keys",
         )
         .await

@@ -7,17 +7,16 @@ use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentities
 use dapi_grpc::platform::v0::get_identities_contract_keys_response::{
     get_identities_contract_keys_response_v0, GetIdentitiesContractKeysResponseV0,
 };
+use dpp::check_validation_result_with_data;
 use dpp::identity::Purpose;
-use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::{check_validation_result_with_data, ProtocolError};
-use std::collections::HashMap;
+use drive::error::query::QuerySyntaxError;
 
 impl<C> Platform<C> {
-    pub(super) fn query_identities_v0(
+    pub(super) fn query_identities_contract_keys_v0(
         &self,
         GetIdentitiesContractKeysRequestV0 {
             identities_ids,
@@ -51,15 +50,29 @@ impl<C> Platform<C> {
                 )
             }));
 
+        let purposes = check_validation_result_with_data!(purposes
+            .into_iter()
+            .map(
+                |purpose| Purpose::try_from(purpose as u8).map_err(|_| QueryError::Query(
+                    QuerySyntaxError::InvalidKeyParameter(format!(
+                        "purpose {} not recognized",
+                        purpose
+                    ))
+                ))
+            )
+            .collect::<Result<Vec<Purpose>, QueryError>>());
+
         let response = if prove {
-            let proof = self.drive.prove_full_identities(
-                identity_ids.as_slice(),
+            let proof = self.drive.prove_identities_contract_keys(
+                identities_ids.as_slice(),
+                &contract_id,
+                purposes,
                 None,
                 &platform_version.drive,
             )?;
-            
-            GetPartialIdentitiesResponseV0 {
-                result: Some(get_partial_identities_response_v0::Result::Proof(
+
+            GetIdentitiesContractKeysResponseV0 {
+                result: Some(get_identities_contract_keys_response_v0::Result::Proof(
                     self.response_proof_v0(platform_state, proof),
                 )),
                 metadata: Some(self.response_metadata_v0(platform_state)),

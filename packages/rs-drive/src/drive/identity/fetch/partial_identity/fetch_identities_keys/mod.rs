@@ -1,6 +1,5 @@
 mod v0;
 
-use std::collections::{BTreeMap, HashMap};
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -10,6 +9,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
+use std::collections::{BTreeMap, HashMap};
 
 impl Drive {
     /// Fetches the Identity's balance along with its keys as `PartialIdentityInfo` from the backing store.
@@ -36,7 +36,7 @@ impl Drive {
         identities_keys_ids: &HashMap<[u8; 32], Vec<u32>>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result::<BTreeMap::<[u8; 32], BTreeMap<KeyID, IdentityPublicKey>>, Error> {
+    ) -> Result<BTreeMap<[u8; 32], BTreeMap<KeyID, IdentityPublicKey>>, Error> {
         match platform_version
             .drive
             .methods
@@ -45,11 +45,7 @@ impl Drive {
             .partial_identity
             .fetch_identities_keys
         {
-            0 => self.fetch_identities_keys_v0(
-                identities_keys_ids,
-                transaction,
-                platform_version,
-            ),
+            0 => self.fetch_identities_keys_v0(identities_keys_ids, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identities_keys".to_string(),
                 known_versions: vec![0],
@@ -88,27 +84,27 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
-//         match platform_version
-//             .drive
-//             .methods
-//             .identity
-//             .fetch
-//             .partial_identity
-//             .fetch_identity_balance_with_keys
-//         {
-//             0 => self.fetch_identity_balance_with_keys_with_cost_v0(
-//                 identity_key_request,
-//                 apply,
-//                 epoch,
-//                 transaction,
-//                 platform_version,
-//             ),
-//             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-//                 method: "fetch_identity_balance_with_keys_with_cost".to_string(),
-//                 known_versions: vec![0],
-//                 received: version,
-//             })),
-//         }
+        //         match platform_version
+        //             .drive
+        //             .methods
+        //             .identity
+        //             .fetch
+        //             .partial_identity
+        //             .fetch_identity_balance_with_keys
+        //         {
+        //             0 => self.fetch_identity_balance_with_keys_with_cost_v0(
+        //                 identity_key_request,
+        //                 apply,
+        //                 epoch,
+        //                 transaction,
+        //                 platform_version,
+        //             ),
+        //             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+        //                 method: "fetch_identity_balance_with_keys_with_cost".to_string(),
+        //                 known_versions: vec![0],
+        //                 received: version,
+        //             })),
+        //         }
         todo!()
     }
 }

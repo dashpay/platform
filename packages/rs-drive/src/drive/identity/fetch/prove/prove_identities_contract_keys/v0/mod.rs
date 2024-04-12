@@ -1,22 +1,22 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::Purpose;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
-use dpp::identity::Purpose;
 
 impl Drive {
     /// Proves identities with all its information from an identity ids.
     pub(super) fn prove_identities_contract_keys_v0(
         &self,
         identity_ids: &[[u8; 32]],
-        contract_id: &[u8;32],
+        contract_id: &[u8; 32],
         purposes: Vec<Purpose>,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let query = Self::identities_contract_keys_query(identity_ids, contract_id, purposes)?;
+        let query = Self::identities_contract_keys_query(identity_ids, contract_id, purposes);
         self.grove_get_proved_path_query(
             &query,
             false,
@@ -44,5 +44,4 @@ mod tests {
     use crate::drive::Drive;
 
     use dpp::version::PlatformVersion;
-
 }

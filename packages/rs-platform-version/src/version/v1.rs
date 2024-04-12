@@ -131,9 +131,9 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     add_update_pending_epoch_refunds_operations: 0,
                 },
                 storage_fee_distribution_pool:
-                    DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
-                        get_storage_fees_from_distribution_pool: 0,
-                    },
+                DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
+                    get_storage_fees_from_distribution_pool: 0,
+                },
                 unpaid_epoch: DriveCreditPoolUnpaidEpochMethodVersions {
                     get_unpaid_epoch_index: 0,
                 },
@@ -297,7 +297,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         fetch_identity_balance_with_keys: 0,
                         fetch_identity_balance_with_keys_and_revision: 0,
                         fetch_identity_with_balance: 0,
-                        fetch_identities_keys: 0
+                        fetch_identities_keys: 0,
                     },
                     full_identity: DriveIdentityFetchFullIdentityMethodVersions {
                         fetch_full_identity: Some(0),
@@ -309,6 +309,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     full_identities: 0,
                     identity_nonce: 0,
                     identity_contract_nonce: 0,
+                    identities_contract_keys: 0,
                     prove_full_identities_by_unique_public_key_hashes: 0,
                     prove_full_identity_by_unique_public_key_hash: 0,
                     prove_identity_id_by_unique_public_key_hash: 0,
@@ -335,14 +336,14 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         replace_key_in_storage: 0,
                     },
                     insert_key_hash_identity_reference:
-                        DriveIdentityKeyHashesToIdentityInsertMethodVersions {
-                            add_estimation_costs_for_insert_non_unique_public_key_hash_reference: 0,
-                            add_estimation_costs_for_insert_unique_public_key_hash_reference: 0,
-                            insert_non_unique_public_key_hash_reference_to_identity: 0,
-                            insert_reference_to_non_unique_key: 0,
-                            insert_reference_to_unique_key: 0,
-                            insert_unique_public_key_hash_reference_to_identity: 0,
-                        },
+                    DriveIdentityKeyHashesToIdentityInsertMethodVersions {
+                        add_estimation_costs_for_insert_non_unique_public_key_hash_reference: 0,
+                        add_estimation_costs_for_insert_unique_public_key_hash_reference: 0,
+                        insert_non_unique_public_key_hash_reference_to_identity: 0,
+                        insert_reference_to_non_unique_key: 0,
+                        insert_reference_to_unique_key: 0,
+                        insert_unique_public_key_hash_reference_to_identity: 0,
+                    },
                 },
                 update: DriveIdentityUpdateMethodVersions {
                     update_identity_revision: 0,
@@ -628,25 +629,25 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     transform_into_action: 0,
                 },
                 identity_credit_withdrawal_state_transition:
-                    DriveAbciStateTransitionValidationVersion {
-                        basic_structure: Some(0),
-                        advanced_structure: None,
-                        identity_signatures: None,
-                        advanced_minimum_balance_pre_check: Some(0),
-                        nonce: Some(0),
-                        state: 0,
-                        transform_into_action: 0,
-                    },
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    advanced_minimum_balance_pre_check: Some(0),
+                    nonce: Some(0),
+                    state: 0,
+                    transform_into_action: 0,
+                },
                 identity_credit_transfer_state_transition:
-                    DriveAbciStateTransitionValidationVersion {
-                        basic_structure: Some(0),
-                        advanced_structure: None,
-                        identity_signatures: None,
-                        advanced_minimum_balance_pre_check: Some(0),
-                        nonce: Some(0),
-                        state: 0,
-                        transform_into_action: 0,
-                    },
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    advanced_minimum_balance_pre_check: Some(0),
+                    nonce: Some(0),
+                    state: 0,
+                    transform_into_action: 0,
+                },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: None,
@@ -666,31 +667,31 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     transform_into_action: 0,
                 },
                 documents_batch_state_transition:
-                    DriveAbciDocumentsStateTransitionValidationVersions {
-                        basic_structure: 0,
-                        advanced_structure: 0,
-                        state: 0,
-                        revision: 0,
-                        transform_into_action: 0,
-                        data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
-                            bindings: 0,
-                            triggers: DriveAbciValidationDataTriggerVersions {
-                                create_contact_request_data_trigger: 0,
-                                create_domain_data_trigger: 0,
-                                create_identity_data_trigger: 0,
-                                create_feature_flag_data_trigger: 0,
-                                create_masternode_reward_shares_data_trigger: 0,
-                                delete_withdrawal_data_trigger: 0,
-                                reject_data_trigger: 0,
-                            },
+                DriveAbciDocumentsStateTransitionValidationVersions {
+                    basic_structure: 0,
+                    advanced_structure: 0,
+                    state: 0,
+                    revision: 0,
+                    transform_into_action: 0,
+                    data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
+                        bindings: 0,
+                        triggers: DriveAbciValidationDataTriggerVersions {
+                            create_contact_request_data_trigger: 0,
+                            create_domain_data_trigger: 0,
+                            create_identity_data_trigger: 0,
+                            create_feature_flag_data_trigger: 0,
+                            create_masternode_reward_shares_data_trigger: 0,
+                            delete_withdrawal_data_trigger: 0,
+                            reject_data_trigger: 0,
                         },
-                        document_create_transition_structure_validation: 0,
-                        document_delete_transition_structure_validation: 0,
-                        document_replace_transition_structure_validation: 0,
-                        document_create_transition_state_validation: 0,
-                        document_delete_transition_state_validation: 0,
-                        document_replace_transition_state_validation: 0,
                     },
+                    document_create_transition_structure_validation: 0,
+                    document_delete_transition_structure_validation: 0,
+                    document_replace_transition_structure_validation: 0,
+                    document_create_transition_state_validation: 0,
+                    document_delete_transition_state_validation: 0,
+                    document_replace_transition_state_validation: 0,
+                },
             },
             process_state_transition: 0,
             state_transition_to_execution_event_for_check_tx: 0,
@@ -723,7 +724,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
-                identities_keys: FeatureVersionBounds {
+                identities_contract_keys: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
@@ -915,9 +916,9 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 max_public_keys_in_creation: 6,
                 asset_locks: IdentityTransitionAssetLockVersions {
                     required_asset_lock_duff_balance_for_processing_start_for_identity_create:
-                        200000,
+                    200000,
                     required_asset_lock_duff_balance_for_processing_start_for_identity_top_up:
-                        50000,
+                    50000,
                     validate_asset_lock_transaction_structure: 0,
                     validate_instant_asset_lock_proof_structure: 0,
                 },
