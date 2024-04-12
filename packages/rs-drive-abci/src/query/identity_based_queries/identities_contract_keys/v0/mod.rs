@@ -10,7 +10,6 @@ use dapi_grpc::platform::v0::get_identities_contract_keys_response::{
 use dpp::check_validation_result_with_data;
 use dpp::identity::Purpose;
 use dpp::platform_value::Bytes32;
-use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
