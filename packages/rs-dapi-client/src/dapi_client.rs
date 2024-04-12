@@ -8,6 +8,7 @@ use std::time::Duration;
 use tracing::Instrument;
 
 use crate::address_list::AddressListError;
+use crate::connection_pool::ConnectionPool;
 use crate::{
     transport::{TransportClient, TransportRequest},
     Address, AddressList, CanRetry, RequestSettings,
@@ -64,6 +65,7 @@ pub trait DapiRequestExecutor {
 pub struct DapiClient {
     address_list: RwLock<AddressList>,
     settings: RequestSettings,
+    pool: ConnectionPool,
     #[cfg(feature = "dump")]
     pub(crate) dump_dir: Option<std::path::PathBuf>,
 }
@@ -71,9 +73,13 @@ pub struct DapiClient {
 impl DapiClient {
     /// Initialize new [DapiClient] and optionally override default settings.
     pub fn new(address_list: AddressList, settings: RequestSettings) -> Self {
+        // multiply by 3 as we need to store core and platform addresses, and we want some spare capacity just in case
+        let address_count = 3 * address_list.len();
+
         Self {
             address_list: RwLock::new(address_list),
             settings,
+            pool: ConnectionPool::new(address_count),
             #[cfg(feature = "dump")]
             dump_dir: None,
         }
@@ -153,9 +159,13 @@ impl DapiRequestExecutor for DapiClient {
                 // It stays wrapped in `Result` since we want to return
                 // `impl Future<Output = Result<...>`, not a `Result` itself.
                 let address = address_result?;
+                let pool = self.pool.clone();
 
-                let mut transport_client =
-                    R::Client::with_uri_and_settings(address.uri().clone(), &applied_settings);
+                let mut transport_client = R::Client::with_uri_and_settings(
+                    address.uri().clone(),
+                    &applied_settings,
+                    &pool,
+                );
 
                 let response = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)

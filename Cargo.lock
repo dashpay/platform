@@ -3537,6 +3537,8 @@ dependencies = [
  "futures",
  "hex",
  "http",
+ "lazy_static",
+ "lru",
  "rand",
  "sha2",
  "thiserror",
