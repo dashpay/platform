@@ -94,7 +94,6 @@ generate-test-vectors = ["network-testing"]
 
 system-data-contracts = ["dpp/data-contracts"]
 
-
 [[example]]
 
 name = "read_contract"

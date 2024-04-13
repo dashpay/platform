@@ -1,9 +1,11 @@
 use crate::consensus::basic::decode::DecodingError;
+use crate::consensus::basic::BasicError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 use crate::ProtocolError;
 
@@ -85,5 +87,11 @@ impl From<platform_value::Error> for DataContractError {
 impl From<(platform_value::Error, &str)> for DataContractError {
     fn from(value: (platform_value::Error, &str)) -> Self {
         DataContractError::ValueDecodingError(format!("{}: {:?}", value.1, value.0))
+    }
+}
+
+impl From<DataContractError> for ConsensusError {
+    fn from(e: DataContractError) -> Self {
+        ConsensusError::BasicError(BasicError::ContractError(e))
     }
 }

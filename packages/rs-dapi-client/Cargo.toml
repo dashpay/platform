@@ -14,11 +14,11 @@ offline-testing = []
 
 [dependencies]
 backon = "0.4.1"
-dapi-grpc = { path = "../dapi-grpc" }
+dapi-grpc = { path = "../dapi-grpc" , features = ["core", "client", "serde"], default-features = false}
 futures = "0.3.28"
 http = "0.2.9"
 rand = { version = "0.8.5", features = ["small_rng"] }
-thiserror = "1.0.41"
+thiserror = "1.0.58"
 tracing = "0.1.40"
 tokio = { version = "1.32.0", default-features = false }
 sha2 = { version = "0.10", optional = true }

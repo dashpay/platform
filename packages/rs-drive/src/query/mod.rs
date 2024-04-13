@@ -230,20 +230,21 @@ pub enum QueryResultEncoding {
     PlatformEncodedQueryResult,
 }
 
+//todo: this needs to be fixed
 #[cfg(any(feature = "server", feature = "verify"))]
 impl QueryResultEncoding {
     /// Encode the value based on the encoding desired
     pub fn encode_value(&self, value: &Value) -> Result<Vec<u8>, Error> {
-        let mut buffer = vec![];
         match self {
             #[cfg(feature = "ciborium")]
             QueryResultEncoding::CborEncodedQueryResult => {
+                let mut buffer = vec![];
                 ciborium::ser::into_writer(value, &mut buffer)
                     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+                Ok(buffer)
             }
-            QueryResultEncoding::PlatformEncodedQueryResult => {}
+            QueryResultEncoding::PlatformEncodedQueryResult => Ok(vec![]),
         }
-        Ok(buffer)
     }
 }
 
