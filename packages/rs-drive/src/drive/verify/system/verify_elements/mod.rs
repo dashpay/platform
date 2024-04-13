@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
-use grovedb::Element;
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
+use grovedb::Element;
+use std::collections::BTreeMap;
 
 mod v0;
 
@@ -35,13 +35,7 @@ impl Drive {
         keys: Vec<Vec<u8>>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<Vec<u8>, Option<Element>>), Error> {
-        match platform_version
-            .drive
-            .methods
-            .verify
-            .system
-            .verify_elements
-        {
+        match platform_version.drive.methods.verify.system.verify_elements {
             0 => Drive::verify_elements_v0(proof, path, keys),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_elements".to_string(),

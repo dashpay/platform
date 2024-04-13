@@ -80,7 +80,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetEpochsInfoResponse",
         "GetProtocolVersionUpgradeStateResponse",
         "GetProtocolVersionUpgradeVoteStatusResponse",
-        "GetPathElementsResponse"
+        "GetPathElementsResponse",
     ];
 
     // Derive VersionedGrpcMessage on requests

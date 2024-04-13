@@ -624,16 +624,8 @@ message GetEpochsInfoResponse {
 
 message GetPathElementsRequest {
   message GetPathElementsRequestV0 {
-    message Keys {
-      repeated bytes key = 1;
-    }
-
-    message PathElement {
-      repeated bytes path = 1;
-    }
-
-    PathElement path = 1;
-    Keys keys = 2;
+    repeated bytes path = 1;
+    repeated bytes keys = 2;
     bool prove = 3;
   }
 

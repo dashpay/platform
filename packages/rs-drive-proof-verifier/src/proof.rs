@@ -3,7 +3,16 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
-use dapi_grpc::platform::v0::{get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_identity_balance_and_revision_request, get_path_elements_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, GetPathElementsResponse, ResponseMetadata, GetPathElementsRequest};
+use dapi_grpc::platform::v0::{
+    get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
+    get_epochs_info_request, get_identity_balance_and_revision_request,
+    get_identity_balance_request, get_identity_by_public_key_hash_request,
+    get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request,
+    get_identity_request, get_path_elements_request, GetPathElementsRequest,
+    GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, ResponseMetadata,
+};
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
@@ -22,6 +31,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
 
+use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dpp::block::block_info::BlockInfo;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
@@ -30,7 +40,6 @@ use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use std::sync::Arc;
-use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 
 use crate::verify::verify_tenderdash_proof;
 
@@ -1045,7 +1054,6 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
     }
 }
 
-
 impl FromProof<GetPathElementsRequest> for Elements {
     type Request = GetPathElementsRequest;
     type Response = GetPathElementsResponse;
@@ -1056,8 +1064,8 @@ impl FromProof<GetPathElementsRequest> for Elements {
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
     ) -> Result<(Option<Self>, ResponseMetadata), Error>
-        where
-            Self: Sized + 'a,
+    where
+        Self: Sized + 'a,
     {
         let request = request.into();
         let response: Self::Response = response.into();
@@ -1070,16 +1078,11 @@ impl FromProof<GetPathElementsRequest> for Elements {
             None => return Err(Error::EmptyVersion),
         };
 
-        let path = request_v0.path.ok_or(Error::RequestDecodeError { error: "the request path must be set".to_string() })?;
-        let keys = request_v0.keys.ok_or(Error::RequestDecodeError { error: "the request keys must be set".to_string() })?;
+        let path = request_v0.path;
+        let keys = request_v0.keys;
 
-        
-        let (root_hash, objects) = Drive::verify_elements(
-            &proof.grovedb_proof,
-            path.path,
-            keys.key,
-            platform_version,
-        )?;
+        let (root_hash, objects) =
+            Drive::verify_elements(&proof.grovedb_proof, path, keys, platform_version)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 

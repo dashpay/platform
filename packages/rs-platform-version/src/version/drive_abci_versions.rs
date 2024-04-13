@@ -43,6 +43,7 @@ pub struct DriveAbciQuerySystemVersions {
     pub version_upgrade_state: FeatureVersionBounds,
     pub version_upgrade_vote_status: FeatureVersionBounds,
     pub epoch_infos: FeatureVersionBounds,
+    pub path_elements: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
