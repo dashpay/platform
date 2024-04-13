@@ -370,21 +370,21 @@ impl NetworkStrategy {
         if block_info.height == 1 && self.strategy.start_identities.number_of_identities > 0 {
             let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
                 self.strategy.start_identities.number_of_identities.into(),
-                self.strategy.identities_inserts.start_keys as KeyID,
-                &self.strategy.identities_inserts.extra_keys,
+                self.strategy.identity_inserts.start_keys as KeyID,
+                &self.strategy.identity_inserts.extra_keys,
                 signer,
                 rng,
                 platform_version,
             );
             state_transitions.append(&mut new_transitions);
         }
-        let frequency = &self.strategy.identities_inserts.frequency;
+        let frequency = &self.strategy.identity_inserts.frequency;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
             let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
                 count,
-                self.strategy.identities_inserts.start_keys as KeyID,
-                &self.strategy.identities_inserts.extra_keys,
+                self.strategy.identity_inserts.start_keys as KeyID,
+                &self.strategy.identity_inserts.extra_keys,
                 signer,
                 rng,
                 platform_version,
@@ -403,7 +403,7 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
         self.strategy
-            .contracts_with_updates
+            .start_contracts
             .iter_mut()
             .map(|(created_contract, contract_updates)| {
                 let identity_num = rng.gen_range(0..current_identities.len());
@@ -474,7 +474,7 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
         self.strategy
-            .contracts_with_updates
+            .start_contracts
             .iter_mut()
             .filter_map(|(_, contract_updates)| {
                 let Some(contract_updates) = contract_updates else {

@@ -35,8 +35,6 @@ getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.12.1" }
-json-patch = "0.2.6"
-jsonptr = "0.1.5"
 jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "feat-unevaluated-properties", default-features = false, features = [
   "draft202012",
 ], optional = true }
@@ -62,8 +60,9 @@ ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"], optional = t
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
-indexmap = { version = "2.0.2"}
+indexmap = { version = "2.0.2", features = ["serde"] }
 strum = { version = "0.25.0", features = ["derive"] }
+json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator' }
 
 [dev-dependencies]
 test-case = { version = "2.0" }
