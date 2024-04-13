@@ -38,10 +38,10 @@ mod tests {
                 let platform_version = PlatformVersion::first();
                 let strategy = NetworkStrategy {
                     strategy: Strategy {
-                        contracts_with_updates: vec![],
+                        start_contracts: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: IdentityInsertInfo::default(),
+                        identity_inserts: IdentityInsertInfo::default(),
 
                         identity_contract_nonce_gaps: None,
                         signer: None,
@@ -281,10 +281,10 @@ mod tests {
                 let platform_version = PlatformVersion::first();
                 let strategy = NetworkStrategy {
                     strategy: Strategy {
-                        contracts_with_updates: vec![],
+                        start_contracts: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: IdentityInsertInfo::default(),
+                        identity_inserts: IdentityInsertInfo::default(),
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -675,10 +675,10 @@ mod tests {
             .spawn(|| {
                 let strategy = NetworkStrategy {
                     strategy: Strategy {
-                        contracts_with_updates: vec![],
+                        start_contracts: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: IdentityInsertInfo::default(),
+                        identity_inserts: IdentityInsertInfo::default(),
 
                         identity_contract_nonce_gaps: None,
                         signer: None,
@@ -908,10 +908,10 @@ mod tests {
             .spawn(|| {
                 let strategy = NetworkStrategy {
                     strategy: Strategy {
-                        contracts_with_updates: vec![],
+                        start_contracts: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: IdentityInsertInfo::default(),
+                        identity_inserts: IdentityInsertInfo::default(),
 
                         identity_contract_nonce_gaps: None,
                         signer: None,
@@ -1069,10 +1069,10 @@ mod tests {
 
                 let strategy = NetworkStrategy {
                     strategy: Strategy {
-                        contracts_with_updates: vec![],
+                        start_contracts: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: IdentityInsertInfo::default(),
+                        identity_inserts: IdentityInsertInfo::default(),
 
                         identity_contract_nonce_gaps: None,
                         signer: None,
@@ -1233,10 +1233,10 @@ mod tests {
             .spawn(|| {
                 let strategy = NetworkStrategy {
                     strategy: Strategy {
-                        contracts_with_updates: vec![],
+                        start_contracts: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: IdentityInsertInfo::default(),
+                        identity_inserts: IdentityInsertInfo::default(),
 
                         identity_contract_nonce_gaps: None,
                         signer: None,
@@ -1349,10 +1349,10 @@ mod tests {
 
                 let strategy = NetworkStrategy {
                     strategy: Strategy {
-                        contracts_with_updates: vec![],
+                        start_contracts: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: IdentityInsertInfo::default(),
+                        identity_inserts: IdentityInsertInfo::default(),
 
                         identity_contract_nonce_gaps: None,
                         signer: None,

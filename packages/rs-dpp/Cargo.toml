@@ -60,7 +60,7 @@ ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"], optional = t
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
-indexmap = { version = "2.0.2"}
+indexmap = { version = "2.0.2", features = ["serde"] }
 strum = { version = "0.25.0", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator' }
 
