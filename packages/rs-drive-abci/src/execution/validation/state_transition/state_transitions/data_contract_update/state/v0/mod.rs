@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::epoch::Epoch;
+use serde_json::json;
 
 use dpp::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, IncompatibleDataContractSchemaError,
@@ -15,11 +16,11 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::schema::{
-    get_operation_and_property_name_json, validate_schema_compatibility,
+    validate_schema_compatibility, IncompatibleJsonSchemaOperation,
 };
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::data_contract::JsonValue;
+use dpp::data_contract::{DataContract, JsonValue};
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::{Value, ValueMap};
 
@@ -28,6 +29,7 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 
 use crate::error::execution::ExecutionError;
@@ -293,9 +295,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         if let Some(old_defs) = old_data_contract.schema_defs() {
             let Some(new_defs) = self.data_contract().schema_defs() else {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                ),
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    ),
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -304,9 +306,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         IncompatibleDataContractSchemaError::new(
                             self.data_contract().id(),
                             "remove".to_string(),
-                            "$defs".to_string(),
-                            old_defs.into(),
-                            Value::Null,
+                            "/$defs".to_string(),
                         ),
                     )
                     .into()],
@@ -339,32 +339,27 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 }
             };
 
-            let diffs =
-                validate_schema_compatibility(&old_defs_json, &new_defs_json, platform_version)?;
+            let old_defs_schema = json!({
+                "$defs": old_defs_json
+            });
 
-            if !diffs.is_empty() {
-                let (operation_name, property_name) =
-                    get_operation_and_property_name_json(&diffs[0]);
+            let new_defs_schema = json!({
+                "$defs": new_defs_json
+            });
 
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+            let compatibility_validation_result = validate_schema_compatibility(
+                &old_defs_schema,
+                &new_defs_schema,
+                platform_version,
+            )?;
+
+            if !compatibility_validation_result.is_valid() {
+                let validation_result = convert_compatibility_to_consensus_validation_result(
                     self,
-                ),
+                    compatibility_validation_result,
                 );
 
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![BasicError::IncompatibleDataContractSchemaError(
-                        IncompatibleDataContractSchemaError::new(
-                            self.data_contract().id(),
-                            operation_name.to_owned(),
-                            property_name.to_owned(),
-                            old_defs_json.into(),
-                            new_defs_json.into(),
-                        ),
-                    )
-                    .into()],
-                ));
+                return Ok(validation_result);
             }
         }
 
@@ -403,35 +398,19 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 }
             };
 
-            let diffs = validate_schema_compatibility(
+            let compatibility_validation_result = validate_schema_compatibility(
                 &old_document_schema_json,
                 &new_document_schema_json,
                 platform_version,
             )?;
 
-            if !diffs.is_empty() {
-                let (operation_name, property_name) =
-                    get_operation_and_property_name_json(&diffs[0]);
-
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+            if !compatibility_validation_result.is_valid() {
+                let validation_result = convert_compatibility_to_consensus_validation_result(
                     self,
-                ),
+                    compatibility_validation_result,
                 );
 
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![BasicError::IncompatibleDataContractSchemaError(
-                        IncompatibleDataContractSchemaError::new(
-                            self.data_contract().id(),
-                            operation_name.to_owned(),
-                            property_name.to_owned(),
-                            old_document_schema.clone(),
-                            new_document_schema,
-                        ),
-                    )
-                    .into()],
-                ));
+                return Ok(validation_result);
             }
         }
 
@@ -475,4 +454,30 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             }
         }
     }
+}
+
+fn convert_compatibility_to_consensus_validation_result(
+    state_transition: &DataContractUpdateTransition,
+    validation_result: SimpleValidationResult<IncompatibleJsonSchemaOperation>,
+) -> ConsensusValidationResult<StateTransitionAction> {
+    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+            state_transition,
+        ),
+    );
+
+    let errors = validation_result
+        .errors
+        .into_iter()
+        .map(|operation| {
+            IncompatibleDataContractSchemaError::new(
+                state_transition.data_contract().id(),
+                operation.name,
+                operation.path,
+            )
+            .into()
+        })
+        .collect();
+
+    return ConsensusValidationResult::new_with_data_and_errors(bump_action, errors);
 }

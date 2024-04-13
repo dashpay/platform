@@ -35,8 +35,6 @@ getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.12.1" }
-json-patch = "0.2.6"
-jsonptr = "0.1.5"
 jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "feat-unevaluated-properties", default-features = false, features = [
   "draft202012",
 ], optional = true }
@@ -46,7 +44,7 @@ num_enum = "0.5.7"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 rand = { version = "0.8.4", features = ["small_rng"] }
 regex = { version = "1.5" }
-serde = { version = "1.0.152", features = ["derive"] }
+serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
@@ -58,12 +56,15 @@ platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 derive_more = "0.99.17"
-ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"], optional = true }
+ed25519-dalek = { version = "2.0.0-rc.2", features = [
+  "rand_core",
+], optional = true }
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
-indexmap = { version = "2.0.2"}
+indexmap = { version = "2.0.2", features = ["serde"] }
 strum = { version = "0.25.0", features = ["derive"] }
+json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator' }
 
 [dev-dependencies]
 test-case = { version = "2.0" }
@@ -72,10 +73,7 @@ pretty_assertions = { version = "1.3.0" }
 dpp = { path = ".", features = ["all_features_without_client"] }
 
 [features]
-default = [
-  "platform-value",
-  "state-transitions",
-]
+default = ["platform-value", "state-transitions"]
 all_features = [
   "json-object",
   "platform-value",
@@ -116,7 +114,7 @@ all_features = [
   "client",
 ]
 
-rs-sdk-features = [
+dash-sdk-features = [
   "json-object",
   "platform-value",
   "system_contracts",
@@ -135,7 +133,7 @@ rs-sdk-features = [
   "state-transitions",
   "fee-distribution",
   "client",
-  "platform-value-cbor"
+  "platform-value-cbor",
 ]
 all_features_without_client = [
   "json-object",
@@ -188,7 +186,7 @@ validation = [
   "platform-value",
   "document-value-conversion",
   "state-transition-serde-conversion",
-  "ed25519-dalek"
+  "ed25519-dalek",
 ]
 platform-value-json = ["platform-value/json"]
 platform-value-cbor = ["platform-value/cbor"]
@@ -201,16 +199,31 @@ message-signature-verification = ["bls-signatures"]
 document-serde-conversion = []
 document-value-conversion = ["document-serde-conversion"]
 document-json-conversion = ["document-value-conversion", "platform-value-json"]
-document-cbor-conversion = ["document-value-conversion", "cbor", "platform-value-cbor"]
+document-cbor-conversion = [
+  "document-value-conversion",
+  "cbor",
+  "platform-value-cbor",
+]
 data-contract-serde-conversion = []
 data-contract-value-conversion = ["data-contract-serde-conversion"]
-data-contract-json-conversion = ["data-contract-value-conversion", "platform-value-json"]
-data-contract-cbor-conversion = ["data-contract-value-conversion", "cbor", "platform-value-cbor"]
+data-contract-json-conversion = [
+  "data-contract-value-conversion",
+  "platform-value-json",
+]
+data-contract-cbor-conversion = [
+  "data-contract-value-conversion",
+  "cbor",
+  "platform-value-cbor",
+]
 identity-serialization = []
 identity-serde-conversion = []
 identity-value-conversion = ["identity-serde-conversion"]
 identity-json-conversion = ["identity-value-conversion", "platform-value-json"]
-identity-cbor-conversion = ["identity-value-conversion", "cbor", "platform-value-cbor"]
+identity-cbor-conversion = [
+  "identity-value-conversion",
+  "cbor",
+  "platform-value-cbor",
+]
 state-transition-serde-conversion = ["data-contract-serde-conversion"]
 state-transition-value-conversion = [
   "platform-value",
@@ -223,8 +236,15 @@ state-transition-json-conversion = [
   "data-contract-json-conversion",
   "platform-value-json",
 ]
-state-transition-validation = ["state-transitions", "message-signature-verification"]
-state-transition-signing = ["state-transitions", "message-signing", "state-transition-validation"]
+state-transition-validation = [
+  "state-transitions",
+  "message-signature-verification",
+]
+state-transition-signing = [
+  "state-transitions",
+  "message-signing",
+  "state-transition-validation",
+]
 state-transitions = []
 system_contracts = ["factories", "data-contracts", "platform-value-json"]
 fixtures-and-mocks = ["system_contracts", "platform-value/json"]

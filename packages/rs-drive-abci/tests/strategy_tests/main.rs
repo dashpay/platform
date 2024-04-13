@@ -122,10 +122,10 @@ mod tests {
     fn run_chain_nothing_happening() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -166,10 +166,10 @@ mod tests {
     fn run_chain_block_signing() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -211,10 +211,10 @@ mod tests {
     fn run_chain_stop_and_restart() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -337,10 +337,10 @@ mod tests {
     fn run_chain_stop_and_restart_multiround() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -470,10 +470,10 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -535,10 +535,10 @@ mod tests {
     fn run_chain_core_height_randomly_increasing() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -583,10 +583,10 @@ mod tests {
     fn run_chain_core_height_randomly_increasing_with_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -639,10 +639,10 @@ mod tests {
     fn run_chain_core_height_randomly_increasing_with_quick_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -700,10 +700,10 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -773,10 +773,10 @@ mod tests {
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_new_proposers() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -836,10 +836,10 @@ mod tests {
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_changing_proposers() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -902,10 +902,10 @@ mod tests {
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_updating_proposers() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -995,10 +995,10 @@ mod tests {
         // drive_abci::logging::Loggers::default().try_install().ok();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1053,10 +1053,10 @@ mod tests {
     fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1135,10 +1135,10 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(contract, None)],
+                start_contracts: vec![(contract, None)],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1189,7 +1189,7 @@ mod tests {
                 outcome
                     .strategy
                     .strategy
-                    .contracts_with_updates
+                    .start_contracts
                     .first()
                     .unwrap()
                     .0
@@ -1210,7 +1210,7 @@ mod tests {
     fn run_chain_insert_one_new_identity_and_many_big_contracts() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::ContractCreate(
                         RandomDocumentTypeParameters {
@@ -1256,7 +1256,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1334,7 +1334,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(
+                start_contracts: vec![(
                     contract,
                     Some(BTreeMap::from([
                         (3, contract_update_1),
@@ -1343,7 +1343,7 @@ mod tests {
                 )],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1394,7 +1394,7 @@ mod tests {
                 outcome
                     .strategy
                     .strategy
-                    .contracts_with_updates
+                    .start_contracts
                     .first()
                     .unwrap()
                     .0
@@ -1438,7 +1438,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![Operation {
                     op_type: OperationType::Document(document_op),
                     frequency: Frequency {
@@ -1447,7 +1447,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1518,7 +1518,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![Operation {
                     op_type: OperationType::Document(document_op),
                     frequency: Frequency {
@@ -1527,7 +1527,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1617,7 +1617,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -1635,7 +1635,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1725,7 +1725,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -1743,7 +1743,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1848,7 +1848,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -1866,7 +1866,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -1973,7 +1973,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -1991,7 +1991,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -2087,7 +2087,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -2105,7 +2105,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -2201,7 +2201,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -2219,7 +2219,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..30,
                         chance_per_block: None,
@@ -2323,7 +2323,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -2348,7 +2348,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..6,
                         chance_per_block: None,
@@ -2412,7 +2412,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityTopUp,
                     frequency: Frequency {
@@ -2421,7 +2421,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -2488,7 +2488,7 @@ mod tests {
     fn run_chain_update_identities_add_keys() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityUpdate(
                         IdentityUpdateOp::IdentityUpdateAddKeys(3),
@@ -2499,7 +2499,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -2573,7 +2573,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityUpdate(
                         IdentityUpdateOp::IdentityUpdateDisableKey(3),
@@ -2584,7 +2584,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -2659,7 +2659,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![
                     Operation {
                         op_type: OperationType::IdentityTopUp,
@@ -2677,7 +2677,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -3238,10 +3238,10 @@ mod tests {
     fn run_chain_rotation_is_deterministic_1_block() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -3403,10 +3403,10 @@ mod tests {
     fn run_chain_heavy_rotation_deterministic_before_payout() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -3539,10 +3539,10 @@ mod tests {
     ) {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -3676,10 +3676,10 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -3801,7 +3801,7 @@ mod tests {
     fn run_chain_transfer_between_identities() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityTransfer,
                     frequency: Frequency {
@@ -3810,7 +3810,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
                     frequency: Frequency {
                         times_per_block_range: 6..10,
@@ -3883,7 +3883,7 @@ mod tests {
     fn run_transactions_exceeding_max_block_size() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 5..6,
                         chance_per_block: None,

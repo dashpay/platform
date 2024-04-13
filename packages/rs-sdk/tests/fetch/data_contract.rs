@@ -1,6 +1,6 @@
 use super::config::Config;
+use dash_sdk::platform::{Fetch, FetchMany};
 use dpp::prelude::{DataContract, Identifier};
-use rs_sdk::platform::{Fetch, FetchMany};
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
