@@ -1,0 +1,21 @@
+[package]
+name = "json-schema-compatibility-validator"
+version = "0.25.16-rc.3"
+edition = "2021"
+rust-version = "1.76"
+authors = [
+  "Ivan Shumkov <ivan@shumkov.ru>",
+]
+
+[dependencies]
+json-patch = "1.2.0"
+serde_json = "1.0.115"
+thiserror = "1.0.58"
+once_cell = "1.19.0"
+
+[dev-dependencies]
+# enable "examples" for integration tests
+json-schema-compatibility-validator = { path = ".", features = ["examples"] }
+
+[features]
+examples = []
