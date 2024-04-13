@@ -1,6 +1,3 @@
-use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::prelude::DataContract;
 use crate::voting::resource_vote::ResourceVote;
 use crate::voting::Vote::ContestedDocumentResourceVote;
 use crate::ProtocolError;

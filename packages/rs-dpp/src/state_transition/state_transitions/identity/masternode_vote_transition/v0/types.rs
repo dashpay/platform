@@ -1,4 +1,3 @@
-use crate::state_transition::masternode_vote_transition::fields::property_names::*;
 use crate::state_transition::masternode_vote_transition::fields::*;
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use crate::state_transition::StateTransitionFieldTypes;

@@ -1,9 +1,12 @@
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use platform_value::BinaryData;
 
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
+use crate::prelude::UserFeeIncrease;
 
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -36,6 +39,16 @@ impl StateTransitionLike for MasternodeVoteTransitionV0 {
     fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
     }
+
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        // The user fee increase for a masternode vote is always 0
+        0
+    }
+
+    fn set_user_fee_increase(&mut self, _fee_multiplier: UserFeeIncrease) {
+        // Setting does nothing
+    }
+
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![self.pro_tx_hash]
@@ -53,7 +66,7 @@ impl StateTransitionLike for MasternodeVoteTransitionV0 {
     fn unique_identifiers(&self) -> Vec<String> {
         vec![format!(
             "{}-{:x}",
-            base64::encode(self.pro_tx_hash),
+            BASE64_STANDARD.encode(self.pro_tx_hash),
             self.nonce
         )]
     }

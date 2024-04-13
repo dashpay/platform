@@ -2,6 +2,7 @@ use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitio
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+use crate::prelude::UserFeeIncrease;
 
 impl StateTransitionLike for MasternodeVoteTransition {
     /// Returns ID of the credit_transferred contract
@@ -50,6 +51,18 @@ impl StateTransitionLike for MasternodeVoteTransition {
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             MasternodeVoteTransition::V0(transition) => transition.unique_identifiers(),
+        }
+    }
+
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.user_fee_increase(),
+        }
+    }
+
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.set_user_fee_increase(fee_multiplier),
         }
     }
 }

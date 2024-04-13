@@ -664,13 +664,13 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                         transform_into_action: 0,
                     },
                 masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
+                    basic_structure: Some(0),
+                    advanced_structure: None,
                     identity_signatures: None,
-                    balance: None,
+                    advanced_minimum_balance_pre_check: None,
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
-                    advanced_structure: None
                 },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),

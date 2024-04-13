@@ -18,7 +18,6 @@ use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTrans
 use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
