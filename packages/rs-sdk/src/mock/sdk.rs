@@ -209,7 +209,7 @@ impl MockDashPlatformSdk {
     /// # let r = tokio::runtime::Runtime::new().unwrap();
     /// #
     /// # r.block_on(async {
-    ///     use rs_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
+    ///     use dash_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
     ///
     ///     let mut api = Sdk::new_mock();
     ///     // Define expected response

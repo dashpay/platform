@@ -22,7 +22,7 @@ use drive::grovedb::Element;
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
 /// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
-/// from a server using [`FetchMany`](rs_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
+/// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
 /// using [`FromProof`](crate::FromProof).
 ///
 /// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.

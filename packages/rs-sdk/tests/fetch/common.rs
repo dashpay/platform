@@ -71,7 +71,7 @@ pub fn mock_data_contract(
 pub fn setup_logs() {
     tracing_subscriber::fmt::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,rs_sdk=trace,h2=info",
+            "info,dash_sdk=trace,h2=info",
         ))
         .pretty()
         .with_ansi(true)

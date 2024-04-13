@@ -37,7 +37,7 @@ use crate::error::Error;
 ///
 /// ```rust, ignore
 ///
-/// use rs_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
+/// use dash_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
 /// use dpp::identity::signer::Signer;
 /// use dpp::prelude::{AssetLockProof, PrivateKey};
 /// use dpp::version::PlatformVersion;
