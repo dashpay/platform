@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use super::{CanRetry, TransportClient, TransportRequest};
+use crate::connection_pool::ConnectionPool;
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
@@ -17,15 +18,13 @@ pub type PlatformGrpcClient = PlatformClient<Channel>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<Channel>;
 
-fn channel_with_uri(uri: Uri) -> Channel {
-    Channel::builder(uri).connect_lazy()
-}
-
-fn channel_with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Channel {
+fn create_channel(uri: Uri, settings: Option<&AppliedRequestSettings>) -> Channel {
     let mut builder = Channel::builder(uri);
 
-    if let Some(timeout) = settings.connect_timeout {
-        builder = builder.connect_timeout(timeout);
+    if let Some(settings) = settings {
+        if let Some(timeout) = settings.connect_timeout {
+            builder = builder.connect_timeout(timeout);
+        }
     }
 
     builder.connect_lazy()
@@ -34,24 +33,44 @@ fn channel_with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) ->
 impl TransportClient for PlatformGrpcClient {
     type Error = dapi_grpc::tonic::Status;
 
-    fn with_uri(uri: Uri) -> Self {
-        Self::new(channel_with_uri(uri))
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
+        pool.get_or_create(&uri, None, || {
+            Self::new(create_channel(uri.clone(), None)).into()
+        })
+        .into()
     }
 
-    fn with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Self {
-        Self::new(channel_with_uri_and_settings(uri, settings))
+    fn with_uri_and_settings(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Self {
+        pool.get_or_create(&uri, Some(settings), || {
+            Self::new(create_channel(uri.clone(), Some(settings))).into()
+        })
+        .into()
     }
 }
 
 impl TransportClient for CoreGrpcClient {
     type Error = dapi_grpc::tonic::Status;
 
-    fn with_uri(uri: Uri) -> Self {
-        Self::new(channel_with_uri(uri))
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
+        pool.get_or_create(&uri, None, || {
+            Self::new(create_channel(uri.clone(), None)).into()
+        })
+        .into()
     }
 
-    fn with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Self {
-        Self::new(channel_with_uri_and_settings(uri, settings))
+    fn with_uri_and_settings(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Self {
+        pool.get_or_create(&uri, Some(settings), || {
+            Self::new(create_channel(uri.clone(), Some(settings))).into()
+        })
+        .into()
     }
 }
 

@@ -3544,6 +3544,7 @@ dependencies = [
  "futures",
  "hex",
  "http",
+ "lru",
  "rand",
  "sha2",
  "thiserror",
