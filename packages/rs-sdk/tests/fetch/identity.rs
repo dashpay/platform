@@ -1,10 +1,10 @@
+use dash_sdk::platform::types::identity::PublicKeyHash;
+use dash_sdk::platform::{Fetch, FetchMany};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::prelude::IdentityPublicKey;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
 use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
-use rs_sdk::platform::types::identity::PublicKeyHash;
-use rs_sdk::platform::{Fetch, FetchMany};
 
 use super::{common::setup_logs, config::Config};
 

@@ -1070,6 +1070,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-sdk"
+version = "1.0.0-dev.10"
+dependencies = [
+ "async-trait",
+ "base64 0.22.0",
+ "bincode",
+ "bip37-bloom-filter",
+ "ciborium",
+ "clap 4.5.4",
+ "dapi-grpc",
+ "dapi-grpc-macros",
+ "dashcore-rpc",
+ "data-contracts",
+ "derive_more",
+ "dotenvy",
+ "dpp",
+ "drive",
+ "drive-proof-verifier",
+ "envy",
+ "futures",
+ "hex",
+ "http",
+ "lru",
+ "rs-dapi-client",
+ "sanitize-filename",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "dashcore"
 version = "0.30.0"
 source = "git+https://github.com/dashpay/rust-dashcore?branch=master#a29315dbe56729be1be963fb6f7b60a22288663f"
@@ -3550,42 +3586,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "rs-sdk"
-version = "1.0.0-dev.10"
-dependencies = [
- "async-trait",
- "base64 0.22.0",
- "bincode",
- "bip37-bloom-filter",
- "ciborium",
- "clap 4.5.4",
- "dapi-grpc",
- "dapi-grpc-macros",
- "dashcore-rpc",
- "data-contracts",
- "derive_more",
- "dotenvy",
- "dpp",
- "drive",
- "drive-proof-verifier",
- "envy",
- "futures",
- "hex",
- "http",
- "lru",
- "rs-dapi-client",
- "sanitize-filename",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-test",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
