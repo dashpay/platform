@@ -179,7 +179,7 @@ where
 mod tests {
     use crate::config::PlatformConfig;
     use crate::platform_types::event_execution_result::EventExecutionResult::{
-        SuccessfulPaidExecution, UnsuccessfulPaidExecution,
+        SuccessfulPaidExecution, UnpaidConsensusExecutionError, UnsuccessfulPaidExecution,
     };
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
@@ -233,7 +233,7 @@ mod tests {
     use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::document_type::DocumentType;
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
-    use dpp::platform_value::Bytes32;
+    use dpp::platform_value::{BinaryData, Bytes32};
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
@@ -1418,6 +1418,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
@@ -1603,6 +1604,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
@@ -1739,6 +1741,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
@@ -1999,6 +2002,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
@@ -2112,6 +2116,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
@@ -2209,15 +2214,16 @@ mod tests {
         let mut identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer(
                 &identity,
-                asset_lock_proof,
+                asset_lock_proof.clone(),
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
 
-        let valid_identity_create_transition = identity_create_transition.clone();
+        let mut valid_identity_create_transition = identity_create_transition.clone();
 
         // let's add an error so this fails on state validation
 
@@ -2268,6 +2274,43 @@ mod tests {
         let validation_result = platform
             .execute_tx(valid_identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // this is unpaid because it will look like a replay attack
+        assert!(matches!(
+            validation_result,
+            UnpaidConsensusExecutionError(..)
+        ));
+
+        let valid_identity_create_transition: StateTransition =
+            IdentityCreateTransition::try_from_identity_with_signer(
+                &identity,
+                asset_lock_proof,
+                pk.as_slice(),
+                &signer,
+                &NativeBlsModule,
+                1,
+                platform_version,
+            )
+            .expect("expected an identity create transition");
+
+        let valid_identity_create_serialized_transition = valid_identity_create_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let validation_result = platform
+            .execute_tx(valid_identity_create_serialized_transition, &transaction)
+            .expect("expected to execute identity_create tx");
+
+        // the user fee increase changed, so this is now passing
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
         platform
@@ -2363,6 +2406,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");

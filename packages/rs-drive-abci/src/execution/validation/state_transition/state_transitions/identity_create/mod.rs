@@ -276,6 +276,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
@@ -422,6 +423,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
@@ -483,6 +485,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
@@ -510,7 +513,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3143370);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3170170);
 
         platform
             .drive
@@ -525,7 +528,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99911323830); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99911297030); // The identity balance is smaller than if there hadn't been any issue
     }
 
     #[test]
@@ -615,7 +618,7 @@ mod tests {
             .create_identifier()
             .expect("expected an identifier");
 
-        let identity: Identity = IdentityV0 {
+        let mut identity: Identity = IdentityV0 {
             id: identifier,
             public_keys: BTreeMap::from([
                 (0, master_key.clone()),
@@ -633,6 +636,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
+                0,
                 platform_version,
             )
             .expect("expected an identity create transition");
@@ -691,5 +695,75 @@ mod tests {
         assert_eq!(processing_result.valid_count(), 0);
 
         assert_eq!(processing_result.aggregated_fees().processing_fee, 0);
+
+        // Okay now let us try to reuse the asset lock
+
+        let (new_public_key, new_private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                1,
+                Some(13),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(new_public_key.clone(), new_private_key.clone());
+
+        // let's set the new key to the identity (replacing the one that was causing the issue
+        identity.set_public_keys(BTreeMap::from([
+            (0, master_key.clone()),
+            (1, new_public_key.clone()),
+        ]));
+
+        let identity_create_transition: StateTransition =
+            IdentityCreateTransition::try_from_identity_with_signer(
+                &identity,
+                asset_lock_proof,
+                pk.as_slice(),
+                &signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .expect("expected an identity create transition");
+
+        let identity_create_serialized_transition = identity_create_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![identity_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.invalid_paid_count(), 0);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3170170);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let identity_balance = platform
+            .drive
+            .fetch_identity_balance(identity.id().into_buffer(), None, platform_version)
+            .expect("expected to get identity balance")
+            .expect("expected there to be an identity balance for this identity");
+
+        assert_eq!(identity_balance, 99911297030); // The identity balance is smaller than if there hadn't been any issue
     }
 }

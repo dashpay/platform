@@ -106,7 +106,7 @@ impl PartiallyUseAssetLockActionV0 {
         desired_used_credits: Credits,
     ) -> Self {
         let IdentityCreateTransitionActionV0 {
-            signable_bytes_hash,
+            signable_bytes_hasher,
             asset_lock_outpoint,
             asset_lock_value_to_be_consumed,
             user_fee_increase,
@@ -125,7 +125,7 @@ impl PartiallyUseAssetLockActionV0 {
         //todo: remove clone
         let mut used_tags = asset_lock_value_to_be_consumed.used_tags_ref().clone();
 
-        used_tags.push(signable_bytes_hash);
+        used_tags.push(signable_bytes_hasher.into_hashed_bytes());
 
         PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint,
@@ -144,7 +144,7 @@ impl PartiallyUseAssetLockActionV0 {
         desired_used_credits: Credits,
     ) -> Self {
         let IdentityCreateTransitionActionV0 {
-            signable_bytes_hash,
+            signable_bytes_hasher,
             asset_lock_outpoint,
             asset_lock_value_to_be_consumed,
             user_fee_increase,
@@ -162,7 +162,7 @@ impl PartiallyUseAssetLockActionV0 {
 
         let mut used_tags = asset_lock_value_to_be_consumed.used_tags_ref().clone();
 
-        used_tags.push(signable_bytes_hash.clone());
+        used_tags.push(signable_bytes_hasher.to_hashed_bytes());
 
         PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint: *asset_lock_outpoint,
@@ -269,7 +269,7 @@ impl PartiallyUseAssetLockActionV0 {
         desired_used_credits: Credits,
     ) -> Self {
         let IdentityTopUpTransitionActionV0 {
-            signable_bytes_hash,
+            signable_bytes_hasher,
             asset_lock_outpoint,
             top_up_asset_lock_value,
             user_fee_increase,
@@ -287,7 +287,7 @@ impl PartiallyUseAssetLockActionV0 {
 
         let mut used_tags = top_up_asset_lock_value.used_tags_ref().clone();
 
-        used_tags.push(signable_bytes_hash.clone());
+        used_tags.push(signable_bytes_hasher.into_hashed_bytes());
 
         PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint,
@@ -306,7 +306,7 @@ impl PartiallyUseAssetLockActionV0 {
         desired_used_credits: Credits,
     ) -> Self {
         let IdentityTopUpTransitionActionV0 {
-            signable_bytes_hash,
+            signable_bytes_hasher,
             asset_lock_outpoint,
             top_up_asset_lock_value,
             user_fee_increase,
@@ -324,7 +324,7 @@ impl PartiallyUseAssetLockActionV0 {
 
         let mut used_tags = top_up_asset_lock_value.used_tags_ref().clone();
 
-        used_tags.push(signable_bytes_hash.clone());
+        used_tags.push(signable_bytes_hasher.to_hashed_bytes());
 
         PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint: *asset_lock_outpoint,

@@ -15,6 +15,7 @@ use dpp::identity::KeyType;
 use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::StateTransitionLike;
 
 use dpp::version::PlatformVersion;
@@ -22,6 +23,7 @@ use drive::state_transition_action::identity::identity_topup::IdentityTopUpTrans
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
+use crate::error::execution::ExecutionError::CorruptedCodeExecution;
 use drive::grovedb::TransactionArg;
 
 use crate::execution::types::execution_operation::{SHA256_BLOCK_SIZE, ValidationOperation};
@@ -62,10 +64,15 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             .asset_locks
             .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up;
 
+        let signable_bytes_len = signable_bytes.len();
+
+        let mut signable_bytes_hasher = SignableBytesHasher::Bytes(signable_bytes);
+
         // Validate asset lock proof state
         let asset_lock_proof_validation = if validation_mode != ValidationMode::NoValidation {
             self.asset_lock_proof().validate(
                 platform,
+                &mut signable_bytes_hasher,
                 required_balance,
                 validation_mode,
                 transaction,
@@ -162,7 +169,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
                     ))
                 })?;
 
-            let block_count = signable_bytes.len() as u16 / SHA256_BLOCK_SIZE;
+            let block_count = signable_bytes_len as u16 / SHA256_BLOCK_SIZE;
 
             execution_context.add_operation(ValidationOperation::DoubleSha256(block_count));
             execution_context.add_operation(ValidationOperation::SignatureVerification(
@@ -170,7 +177,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             ));
 
             if let Err(e) = signer::verify_hash_signature(
-                &double_sha(signable_bytes),
+                &signable_bytes_hasher.hash_bytes().as_slice(),
                 self.signature().as_slice(),
                 public_key_hash,
             ) {
@@ -182,6 +189,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
 
         match IdentityTopUpTransitionAction::try_from_borrowed(
             self,
+            signable_bytes_hasher,
             asset_lock_value_to_be_consumed,
         ) {
             Ok(action) => Ok(ConsensusValidationResult::new_with_data(action.into())),

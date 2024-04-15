@@ -141,6 +141,7 @@ impl ErrorWithCode for BasicError {
             Self::IdentityCreditTransferToSelfError(_) => 10528,
             Self::MasterPublicKeyUpdateError(_) => 10529,
             Self::IdentityAssetLockTransactionOutPointNotEnoughBalanceError(_) => 10530,
+            Self::IdentityAssetLockStateTransitionReplayError(_) => 10531,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,

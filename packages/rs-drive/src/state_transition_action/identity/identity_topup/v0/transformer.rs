@@ -4,6 +4,7 @@ use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundE
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::Bytes36;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use dpp::util::hash::hash_double;
 
@@ -11,7 +12,7 @@ impl IdentityTopUpTransitionActionV0 {
     /// try from
     pub fn try_from(
         value: IdentityTopUpTransitionV0,
-        signable_bytes: Vec<u8>,
+        signable_bytes_hasher: SignableBytesHasher,
         top_up_asset_lock_value: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityTopUpTransitionV0 {
@@ -27,10 +28,8 @@ impl IdentityTopUpTransitionActionV0 {
             )
         })?;
 
-        let signable_bytes_hash = hash_double(signable_bytes).into();
-
         Ok(IdentityTopUpTransitionActionV0 {
-            signable_bytes_hash,
+            signable_bytes_hasher,
             top_up_asset_lock_value,
             identity_id,
             asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
@@ -41,7 +40,7 @@ impl IdentityTopUpTransitionActionV0 {
     /// try from borrowed
     pub fn try_from_borrowed(
         value: &IdentityTopUpTransitionV0,
-        signable_bytes: Vec<u8>,
+        signable_bytes_hasher: SignableBytesHasher,
         top_up_asset_lock_value: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityTopUpTransitionV0 {
@@ -57,10 +56,8 @@ impl IdentityTopUpTransitionActionV0 {
             )
         })?;
 
-        let signable_bytes_hash = hash_double(signable_bytes).into();
-
         Ok(IdentityTopUpTransitionActionV0 {
-            signable_bytes_hash,
+            signable_bytes_hasher,
             top_up_asset_lock_value,
             identity_id: *identity_id,
             asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
