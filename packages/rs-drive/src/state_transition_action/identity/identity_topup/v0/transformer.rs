@@ -6,7 +6,6 @@ use dpp::consensus::ConsensusError;
 use dpp::platform_value::Bytes36;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
-use dpp::util::hash::hash_double;
 
 impl IdentityTopUpTransitionActionV0 {
     /// try from

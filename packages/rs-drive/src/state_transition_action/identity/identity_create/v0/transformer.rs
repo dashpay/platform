@@ -6,7 +6,6 @@ use dpp::platform_value::Bytes36;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 
 use dpp::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
-use dpp::util::hash::hash_double;
 
 impl IdentityCreateTransitionActionV0 {
     /// try from

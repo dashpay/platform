@@ -1,7 +1,7 @@
 use crate::state_transition_action::identity::identity_create::v0::IdentityCreateTransitionActionV0;
 use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
 use crate::state_transition_action::system::partially_use_asset_lock_action::v0::PartiallyUseAssetLockActionV0;
-use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValueGettersV0, AssetLockValueSettersV0};
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;

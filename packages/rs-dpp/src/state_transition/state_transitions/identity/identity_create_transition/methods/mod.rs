@@ -8,6 +8,7 @@ use crate::identity::signer::Signer;
 use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;

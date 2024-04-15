@@ -1,11 +1,7 @@
 use crate::state_transition_action::identity::identity_create::v0::IdentityCreateTransitionActionV0;
 use crate::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::consensus::basic::value_error::ValueError;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::platform_value::Bytes32;
-use dpp::serialization::Signable;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 
