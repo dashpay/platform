@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
-use dpp::platform_value::Bytes36;
+use dpp::platform_value::{Bytes32, Bytes36};
 
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::version::PlatformVersion;

@@ -15,6 +15,7 @@ use dpp::identity::KeyType;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::ProtocolError;
 
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::StateTransitionLike;
@@ -100,7 +101,15 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         } else {
             // It's not valid, we need to give back the action that partially uses the asset lock
 
-            let used_credits = 1000; //todo: figure this out
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .unique_key_already_present;
+
+            let used_credits = penalty
+                .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
+                .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
 
             let bump_action = PartiallyUseAssetLockAction::from_identity_create_transition_action(
                 action,
@@ -208,6 +217,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
                 initial_balance_amount,
                 tx_out.script_pubkey.0,
                 initial_balance_amount,
+                vec![],
                 platform_version,
             )?
         };

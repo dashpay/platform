@@ -85,6 +85,7 @@ pub struct DriveAbciValidationVersions {
 #[derive(Clone, Debug, Default)]
 pub struct PenaltyAmounts {
     pub identity_id_not_correct: u64,
+    pub unique_key_already_present: u64,
     pub validation_of_added_keys_structure_failure: u64,
     pub validation_of_added_keys_proof_of_possession_failure: u64,
 }

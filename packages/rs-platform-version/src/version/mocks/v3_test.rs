@@ -695,9 +695,10 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             process_state_transition: 0,
             state_transition_to_execution_event_for_check_tx: 0,
             penalties: PenaltyAmounts {
-                identity_id_not_correct: 5000000,
-                validation_of_added_keys_structure_failure: 1000000,
-                validation_of_added_keys_proof_of_possession_failure: 5000000,
+                identity_id_not_correct: 50000000,
+                unique_key_already_present: 10000000,
+                validation_of_added_keys_structure_failure: 10000000,
+                validation_of_added_keys_proof_of_possession_failure: 50000000,
             },
         },
         query: DriveAbciQueryVersions {

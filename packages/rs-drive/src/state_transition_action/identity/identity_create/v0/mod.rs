@@ -7,7 +7,7 @@ use dpp::identity::{IdentityPublicKey, IdentityV0, PartialIdentity};
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
-use dpp::platform_value::Bytes36;
+use dpp::platform_value::{Bytes32, Bytes36};
 use dpp::prelude::UserFeeIncrease;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -15,6 +15,8 @@ use dpp::ProtocolError;
 /// action v0
 #[derive(Debug, Clone)]
 pub struct IdentityCreateTransitionActionV0 {
+    /// The state transition signable bytes hash
+    pub signable_bytes_hash: Bytes32,
     /// public keys
     pub public_keys: Vec<IdentityPublicKey>,
     /// the initial balance amount is equal to the remaining asset lock value

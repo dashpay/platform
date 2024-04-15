@@ -21,6 +21,8 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
         let used_credits = self.used_credits();
         let asset_lock_outpoint = self.asset_lock_outpoint();
 
+        let previous_transaction_hashes = self.previous_transaction_hashes_ref().clone();
+
         let tx_out_script = self.asset_lock_script_owned();
 
         let drive_operations = vec![
@@ -33,6 +35,7 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
                     initial_credit_value,
                     tx_out_script,
                     remaining_credit_value,
+                    previous_transaction_hashes,
                     platform_version,
                 )?,
             }),

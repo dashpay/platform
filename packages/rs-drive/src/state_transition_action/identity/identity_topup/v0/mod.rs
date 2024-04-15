@@ -3,12 +3,14 @@ mod transformer;
 use dpp::identifier::Identifier;
 
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::platform_value::Bytes36;
+use dpp::platform_value::{Bytes32, Bytes36};
 use dpp::prelude::UserFeeIncrease;
 
 /// action v0
 #[derive(Debug, Clone)]
 pub struct IdentityTopUpTransitionActionV0 {
+    /// The state transition signable bytes hash
+    pub signable_bytes_hash: Bytes32,
     /// we top up the remaining amount of the asset lock value
     pub top_up_asset_lock_value: AssetLockValue,
     /// identity id

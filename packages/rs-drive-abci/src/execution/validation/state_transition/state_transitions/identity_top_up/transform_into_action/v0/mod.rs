@@ -143,6 +143,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
                 initial_balance_amount,
                 tx_out.script_pubkey.0,
                 initial_balance_amount,
+                vec![],
                 platform_version,
             )?
         };
