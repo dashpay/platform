@@ -20,10 +20,10 @@ use dapi_grpc::platform::v0::{
     GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
     GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
     GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
-    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, WaitForStateTransitionResultRequest,
-    WaitForStateTransitionResultResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetProofsRequest, GetProofsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
@@ -385,6 +385,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_epoch_infos,
             "get_epochs_info",
+        )
+        .await
+    }
+
+    async fn get_path_elements(
+        &self,
+        request: Request<GetPathElementsRequest>,
+    ) -> Result<Response<GetPathElementsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_path_elements,
+            "get_path_elements",
         )
         .await
     }

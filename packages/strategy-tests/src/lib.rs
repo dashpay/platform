@@ -75,7 +75,7 @@ pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 ///
 /// # Fields
 /// - `start_identities`: Specifies identities to be established at the simulation's outset, including their initial attributes and balances. This setup allows for immediate participation of these identities in the blockchain's simulated activities.
-/// 
+///
 /// - `start_contracts`: Maps each created data contract to potential updates, enabling the simulation of contract evolution. Each tuple consists of a `CreatedDataContract` and an optional mapping of block heights to subsequent contract versions, facilitating time-sensitive contract transformations.
 ///
 /// - `operations`: Enumerates discrete operations to be executed within the strategy. These operations represent individual actions or sequences of actions, such as document manipulations, identity updates, or contract interactions, each contributing to the overarching simulation narrative.
@@ -1442,7 +1442,7 @@ impl Strategy {
                 )
                 .expect("Expected to get identity public key in initial_contract_state_transitions");
                 let key_id = identity_public_key.id();
-                
+
                 let partial_identity = identity.clone().into_partial_identity_info();
                 let partial_identity_public_key = partial_identity.loaded_public_keys.values()
                     .find(|&public_key| public_key.id() == key_id)

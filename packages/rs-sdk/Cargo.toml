@@ -7,9 +7,7 @@ edition = "2021"
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }
-dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
-  "client",
-] }
+dapi-grpc = { path = "../dapi-grpc" }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",

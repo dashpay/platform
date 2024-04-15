@@ -10,6 +10,7 @@ pub struct DriveAbciVersion {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryVersions {
+    pub max_returned_elements: u16,
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersionBounds,
     pub document_query: FeatureVersionBounds,
@@ -43,6 +44,7 @@ pub struct DriveAbciQuerySystemVersions {
     pub version_upgrade_state: FeatureVersionBounds,
     pub version_upgrade_vote_status: FeatureVersionBounds,
     pub epoch_infos: FeatureVersionBounds,
+    pub path_elements: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

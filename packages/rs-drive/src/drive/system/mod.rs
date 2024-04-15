@@ -1,4 +1,5 @@
 mod estimation_costs;
+mod fetch_elements;
 /// Genesis time module
 #[cfg(feature = "server")]
 pub mod genesis_time;

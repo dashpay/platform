@@ -17,6 +17,7 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
+use drive::grovedb::Element;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -43,6 +44,12 @@ pub type DataContractHistory = BTreeMap<u64, DataContract>;
 /// Mapping between data contract IDs and data contracts.
 /// If data contract is not found, it is represented as `None`.
 pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
+
+/// Multiple grovedb elements.
+///
+/// Mapping between the key id and associated elements.
+/// If element is not found, it is represented as `None`.
+pub type Elements = RetrievedObjects<Vec<u8>, Element>;
 
 /// Identity balance.
 pub type IdentityBalance = u64;
