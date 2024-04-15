@@ -705,6 +705,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         query: DriveAbciQueryVersions {
+            max_returned_elements: 100,
             response_metadata: 0,
             proofs_query: FeatureVersionBounds {
                 min_version: 0,
