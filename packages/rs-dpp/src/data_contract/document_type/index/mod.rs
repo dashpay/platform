@@ -264,7 +264,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     for (contested_key_value, contested_value) in contested_properties_value_map {
                         let contested_key = contested_key_value
                             .to_str()
-                            .map_err(ProtocolError::ValueError)?;
+                            .map_err(|e| DataContractError::ValueDecodingError(e.to_string()))?;
                         match contested_key {
                             "regexPattern" => {
                                 let regex = contested_value.to_str()?.to_owned();
@@ -282,13 +282,11 @@ impl TryFrom<&[(Value, Value)]> for Index {
                             "resolution" => {
                                 let resolution_int = contested_value.to_integer::<u8>()?;
                                 contested_index_information.resolution =
-                                    resolution_int.try_into()?;
+                                    resolution_int.try_into().map_err(|e: ProtocolError| DataContractError::ValueWrongType(e.to_string()))?;
                             }
                             "description" => {}
                             _ => {
-                                return Err(ProtocolError::StructureError(
-                                    StructureError::ValueWrongType("unexpected contested key"),
-                                ))
+                                return Err(DataContractError::ValueWrongType("unexpected contested key".to_string()));
                             }
                         }
                     }

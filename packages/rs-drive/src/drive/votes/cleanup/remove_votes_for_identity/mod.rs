@@ -5,8 +5,6 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use dpp::fee::fee_result::FeeResult;
-
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;

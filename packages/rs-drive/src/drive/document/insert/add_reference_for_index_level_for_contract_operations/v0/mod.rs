@@ -9,7 +9,7 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo, PathKeyInfo};
+use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

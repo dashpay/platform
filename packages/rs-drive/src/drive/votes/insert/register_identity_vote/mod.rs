@@ -13,7 +13,7 @@ use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 
 impl Drive {
-    pub fn register_identity_vote(
+    pub fn register_identity_vote_for_identity_queries(
         &self,
         vote: Vote,
         block_info: &BlockInfo,
@@ -26,11 +26,11 @@ impl Drive {
             .methods
             .vote
             .contested_resource_insert
-            .register_identity_vote
+            .register_identity_vote_for_identity_queries
         {
-            0 => self.register_identity_vote_v0(vote, block_info, apply, transaction, platform_version),
+            0 => self.register_identity_vote_for_identity_queries_v0(vote, block_info, apply, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "register_identity_vote".to_string(),
+                method: "register_identity_vote_for_identity_queries".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

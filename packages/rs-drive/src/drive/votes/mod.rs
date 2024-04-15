@@ -1,10 +1,8 @@
-use crate::drive::document::{contract_document_type_path, contract_document_type_path_vec};
+use crate::drive::document::contract_document_type_path;
 use crate::drive::RootTree;
-use dpp::consensus::basic::data_contract::DuplicateIndexError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
-use dpp::util::vec;
 use dpp::voting::ContestedDocumentResourceVoteType;
 use dpp::ProtocolError;
 

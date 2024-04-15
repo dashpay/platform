@@ -41,7 +41,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         match platform_version.drive.methods.document.insert.add_document {
-            0 => self.add_document_v0(
+            0 => self.add_new_masternode_vote_type_v0(
                 owned_document_info,
                 data_contract_id,
                 document_type_name,
