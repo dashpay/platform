@@ -10,9 +10,11 @@ use dapi_grpc::platform::v0::get_path_elements_response::{
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::check_validation_result_with_data;
 
+use crate::error::query::QueryError;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::error::query::QuerySyntaxError;
 
 impl<C> Platform<C> {
     pub(super) fn query_path_elements_v0(
@@ -21,6 +23,15 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetPathElementsResponseV0>, Error> {
+        if keys.len() > platform_version.drive_abci.query.max_returned_elements as usize {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::InvalidLimit(format!(
+                    "trying to get {} values, maximum is {}",
+                    keys.len(),
+                    platform_version.drive_abci.query.max_returned_elements
+                )),
+            )));
+        }
         let response = if prove {
             let proof = check_validation_result_with_data!(self.drive.prove_elements(
                 path,
