@@ -1006,7 +1006,7 @@ void GetIdentitiesContractKeysRequest_ClearVersionOneOfCase(GetIdentitiesContrac
 typedef GPB_ENUM(GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber) {
   GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_IdentitiesIdsArray = 1,
   GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_ContractId = 2,
-  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_DocumentType = 3,
+  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_DocumentTypeName = 3,
   GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_PurposesArray = 4,
   GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_Prove = 5,
 };
@@ -1019,7 +1019,9 @@ GPB_FINAL @interface GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysR
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
 
-@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+/** Test to see if @c documentTypeName has been set. */
+@property(nonatomic, readwrite) BOOL hasDocumentTypeName;
 
 // |purposesArray| contains |KeyPurpose|
 @property(nonatomic, readwrite, strong, null_resettable) GPBEnumArray *purposesArray;

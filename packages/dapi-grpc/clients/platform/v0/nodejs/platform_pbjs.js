@@ -9429,7 +9429,7 @@ $root.org = (function() {
                              * @interface IGetIdentitiesContractKeysRequestV0
                              * @property {Array.<Uint8Array>|null} [identitiesIds] GetIdentitiesContractKeysRequestV0 identitiesIds
                              * @property {Uint8Array|null} [contractId] GetIdentitiesContractKeysRequestV0 contractId
-                             * @property {string|null} [documentType] GetIdentitiesContractKeysRequestV0 documentType
+                             * @property {string|null} [documentTypeName] GetIdentitiesContractKeysRequestV0 documentTypeName
                              * @property {Array.<org.dash.platform.dapi.v0.KeyPurpose>|null} [purposes] GetIdentitiesContractKeysRequestV0 purposes
                              * @property {boolean|null} [prove] GetIdentitiesContractKeysRequestV0 prove
                              */
@@ -9468,12 +9468,12 @@ $root.org = (function() {
                             GetIdentitiesContractKeysRequestV0.prototype.contractId = $util.newBuffer([]);
 
                             /**
-                             * GetIdentitiesContractKeysRequestV0 documentType.
-                             * @member {string} documentType
+                             * GetIdentitiesContractKeysRequestV0 documentTypeName.
+                             * @member {string} documentTypeName
                              * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0
                              * @instance
                              */
-                            GetIdentitiesContractKeysRequestV0.prototype.documentType = "";
+                            GetIdentitiesContractKeysRequestV0.prototype.documentTypeName = "";
 
                             /**
                              * GetIdentitiesContractKeysRequestV0 purposes.
@@ -9520,8 +9520,8 @@ $root.org = (function() {
                                         writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identitiesIds[i]);
                                 if (message.contractId != null && Object.hasOwnProperty.call(message, "contractId"))
                                     writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.contractId);
-                                if (message.documentType != null && Object.hasOwnProperty.call(message, "documentType"))
-                                    writer.uint32(/* id 3, wireType 2 =*/26).string(message.documentType);
+                                if (message.documentTypeName != null && Object.hasOwnProperty.call(message, "documentTypeName"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).string(message.documentTypeName);
                                 if (message.purposes != null && message.purposes.length) {
                                     writer.uint32(/* id 4, wireType 2 =*/34).fork();
                                     for (var i = 0; i < message.purposes.length; ++i)
@@ -9573,7 +9573,7 @@ $root.org = (function() {
                                         message.contractId = reader.bytes();
                                         break;
                                     case 3:
-                                        message.documentType = reader.string();
+                                        message.documentTypeName = reader.string();
                                         break;
                                     case 4:
                                         if (!(message.purposes && message.purposes.length))
@@ -9633,9 +9633,9 @@ $root.org = (function() {
                                 if (message.contractId != null && message.hasOwnProperty("contractId"))
                                     if (!(message.contractId && typeof message.contractId.length === "number" || $util.isString(message.contractId)))
                                         return "contractId: buffer expected";
-                                if (message.documentType != null && message.hasOwnProperty("documentType"))
-                                    if (!$util.isString(message.documentType))
-                                        return "documentType: string expected";
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    if (!$util.isString(message.documentTypeName))
+                                        return "documentTypeName: string expected";
                                 if (message.purposes != null && message.hasOwnProperty("purposes")) {
                                     if (!Array.isArray(message.purposes))
                                         return "purposes: array expected";
@@ -9685,8 +9685,8 @@ $root.org = (function() {
                                         $util.base64.decode(object.contractId, message.contractId = $util.newBuffer($util.base64.length(object.contractId)), 0);
                                     else if (object.contractId.length >= 0)
                                         message.contractId = object.contractId;
-                                if (object.documentType != null)
-                                    message.documentType = String(object.documentType);
+                                if (object.documentTypeName != null)
+                                    message.documentTypeName = String(object.documentTypeName);
                                 if (object.purposes) {
                                     if (!Array.isArray(object.purposes))
                                         throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.purposes: array expected");
@@ -9750,7 +9750,7 @@ $root.org = (function() {
                                         if (options.bytes !== Array)
                                             object.contractId = $util.newBuffer(object.contractId);
                                     }
-                                    object.documentType = "";
+                                    object.documentTypeName = "";
                                     object.prove = false;
                                 }
                                 if (message.identitiesIds && message.identitiesIds.length) {
@@ -9760,8 +9760,8 @@ $root.org = (function() {
                                 }
                                 if (message.contractId != null && message.hasOwnProperty("contractId"))
                                     object.contractId = options.bytes === String ? $util.base64.encode(message.contractId, 0, message.contractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.contractId) : message.contractId;
-                                if (message.documentType != null && message.hasOwnProperty("documentType"))
-                                    object.documentType = message.documentType;
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    object.documentTypeName = message.documentTypeName;
                                 if (message.purposes && message.purposes.length) {
                                     object.purposes = [];
                                     for (var j = 0; j < message.purposes.length; ++j)

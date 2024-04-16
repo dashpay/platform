@@ -1134,8 +1134,10 @@ export namespace GetIdentitiesContractKeysRequest {
     getContractId_asB64(): string;
     setContractId(value: Uint8Array | string): void;
 
-    getDocumentType(): string;
-    setDocumentType(value: string): void;
+    hasDocumentTypeName(): boolean;
+    clearDocumentTypeName(): void;
+    getDocumentTypeName(): string;
+    setDocumentTypeName(value: string): void;
 
     clearPurposesList(): void;
     getPurposesList(): Array<KeyPurposeMap[keyof KeyPurposeMap]>;
@@ -1159,7 +1161,7 @@ export namespace GetIdentitiesContractKeysRequest {
     export type AsObject = {
       identitiesIdsList: Array<Uint8Array | string>,
       contractId: Uint8Array | string,
-      documentType: string,
+      documentTypeName: string,
       purposesList: Array<KeyPurposeMap[keyof KeyPurposeMap]>,
       prove: boolean,
     }

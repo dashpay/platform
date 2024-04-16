@@ -2538,7 +2538,7 @@ void GetIdentitiesContractKeysRequest_ClearVersionOneOfCase(GetIdentitiesContrac
 
 @dynamic identitiesIdsArray, identitiesIdsArray_Count;
 @dynamic contractId;
-@dynamic documentType;
+@dynamic hasDocumentTypeName, documentTypeName;
 @dynamic purposesArray, purposesArray_Count;
 @dynamic prove;
 
@@ -2546,7 +2546,7 @@ typedef struct GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequest
   uint32_t _has_storage_[1];
   NSMutableArray *identitiesIdsArray;
   NSData *contractId;
-  NSString *documentType;
+  NSString *documentTypeName;
   GPBEnumArray *purposesArray;
 } GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0__storage_;
 
@@ -2575,12 +2575,12 @@ typedef struct GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequest
         .dataType = GPBDataTypeBytes,
       },
       {
-        .name = "documentType",
+        .name = "documentTypeName",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_DocumentType,
+        .number = GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_DocumentTypeName,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0__storage_, documentType),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .offset = (uint32_t)offsetof(GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0__storage_, documentTypeName),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeString,
       },
       {

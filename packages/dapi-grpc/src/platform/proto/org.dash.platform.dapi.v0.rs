@@ -734,8 +734,8 @@ pub mod get_identities_contract_keys_request {
         pub identities_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
         #[prost(bytes = "vec", tag = "2")]
         pub contract_id: ::prost::alloc::vec::Vec<u8>,
-        #[prost(string, tag = "3")]
-        pub document_type: ::prost::alloc::string::String,
+        #[prost(string, optional, tag = "3")]
+        pub document_type_name: ::core::option::Option<::prost::alloc::string::String>,
         #[prost(enumeration = "super::KeyPurpose", repeated, tag = "4")]
         pub purposes: ::prost::alloc::vec::Vec<i32>,
         #[prost(bool, tag = "5")]

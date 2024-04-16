@@ -10003,7 +10003,7 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesCo
   var f, obj = {
     identitiesIdsList: msg.getIdentitiesIdsList_asB64(),
     contractId: msg.getContractId_asB64(),
-    documentType: jspb.Message.getFieldWithDefault(msg, 3, ""),
+    documentTypeName: jspb.Message.getFieldWithDefault(msg, 3, ""),
     purposesList: (f = jspb.Message.getRepeatedField(msg, 4)) == null ? undefined : f,
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 5, false)
   };
@@ -10052,7 +10052,7 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesCo
       break;
     case 3:
       var value = /** @type {string} */ (reader.readString());
-      msg.setDocumentType(value);
+      msg.setDocumentTypeName(value);
       break;
     case 4:
       var values = /** @type {!Array<!proto.org.dash.platform.dapi.v0.KeyPurpose>} */ (reader.isDelimited() ? reader.readPackedEnum() : [reader.readEnum()]);
@@ -10107,8 +10107,8 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesCo
       f
     );
   }
-  f = message.getDocumentType();
-  if (f.length > 0) {
+  f = /** @type {string} */ (jspb.Message.getField(message, 3));
+  if (f != null) {
     writer.writeString(
       3,
       f
@@ -10235,10 +10235,10 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesCo
 
 
 /**
- * optional string document_type = 3;
+ * optional string document_type_name = 3;
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.prototype.getDocumentType = function() {
+proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.prototype.getDocumentTypeName = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
 };
 
@@ -10247,8 +10247,26 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesCo
  * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.prototype.setDocumentType = function(value) {
-  return jspb.Message.setProto3StringField(this, 3, value);
+proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.prototype.setDocumentTypeName = function(value) {
+  return jspb.Message.setField(this, 3, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.prototype.clearDocumentTypeName = function() {
+  return jspb.Message.setField(this, 3, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0.prototype.hasDocumentTypeName = function() {
+  return jspb.Message.getField(this, 3) != null;
 };
 
 
