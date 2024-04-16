@@ -302,6 +302,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         fetch_full_identity: Some(0),
                         fetch_full_identities: Some(0),
                     },
+                    identities_contract_keys: 0
                 },
                 prove: DriveIdentityProveMethodVersions {
                     full_identity: 0,

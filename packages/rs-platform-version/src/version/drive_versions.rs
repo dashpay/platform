@@ -481,6 +481,7 @@ pub struct DriveIdentityFetchMethodVersions {
     pub attributes: DriveIdentityFetchAttributesMethodVersions,
     pub partial_identity: DriveIdentityFetchPartialIdentityMethodVersions,
     pub full_identity: DriveIdentityFetchFullIdentityMethodVersions,
+    pub identities_contract_keys: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

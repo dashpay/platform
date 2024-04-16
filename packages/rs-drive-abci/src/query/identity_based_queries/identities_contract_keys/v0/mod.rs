@@ -79,37 +79,25 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
-            todo!()
-            // let identities_keys = self.drive.fetch_identities_keys(
-            //     &identities_keys_ids,
-            //     None,
-            //     platform_version,
-            // )?;
-            //
-            // use get_identities_keys_response_v0::Keys;
-            //
-            // let identities_keys = identities_keys
-            //     .into_iter()
-            //     .map(|(key, identity_keys)| {
-            //         let keys_bytes = identity_keys
-            //             .into_iter()
-            //             .map(|(_, key)| key.serialize_to_bytes())
-            //             .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
-            //
-            //         Ok((hex::encode(&key), Keys { keys_bytes }))
-            //     })
-            //     .collect::<Result<HashMap<String, Keys>, ProtocolError>>()?;
-            //
-            // GetIdentitiesKeysResponseV0 {
-            //     result: Some(
-            //         get_identities_keys_response_v0::Result::IdentitiesKeys(
-            //             get_identities_keys_response_v0::IdentitiesKeys {
-            //                 entries: identities_keys
-            //             }
-            //         )
-            //     ),
+            let keys = self.drive.get_identities_contract_keys(
+                identities_ids.as_slice(),
+                &contract_id,
+                document_type_name,
+                purposes,
+                None,
+                &platform_version.drive,
+            )?;
+            
+            // let identities_keys = get_identities_contract_keys_response_v0::IdentitiesKeys {
+            //     
+            // } 
+            
+            // GetIdentitiesContractKeysResponseV0 {
+            //     result: Some(get_identities_contract_keys_response_v0::Result::IdentitiesKeys(keys)),
             //     metadata: Some(self.response_metadata_v0(platform_state)),
             // }
+            
+            todo!()
         };
 
         Ok(QueryValidationResult::new_with_data(response))
