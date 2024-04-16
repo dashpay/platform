@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt::Display,
+    sync::{Arc, Mutex},
+};
 
 use http::Uri;
 use lru::LruCache;
@@ -41,21 +44,37 @@ impl Default for ConnectionPool {
 
 impl ConnectionPool {
     /// Get item from the pool for the given uri and settings.
-    pub fn get(&self, uri: &Uri, settings: Option<&AppliedRequestSettings>) -> Option<PoolItem> {
-        let key = format!("{}{:?}", uri, settings);
+    ///
+    /// # Arguments
+    /// * `prefix` -  Prefix for the item in the pool. Used to distinguish between Core and Platform clients.
+    /// * `uri` - URI of the node.
+    /// * `settings` - Applied request settings.
+    pub fn get(
+        &self,
+        prefix: PoolPrefix,
+        uri: &Uri,
+        settings: Option<&AppliedRequestSettings>,
+    ) -> Option<PoolItem> {
+        let key = Self::key(prefix, uri, settings);
         self.inner.lock().expect("must lock").get(&key).cloned()
     }
 
     /// Get value from cache or create it using provided closure.
     /// If value is already in the cache, it will be returned.
     /// If value is not in the cache, it will be created by calling `create()` and stored in the cache.
+    ///
+    /// # Arguments
+    /// * `prefix` -  Prefix for the item in the pool. Used to distinguish between Core and Platform clients.
+    /// * `uri` - URI of the node.
+    /// * `settings` - Applied request settings.
     pub fn get_or_create(
         &self,
+        prefix: PoolPrefix,
         uri: &Uri,
         settings: Option<&AppliedRequestSettings>,
         create: impl FnOnce() -> PoolItem,
     ) -> PoolItem {
-        if let Some(cli) = self.get(uri, settings) {
+        if let Some(cli) = self.get(prefix, uri, settings) {
             return cli;
         }
 
@@ -66,8 +85,17 @@ impl ConnectionPool {
 
     /// Put item into the pool for the given uri and settings.
     pub fn put(&self, uri: &Uri, settings: Option<&AppliedRequestSettings>, value: PoolItem) {
-        let key = format!("{}{:?}", uri, settings);
+        let key = Self::key(&value, uri, settings);
         self.inner.lock().expect("must lock").put(key, value);
+    }
+
+    fn key<C: Into<PoolPrefix>>(
+        class: C,
+        uri: &Uri,
+        settings: Option<&AppliedRequestSettings>,
+    ) -> String {
+        let prefix: PoolPrefix = class.into();
+        format!("{}:{}{:?}", prefix, uri, settings)
     }
 }
 
@@ -95,7 +123,13 @@ impl From<PoolItem> for PlatformGrpcClient {
     fn from(client: PoolItem) -> Self {
         match client {
             PoolItem::Platform(client) => client,
-            _ => panic!("ClientType is not Platform: {:?}", client),
+            _ => {
+                tracing::error!(
+                    ?client,
+                    "invalid connection fetched from pool: expected platform client"
+                );
+                panic!("ClientType is not Platform: {:?}", client)
+            }
         }
     }
 }
@@ -104,7 +138,35 @@ impl From<PoolItem> for CoreGrpcClient {
     fn from(client: PoolItem) -> Self {
         match client {
             PoolItem::Core(client) => client,
-            _ => panic!("ClientType is not Core: {:?}", client),
+            _ => {
+                tracing::error!(
+                    ?client,
+                    "invalid connection fetched from pool: expected core client"
+                );
+                panic!("ClientType is not Core: {:?}", client)
+            }
+        }
+    }
+}
+
+/// Prefix for the item in the pool. Used to distinguish between Core and Platform clients.
+pub enum PoolPrefix {
+    Core,
+    Platform,
+}
+impl Display for PoolPrefix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PoolPrefix::Core => write!(f, "Core"),
+            PoolPrefix::Platform => write!(f, "Platform"),
+        }
+    }
+}
+impl From<&PoolItem> for PoolPrefix {
+    fn from(item: &PoolItem) -> Self {
+        match item {
+            PoolItem::Core(_) => PoolPrefix::Core,
+            PoolItem::Platform(_) => PoolPrefix::Platform,
         }
     }
 }

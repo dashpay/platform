@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use super::{CanRetry, TransportClient, TransportRequest};
-use crate::connection_pool::ConnectionPool;
+use crate::connection_pool::{ConnectionPool, PoolPrefix};
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
@@ -34,7 +34,7 @@ impl TransportClient for PlatformGrpcClient {
     type Error = dapi_grpc::tonic::Status;
 
     fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
-        pool.get_or_create(&uri, None, || {
+        pool.get_or_create(PoolPrefix::Platform, &uri, None, || {
             Self::new(create_channel(uri.clone(), None)).into()
         })
         .into()
@@ -45,7 +45,7 @@ impl TransportClient for PlatformGrpcClient {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Self {
-        pool.get_or_create(&uri, Some(settings), || {
+        pool.get_or_create(PoolPrefix::Platform, &uri, Some(settings), || {
             Self::new(create_channel(uri.clone(), Some(settings))).into()
         })
         .into()
@@ -56,7 +56,7 @@ impl TransportClient for CoreGrpcClient {
     type Error = dapi_grpc::tonic::Status;
 
     fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
-        pool.get_or_create(&uri, None, || {
+        pool.get_or_create(PoolPrefix::Core, &uri, None, || {
             Self::new(create_channel(uri.clone(), None)).into()
         })
         .into()
@@ -67,7 +67,7 @@ impl TransportClient for CoreGrpcClient {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Self {
-        pool.get_or_create(&uri, Some(settings), || {
+        pool.get_or_create(PoolPrefix::Core, &uri, Some(settings), || {
             Self::new(create_channel(uri.clone(), Some(settings))).into()
         })
         .into()
