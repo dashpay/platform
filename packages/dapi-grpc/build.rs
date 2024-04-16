@@ -101,7 +101,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     platform = platform.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
 
     #[cfg(feature = "serde")]
-        let platform = platform
+    let platform = platform
         .type_attribute(
             ".",
             r#"#[derive(::serde::Serialize, ::serde::Deserialize)]"#,
@@ -149,7 +149,7 @@ fn configure_core(mut core: MappingConfig) -> MappingConfig {
 
     // Serde support
     #[cfg(feature = "serde")]
-        let core = core.type_attribute(
+    let core = core.type_attribute(
         ".",
         r#"#[derive(::serde::Serialize, ::serde::Deserialize)]"#,
     );

@@ -201,7 +201,6 @@ impl<C> Platform<C> {
         let serialization =
             data_contract.serialize_to_bytes_with_platform_version(platform_version)?;
         operations.push(DriveOperation::DataContractOperation(
-            //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Borrowed(data_contract),
                 serialized_contract: serialization,

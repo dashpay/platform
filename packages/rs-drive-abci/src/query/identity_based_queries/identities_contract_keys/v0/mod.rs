@@ -116,32 +116,66 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
-    use rand::prelude::StdRng;
-    use rand::{Rng, SeedableRng};
+    use crate::query::tests::setup_platform;
     use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
-    use dapi_grpc::platform::v0::get_identities_contract_keys_response::{get_identities_contract_keys_response_v0, GetIdentitiesContractKeysResponseV0};
+    use dapi_grpc::platform::v0::get_identities_contract_keys_response::{
+        get_identities_contract_keys_response_v0, GetIdentitiesContractKeysResponseV0,
+    };
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::{KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::identity::{Identity, IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::IdentityPublicKey;
+    use dpp::serialization::PlatformSerializableWithPlatformVersion;
     use drive::common::test_utils::identities::create_test_identity_with_rng;
-    use crate::query::tests::setup_platform;
+    use drive::drive::batch::{DataContractOperationType, DriveOperation};
+    use rand::prelude::StdRng;
+    use rand::{Rng, SeedableRng};
+    use std::borrow::Cow;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_identities_contract_keys_proof() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, platform_version) = setup_platform();
+
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+
+        let serialization = dashpay
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("expected to serialize data contract");
+
+        platform
+            .drive
+            .apply_drive_operations(
+                vec![DriveOperation::DataContractOperation(
+                    DataContractOperationType::ApplyContractWithSerialization {
+                        contract: Cow::Borrowed(dashpay.as_ref()),
+                        serialized_contract: serialization,
+                        storage_flags: None,
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to register dashpay contract");
 
         let (alice, bob) = {
             let mut rng = StdRng::seed_from_u64(10);
 
             let alice_id = rng.gen::<[u8; 32]>();
             let bob_id = rng.gen::<[u8; 32]>();
-            let alice = create_test_identity_with_rng(&platform.drive, alice_id, &mut rng, None, version)
-                .expect("expected to create a test identity");
+            let alice = create_test_identity_with_rng(
+                &platform.drive,
+                alice_id,
+                &mut rng,
+                None,
+                platform_version,
+            )
+            .expect("expected to create a test identity");
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -149,39 +183,51 @@ mod tests {
                 2,
                 &mut rng,
                 Purpose::ENCRYPTION,
-                SecurityLevel::CRITICAL,
+                SecurityLevel::MEDIUM,
                 KeyType::ECDSA_SECP256K1,
-                Some(ContractBounds::SingleContract {
-                    id: dashpay.id()
+                Some(ContractBounds::SingleContractDocumentType {
+                    id: dashpay.id(),
+                    document_type_name: "contactRequest".to_string(),
                 }),
-                version
-            ).unwrap();
+                platform_version,
+            )
+            .unwrap();
 
             let db_transaction = platform.drive.grove.start_transaction();
 
-            let _ = platform.drive
+            platform
+                .drive
                 .add_new_unique_keys_to_identity(
                     alice.id().to_buffer(),
                     vec![alice_enc_key],
                     &block,
                     true,
                     Some(&db_transaction),
-                    version
-                );
-            platform.drive
+                    platform_version,
+                )
+                .expect("expected to add a new key");
+            platform
+                .drive
                 .grove
                 .commit_transaction(db_transaction)
                 .unwrap()
                 .expect("expected to be able to commit a transaction");
 
-            let identity_keys = platform.drive
-                .fetch_all_identity_keys(alice.id().to_buffer(), None, version)
+            let identity_keys = platform
+                .drive
+                .fetch_all_identity_keys(alice.id().to_buffer(), None, platform_version)
                 .expect("expected to get balance");
 
             println!("{:?}", identity_keys.len());
 
-            let bob = create_test_identity_with_rng(&platform.drive, bob_id, &mut rng, None, version)
-                .expect("expected to create a test identity");
+            let bob = create_test_identity_with_rng(
+                &platform.drive,
+                bob_id,
+                &mut rng,
+                None,
+                platform_version,
+            )
+            .expect("expected to create a test identity");
             (alice, bob)
         };
         // println!("{:?}", alice.id());
@@ -195,16 +241,14 @@ mod tests {
         };
 
         let result = platform
-            .query_identities_contract_keys_v0(request, &state, &version)
+            .query_identities_contract_keys_v0(request, &state, platform_version)
             .expect("query failed");
 
-        let GetIdentitiesContractKeysResponseV0{
-            result,
-            ..
-        } = result.data.unwrap();
+        let GetIdentitiesContractKeysResponseV0 { result, .. } = result.data.unwrap();
 
-        let get_identities_contract_keys_response_v0::Result::Proof(proof)
-            = result.unwrap() else { todo!()};
+        let get_identities_contract_keys_response_v0::Result::Proof(proof) = result.unwrap() else {
+            panic!("expected a proof");
+        };
 
         println!("{:?}", proof.grovedb_proof.len());
     }
@@ -225,13 +269,11 @@ mod tests {
             .query_identities_contract_keys_v0(request, &state, &version)
             .expect("query failed");
 
-        let GetIdentitiesContractKeysResponseV0{
-            result,
-            ..
-        } = result.data.unwrap();
+        let GetIdentitiesContractKeysResponseV0 { result, .. } = result.data.unwrap();
 
-        let get_identities_contract_keys_response_v0::Result::Proof(proof)
-            = result.unwrap() else { todo!()};
+        let get_identities_contract_keys_response_v0::Result::Proof(proof) = result.unwrap() else {
+            todo!()
+        };
 
         // 181
         // println!("{:?}", proof.grovedb_proof.len());

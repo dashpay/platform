@@ -4,9 +4,9 @@ use crate::identity::{IdentityPublicKey, KeyCount, KeyID, KeyType, Purpose, Secu
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+use crate::identity::contract_bounds::ContractBounds;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use crate::identity::contract_bounds::ContractBounds;
 
 pub type UsedKeyMatrix = Vec<bool>;
 

@@ -1,3 +1,4 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType::ECDSA_SECP256K1;
 use crate::identity::Purpose::AUTHENTICATION;
@@ -10,7 +11,6 @@ use rand::rngs::StdRng;
 use rand::Rng;
 use std::convert::TryFrom;
 use std::ops::{Div, Rem};
-use crate::identity::contract_bounds::ContractBounds;
 
 pub type UsedKeyMatrix = Vec<bool>;
 
@@ -137,7 +137,7 @@ impl IdentityPublicKeyV0 {
             read_only,
             disabled_at: None,
             data,
-            contract_bounds
+            contract_bounds,
         };
         Ok((identity_public_key, private_data))
     }

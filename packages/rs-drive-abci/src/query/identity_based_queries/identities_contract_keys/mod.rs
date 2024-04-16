@@ -48,8 +48,11 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result =
-                    self.query_identities_contract_keys_v0(request_v0, platform_state, platform_version)?;
+                let result = self.query_identities_contract_keys_v0(
+                    request_v0,
+                    platform_state,
+                    platform_version,
+                )?;
 
                 Ok(result.map(|response_v0| GetIdentitiesContractKeysResponse {
                     version: Some(ResponseVersion::V0(response_v0)),
