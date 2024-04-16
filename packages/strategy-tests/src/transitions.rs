@@ -711,6 +711,7 @@ pub fn create_identities_state_transitions(
                     &pk,
                     signer,
                     &NativeBlsModule,
+                    0,
                     platform_version,
                 ) {
                     Ok(identity_create_transition) => {
@@ -788,6 +789,7 @@ pub fn create_state_transitions_for_identities(
                     pk.as_slice(),
                     signer,
                     &NativeBlsModule,
+                    0,
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");

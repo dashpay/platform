@@ -8,6 +8,7 @@ use dpp::consensus::ConsensusError as DPPConsensusError;
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
     IdentityAssetLockProofLockedTransactionMismatchErrorWasm,
+    IdentityAssetLockStateTransitionReplayErrorWasm,
     IdentityAssetLockTransactionIsNotFoundErrorWasm,
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceErrorWasm,
@@ -36,7 +37,7 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
-    IdentityAssetLockTransactionIsNotFoundError,
+    IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
@@ -368,6 +369,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         InvalidIdentityAssetLockTransactionOutputError(e) => {
             InvalidIdentityAssetLockTransactionOutputErrorWasm::from(e).into()
+        }
+        IdentityAssetLockStateTransitionReplayError(e) => {
+            IdentityAssetLockStateTransitionReplayErrorWasm::from(e).into()
         }
         InvalidAssetLockTransactionOutputReturnSizeError(e) => {
             InvalidAssetLockTransactionOutputReturnSizeErrorWasm::from(e).into()

@@ -4,6 +4,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Bytes32;
 use platform_version::version::PlatformVersion;
 
 mod v0;
@@ -21,6 +22,7 @@ impl AssetLockValue {
         initial_credit_value: Credits,
         tx_out_script: Vec<u8>,
         remaining_credit_value: Credits,
+        used_tags: Vec<Bytes32>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -33,6 +35,7 @@ impl AssetLockValue {
                 initial_credit_value,
                 tx_out_script,
                 remaining_credit_value,
+                used_tags,
             })),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ReducedAssetLockValue::new".to_string(),
@@ -67,6 +70,12 @@ impl AssetLockValueGettersV0 for AssetLockValue {
             AssetLockValue::V0(v0) => v0.remaining_credit_value,
         }
     }
+
+    fn used_tags_ref(&self) -> &Vec<Bytes32> {
+        match self {
+            AssetLockValue::V0(v0) => &v0.used_tags,
+        }
+    }
 }
 
 impl AssetLockValueSettersV0 for AssetLockValue {
@@ -85,6 +94,18 @@ impl AssetLockValueSettersV0 for AssetLockValue {
     fn set_remaining_credit_value(&mut self, value: Credits) {
         match self {
             AssetLockValue::V0(v0) => v0.remaining_credit_value = value,
+        }
+    }
+
+    fn set_used_tags(&mut self, tags: Vec<Bytes32>) {
+        match self {
+            AssetLockValue::V0(v0) => v0.used_tags = tags,
+        }
+    }
+
+    fn add_used_tag(&mut self, tag: Bytes32) {
+        match self {
+            AssetLockValue::V0(v0) => v0.used_tags.push(tag),
         }
     }
 }
