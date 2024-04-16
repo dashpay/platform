@@ -47,13 +47,11 @@ use crate::error::Error;
 use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
 use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
-use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::storage_fee_distribution_outcome;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
-use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;

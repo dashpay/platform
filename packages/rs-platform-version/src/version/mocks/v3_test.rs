@@ -600,6 +600,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     validate_master_key_uniqueness: 0,
                     validate_simple_pre_check_balance: 0,
                 },
+                max_asset_lock_usage_attempts: 16,
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: Some(0),

@@ -253,9 +253,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identifier = asset_lock_proof
             .create_identifier()
@@ -397,9 +398,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identifier = asset_lock_proof
             .create_identifier()
@@ -532,6 +534,447 @@ mod tests {
     }
 
     #[test]
+    fn test_identity_create_asset_lock_reuse_after_max_issues() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let platform_state = platform.state.load();
+
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(
+                0,
+                Some(58),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
+        let (critical_public_key_that_is_already_in_system, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                1,
+                Some(999),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        // Let's start by adding this critical key to another identity
+
+        let (another_master_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key(
+            0,
+            Some(53),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        let identity_already_in_system: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, another_master_key.clone()),
+                (1, critical_public_key_that_is_already_in_system.clone()),
+            ]),
+            balance: 100000,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity_already_in_system,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        signer.add_key(
+            critical_public_key_that_is_already_in_system.clone(),
+            private_key.clone(),
+        );
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
+
+        let identifier = asset_lock_proof
+            .create_identifier()
+            .expect("expected an identifier");
+
+        for i in 0..16 {
+            let (new_master_key, new_master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(58 + i),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            signer.add_key(new_master_key.clone(), new_master_private_key.clone());
+
+            let identity: Identity = IdentityV0 {
+                id: identifier,
+                public_keys: BTreeMap::from([
+                    (0, new_master_key.clone()),
+                    (1, critical_public_key_that_is_already_in_system.clone()),
+                ]),
+                balance: 1000000000,
+                revision: 0,
+            }
+            .into();
+
+            let identity_create_transition: StateTransition =
+                IdentityCreateTransition::try_from_identity_with_signer(
+                    &identity,
+                    asset_lock_proof.clone(),
+                    pk.as_slice(),
+                    &signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .expect("expected an identity create transition");
+
+            let identity_create_serialized_transition = identity_create_transition
+                .serialize_to_bytes()
+                .expect("serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![identity_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+            assert_eq!(processing_result.valid_count(), 0);
+
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+        }
+
+        // Okay now let us try to reuse the asset lock, there should be no balance
+
+        let (new_public_key, new_private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                1,
+                Some(13),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(new_public_key.clone(), new_private_key.clone());
+
+        let identity: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, new_public_key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let identity_create_transition: StateTransition =
+            IdentityCreateTransition::try_from_identity_with_signer(
+                &identity,
+                asset_lock_proof,
+                pk.as_slice(),
+                &signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .expect("expected an identity create transition");
+
+        let identity_create_serialized_transition = identity_create_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![identity_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.invalid_paid_count(), 0);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 1);
+
+        assert_eq!(processing_result.valid_count(), 0);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 0);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+    }
+
+    #[test]
+    fn test_identity_create_asset_lock_use_all_funds() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let platform_state = platform.state.load();
+
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(
+                0,
+                Some(58),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
+        let (critical_public_key_that_is_already_in_system, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                1,
+                Some(999),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        // Let's start by adding this critical key to another identity
+
+        let (another_master_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key(
+            0,
+            Some(53),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        let identity_already_in_system: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, another_master_key.clone()),
+                (1, critical_public_key_that_is_already_in_system.clone()),
+            ]),
+            balance: 100000,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity_already_in_system,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        signer.add_key(
+            critical_public_key_that_is_already_in_system.clone(),
+            private_key.clone(),
+        );
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            Some(220000),
+        );
+
+        let identifier = asset_lock_proof
+            .create_identifier()
+            .expect("expected an identifier");
+
+        // this should work for 2 times only
+        for i in 0..2 {
+            let (new_master_key, new_master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(58 + i),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            signer.add_key(new_master_key.clone(), new_master_private_key.clone());
+
+            let identity: Identity = IdentityV0 {
+                id: identifier,
+                public_keys: BTreeMap::from([
+                    (0, new_master_key.clone()),
+                    (1, critical_public_key_that_is_already_in_system.clone()),
+                ]),
+                balance: 1000000000,
+                revision: 0,
+            }
+            .into();
+
+            let identity_create_transition: StateTransition =
+                IdentityCreateTransition::try_from_identity_with_signer(
+                    &identity,
+                    asset_lock_proof.clone(),
+                    pk.as_slice(),
+                    &signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .expect("expected an identity create transition");
+
+            let identity_create_serialized_transition = identity_create_transition
+                .serialize_to_bytes()
+                .expect("serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![identity_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+            assert_eq!(processing_result.valid_count(), 0);
+
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+        }
+
+        // Okay now let us try to reuse the asset lock, there should be no balance
+
+        let (new_public_key, new_private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                1,
+                Some(13),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(new_public_key.clone(), new_private_key.clone());
+
+        let identity: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, new_public_key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let identity_create_transition: StateTransition =
+            IdentityCreateTransition::try_from_identity_with_signer(
+                &identity,
+                asset_lock_proof,
+                pk.as_slice(),
+                &signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .expect("expected an identity create transition");
+
+        let identity_create_serialized_transition = identity_create_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![identity_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.invalid_paid_count(), 0);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 1);
+
+        assert_eq!(processing_result.valid_count(), 0);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 0);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+    }
+
+    #[test]
     fn test_identity_create_asset_lock_replay_attack() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -610,9 +1053,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identifier = asset_lock_proof
             .create_identifier()

@@ -233,7 +233,7 @@ mod tests {
     use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::document_type::DocumentType;
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
-    use dpp::platform_value::{BinaryData, Bytes32};
+    use dpp::platform_value::Bytes32;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
@@ -1395,9 +1395,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identifier = asset_lock_proof
             .create_identifier()
@@ -1581,9 +1582,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identifier = asset_lock_proof
             .create_identifier()
@@ -1636,9 +1638,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
@@ -1718,9 +1721,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identifier = asset_lock_proof
             .create_identifier()
@@ -1773,9 +1777,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
@@ -1881,9 +1886,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identifier = asset_lock_proof
             .create_identifier()
@@ -1906,9 +1912,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
@@ -1979,9 +1986,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identifier = asset_lock_proof
             .create_identifier()
@@ -2034,9 +2042,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
@@ -2195,9 +2204,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identifier = asset_lock_proof
             .create_identifier()
@@ -2223,7 +2233,7 @@ mod tests {
             )
             .expect("expected an identity create transition");
 
-        let mut valid_identity_create_transition = identity_create_transition.clone();
+        let valid_identity_create_transition = identity_create_transition.clone();
 
         // let's add an error so this fails on state validation
 
@@ -2324,9 +2334,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
+        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(

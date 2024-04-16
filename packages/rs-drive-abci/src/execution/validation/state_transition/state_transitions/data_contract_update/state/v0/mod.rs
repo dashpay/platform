@@ -20,9 +20,9 @@ use dpp::data_contract::document_type::schema::{
 };
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::data_contract::{DataContract, JsonValue};
+use dpp::data_contract::JsonValue;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::{Value, ValueMap};
+use dpp::platform_value::ValueMap;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;

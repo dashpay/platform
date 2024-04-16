@@ -103,14 +103,11 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::{Network, PrivateKey};
-    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
-    use dpp::native_bls::NativeBlsModule;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
-    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
     use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
     use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use dpp::state_transition::StateTransition;
@@ -188,13 +185,10 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
 
-        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
-            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
-        ));
-
-        let identifier = asset_lock_proof
-            .create_identifier()
-            .expect("expected an identifier");
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(

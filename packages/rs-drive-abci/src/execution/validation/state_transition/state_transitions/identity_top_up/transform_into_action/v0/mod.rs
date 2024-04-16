@@ -7,7 +7,6 @@ use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnou
 
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::signer::double_sha;
 use dpp::dashcore::{signer, ScriptBuf, Txid};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::KeyType;
@@ -23,7 +22,6 @@ use drive::state_transition_action::identity::identity_topup::IdentityTopUpTrans
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
-use crate::error::execution::ExecutionError::CorruptedCodeExecution;
 use drive::grovedb::TransactionArg;
 
 use crate::execution::types::execution_operation::{SHA256_BLOCK_SIZE, ValidationOperation};

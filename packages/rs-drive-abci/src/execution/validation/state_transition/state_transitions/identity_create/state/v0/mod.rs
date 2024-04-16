@@ -8,7 +8,6 @@ use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::signer::double_sha;
 use dpp::dashcore::{signer, ScriptBuf, Txid};
 use dpp::identity::KeyType;
 
@@ -26,7 +25,6 @@ use drive::state_transition_action::identity::identity_create::IdentityCreateTra
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
-use crate::error::execution::ExecutionError::CorruptedCodeExecution;
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use crate::execution::types::execution_operation::{ValidationOperation, SHA256_BLOCK_SIZE};
 use crate::execution::types::state_transition_execution_context::{
