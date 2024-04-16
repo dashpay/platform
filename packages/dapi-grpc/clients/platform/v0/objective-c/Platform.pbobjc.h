@@ -71,6 +71,9 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityNonceResponse_GetIdentityNonceResponseV0;
 @class GetIdentityRequest_GetIdentityRequestV0;
 @class GetIdentityResponse_GetIdentityResponseV0;
+@class GetPathElementsRequest_GetPathElementsRequestV0;
+@class GetPathElementsResponse_GetPathElementsResponseV0;
+@class GetPathElementsResponse_GetPathElementsResponseV0_Elements;
 @class GetProofsRequest_GetProofsRequestV0;
 @class GetProofsRequest_GetProofsRequestV0_ContractRequest;
 @class GetProofsRequest_GetProofsRequestV0_DocumentRequest;
@@ -1003,8 +1006,9 @@ void GetIdentitiesContractKeysRequest_ClearVersionOneOfCase(GetIdentitiesContrac
 typedef GPB_ENUM(GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber) {
   GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_IdentitiesIdsArray = 1,
   GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_ContractId = 2,
-  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_PurposesArray = 3,
-  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_Prove = 4,
+  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_DocumentType = 3,
+  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_PurposesArray = 4,
+  GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0_FieldNumber_Prove = 5,
 };
 
 GPB_FINAL @interface GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0 : GPBMessage
@@ -1014,6 +1018,8 @@ GPB_FINAL @interface GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysR
 @property(nonatomic, readonly) NSUInteger identitiesIdsArray_Count;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
 
 // |purposesArray| contains |KeyPurpose|
 @property(nonatomic, readwrite, strong, null_resettable) GPBEnumArray *purposesArray;
@@ -2476,6 +2482,123 @@ GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo : G
 @property(nonatomic, readwrite) double feeMultiplier;
 
 @property(nonatomic, readwrite) uint32_t protocolVersion;
+
+@end
+
+#pragma mark - GetPathElementsRequest
+
+typedef GPB_ENUM(GetPathElementsRequest_FieldNumber) {
+  GetPathElementsRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetPathElementsRequest_Version_OneOfCase) {
+  GetPathElementsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetPathElementsRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetPathElementsRequest : GPBMessage
+
+@property(nonatomic, readonly) GetPathElementsRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetPathElementsRequest_GetPathElementsRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetPathElementsRequest_ClearVersionOneOfCase(GetPathElementsRequest *message);
+
+#pragma mark - GetPathElementsRequest_GetPathElementsRequestV0
+
+typedef GPB_ENUM(GetPathElementsRequest_GetPathElementsRequestV0_FieldNumber) {
+  GetPathElementsRequest_GetPathElementsRequestV0_FieldNumber_PathArray = 1,
+  GetPathElementsRequest_GetPathElementsRequestV0_FieldNumber_KeysArray = 2,
+  GetPathElementsRequest_GetPathElementsRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetPathElementsRequest_GetPathElementsRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *pathArray;
+/** The number of items in @c pathArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger pathArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *keysArray;
+/** The number of items in @c keysArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger keysArray_Count;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetPathElementsResponse
+
+typedef GPB_ENUM(GetPathElementsResponse_FieldNumber) {
+  GetPathElementsResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetPathElementsResponse_Version_OneOfCase) {
+  GetPathElementsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetPathElementsResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetPathElementsResponse : GPBMessage
+
+@property(nonatomic, readonly) GetPathElementsResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetPathElementsResponse_GetPathElementsResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetPathElementsResponse_ClearVersionOneOfCase(GetPathElementsResponse *message);
+
+#pragma mark - GetPathElementsResponse_GetPathElementsResponseV0
+
+typedef GPB_ENUM(GetPathElementsResponse_GetPathElementsResponseV0_FieldNumber) {
+  GetPathElementsResponse_GetPathElementsResponseV0_FieldNumber_Elements = 1,
+  GetPathElementsResponse_GetPathElementsResponseV0_FieldNumber_Proof = 2,
+  GetPathElementsResponse_GetPathElementsResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetPathElementsResponse_GetPathElementsResponseV0_Result_OneOfCase) {
+  GetPathElementsResponse_GetPathElementsResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetPathElementsResponse_GetPathElementsResponseV0_Result_OneOfCase_Elements = 1,
+  GetPathElementsResponse_GetPathElementsResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetPathElementsResponse_GetPathElementsResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetPathElementsResponse_GetPathElementsResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetPathElementsResponse_GetPathElementsResponseV0_Elements *elements;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetPathElementsResponse_GetPathElementsResponseV0_ClearResultOneOfCase(GetPathElementsResponse_GetPathElementsResponseV0 *message);
+
+#pragma mark - GetPathElementsResponse_GetPathElementsResponseV0_Elements
+
+typedef GPB_ENUM(GetPathElementsResponse_GetPathElementsResponseV0_Elements_FieldNumber) {
+  GetPathElementsResponse_GetPathElementsResponseV0_Elements_FieldNumber_ElementsArray = 1,
+};
+
+GPB_FINAL @interface GetPathElementsResponse_GetPathElementsResponseV0_Elements : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *elementsArray;
+/** The number of items in @c elementsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger elementsArray_Count;
 
 @end
 

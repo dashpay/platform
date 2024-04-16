@@ -249,8 +249,9 @@ message GetIdentitiesContractKeysRequest {
   message GetIdentitiesContractKeysRequestV0 {
     repeated bytes identities_ids = 1;
     bytes contract_id = 2;
-    repeated KeyPurpose purposes = 3;
-    bool prove = 4;
+    string document_type = 3;
+    repeated KeyPurpose purposes = 4;
+    bool prove = 5;
   }
 
   oneof version {

@@ -44,6 +44,8 @@
 @class GetIdentityNonceResponse;
 @class GetIdentityRequest;
 @class GetIdentityResponse;
+@class GetPathElementsRequest;
+@class GetPathElementsResponse;
 @class GetProofsRequest;
 @class GetProofsResponse;
 @class GetProtocolVersionUpgradeStateRequest;
@@ -157,6 +159,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse)
 
 - (GRPCUnaryProtoCall *)getEpochsInfoWithMessage:(GetEpochsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
+
+- (GRPCUnaryProtoCall *)getPathElementsWithMessage:(GetPathElementsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -297,6 +303,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
+
+- (void)getPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end
