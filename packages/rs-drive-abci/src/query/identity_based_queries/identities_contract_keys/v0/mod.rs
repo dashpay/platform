@@ -87,16 +87,16 @@ impl<C> Platform<C> {
                 None,
                 &platform_version.drive,
             )?;
-            
+
             // let identities_keys = get_identities_contract_keys_response_v0::IdentitiesKeys {
-            //     
-            // } 
-            
+            //
+            // }
+
             // GetIdentitiesContractKeysResponseV0 {
             //     result: Some(get_identities_contract_keys_response_v0::Result::IdentitiesKeys(keys)),
             //     metadata: Some(self.response_metadata_v0(platform_state)),
             // }
-            
+
             todo!()
         };
 
@@ -125,6 +125,116 @@ mod tests {
     use rand::{Rng, SeedableRng};
     use std::borrow::Cow;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn test_identities_contract_keys() {
+        let (platform, state, platform_version) = setup_platform();
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+
+        let serialization = dashpay
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("expected to serialize data contract");
+
+        platform
+            .drive
+            .apply_drive_operations(
+                vec![DriveOperation::DataContractOperation(
+                    DataContractOperationType::ApplyContractWithSerialization {
+                        contract: Cow::Borrowed(dashpay.as_ref()),
+                        serialized_contract: serialization,
+                        storage_flags: None,
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to register dashpay contract");
+
+        let (alice, bob) = {
+            let mut rng = StdRng::seed_from_u64(10);
+
+            let alice_id = rng.gen::<[u8; 32]>();
+            let bob_id = rng.gen::<[u8; 32]>();
+            let alice = create_test_identity_with_rng(
+                &platform.drive,
+                alice_id,
+                &mut rng,
+                None,
+                platform_version,
+            )
+                .expect("expected to create a test identity");
+
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
+
+            let (alice_enc_key, _) = IdentityPublicKey::random_key_with_known_attributes(
+                2,
+                &mut rng,
+                Purpose::ENCRYPTION,
+                SecurityLevel::MEDIUM,
+                KeyType::ECDSA_SECP256K1,
+                Some(ContractBounds::SingleContractDocumentType {
+                    id: dashpay.id(),
+                    document_type_name: "contactRequest".to_string(),
+                }),
+                platform_version,
+            )
+                .unwrap();
+
+            let db_transaction = platform.drive.grove.start_transaction();
+
+            platform
+                .drive
+                .add_new_unique_keys_to_identity(
+                    alice.id().to_buffer(),
+                    vec![alice_enc_key],
+                    &block,
+                    true,
+                    Some(&db_transaction),
+                    platform_version,
+                )
+                .expect("expected to add a new key");
+            platform
+                .drive
+                .grove
+                .commit_transaction(db_transaction)
+                .unwrap()
+                .expect("expected to be able to commit a transaction");
+
+            let bob = create_test_identity_with_rng(
+                &platform.drive,
+                bob_id,
+                &mut rng,
+                None,
+                platform_version,
+            )
+                .expect("expected to create a test identity");
+            (alice, bob)
+        };
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![alice.id().to_vec()],
+            contract_id: dashpay.id().to_vec(),
+            document_type_name: Some("contactRequest".to_string()),
+            purposes: vec![Purpose::ENCRYPTION as i32, Purpose::DECRYPTION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("query failed");
+
+        assert!(result.is_valid());
+        assert!(matches!(
+            result.data,
+            Some(GetIdentitiesContractKeysResponseV0 {
+                result: Some(get_identities_contract_keys_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
 
     #[test]
     fn test_identities_contract_keys_proof() {

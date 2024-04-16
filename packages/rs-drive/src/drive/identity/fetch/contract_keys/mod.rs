@@ -30,7 +30,7 @@ impl Drive {
         purposes: Vec<Purpose>,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<Vec<Vec<u8>>, Error> {
+    ) -> Result<Vec<Vec<Vec<u8>>>, Error> {
         match drive_version
             .methods
             .identity
