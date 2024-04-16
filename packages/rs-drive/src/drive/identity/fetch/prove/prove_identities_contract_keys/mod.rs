@@ -26,6 +26,7 @@ impl Drive {
         &self,
         identity_ids: &[[u8; 32]],
         contract_id: &[u8; 32],
+        document_type_name: Option<String>,
         purposes: Vec<Purpose>,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
@@ -39,6 +40,7 @@ impl Drive {
             0 => self.prove_identities_contract_keys_v0(
                 identity_ids,
                 contract_id,
+                document_type_name,
                 purposes,
                 transaction,
                 drive_version,

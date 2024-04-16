@@ -188,6 +188,7 @@ impl Drive {
     pub fn identities_contract_keys_query(
         identity_ids: &[[u8; 32]],
         contract_id: &[u8; 32],
+        document_type_name: Option<String>,
         purposes: Vec<Purpose>,
     ) -> PathQuery {
         let identities_path = identity_tree_path_vec();
@@ -198,9 +199,15 @@ impl Drive {
                 .map(|identity_id| identity_id.to_vec())
                 .collect(),
         );
+        
+        let mut group_id = contract_id.to_vec();
+        if let Some(document_type_name) = document_type_name {
+            group_id.extend(document_type_name.as_bytes());
+        }
+        
         query.default_subquery_branch.subquery_path = Some(vec![
             vec![IdentityRootStructure::IdentityContractInfo as u8],
-            contract_id.to_vec(),
+            group_id,
             vec![ContractInfoStructure::ContractInfoKeysKey as u8],
         ]);
 

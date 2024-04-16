@@ -11,12 +11,13 @@ impl Drive {
         &self,
         identity_ids: &[[u8; 32]],
         contract_id: &[u8; 32],
+        document_type_name: Option<String>,
         purposes: Vec<Purpose>,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let query = Self::identities_contract_keys_query(identity_ids, contract_id, purposes);
+        let query = Self::identities_contract_keys_query(identity_ids, contract_id, document_type_name, purposes);
         self.grove_get_proved_path_query(
             &query,
             false,

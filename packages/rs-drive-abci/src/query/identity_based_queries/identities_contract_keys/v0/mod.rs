@@ -20,6 +20,7 @@ impl<C> Platform<C> {
         GetIdentitiesContractKeysRequestV0 {
             identities_ids,
             contract_id,
+            document_type_name,
             purposes,
             prove,
         }: GetIdentitiesContractKeysRequestV0,
@@ -65,6 +66,7 @@ impl<C> Platform<C> {
             let proof = self.drive.prove_identities_contract_keys(
                 identities_ids.as_slice(),
                 &contract_id,
+                document_type_name,
                 purposes,
                 None,
                 &platform_version.drive,
@@ -175,7 +177,7 @@ mod tests {
                 None,
                 platform_version,
             )
-            .expect("expected to create a test identity");
+                .expect("expected to create a test identity");
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -191,7 +193,7 @@ mod tests {
                 }),
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
             let db_transaction = platform.drive.grove.start_transaction();
 
@@ -213,13 +215,6 @@ mod tests {
                 .unwrap()
                 .expect("expected to be able to commit a transaction");
 
-            let identity_keys = platform
-                .drive
-                .fetch_all_identity_keys(alice.id().to_buffer(), None, platform_version)
-                .expect("expected to get balance");
-
-            println!("{:?}", identity_keys.len());
-
             let bob = create_test_identity_with_rng(
                 &platform.drive,
                 bob_id,
@@ -227,15 +222,14 @@ mod tests {
                 None,
                 platform_version,
             )
-            .expect("expected to create a test identity");
+                .expect("expected to create a test identity");
             (alice, bob)
         };
-        // println!("{:?}", alice.id());
-        // println!("{:?}", bob.id());
 
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: vec![alice.id().to_vec()],
             contract_id: dashpay.id().to_vec(),
+            document_type_name: Some("contactRequest".to_string()),
             purposes: vec![Purpose::ENCRYPTION as i32, Purpose::DECRYPTION as i32],
             prove: true,
         };
@@ -244,13 +238,14 @@ mod tests {
             .query_identities_contract_keys_v0(request, &state, platform_version)
             .expect("query failed");
 
-        let GetIdentitiesContractKeysResponseV0 { result, .. } = result.data.unwrap();
-
-        let get_identities_contract_keys_response_v0::Result::Proof(proof) = result.unwrap() else {
-            panic!("expected a proof");
-        };
-
-        println!("{:?}", proof.grovedb_proof.len());
+        assert!(result.is_valid());
+        assert!(matches!(
+            result.data,
+            Some(GetIdentitiesContractKeysResponseV0 {
+                result: Some(get_identities_contract_keys_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
     }
 
     #[test]
@@ -261,6 +256,7 @@ mod tests {
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: vec![vec![0; 32]],
             contract_id: dashpay.id().to_vec(),
+            document_type_name: Some("contactRequest".to_string()),
             purposes: vec![Purpose::ENCRYPTION as i32, Purpose::DECRYPTION as i32],
             prove: true,
         };
@@ -269,23 +265,13 @@ mod tests {
             .query_identities_contract_keys_v0(request, &state, &version)
             .expect("query failed");
 
-        let GetIdentitiesContractKeysResponseV0 { result, .. } = result.data.unwrap();
-
-        let get_identities_contract_keys_response_v0::Result::Proof(proof) = result.unwrap() else {
-            todo!()
-        };
-
-        // 181
-        // println!("{:?}", proof.grovedb_proof.len());
-
-        // assert!(result.is_valid());
-        //
-        // assert!(matches!(
-        //     result.data,
-        //     Some(GetIdentitiesContractKeysResponseV0 {
-        //         result: Some(get_identities_contract_keys_response_v0::Result::Proof(_)),
-        //         metadata: Some(_),
-        //     })
-        // ));
+        assert!(result.is_valid());
+        assert!(matches!(
+            result.data,
+            Some(GetIdentitiesContractKeysResponseV0 {
+                result: Some(get_identities_contract_keys_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
     }
 }
