@@ -12,9 +12,9 @@
 //! ## Example
 //!
 //! ```no_run
-//! let sdk = rs_sdk::Sdk::new_mock();
-//! let query = rs_sdk::platform::Identifier::random();
-//! sdk.mock().expect_fetch(query, None as Option<rs_sdk::platform::Identity>);
+//! let sdk = dash_sdk::Sdk::new_mock();
+//! let query = dash_sdk::platform::Identifier::random();
+//! sdk.mock().expect_fetch(query, None as Option<dash_sdk::platform::Identity>);
 //! ```
 //!
 //! See tests/mock_*.rs for more detailed examples.

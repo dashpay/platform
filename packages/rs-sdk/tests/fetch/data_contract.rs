@@ -1,9 +1,9 @@
 use super::config::Config;
+use dash_sdk::platform::{Fetch, FetchMany, LimitQuery};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
 use drive_proof_verifier::types::DataContractHistory;
-use rs_sdk::platform::{Fetch, FetchMany, LimitQuery};
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

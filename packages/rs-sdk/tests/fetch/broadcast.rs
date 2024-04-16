@@ -6,8 +6,8 @@ mod online {
         wait_for_state_transition_result_request::WaitForStateTransitionResultRequestV0,
         WaitForStateTransitionResultRequest,
     };
+    use dash_sdk::Sdk;
     use rs_dapi_client::{DapiRequest, RequestSettings};
-    use rs_sdk::Sdk;
     use std::time::Duration;
 
     /// Send streaming request to the server and time out after 1 second (because we don't expect to receive anything)

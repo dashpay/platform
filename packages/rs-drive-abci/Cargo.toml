@@ -44,7 +44,7 @@ tracing = { version = "0.1.37", default-features = false, features = [] }
 clap = { version = "4.4.10", features = ["derive"] }
 envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.7" }
-dapi-grpc = { path = "../dapi-grpc", features = ["server"], default-features = false }
+dapi-grpc = { path = "../dapi-grpc" }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
   "env-filter",
   "ansi",

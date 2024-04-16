@@ -34,7 +34,7 @@ use super::DocumentQuery;
 /// * call [Identity::fetch()] with the query and an instance of [Sdk].
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+/// use dash_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
 /// let sdk = Sdk::new_mock();

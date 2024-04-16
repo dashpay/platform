@@ -1,6 +1,6 @@
+use dash_sdk::platform::Fetch;
 use dpp::prelude::Identifier;
 use drive_proof_verifier::types::IdentityContractNonceFetcher;
-use rs_sdk::platform::Fetch;
 
 use super::{common::setup_logs, config::Config};
 

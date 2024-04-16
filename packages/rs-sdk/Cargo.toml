@@ -1,22 +1,24 @@
 [package]
-name = "rs-sdk"
+name = "dash-sdk"
 version = "1.0.0-dev.10"
 edition = "2021"
 
 [dependencies]
-dpp = { path = "../rs-dpp", default-features = false, features = ["rs-sdk-features"] }
-dapi-grpc = { path = "../dapi-grpc", default-features = false, features = ["client"] }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+  "dash-sdk-features",
+] }
+dapi-grpc = { path = "../dapi-grpc" }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
   "serde",
-]}
+] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 thiserror = "1.0.58"
 tokio = { version = "1.36.0", features = ["macros"] }
-tokio-util = { version = "0.7.10"}
+tokio-util = { version = "0.7.10" }
 async-trait = { version = "0.1.79" }
 http = { version = "0.2.12" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }

@@ -22,8 +22,8 @@ const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
 ///
 /// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
 /// when the [Config::new()] is called.
-/// Variable names in the enviroment and `.env` file must be prefixed with [RS_SDK_](Config::CONFIG_PREFIX)
-/// and written as SCREAMING_SNAKE_CASE (e.g. `RS_SDK_PLATFORM_HOST`).
+/// Variable names in the enviroment and `.env` file must be prefixed with [DASH_SDK_](Config::CONFIG_PREFIX)
+/// and written as SCREAMING_SNAKE_CASE (e.g. `DASH_SDK_PLATFORM_HOST`).
 pub struct Config {
     /// Hostname of the Dash Platform node to connect to
     #[serde(default)]
@@ -72,12 +72,12 @@ pub struct Config {
 
 impl Config {
     /// Prefix of configuration options in the environment variables and `.env` file.
-    pub const CONFIG_PREFIX: &'static str = "RS_SDK_";
+    pub const CONFIG_PREFIX: &'static str = "DASH_SDK_";
     /// Load configuration from operating system environment variables and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and `${CARGO_MANIFEST_DIR}/tests/.env` file.
     /// Variable names in the environment and `.env` file must be converted to SCREAMING_SNAKE_CASE and
-    /// prefixed with [RS_SDK_](Config::CONFIG_PREFIX).
+    /// prefixed with [DASH_SDK_](Config::CONFIG_PREFIX).
     pub fn new() -> Self {
         // load config from .env file, ignore errors
 
@@ -144,7 +144,7 @@ impl Config {
     /// expectations from different tests.
     ///
     /// When empty string is provided, expectations are stored in the root of the dump directory.
-    pub async fn setup_api(&self, namespace: &str) -> Arc<rs_sdk::Sdk> {
+    pub async fn setup_api(&self, namespace: &str) -> Arc<dash_sdk::Sdk> {
         let dump_dir = match namespace.is_empty() {
             true => self.dump_dir.clone(),
             false => self.dump_dir.join(sanitize_filename::sanitize(namespace)),
@@ -165,7 +165,7 @@ impl Config {
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
-            let builder = rs_sdk::SdkBuilder::new(self.address_list()).with_core(
+            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
                 &self.platform_host,
                 self.core_port,
                 &self.core_user,
@@ -194,7 +194,7 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mock_sdk = rs_sdk::SdkBuilder::new_mock()
+            let mock_sdk = dash_sdk::SdkBuilder::new_mock()
                 .build()
                 .expect("initialize api");
 

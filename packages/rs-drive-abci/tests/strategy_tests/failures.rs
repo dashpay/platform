@@ -41,13 +41,10 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(
-                    contract,
-                    Some(BTreeMap::from([(3, contract_update_1)])),
-                )],
+                start_contracts: vec![(contract, Some(BTreeMap::from([(3, contract_update_1)])))],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo {
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -104,7 +101,7 @@ mod tests {
                 outcome
                     .strategy
                     .strategy
-                    .contracts_with_updates
+                    .start_contracts
                     .first()
                     .unwrap()
                     .0
@@ -125,10 +122,10 @@ mod tests {
     fn run_chain_block_failure_on_genesis_block_correctly_fixes_itself() {
         let mut strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,

@@ -21,8 +21,15 @@ default = ["core", "platform", "client", "serde", "server"]
 core = []
 platform = []
 # Re-export Dash Platform protobuf types as `dapi_grpc::platform::proto`
+# Note: client needs tls and tls-roots to connect to testnet which uses TLS.
 tenderdash-proto = []
-client = ["tonic/channel", "tonic/transport", "platform"]
+client = [
+  "tonic/channel",
+  "tonic/transport",
+  "tonic/tls",
+  "tonic/tls-roots",
+  "platform",
+]
 server = ["tonic/channel", "tonic/transport", "platform"]
 serde = ["dep:serde", "dep:serde_bytes"]
 mocks = ["dep:serde_json"]

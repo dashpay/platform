@@ -43,8 +43,8 @@ use crate::version::drive_versions::{
     DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertMethodVersions,
     DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
     DriveDocumentUpdateMethodVersions, DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions,
-    DriveGroveApplyMethodVersions, DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions,
-    DriveGroveCostMethodVersions, DriveGroveMethodVersions,
+    DriveFetchMethodVersions, DriveGroveApplyMethodVersions, DriveGroveBasicMethodVersions,
+    DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions, DriveGroveMethodVersions,
     DriveIdentityContractInfoMethodVersions, DriveIdentityCostEstimationMethodVersions,
     DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchFullIdentityMethodVersions,
     DriveIdentityFetchMethodVersions, DriveIdentityFetchPartialIdentityMethodVersions,
@@ -147,7 +147,10 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 remove_validators_proposed_app_versions: 0,
                 update_validator_proposed_app_version: 0,
             },
-            prove: DriveProveMethodVersions { prove_multiple: 0 },
+            prove: DriveProveMethodVersions {
+                prove_elements: 0,
+                prove_multiple_state_transition_results: 0,
+            },
             balances: DriveBalancesMethodVersions {
                 add_to_system_credits: 0,
                 add_to_system_credits_operations: 0,
@@ -264,6 +267,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 system: DriveVerifySystemMethodVersions {
                     verify_epoch_infos: 0,
+                    verify_elements: 0,
                     verify_upgrade_state: 0,
                     verify_upgrade_vote_status: 0,
                 },
@@ -427,6 +431,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 fetch_platform_state_bytes: 0,
                 store_platform_state_bytes: 0,
             },
+            fetch: DriveFetchMethodVersions { fetch_elements: 0 },
         },
         grove_methods: DriveGroveMethodVersions {
             basic: DriveGroveBasicMethodVersions {
@@ -700,6 +705,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         query: DriveAbciQueryVersions {
+            max_returned_elements: 100,
             response_metadata: 0,
             proofs_query: FeatureVersionBounds {
                 min_version: 0,
@@ -787,6 +793,11 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 epoch_infos: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                path_elements: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
