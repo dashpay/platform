@@ -1122,8 +1122,9 @@ impl Strategy {
 
                         // Create `count` ContractCreate transitions and push to operations vec
                         for _ in 0..count {
-                            // Get the contract owner_id from loaded_identity and loaded_identity nonce
-                            let identity = &current_identities[0];
+                            // Get the contract owner_id from a random current_identity and identity nonce
+                            let identity_num = rng.gen_range(0..current_identities.len());
+                            let identity = current_identities.get(identity_num).unwrap().clone();
                             let identity_nonce =
                                 identity_nonce_counter.entry(identity.id()).or_default();
                             *identity_nonce += 1;
