@@ -1,9 +1,21 @@
+use std::collections::BTreeMap;
+use grovedb::query_result_type::QueryResultType;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::identity::Purpose;
+use dpp::identity::{PartialIdentity, Purpose};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use dpp::consensus::basic::BasicError::DataContractBoundsNotPresentError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use dpp::prelude::Identifier;
+use platform_version::version::PlatformVersion;
+use crate::error::contract::DataContractError;
+use crate::error::drive::DriveError;
+use crate::error::query::QuerySyntaxError;
 
 impl Drive {
     /// Proves identities with all its information from an identity ids.
@@ -14,30 +26,85 @@ impl Drive {
         document_type_name: Option<String>,
         purposes: Vec<Purpose>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<Vec<Vec<Vec<u8>>>, Error> {
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<Identifier, BTreeMap<Purpose, Vec<u8>>>, Error> {
+        // let contract = &self.get_contract_with_fetch_info(
+        //     *contract_id,
+        //     false,
+        //     transaction,
+        //     platform_version,
+        // )?.ok_or(Error::Query(QuerySyntaxError::DataContractNotFound("Contract not found for get_identities_contract_keys")))?.contract;
+
+        // let (requires_encryption, requires_decryption) =
+        // if let Some(document_type_name) = document_type_name {
+        //     let document_type = contract.document_type_for_name(&document_type_name)?;
+        //     (
+        //         document_type.requires_identity_encryption_bounded_key(),
+        //         document_type.requires_identity_decryption_bounded_key()
+        //     )
+        // } else {
+        //     (
+        //         contract.config().requires_identity_encryption_bounded_key(),
+        //         contract.config().requires_identity_decryption_bounded_key(),
+        //     )
+        // };
+
+        // let purpose_to_storage_requirements = purposes
+        //     .into_iter()
+        //     .map(|purpose| {
+        //         let requirements = if purpose == Purpose::ENCRYPTION {
+        //             requires_encryption.ok_or(Error::DataContract(DataContractError::KeyBoundsExpectedButNotPresent(
+        //                 "expected an encryption key"
+        //             )))
+        //         } else if purpose == Purpose::DECRYPTION {
+        //             requires_decryption.ok_or(Error::DataContract(DataContractError::KeyBoundsExpectedButNotPresent(
+        //                 "expected a decryption key"
+        //             )))
+        //         } else {
+        //             Err(
+        //               Error::Query(
+        //                   QuerySyntaxError::InvalidKeyParameter(
+        //                       "expected an encryption or decryption key".to_string()
+        //                   )
+        //               )
+        //             )
+        //         }?;
+        //
+        //         Ok((purpose, requirements))
+        //     })
+        //     .collect::<Result<BTreeMap<Purpose, StorageKeyRequirements>, Error>>()?;
+
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        
-        let identities_keys = identity_ids
-            .iter()
-            .map(|identity_id| {
-                let query = Self::identities_contract_keys_query(&[*identity_id], contract_id, &document_type_name, &purposes);
-                let identity_keys = self.grove_get_path_query_serialized_results(
-                    &query,
-                    transaction,
-                    &mut drive_operations,
-                    drive_version,
-                );
-                identity_keys
-            })
-            .collect::<Result<Vec<(Vec<Vec<u8>>, u16)>, Error>>()?;
 
-        let res = identities_keys
-            .into_iter()
-            .map(|(keys, _)| keys)
-            .collect::<Vec<Vec<Vec<u8>>>>();
+        let query = Self::identities_contract_keys_query(identity_ids, contract_id, &document_type_name, &purposes);
 
-        Ok(res)
+        let result = self.grove_get_path_query(
+            &query,
+            transaction,
+            QueryResultType::QueryPathKeyElementTrioResultType,
+            &mut drive_operations,
+            &platform_version.drive,
+        )?.0.to_path_key_elements();
+
+        let mut partial_identities = BTreeMap::new();
+
+        for (path, _, element) in result {
+            if let Some(identity_id_bytes) = path.get(1) {
+                let identity_id = Identifier::from_vec(identity_id_bytes.to_owned())?;
+                let purpose= *path.last().expect("last path element is the purpose")
+                    .first().ok_or(Error::Query(QuerySyntaxError::InvalidKeyParameter("invalid purpose".to_string())))?;
+                let purpose = Purpose::try_from(purpose)
+                    .map_err(|_| Error::Query(QuerySyntaxError::InvalidKeyParameter("invalid purpose".to_string())))?;
+
+                let entry = partial_identities.entry(identity_id)
+                    .or_insert(BTreeMap::new());
+
+                entry.insert(purpose, element.into_item_bytes()?);
+            }
+        }
+
+
+        Ok(partial_identities)
     }
 }
 

@@ -1,5 +1,6 @@
 mod v0;
 
+use std::collections::BTreeMap;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -7,6 +8,8 @@ use crate::error::Error;
 use dpp::identity::Purpose;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use dpp::identifier::Identifier;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Proves identities contract keys given identity ids and contract id.
@@ -29,9 +32,10 @@ impl Drive {
         document_type_name: Option<String>,
         purposes: Vec<Purpose>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<Vec<Vec<Vec<u8>>>, Error> {
-        match drive_version
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<Identifier, BTreeMap<Purpose, Vec<u8>>>, Error> {
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -43,7 +47,7 @@ impl Drive {
                 document_type_name,
                 purposes,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_identities_contract_keys".to_string(),

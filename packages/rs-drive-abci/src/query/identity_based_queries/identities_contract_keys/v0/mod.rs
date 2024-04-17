@@ -85,9 +85,10 @@ impl<C> Platform<C> {
                 document_type_name,
                 purposes,
                 None,
-                &platform_version.drive,
+                &platform_version,
             )?;
 
+            println!("asdasd");
             // let identities_keys = get_identities_contract_keys_response_v0::IdentitiesKeys {
             //
             // }

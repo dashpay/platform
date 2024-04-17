@@ -16,6 +16,7 @@ use crate::drive::identity::{
 use crate::error::query::QuerySyntaxError;
 use dpp::identity::Purpose;
 use grovedb::{PathQuery, Query, SizedQuery};
+use grovedb::query_result_type::Key;
 
 /// An enumeration representing the types of identity prove requests.
 ///
@@ -219,6 +220,8 @@ impl Drive {
                 .map(|purpose| vec![*purpose as u8])
                 .collect(),
         );
+        
+        sub_query.set_subquery_key(Key::new());
 
         query.default_subquery_branch.subquery = Some(sub_query.into());
         PathQuery {
