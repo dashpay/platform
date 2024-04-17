@@ -39,6 +39,7 @@ service Platform {
   rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
   rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
   rpc getContestedResourceVoteStatus(GetContestedResourceVoteStatusRequest) returns (GetContestedResourceVoteStatusResponse);
+  rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
 }
 
 message Proof {
@@ -624,7 +625,6 @@ message GetEpochsInfoResponse {
   }
 }
 
-
 message GetContestedResourcesRequest {
   message GetContestedResourcesRequestV0 {
     bool prove = 1;
@@ -737,5 +737,36 @@ message GetContestedResourceVoteStatusResponse {
 
   oneof version {
     GetContestedResourceVoteStatusResponseV0 v0 = 1;
+  }
+}
+
+message GetPathElementsRequest {
+  message GetPathElementsRequestV0 {
+    repeated bytes path = 1;
+    repeated bytes keys = 2;
+    bool prove = 3;
+  }
+
+  oneof version {
+    GetPathElementsRequestV0 v0 = 1;
+  }
+}
+
+message GetPathElementsResponse {
+  message GetPathElementsResponseV0 {
+    message Elements {
+      repeated bytes elements = 1;
+    }
+
+    oneof result {
+      Elements elements = 1;
+
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetPathElementsResponseV0 v0 = 1;
   }
 }

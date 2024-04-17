@@ -32,8 +32,6 @@
 
 extern crate core;
 
-use dashcore_rpc::dashcore::QuorumHash;
-
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
@@ -78,7 +76,7 @@ mod tests {
     use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, ExtendedQuorumDetails};
+    use dashcore_rpc::dashcore_rpc_json::AssetUnlockStatus;
     use dashcore_rpc::json::AssetUnlockStatusResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use std::sync::{Arc, Mutex};

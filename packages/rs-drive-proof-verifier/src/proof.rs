@@ -8,7 +8,8 @@ use dapi_grpc::platform::v0::{
     get_epochs_info_request, get_identity_balance_and_revision_request,
     get_identity_balance_request, get_identity_by_public_key_hash_request,
     get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request,
-    get_identity_request, GetProtocolVersionUpgradeStateRequest,
+    get_identity_request, get_path_elements_request, GetPathElementsRequest,
+    GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, ResponseMetadata,
 };
@@ -30,6 +31,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
 
+use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dpp::block::block_info::BlockInfo;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
@@ -1051,6 +1053,43 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
         Ok((Some(votes), mtd.clone()))
     }
 }
+
+impl FromProof<GetPathElementsRequest> for Elements {
+    type Request = GetPathElementsRequest;
+    type Response = GetPathElementsResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let request_v0: GetPathElementsRequestV0 = match request.version {
+            Some(get_path_elements_request::Version::V0(v0)) => v0,
+            None => return Err(Error::EmptyVersion),
+        };
+
+        let path = request_v0.path;
+        let keys = request_v0.keys;
+
+        let (root_hash, objects) =
+            Drive::verify_elements(&proof.grovedb_proof, path, keys, platform_version)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(objects), mtd.clone()))
+    }
+}
+
 // #[cfg_attr(feature = "mocks", mockall::automock)]
 impl<'dq, Q> FromProof<Q> for Documents
 where

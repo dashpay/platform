@@ -90,7 +90,7 @@ impl<C> Platform<C> {
             })
             .collect::<Result<Vec<_>, QueryError>>());
 
-        let proof = self.drive.prove_multiple(
+        let proof = self.drive.prove_multiple_state_transition_results(
             &identity_requests,
             &contract_ids,
             &document_queries,
