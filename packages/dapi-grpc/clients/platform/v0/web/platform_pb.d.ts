@@ -1229,18 +1229,44 @@ export namespace GetIdentitiesContractKeysResponse {
       metadata?: ResponseMetadata.AsObject,
     }
 
+    export class PurposeKeys extends jspb.Message {
+      getPurpose(): KeyPurposeMap[keyof KeyPurposeMap];
+      setPurpose(value: KeyPurposeMap[keyof KeyPurposeMap]): void;
+
+      clearKeysBytesList(): void;
+      getKeysBytesList(): Array<Uint8Array | string>;
+      getKeysBytesList_asU8(): Array<Uint8Array>;
+      getKeysBytesList_asB64(): Array<string>;
+      setKeysBytesList(value: Array<Uint8Array | string>): void;
+      addKeysBytes(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): PurposeKeys.AsObject;
+      static toObject(includeInstance: boolean, msg: PurposeKeys): PurposeKeys.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: PurposeKeys, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): PurposeKeys;
+      static deserializeBinaryFromReader(message: PurposeKeys, reader: jspb.BinaryReader): PurposeKeys;
+    }
+
+    export namespace PurposeKeys {
+      export type AsObject = {
+        purpose: KeyPurposeMap[keyof KeyPurposeMap],
+        keysBytesList: Array<Uint8Array | string>,
+      }
+    }
+
     export class IdentityKeys extends jspb.Message {
       getIdentityId(): Uint8Array | string;
       getIdentityId_asU8(): Uint8Array;
       getIdentityId_asB64(): string;
       setIdentityId(value: Uint8Array | string): void;
 
-      clearKeyBytesList(): void;
-      getKeyBytesList(): Array<Uint8Array | string>;
-      getKeyBytesList_asU8(): Array<Uint8Array>;
-      getKeyBytesList_asB64(): Array<string>;
-      setKeyBytesList(value: Array<Uint8Array | string>): void;
-      addKeyBytes(value: Uint8Array | string, index?: number): Uint8Array | string;
+      clearKeysList(): void;
+      getKeysList(): Array<GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.PurposeKeys>;
+      setKeysList(value: Array<GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.PurposeKeys>): void;
+      addKeys(value?: GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.PurposeKeys, index?: number): GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.PurposeKeys;
 
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): IdentityKeys.AsObject;
@@ -1255,7 +1281,7 @@ export namespace GetIdentitiesContractKeysResponse {
     export namespace IdentityKeys {
       export type AsObject = {
         identityId: Uint8Array | string,
-        keyBytesList: Array<Uint8Array | string>,
+        keysList: Array<GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.PurposeKeys.AsObject>,
       }
     }
 

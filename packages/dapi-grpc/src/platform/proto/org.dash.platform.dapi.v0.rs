@@ -784,9 +784,23 @@ pub mod get_identities_contract_keys_response {
         #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct Keys {
-            #[prost(bytes = "vec", repeated, tag = "1")]
+        pub struct PurposeKeys {
+            #[prost(enumeration = "super::super::KeyPurpose", tag = "1")]
+            pub purpose: i32,
+            #[prost(bytes = "vec", repeated, tag = "2")]
             pub keys_bytes: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct IdentityKeys {
+            #[prost(bytes = "vec", tag = "1")]
+            #[serde(with = "serde_bytes")]
+            pub identity_id: ::prost::alloc::vec::Vec<u8>,
+            #[prost(message, repeated, tag = "2")]
+            pub keys: ::prost::alloc::vec::Vec<PurposeKeys>,
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
@@ -795,7 +809,7 @@ pub mod get_identities_contract_keys_response {
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct IdentitiesKeys {
             #[prost(message, repeated, tag = "1")]
-            pub entries: ::prost::alloc::vec::Vec<Keys>,
+            pub entries: ::prost::alloc::vec::Vec<IdentityKeys>,
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]

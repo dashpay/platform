@@ -55,6 +55,7 @@ CF_EXTERN_C_BEGIN
 @class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0;
 @class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys;
 @class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys;
+@class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys;
 @class GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0;
 @class GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0;
 @class GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision;
@@ -1086,20 +1087,49 @@ GPB_FINAL @interface GetIdentitiesContractKeysResponse_GetIdentitiesContractKeys
  **/
 void GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_ClearResultOneOfCase(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0 *message);
 
+#pragma mark - GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys
+
+typedef GPB_ENUM(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_FieldNumber) {
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_FieldNumber_Purpose = 1,
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_FieldNumber_KeysBytesArray = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys : GPBMessage
+
+@property(nonatomic, readwrite) KeyPurpose purpose;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *keysBytesArray;
+/** The number of items in @c keysBytesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger keysBytesArray_Count;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys's @c purpose property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_Purpose_RawValue(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys *message);
+/**
+ * Sets the raw value of an @c GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys's @c purpose property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_Purpose_RawValue(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys *message, int32_t value);
+
 #pragma mark - GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys
 
 typedef GPB_ENUM(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys_FieldNumber) {
   GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys_FieldNumber_IdentityId = 1,
-  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys_FieldNumber_KeyBytesArray = 2,
+  GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys_FieldNumber_KeysArray = 2,
 };
 
 GPB_FINAL @interface GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *keyBytesArray;
-/** The number of items in @c keyBytesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger keyBytesArray_Count;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys*> *keysArray;
+/** The number of items in @c keysArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger keysArray_Count;
 
 @end
 

@@ -69,6 +69,7 @@ GPBObjCClassDeclaration(GetIdentitiesContractKeysResponse);
 GPBObjCClassDeclaration(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0);
 GPBObjCClassDeclaration(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys);
 GPBObjCClassDeclaration(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys);
+GPBObjCClassDeclaration(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys);
 GPBObjCClassDeclaration(GetIdentityBalanceAndRevisionRequest);
 GPBObjCClassDeclaration(GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0);
 GPBObjCClassDeclaration(GetIdentityBalanceAndRevisionResponse);
@@ -2753,17 +2754,86 @@ void GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_Clear
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys
+
+@implementation GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys
+
+@dynamic purpose;
+@dynamic keysBytesArray, keysBytesArray_Count;
+
+typedef struct GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys__storage_ {
+  uint32_t _has_storage_[1];
+  KeyPurpose purpose;
+  NSMutableArray *keysBytesArray;
+} GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "purpose",
+        .dataTypeSpecific.enumDescFunc = KeyPurpose_EnumDescriptor,
+        .number = GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_FieldNumber_Purpose,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys__storage_, purpose),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "keysBytesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_FieldNumber_KeysBytesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys__storage_, keysBytesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_Purpose_RawValue(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys *message) {
+  GPBDescriptor *descriptor = [GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_FieldNumber_Purpose];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_Purpose_RawValue(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys_FieldNumber_Purpose];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
 #pragma mark - GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys
 
 @implementation GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys
 
 @dynamic identityId;
-@dynamic keyBytesArray, keyBytesArray_Count;
+@dynamic keysArray, keysArray_Count;
 
 typedef struct GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys__storage_ {
   uint32_t _has_storage_[1];
   NSData *identityId;
-  NSMutableArray *keyBytesArray;
+  NSMutableArray *keysArray;
 } GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys__storage_;
 
 // This method is threadsafe because it is initially called
@@ -2782,13 +2852,13 @@ typedef struct GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysRespon
         .dataType = GPBDataTypeBytes,
       },
       {
-        .name = "keyBytesArray",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys_FieldNumber_KeyBytesArray,
+        .name = "keysArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_PurposeKeys),
+        .number = GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys_FieldNumber_KeysArray,
         .hasIndex = GPBNoHasBit,
-        .offset = (uint32_t)offsetof(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys__storage_, keyBytesArray),
+        .offset = (uint32_t)offsetof(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys__storage_, keysArray),
         .flags = GPBFieldRepeated,
-        .dataType = GPBDataTypeBytes,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
