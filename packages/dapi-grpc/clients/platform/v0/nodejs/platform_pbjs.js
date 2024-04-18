@@ -713,39 +713,6 @@ $root.org = (function() {
                          * @variation 2
                          */
 
-                        /**
-                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getPathElements}.
-                         * @memberof org.dash.platform.dapi.v0.Platform
-                         * @typedef getPathElementsCallback
-                         * @type {function}
-                         * @param {Error|null} error Error, if any
-                         * @param {org.dash.platform.dapi.v0.GetPathElementsResponse} [response] GetPathElementsResponse
-                         */
-
-                        /**
-                         * Calls getPathElements.
-                         * @function getPathElements
-                         * @memberof org.dash.platform.dapi.v0.Platform
-                         * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsRequest} request GetPathElementsRequest message or plain object
-                         * @param {org.dash.platform.dapi.v0.Platform.getPathElementsCallback} callback Node-style callback called with the error, if any, and GetPathElementsResponse
-                         * @returns {undefined}
-                         * @variation 1
-                         */
-                        Object.defineProperty(Platform.prototype.getPathElements = function getPathElements(request, callback) {
-                            return this.rpcCall(getPathElements, $root.org.dash.platform.dapi.v0.GetPathElementsRequest, $root.org.dash.platform.dapi.v0.GetPathElementsResponse, request, callback);
-                        }, "name", { value: "getPathElements" });
-
-                        /**
-                         * Calls getPathElements.
-                         * @function getPathElements
-                         * @memberof org.dash.platform.dapi.v0.Platform
-                         * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsRequest} request GetPathElementsRequest message or plain object
-                         * @returns {Promise<org.dash.platform.dapi.v0.GetPathElementsResponse>} Promise
-                         * @variation 2
-                         */
-
                         return Platform;
                     })();
 
@@ -10267,25 +10234,26 @@ $root.org = (function() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            GetIdentitiesContractKeysResponseV0.Keys = (function() {
+                            GetIdentitiesContractKeysResponseV0.IdentityKeys = (function() {
 
                                 /**
-                                 * Properties of a Keys.
+                                 * Properties of an IdentityKeys.
                                  * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
-                                 * @interface IKeys
-                                 * @property {Array.<Uint8Array>|null} [keysBytes] Keys keysBytes
+                                 * @interface IIdentityKeys
+                                 * @property {Uint8Array|null} [identityId] IdentityKeys identityId
+                                 * @property {Array.<Uint8Array>|null} [keyBytes] IdentityKeys keyBytes
                                  */
 
                                 /**
-                                 * Constructs a new Keys.
+                                 * Constructs a new IdentityKeys.
                                  * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
-                                 * @classdesc Represents a Keys.
-                                 * @implements IKeys
+                                 * @classdesc Represents an IdentityKeys.
+                                 * @implements IIdentityKeys
                                  * @constructor
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys=} [properties] Properties to set
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentityKeys=} [properties] Properties to set
                                  */
-                                function Keys(properties) {
-                                    this.keysBytes = [];
+                                function IdentityKeys(properties) {
+                                    this.keyBytes = [];
                                     if (properties)
                                         for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                             if (properties[keys[i]] != null)
@@ -10293,78 +10261,91 @@ $root.org = (function() {
                                 }
 
                                 /**
-                                 * Keys keysBytes.
-                                 * @member {Array.<Uint8Array>} keysBytes
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
+                                 * IdentityKeys identityId.
+                                 * @member {Uint8Array} identityId
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
                                  * @instance
                                  */
-                                Keys.prototype.keysBytes = $util.emptyArray;
+                                IdentityKeys.prototype.identityId = $util.newBuffer([]);
 
                                 /**
-                                 * Creates a new Keys instance using the specified properties.
-                                 * @function create
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
-                                 * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys=} [properties] Properties to set
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} Keys instance
+                                 * IdentityKeys keyBytes.
+                                 * @member {Array.<Uint8Array>} keyBytes
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
+                                 * @instance
                                  */
-                                Keys.create = function create(properties) {
-                                    return new Keys(properties);
+                                IdentityKeys.prototype.keyBytes = $util.emptyArray;
+
+                                /**
+                                 * Creates a new IdentityKeys instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentityKeys=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys} IdentityKeys instance
+                                 */
+                                IdentityKeys.create = function create(properties) {
+                                    return new IdentityKeys(properties);
                                 };
 
                                 /**
-                                 * Encodes the specified Keys message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.verify|verify} messages.
+                                 * Encodes the specified IdentityKeys message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys.verify|verify} messages.
                                  * @function encode
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys} message Keys message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentityKeys} message IdentityKeys message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
-                                Keys.encode = function encode(message, writer) {
+                                IdentityKeys.encode = function encode(message, writer) {
                                     if (!writer)
                                         writer = $Writer.create();
-                                    if (message.keysBytes != null && message.keysBytes.length)
-                                        for (var i = 0; i < message.keysBytes.length; ++i)
-                                            writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.keysBytes[i]);
+                                    if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
+                                    if (message.keyBytes != null && message.keyBytes.length)
+                                        for (var i = 0; i < message.keyBytes.length; ++i)
+                                            writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.keyBytes[i]);
                                     return writer;
                                 };
 
                                 /**
-                                 * Encodes the specified Keys message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.verify|verify} messages.
+                                 * Encodes the specified IdentityKeys message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys.verify|verify} messages.
                                  * @function encodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys} message Keys message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentityKeys} message IdentityKeys message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
-                                Keys.encodeDelimited = function encodeDelimited(message, writer) {
+                                IdentityKeys.encodeDelimited = function encodeDelimited(message, writer) {
                                     return this.encode(message, writer).ldelim();
                                 };
 
                                 /**
-                                 * Decodes a Keys message from the specified reader or buffer.
+                                 * Decodes an IdentityKeys message from the specified reader or buffer.
                                  * @function decode
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                                  * @param {number} [length] Message length if known beforehand
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} Keys
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys} IdentityKeys
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
-                                Keys.decode = function decode(reader, length) {
+                                IdentityKeys.decode = function decode(reader, length) {
                                     if (!(reader instanceof $Reader))
                                         reader = $Reader.create(reader);
-                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys();
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys();
                                     while (reader.pos < end) {
                                         var tag = reader.uint32();
                                         switch (tag >>> 3) {
                                         case 1:
-                                            if (!(message.keysBytes && message.keysBytes.length))
-                                                message.keysBytes = [];
-                                            message.keysBytes.push(reader.bytes());
+                                            message.identityId = reader.bytes();
+                                            break;
+                                        case 2:
+                                            if (!(message.keyBytes && message.keyBytes.length))
+                                                message.keyBytes = [];
+                                            message.keyBytes.push(reader.bytes());
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -10375,102 +10356,120 @@ $root.org = (function() {
                                 };
 
                                 /**
-                                 * Decodes a Keys message from the specified reader or buffer, length delimited.
+                                 * Decodes an IdentityKeys message from the specified reader or buffer, length delimited.
                                  * @function decodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} Keys
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys} IdentityKeys
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
-                                Keys.decodeDelimited = function decodeDelimited(reader) {
+                                IdentityKeys.decodeDelimited = function decodeDelimited(reader) {
                                     if (!(reader instanceof $Reader))
                                         reader = new $Reader(reader);
                                     return this.decode(reader, reader.uint32());
                                 };
 
                                 /**
-                                 * Verifies a Keys message.
+                                 * Verifies an IdentityKeys message.
                                  * @function verify
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
                                  * @static
                                  * @param {Object.<string,*>} message Plain object to verify
                                  * @returns {string|null} `null` if valid, otherwise the reason why it is not
                                  */
-                                Keys.verify = function verify(message) {
+                                IdentityKeys.verify = function verify(message) {
                                     if (typeof message !== "object" || message === null)
                                         return "object expected";
-                                    if (message.keysBytes != null && message.hasOwnProperty("keysBytes")) {
-                                        if (!Array.isArray(message.keysBytes))
-                                            return "keysBytes: array expected";
-                                        for (var i = 0; i < message.keysBytes.length; ++i)
-                                            if (!(message.keysBytes[i] && typeof message.keysBytes[i].length === "number" || $util.isString(message.keysBytes[i])))
-                                                return "keysBytes: buffer[] expected";
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                            return "identityId: buffer expected";
+                                    if (message.keyBytes != null && message.hasOwnProperty("keyBytes")) {
+                                        if (!Array.isArray(message.keyBytes))
+                                            return "keyBytes: array expected";
+                                        for (var i = 0; i < message.keyBytes.length; ++i)
+                                            if (!(message.keyBytes[i] && typeof message.keyBytes[i].length === "number" || $util.isString(message.keyBytes[i])))
+                                                return "keyBytes: buffer[] expected";
                                     }
                                     return null;
                                 };
 
                                 /**
-                                 * Creates a Keys message from a plain object. Also converts values to their respective internal types.
+                                 * Creates an IdentityKeys message from a plain object. Also converts values to their respective internal types.
                                  * @function fromObject
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
                                  * @static
                                  * @param {Object.<string,*>} object Plain object
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} Keys
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys} IdentityKeys
                                  */
-                                Keys.fromObject = function fromObject(object) {
-                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys)
+                                IdentityKeys.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys)
                                         return object;
-                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys();
-                                    if (object.keysBytes) {
-                                        if (!Array.isArray(object.keysBytes))
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.keysBytes: array expected");
-                                        message.keysBytes = [];
-                                        for (var i = 0; i < object.keysBytes.length; ++i)
-                                            if (typeof object.keysBytes[i] === "string")
-                                                $util.base64.decode(object.keysBytes[i], message.keysBytes[i] = $util.newBuffer($util.base64.length(object.keysBytes[i])), 0);
-                                            else if (object.keysBytes[i].length >= 0)
-                                                message.keysBytes[i] = object.keysBytes[i];
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys();
+                                    if (object.identityId != null)
+                                        if (typeof object.identityId === "string")
+                                            $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                        else if (object.identityId.length >= 0)
+                                            message.identityId = object.identityId;
+                                    if (object.keyBytes) {
+                                        if (!Array.isArray(object.keyBytes))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys.keyBytes: array expected");
+                                        message.keyBytes = [];
+                                        for (var i = 0; i < object.keyBytes.length; ++i)
+                                            if (typeof object.keyBytes[i] === "string")
+                                                $util.base64.decode(object.keyBytes[i], message.keyBytes[i] = $util.newBuffer($util.base64.length(object.keyBytes[i])), 0);
+                                            else if (object.keyBytes[i].length >= 0)
+                                                message.keyBytes[i] = object.keyBytes[i];
                                     }
                                     return message;
                                 };
 
                                 /**
-                                 * Creates a plain object from a Keys message. Also converts values to other types if specified.
+                                 * Creates a plain object from an IdentityKeys message. Also converts values to other types if specified.
                                  * @function toObject
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys} message Keys
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys} message IdentityKeys
                                  * @param {$protobuf.IConversionOptions} [options] Conversion options
                                  * @returns {Object.<string,*>} Plain object
                                  */
-                                Keys.toObject = function toObject(message, options) {
+                                IdentityKeys.toObject = function toObject(message, options) {
                                     if (!options)
                                         options = {};
                                     var object = {};
                                     if (options.arrays || options.defaults)
-                                        object.keysBytes = [];
-                                    if (message.keysBytes && message.keysBytes.length) {
-                                        object.keysBytes = [];
-                                        for (var j = 0; j < message.keysBytes.length; ++j)
-                                            object.keysBytes[j] = options.bytes === String ? $util.base64.encode(message.keysBytes[j], 0, message.keysBytes[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.keysBytes[j]) : message.keysBytes[j];
+                                        object.keyBytes = [];
+                                    if (options.defaults)
+                                        if (options.bytes === String)
+                                            object.identityId = "";
+                                        else {
+                                            object.identityId = [];
+                                            if (options.bytes !== Array)
+                                                object.identityId = $util.newBuffer(object.identityId);
+                                        }
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                    if (message.keyBytes && message.keyBytes.length) {
+                                        object.keyBytes = [];
+                                        for (var j = 0; j < message.keyBytes.length; ++j)
+                                            object.keyBytes[j] = options.bytes === String ? $util.base64.encode(message.keyBytes[j], 0, message.keyBytes[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.keyBytes[j]) : message.keyBytes[j];
                                     }
                                     return object;
                                 };
 
                                 /**
-                                 * Converts this Keys to JSON.
+                                 * Converts this IdentityKeys to JSON.
                                  * @function toJSON
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys
                                  * @instance
                                  * @returns {Object.<string,*>} JSON object
                                  */
-                                Keys.prototype.toJSON = function toJSON() {
+                                IdentityKeys.prototype.toJSON = function toJSON() {
                                     return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                                 };
 
-                                return Keys;
+                                return IdentityKeys;
                             })();
 
                             GetIdentitiesContractKeysResponseV0.IdentitiesKeys = (function() {
@@ -10479,7 +10478,7 @@ $root.org = (function() {
                                  * Properties of an IdentitiesKeys.
                                  * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0
                                  * @interface IIdentitiesKeys
-                                 * @property {Array.<org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys>|null} [entries] IdentitiesKeys entries
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentityKeys>|null} [entries] IdentitiesKeys entries
                                  */
 
                                 /**
@@ -10500,7 +10499,7 @@ $root.org = (function() {
 
                                 /**
                                  * IdentitiesKeys entries.
-                                 * @member {Array.<org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IKeys>} entries
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IIdentityKeys>} entries
                                  * @memberof org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys
                                  * @instance
                                  */
@@ -10532,7 +10531,7 @@ $root.org = (function() {
                                         writer = $Writer.create();
                                     if (message.entries != null && message.entries.length)
                                         for (var i = 0; i < message.entries.length; ++i)
-                                            $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                            $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                     return writer;
                                 };
 
@@ -10570,7 +10569,7 @@ $root.org = (function() {
                                         case 1:
                                             if (!(message.entries && message.entries.length))
                                                 message.entries = [];
-                                            message.entries.push($root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.decode(reader, reader.uint32()));
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys.decode(reader, reader.uint32()));
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -10611,7 +10610,7 @@ $root.org = (function() {
                                         if (!Array.isArray(message.entries))
                                             return "entries: array expected";
                                         for (var i = 0; i < message.entries.length; ++i) {
-                                            var error = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.verify(message.entries[i]);
+                                            var error = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys.verify(message.entries[i]);
                                             if (error)
                                                 return "entries." + error;
                                         }
@@ -10638,7 +10637,7 @@ $root.org = (function() {
                                         for (var i = 0; i < object.entries.length; ++i) {
                                             if (typeof object.entries[i] !== "object")
                                                 throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeys.entries: object expected");
-                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.fromObject(object.entries[i]);
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys.fromObject(object.entries[i]);
                                         }
                                     }
                                     return message;
@@ -10662,7 +10661,7 @@ $root.org = (function() {
                                     if (message.entries && message.entries.length) {
                                         object.entries = [];
                                         for (var j = 0; j < message.entries.length; ++j)
-                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.Keys.toObject(message.entries[j], options);
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeys.toObject(message.entries[j], options);
                                     }
                                     return object;
                                 };
@@ -24674,1178 +24673,6 @@ $root.org = (function() {
                         })();
 
                         return GetEpochsInfoResponse;
-                    })();
-
-                    v0.GetPathElementsRequest = (function() {
-
-                        /**
-                         * Properties of a GetPathElementsRequest.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetPathElementsRequest
-                         * @property {org.dash.platform.dapi.v0.GetPathElementsRequest.IGetPathElementsRequestV0|null} [v0] GetPathElementsRequest v0
-                         */
-
-                        /**
-                         * Constructs a new GetPathElementsRequest.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetPathElementsRequest.
-                         * @implements IGetPathElementsRequest
-                         * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsRequest=} [properties] Properties to set
-                         */
-                        function GetPathElementsRequest(properties) {
-                            if (properties)
-                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                    if (properties[keys[i]] != null)
-                                        this[keys[i]] = properties[keys[i]];
-                        }
-
-                        /**
-                         * GetPathElementsRequest v0.
-                         * @member {org.dash.platform.dapi.v0.GetPathElementsRequest.IGetPathElementsRequestV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @instance
-                         */
-                        GetPathElementsRequest.prototype.v0 = null;
-
-                        // OneOf field names bound to virtual getters and setters
-                        var $oneOfFields;
-
-                        /**
-                         * GetPathElementsRequest version.
-                         * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @instance
-                         */
-                        Object.defineProperty(GetPathElementsRequest.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
-                            set: $util.oneOfSetter($oneOfFields)
-                        });
-
-                        /**
-                         * Creates a new GetPathElementsRequest instance using the specified properties.
-                         * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsRequest=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetPathElementsRequest} GetPathElementsRequest instance
-                         */
-                        GetPathElementsRequest.create = function create(properties) {
-                            return new GetPathElementsRequest(properties);
-                        };
-
-                        /**
-                         * Encodes the specified GetPathElementsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsRequest.verify|verify} messages.
-                         * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsRequest} message GetPathElementsRequest message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetPathElementsRequest.encode = function encode(message, writer) {
-                            if (!writer)
-                                writer = $Writer.create();
-                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
-                            return writer;
-                        };
-
-                        /**
-                         * Encodes the specified GetPathElementsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsRequest.verify|verify} messages.
-                         * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsRequest} message GetPathElementsRequest message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetPathElementsRequest.encodeDelimited = function encodeDelimited(message, writer) {
-                            return this.encode(message, writer).ldelim();
-                        };
-
-                        /**
-                         * Decodes a GetPathElementsRequest message from the specified reader or buffer.
-                         * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetPathElementsRequest} GetPathElementsRequest
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetPathElementsRequest.decode = function decode(reader, length) {
-                            if (!(reader instanceof $Reader))
-                                reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPathElementsRequest();
-                            while (reader.pos < end) {
-                                var tag = reader.uint32();
-                                switch (tag >>> 3) {
-                                case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.decode(reader, reader.uint32());
-                                    break;
-                                default:
-                                    reader.skipType(tag & 7);
-                                    break;
-                                }
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Decodes a GetPathElementsRequest message from the specified reader or buffer, length delimited.
-                         * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetPathElementsRequest} GetPathElementsRequest
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetPathElementsRequest.decodeDelimited = function decodeDelimited(reader) {
-                            if (!(reader instanceof $Reader))
-                                reader = new $Reader(reader);
-                            return this.decode(reader, reader.uint32());
-                        };
-
-                        /**
-                         * Verifies a GetPathElementsRequest message.
-                         * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @static
-                         * @param {Object.<string,*>} message Plain object to verify
-                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                         */
-                        GetPathElementsRequest.verify = function verify(message) {
-                            if (typeof message !== "object" || message === null)
-                                return "object expected";
-                            var properties = {};
-                            if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                properties.version = 1;
-                                {
-                                    var error = $root.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.verify(message.v0);
-                                    if (error)
-                                        return "v0." + error;
-                                }
-                            }
-                            return null;
-                        };
-
-                        /**
-                         * Creates a GetPathElementsRequest message from a plain object. Also converts values to their respective internal types.
-                         * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @static
-                         * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetPathElementsRequest} GetPathElementsRequest
-                         */
-                        GetPathElementsRequest.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetPathElementsRequest)
-                                return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetPathElementsRequest();
-                            if (object.v0 != null) {
-                                if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetPathElementsRequest.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.fromObject(object.v0);
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Creates a plain object from a GetPathElementsRequest message. Also converts values to other types if specified.
-                         * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.GetPathElementsRequest} message GetPathElementsRequest
-                         * @param {$protobuf.IConversionOptions} [options] Conversion options
-                         * @returns {Object.<string,*>} Plain object
-                         */
-                        GetPathElementsRequest.toObject = function toObject(message, options) {
-                            if (!options)
-                                options = {};
-                            var object = {};
-                            if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.toObject(message.v0, options);
-                                if (options.oneofs)
-                                    object.version = "v0";
-                            }
-                            return object;
-                        };
-
-                        /**
-                         * Converts this GetPathElementsRequest to JSON.
-                         * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                         * @instance
-                         * @returns {Object.<string,*>} JSON object
-                         */
-                        GetPathElementsRequest.prototype.toJSON = function toJSON() {
-                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                        };
-
-                        GetPathElementsRequest.GetPathElementsRequestV0 = (function() {
-
-                            /**
-                             * Properties of a GetPathElementsRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                             * @interface IGetPathElementsRequestV0
-                             * @property {Array.<Uint8Array>|null} [path] GetPathElementsRequestV0 path
-                             * @property {Array.<Uint8Array>|null} [keys] GetPathElementsRequestV0 keys
-                             * @property {boolean|null} [prove] GetPathElementsRequestV0 prove
-                             */
-
-                            /**
-                             * Constructs a new GetPathElementsRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest
-                             * @classdesc Represents a GetPathElementsRequestV0.
-                             * @implements IGetPathElementsRequestV0
-                             * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsRequest.IGetPathElementsRequestV0=} [properties] Properties to set
-                             */
-                            function GetPathElementsRequestV0(properties) {
-                                this.path = [];
-                                this.keys = [];
-                                if (properties)
-                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                        if (properties[keys[i]] != null)
-                                            this[keys[i]] = properties[keys[i]];
-                            }
-
-                            /**
-                             * GetPathElementsRequestV0 path.
-                             * @member {Array.<Uint8Array>} path
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @instance
-                             */
-                            GetPathElementsRequestV0.prototype.path = $util.emptyArray;
-
-                            /**
-                             * GetPathElementsRequestV0 keys.
-                             * @member {Array.<Uint8Array>} keys
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @instance
-                             */
-                            GetPathElementsRequestV0.prototype.keys = $util.emptyArray;
-
-                            /**
-                             * GetPathElementsRequestV0 prove.
-                             * @member {boolean} prove
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @instance
-                             */
-                            GetPathElementsRequestV0.prototype.prove = false;
-
-                            /**
-                             * Creates a new GetPathElementsRequestV0 instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsRequest.IGetPathElementsRequestV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} GetPathElementsRequestV0 instance
-                             */
-                            GetPathElementsRequestV0.create = function create(properties) {
-                                return new GetPathElementsRequestV0(properties);
-                            };
-
-                            /**
-                             * Encodes the specified GetPathElementsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.verify|verify} messages.
-                             * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsRequest.IGetPathElementsRequestV0} message GetPathElementsRequestV0 message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            GetPathElementsRequestV0.encode = function encode(message, writer) {
-                                if (!writer)
-                                    writer = $Writer.create();
-                                if (message.path != null && message.path.length)
-                                    for (var i = 0; i < message.path.length; ++i)
-                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.path[i]);
-                                if (message.keys != null && message.keys.length)
-                                    for (var i = 0; i < message.keys.length; ++i)
-                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.keys[i]);
-                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
-                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.prove);
-                                return writer;
-                            };
-
-                            /**
-                             * Encodes the specified GetPathElementsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.verify|verify} messages.
-                             * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsRequest.IGetPathElementsRequestV0} message GetPathElementsRequestV0 message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            GetPathElementsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
-                                return this.encode(message, writer).ldelim();
-                            };
-
-                            /**
-                             * Decodes a GetPathElementsRequestV0 message from the specified reader or buffer.
-                             * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} GetPathElementsRequestV0
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            GetPathElementsRequestV0.decode = function decode(reader, length) {
-                                if (!(reader instanceof $Reader))
-                                    reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0();
-                                while (reader.pos < end) {
-                                    var tag = reader.uint32();
-                                    switch (tag >>> 3) {
-                                    case 1:
-                                        if (!(message.path && message.path.length))
-                                            message.path = [];
-                                        message.path.push(reader.bytes());
-                                        break;
-                                    case 2:
-                                        if (!(message.keys && message.keys.length))
-                                            message.keys = [];
-                                        message.keys.push(reader.bytes());
-                                        break;
-                                    case 3:
-                                        message.prove = reader.bool();
-                                        break;
-                                    default:
-                                        reader.skipType(tag & 7);
-                                        break;
-                                    }
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Decodes a GetPathElementsRequestV0 message from the specified reader or buffer, length delimited.
-                             * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} GetPathElementsRequestV0
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            GetPathElementsRequestV0.decodeDelimited = function decodeDelimited(reader) {
-                                if (!(reader instanceof $Reader))
-                                    reader = new $Reader(reader);
-                                return this.decode(reader, reader.uint32());
-                            };
-
-                            /**
-                             * Verifies a GetPathElementsRequestV0 message.
-                             * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @static
-                             * @param {Object.<string,*>} message Plain object to verify
-                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                             */
-                            GetPathElementsRequestV0.verify = function verify(message) {
-                                if (typeof message !== "object" || message === null)
-                                    return "object expected";
-                                if (message.path != null && message.hasOwnProperty("path")) {
-                                    if (!Array.isArray(message.path))
-                                        return "path: array expected";
-                                    for (var i = 0; i < message.path.length; ++i)
-                                        if (!(message.path[i] && typeof message.path[i].length === "number" || $util.isString(message.path[i])))
-                                            return "path: buffer[] expected";
-                                }
-                                if (message.keys != null && message.hasOwnProperty("keys")) {
-                                    if (!Array.isArray(message.keys))
-                                        return "keys: array expected";
-                                    for (var i = 0; i < message.keys.length; ++i)
-                                        if (!(message.keys[i] && typeof message.keys[i].length === "number" || $util.isString(message.keys[i])))
-                                            return "keys: buffer[] expected";
-                                }
-                                if (message.prove != null && message.hasOwnProperty("prove"))
-                                    if (typeof message.prove !== "boolean")
-                                        return "prove: boolean expected";
-                                return null;
-                            };
-
-                            /**
-                             * Creates a GetPathElementsRequestV0 message from a plain object. Also converts values to their respective internal types.
-                             * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @static
-                             * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} GetPathElementsRequestV0
-                             */
-                            GetPathElementsRequestV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0)
-                                    return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0();
-                                if (object.path) {
-                                    if (!Array.isArray(object.path))
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.path: array expected");
-                                    message.path = [];
-                                    for (var i = 0; i < object.path.length; ++i)
-                                        if (typeof object.path[i] === "string")
-                                            $util.base64.decode(object.path[i], message.path[i] = $util.newBuffer($util.base64.length(object.path[i])), 0);
-                                        else if (object.path[i].length >= 0)
-                                            message.path[i] = object.path[i];
-                                }
-                                if (object.keys) {
-                                    if (!Array.isArray(object.keys))
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.keys: array expected");
-                                    message.keys = [];
-                                    for (var i = 0; i < object.keys.length; ++i)
-                                        if (typeof object.keys[i] === "string")
-                                            $util.base64.decode(object.keys[i], message.keys[i] = $util.newBuffer($util.base64.length(object.keys[i])), 0);
-                                        else if (object.keys[i].length >= 0)
-                                            message.keys[i] = object.keys[i];
-                                }
-                                if (object.prove != null)
-                                    message.prove = Boolean(object.prove);
-                                return message;
-                            };
-
-                            /**
-                             * Creates a plain object from a GetPathElementsRequestV0 message. Also converts values to other types if specified.
-                             * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} message GetPathElementsRequestV0
-                             * @param {$protobuf.IConversionOptions} [options] Conversion options
-                             * @returns {Object.<string,*>} Plain object
-                             */
-                            GetPathElementsRequestV0.toObject = function toObject(message, options) {
-                                if (!options)
-                                    options = {};
-                                var object = {};
-                                if (options.arrays || options.defaults) {
-                                    object.path = [];
-                                    object.keys = [];
-                                }
-                                if (options.defaults)
-                                    object.prove = false;
-                                if (message.path && message.path.length) {
-                                    object.path = [];
-                                    for (var j = 0; j < message.path.length; ++j)
-                                        object.path[j] = options.bytes === String ? $util.base64.encode(message.path[j], 0, message.path[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.path[j]) : message.path[j];
-                                }
-                                if (message.keys && message.keys.length) {
-                                    object.keys = [];
-                                    for (var j = 0; j < message.keys.length; ++j)
-                                        object.keys[j] = options.bytes === String ? $util.base64.encode(message.keys[j], 0, message.keys[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.keys[j]) : message.keys[j];
-                                }
-                                if (message.prove != null && message.hasOwnProperty("prove"))
-                                    object.prove = message.prove;
-                                return object;
-                            };
-
-                            /**
-                             * Converts this GetPathElementsRequestV0 to JSON.
-                             * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0
-                             * @instance
-                             * @returns {Object.<string,*>} JSON object
-                             */
-                            GetPathElementsRequestV0.prototype.toJSON = function toJSON() {
-                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                            };
-
-                            return GetPathElementsRequestV0;
-                        })();
-
-                        return GetPathElementsRequest;
-                    })();
-
-                    v0.GetPathElementsResponse = (function() {
-
-                        /**
-                         * Properties of a GetPathElementsResponse.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetPathElementsResponse
-                         * @property {org.dash.platform.dapi.v0.GetPathElementsResponse.IGetPathElementsResponseV0|null} [v0] GetPathElementsResponse v0
-                         */
-
-                        /**
-                         * Constructs a new GetPathElementsResponse.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetPathElementsResponse.
-                         * @implements IGetPathElementsResponse
-                         * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsResponse=} [properties] Properties to set
-                         */
-                        function GetPathElementsResponse(properties) {
-                            if (properties)
-                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                    if (properties[keys[i]] != null)
-                                        this[keys[i]] = properties[keys[i]];
-                        }
-
-                        /**
-                         * GetPathElementsResponse v0.
-                         * @member {org.dash.platform.dapi.v0.GetPathElementsResponse.IGetPathElementsResponseV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @instance
-                         */
-                        GetPathElementsResponse.prototype.v0 = null;
-
-                        // OneOf field names bound to virtual getters and setters
-                        var $oneOfFields;
-
-                        /**
-                         * GetPathElementsResponse version.
-                         * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @instance
-                         */
-                        Object.defineProperty(GetPathElementsResponse.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
-                            set: $util.oneOfSetter($oneOfFields)
-                        });
-
-                        /**
-                         * Creates a new GetPathElementsResponse instance using the specified properties.
-                         * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsResponse=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse} GetPathElementsResponse instance
-                         */
-                        GetPathElementsResponse.create = function create(properties) {
-                            return new GetPathElementsResponse(properties);
-                        };
-
-                        /**
-                         * Encodes the specified GetPathElementsResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsResponse.verify|verify} messages.
-                         * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsResponse} message GetPathElementsResponse message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetPathElementsResponse.encode = function encode(message, writer) {
-                            if (!writer)
-                                writer = $Writer.create();
-                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
-                            return writer;
-                        };
-
-                        /**
-                         * Encodes the specified GetPathElementsResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsResponse.verify|verify} messages.
-                         * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetPathElementsResponse} message GetPathElementsResponse message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetPathElementsResponse.encodeDelimited = function encodeDelimited(message, writer) {
-                            return this.encode(message, writer).ldelim();
-                        };
-
-                        /**
-                         * Decodes a GetPathElementsResponse message from the specified reader or buffer.
-                         * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse} GetPathElementsResponse
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetPathElementsResponse.decode = function decode(reader, length) {
-                            if (!(reader instanceof $Reader))
-                                reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPathElementsResponse();
-                            while (reader.pos < end) {
-                                var tag = reader.uint32();
-                                switch (tag >>> 3) {
-                                case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.decode(reader, reader.uint32());
-                                    break;
-                                default:
-                                    reader.skipType(tag & 7);
-                                    break;
-                                }
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Decodes a GetPathElementsResponse message from the specified reader or buffer, length delimited.
-                         * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse} GetPathElementsResponse
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetPathElementsResponse.decodeDelimited = function decodeDelimited(reader) {
-                            if (!(reader instanceof $Reader))
-                                reader = new $Reader(reader);
-                            return this.decode(reader, reader.uint32());
-                        };
-
-                        /**
-                         * Verifies a GetPathElementsResponse message.
-                         * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @static
-                         * @param {Object.<string,*>} message Plain object to verify
-                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                         */
-                        GetPathElementsResponse.verify = function verify(message) {
-                            if (typeof message !== "object" || message === null)
-                                return "object expected";
-                            var properties = {};
-                            if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                properties.version = 1;
-                                {
-                                    var error = $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.verify(message.v0);
-                                    if (error)
-                                        return "v0." + error;
-                                }
-                            }
-                            return null;
-                        };
-
-                        /**
-                         * Creates a GetPathElementsResponse message from a plain object. Also converts values to their respective internal types.
-                         * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @static
-                         * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse} GetPathElementsResponse
-                         */
-                        GetPathElementsResponse.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetPathElementsResponse)
-                                return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetPathElementsResponse();
-                            if (object.v0 != null) {
-                                if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetPathElementsResponse.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.fromObject(object.v0);
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Creates a plain object from a GetPathElementsResponse message. Also converts values to other types if specified.
-                         * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.GetPathElementsResponse} message GetPathElementsResponse
-                         * @param {$protobuf.IConversionOptions} [options] Conversion options
-                         * @returns {Object.<string,*>} Plain object
-                         */
-                        GetPathElementsResponse.toObject = function toObject(message, options) {
-                            if (!options)
-                                options = {};
-                            var object = {};
-                            if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.toObject(message.v0, options);
-                                if (options.oneofs)
-                                    object.version = "v0";
-                            }
-                            return object;
-                        };
-
-                        /**
-                         * Converts this GetPathElementsResponse to JSON.
-                         * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                         * @instance
-                         * @returns {Object.<string,*>} JSON object
-                         */
-                        GetPathElementsResponse.prototype.toJSON = function toJSON() {
-                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                        };
-
-                        GetPathElementsResponse.GetPathElementsResponseV0 = (function() {
-
-                            /**
-                             * Properties of a GetPathElementsResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                             * @interface IGetPathElementsResponseV0
-                             * @property {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.IElements|null} [elements] GetPathElementsResponseV0 elements
-                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetPathElementsResponseV0 proof
-                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetPathElementsResponseV0 metadata
-                             */
-
-                            /**
-                             * Constructs a new GetPathElementsResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse
-                             * @classdesc Represents a GetPathElementsResponseV0.
-                             * @implements IGetPathElementsResponseV0
-                             * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.IGetPathElementsResponseV0=} [properties] Properties to set
-                             */
-                            function GetPathElementsResponseV0(properties) {
-                                if (properties)
-                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                        if (properties[keys[i]] != null)
-                                            this[keys[i]] = properties[keys[i]];
-                            }
-
-                            /**
-                             * GetPathElementsResponseV0 elements.
-                             * @member {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.IElements|null|undefined} elements
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @instance
-                             */
-                            GetPathElementsResponseV0.prototype.elements = null;
-
-                            /**
-                             * GetPathElementsResponseV0 proof.
-                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @instance
-                             */
-                            GetPathElementsResponseV0.prototype.proof = null;
-
-                            /**
-                             * GetPathElementsResponseV0 metadata.
-                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @instance
-                             */
-                            GetPathElementsResponseV0.prototype.metadata = null;
-
-                            // OneOf field names bound to virtual getters and setters
-                            var $oneOfFields;
-
-                            /**
-                             * GetPathElementsResponseV0 result.
-                             * @member {"elements"|"proof"|undefined} result
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @instance
-                             */
-                            Object.defineProperty(GetPathElementsResponseV0.prototype, "result", {
-                                get: $util.oneOfGetter($oneOfFields = ["elements", "proof"]),
-                                set: $util.oneOfSetter($oneOfFields)
-                            });
-
-                            /**
-                             * Creates a new GetPathElementsResponseV0 instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.IGetPathElementsResponseV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} GetPathElementsResponseV0 instance
-                             */
-                            GetPathElementsResponseV0.create = function create(properties) {
-                                return new GetPathElementsResponseV0(properties);
-                            };
-
-                            /**
-                             * Encodes the specified GetPathElementsResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.verify|verify} messages.
-                             * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.IGetPathElementsResponseV0} message GetPathElementsResponseV0 message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            GetPathElementsResponseV0.encode = function encode(message, writer) {
-                                if (!writer)
-                                    writer = $Writer.create();
-                                if (message.elements != null && Object.hasOwnProperty.call(message, "elements"))
-                                    $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.encode(message.elements, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
-                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
-                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
-                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
-                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                                return writer;
-                            };
-
-                            /**
-                             * Encodes the specified GetPathElementsResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.verify|verify} messages.
-                             * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.IGetPathElementsResponseV0} message GetPathElementsResponseV0 message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            GetPathElementsResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
-                                return this.encode(message, writer).ldelim();
-                            };
-
-                            /**
-                             * Decodes a GetPathElementsResponseV0 message from the specified reader or buffer.
-                             * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} GetPathElementsResponseV0
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            GetPathElementsResponseV0.decode = function decode(reader, length) {
-                                if (!(reader instanceof $Reader))
-                                    reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0();
-                                while (reader.pos < end) {
-                                    var tag = reader.uint32();
-                                    switch (tag >>> 3) {
-                                    case 1:
-                                        message.elements = $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.decode(reader, reader.uint32());
-                                        break;
-                                    case 2:
-                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
-                                        break;
-                                    case 3:
-                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
-                                        break;
-                                    default:
-                                        reader.skipType(tag & 7);
-                                        break;
-                                    }
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Decodes a GetPathElementsResponseV0 message from the specified reader or buffer, length delimited.
-                             * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} GetPathElementsResponseV0
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            GetPathElementsResponseV0.decodeDelimited = function decodeDelimited(reader) {
-                                if (!(reader instanceof $Reader))
-                                    reader = new $Reader(reader);
-                                return this.decode(reader, reader.uint32());
-                            };
-
-                            /**
-                             * Verifies a GetPathElementsResponseV0 message.
-                             * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @static
-                             * @param {Object.<string,*>} message Plain object to verify
-                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                             */
-                            GetPathElementsResponseV0.verify = function verify(message) {
-                                if (typeof message !== "object" || message === null)
-                                    return "object expected";
-                                var properties = {};
-                                if (message.elements != null && message.hasOwnProperty("elements")) {
-                                    properties.result = 1;
-                                    {
-                                        var error = $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.verify(message.elements);
-                                        if (error)
-                                            return "elements." + error;
-                                    }
-                                }
-                                if (message.proof != null && message.hasOwnProperty("proof")) {
-                                    if (properties.result === 1)
-                                        return "result: multiple values";
-                                    properties.result = 1;
-                                    {
-                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                        if (error)
-                                            return "proof." + error;
-                                    }
-                                }
-                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
-                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
-                                    if (error)
-                                        return "metadata." + error;
-                                }
-                                return null;
-                            };
-
-                            /**
-                             * Creates a GetPathElementsResponseV0 message from a plain object. Also converts values to their respective internal types.
-                             * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @static
-                             * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} GetPathElementsResponseV0
-                             */
-                            GetPathElementsResponseV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0)
-                                    return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0();
-                                if (object.elements != null) {
-                                    if (typeof object.elements !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.elements: object expected");
-                                    message.elements = $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.fromObject(object.elements);
-                                }
-                                if (object.proof != null) {
-                                    if (typeof object.proof !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.proof: object expected");
-                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
-                                }
-                                if (object.metadata != null) {
-                                    if (typeof object.metadata !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.metadata: object expected");
-                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Creates a plain object from a GetPathElementsResponseV0 message. Also converts values to other types if specified.
-                             * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} message GetPathElementsResponseV0
-                             * @param {$protobuf.IConversionOptions} [options] Conversion options
-                             * @returns {Object.<string,*>} Plain object
-                             */
-                            GetPathElementsResponseV0.toObject = function toObject(message, options) {
-                                if (!options)
-                                    options = {};
-                                var object = {};
-                                if (options.defaults)
-                                    object.metadata = null;
-                                if (message.elements != null && message.hasOwnProperty("elements")) {
-                                    object.elements = $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.toObject(message.elements, options);
-                                    if (options.oneofs)
-                                        object.result = "elements";
-                                }
-                                if (message.proof != null && message.hasOwnProperty("proof")) {
-                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
-                                    if (options.oneofs)
-                                        object.result = "proof";
-                                }
-                                if (message.metadata != null && message.hasOwnProperty("metadata"))
-                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
-                                return object;
-                            };
-
-                            /**
-                             * Converts this GetPathElementsResponseV0 to JSON.
-                             * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                             * @instance
-                             * @returns {Object.<string,*>} JSON object
-                             */
-                            GetPathElementsResponseV0.prototype.toJSON = function toJSON() {
-                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                            };
-
-                            GetPathElementsResponseV0.Elements = (function() {
-
-                                /**
-                                 * Properties of an Elements.
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                                 * @interface IElements
-                                 * @property {Array.<Uint8Array>|null} [elements] Elements elements
-                                 */
-
-                                /**
-                                 * Constructs a new Elements.
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0
-                                 * @classdesc Represents an Elements.
-                                 * @implements IElements
-                                 * @constructor
-                                 * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.IElements=} [properties] Properties to set
-                                 */
-                                function Elements(properties) {
-                                    this.elements = [];
-                                    if (properties)
-                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                            if (properties[keys[i]] != null)
-                                                this[keys[i]] = properties[keys[i]];
-                                }
-
-                                /**
-                                 * Elements elements.
-                                 * @member {Array.<Uint8Array>} elements
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @instance
-                                 */
-                                Elements.prototype.elements = $util.emptyArray;
-
-                                /**
-                                 * Creates a new Elements instance using the specified properties.
-                                 * @function create
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @static
-                                 * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.IElements=} [properties] Properties to set
-                                 * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} Elements instance
-                                 */
-                                Elements.create = function create(properties) {
-                                    return new Elements(properties);
-                                };
-
-                                /**
-                                 * Encodes the specified Elements message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.verify|verify} messages.
-                                 * @function encode
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @static
-                                 * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.IElements} message Elements message or plain object to encode
-                                 * @param {$protobuf.Writer} [writer] Writer to encode to
-                                 * @returns {$protobuf.Writer} Writer
-                                 */
-                                Elements.encode = function encode(message, writer) {
-                                    if (!writer)
-                                        writer = $Writer.create();
-                                    if (message.elements != null && message.elements.length)
-                                        for (var i = 0; i < message.elements.length; ++i)
-                                            writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.elements[i]);
-                                    return writer;
-                                };
-
-                                /**
-                                 * Encodes the specified Elements message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.verify|verify} messages.
-                                 * @function encodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @static
-                                 * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.IElements} message Elements message or plain object to encode
-                                 * @param {$protobuf.Writer} [writer] Writer to encode to
-                                 * @returns {$protobuf.Writer} Writer
-                                 */
-                                Elements.encodeDelimited = function encodeDelimited(message, writer) {
-                                    return this.encode(message, writer).ldelim();
-                                };
-
-                                /**
-                                 * Decodes an Elements message from the specified reader or buffer.
-                                 * @function decode
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @static
-                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @param {number} [length] Message length if known beforehand
-                                 * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} Elements
-                                 * @throws {Error} If the payload is not a reader or valid buffer
-                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                                 */
-                                Elements.decode = function decode(reader, length) {
-                                    if (!(reader instanceof $Reader))
-                                        reader = $Reader.create(reader);
-                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements();
-                                    while (reader.pos < end) {
-                                        var tag = reader.uint32();
-                                        switch (tag >>> 3) {
-                                        case 1:
-                                            if (!(message.elements && message.elements.length))
-                                                message.elements = [];
-                                            message.elements.push(reader.bytes());
-                                            break;
-                                        default:
-                                            reader.skipType(tag & 7);
-                                            break;
-                                        }
-                                    }
-                                    return message;
-                                };
-
-                                /**
-                                 * Decodes an Elements message from the specified reader or buffer, length delimited.
-                                 * @function decodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @static
-                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} Elements
-                                 * @throws {Error} If the payload is not a reader or valid buffer
-                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                                 */
-                                Elements.decodeDelimited = function decodeDelimited(reader) {
-                                    if (!(reader instanceof $Reader))
-                                        reader = new $Reader(reader);
-                                    return this.decode(reader, reader.uint32());
-                                };
-
-                                /**
-                                 * Verifies an Elements message.
-                                 * @function verify
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @static
-                                 * @param {Object.<string,*>} message Plain object to verify
-                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                                 */
-                                Elements.verify = function verify(message) {
-                                    if (typeof message !== "object" || message === null)
-                                        return "object expected";
-                                    if (message.elements != null && message.hasOwnProperty("elements")) {
-                                        if (!Array.isArray(message.elements))
-                                            return "elements: array expected";
-                                        for (var i = 0; i < message.elements.length; ++i)
-                                            if (!(message.elements[i] && typeof message.elements[i].length === "number" || $util.isString(message.elements[i])))
-                                                return "elements: buffer[] expected";
-                                    }
-                                    return null;
-                                };
-
-                                /**
-                                 * Creates an Elements message from a plain object. Also converts values to their respective internal types.
-                                 * @function fromObject
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @static
-                                 * @param {Object.<string,*>} object Plain object
-                                 * @returns {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} Elements
-                                 */
-                                Elements.fromObject = function fromObject(object) {
-                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements)
-                                        return object;
-                                    var message = new $root.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements();
-                                    if (object.elements) {
-                                        if (!Array.isArray(object.elements))
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.elements: array expected");
-                                        message.elements = [];
-                                        for (var i = 0; i < object.elements.length; ++i)
-                                            if (typeof object.elements[i] === "string")
-                                                $util.base64.decode(object.elements[i], message.elements[i] = $util.newBuffer($util.base64.length(object.elements[i])), 0);
-                                            else if (object.elements[i].length >= 0)
-                                                message.elements[i] = object.elements[i];
-                                    }
-                                    return message;
-                                };
-
-                                /**
-                                 * Creates a plain object from an Elements message. Also converts values to other types if specified.
-                                 * @function toObject
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @static
-                                 * @param {org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} message Elements
-                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
-                                 * @returns {Object.<string,*>} Plain object
-                                 */
-                                Elements.toObject = function toObject(message, options) {
-                                    if (!options)
-                                        options = {};
-                                    var object = {};
-                                    if (options.arrays || options.defaults)
-                                        object.elements = [];
-                                    if (message.elements && message.elements.length) {
-                                        object.elements = [];
-                                        for (var j = 0; j < message.elements.length; ++j)
-                                            object.elements[j] = options.bytes === String ? $util.base64.encode(message.elements[j], 0, message.elements[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.elements[j]) : message.elements[j];
-                                    }
-                                    return object;
-                                };
-
-                                /**
-                                 * Converts this Elements to JSON.
-                                 * @function toJSON
-                                 * @memberof org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements
-                                 * @instance
-                                 * @returns {Object.<string,*>} JSON object
-                                 */
-                                Elements.prototype.toJSON = function toJSON() {
-                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                                };
-
-                                return Elements;
-                            })();
-
-                            return GetPathElementsResponseV0;
-                        })();
-
-                        return GetPathElementsResponse;
                     })();
 
                     return v0;

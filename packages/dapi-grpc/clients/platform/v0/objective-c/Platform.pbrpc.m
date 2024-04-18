@@ -450,25 +450,5 @@
              responseClass:[GetEpochsInfoResponse class]];
 }
 
-#pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
-
-- (void)getPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetPathElementsWithRequest:request handler:handler] start];
-}
-// Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getPathElements"
-            requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetPathElementsResponse class]
-        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
-}
-- (GRPCUnaryProtoCall *)getPathElementsWithMessage:(GetPathElementsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getPathElements"
-                   message:message
-           responseHandler:handler
-               callOptions:callOptions
-             responseClass:[GetPathElementsResponse class]];
-}
-
 @end
 #endif

@@ -181,15 +181,6 @@ Platform.getEpochsInfo = {
   responseType: platform_pb.GetEpochsInfoResponse
 };
 
-Platform.getPathElements = {
-  methodName: "getPathElements",
-  service: Platform,
-  requestStream: false,
-  responseStream: false,
-  requestType: platform_pb.GetPathElementsRequest,
-  responseType: platform_pb.GetPathElementsResponse
-};
-
 exports.Platform = Platform;
 
 function PlatformClient(serviceHost, options) {
@@ -760,37 +751,6 @@ PlatformClient.prototype.getEpochsInfo = function getEpochsInfo(requestMessage, 
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getEpochsInfo, {
-    request: requestMessage,
-    host: this.serviceHost,
-    metadata: metadata,
-    transport: this.options.transport,
-    debug: this.options.debug,
-    onEnd: function (response) {
-      if (callback) {
-        if (response.status !== grpc.Code.OK) {
-          var err = new Error(response.statusMessage);
-          err.code = response.status;
-          err.metadata = response.trailers;
-          callback(err, null);
-        } else {
-          callback(null, response.message);
-        }
-      }
-    }
-  });
-  return {
-    cancel: function () {
-      callback = null;
-      client.close();
-    }
-  };
-};
-
-PlatformClient.prototype.getPathElements = function getPathElements(requestMessage, metadata, callback) {
-  if (arguments.length === 2) {
-    callback = arguments[1];
-  }
-  var client = grpc.unary(Platform.getPathElements, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
