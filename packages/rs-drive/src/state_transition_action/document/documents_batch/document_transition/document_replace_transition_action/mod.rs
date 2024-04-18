@@ -14,7 +14,7 @@ pub use v0::*;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use dpp::version::PlatformVersion;
 
-/// tranformer
+/// transformer
 pub mod transformer;
 
 /// action

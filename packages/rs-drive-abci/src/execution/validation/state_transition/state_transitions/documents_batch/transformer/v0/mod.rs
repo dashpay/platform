@@ -18,6 +18,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
+use dpp::prelude::Revision;
 
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -36,7 +37,9 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
+use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionAction;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchTransitionTransformerV0
@@ -89,12 +92,13 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
         fetched_documents: &'a [Document],
     ) -> ConsensusValidationResult<&'a Document>;
     fn check_ownership_of_old_replaced_document_v0(
-        document_transition: &DocumentReplaceTransition,
+        document_id: Identifier,
         fetched_document: &Document,
         owner_id: &Identifier,
     ) -> SimpleConsensusValidationResult;
     fn check_revision_is_bumped_by_one_during_replace_v0(
-        document_transition: &DocumentReplaceTransition,
+        transition_revision: Revision,
+        document_id: Identifier,
         original_document: &Document,
     ) -> SimpleConsensusValidationResult;
 }
@@ -261,15 +265,15 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             ));
         };
 
-        let replace_transitions = document_transitions
+        let replace_and_transfer_transitions = document_transitions
             .iter()
-            .filter(|transition| matches!(transition, DocumentTransition::Replace(_)))
+            .filter(|transition| matches!(transition, DocumentTransition::Replace(_) | DocumentTransition::Transfer(_)))
             .copied()
             .collect::<Vec<_>>();
 
-        // We fetch documents only for replace transitions
+        // We fetch documents only for replace and transfer transitions
         // since we need them to create transition actions
-        // Below we also perform state validation for replace transitions only
+        // Below we also perform state validation for replace and transfer transitions only
         // other transitions are validated in their validate_state functions
         // TODO: Think more about this architecture
         let fetched_documents_validation_result =
@@ -277,7 +281,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 platform.drive,
                 data_contract,
                 document_type,
-                replace_transitions.as_slice(),
+                replace_and_transfer_transitions.as_slice(),
                 transaction,
                 platform_version,
             )?;
@@ -377,7 +381,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     original_document.created_at_core_block_height();
 
                 let validation_result = Self::check_ownership_of_old_replaced_document_v0(
-                    document_replace_transition,
+                    document_replace_transition.base().id(),
                     original_document,
                     &owner_id,
                 );
@@ -392,7 +396,8 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     // for example when we already applied the state transition action
                     // and we are just validating it happened
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
-                        document_replace_transition,
+                        document_replace_transition.revision(),
+                        document_replace_transition.base().id(),
                         original_document,
                     );
 
@@ -424,6 +429,62 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             })?;
                 Ok(DocumentTransitionAction::DeleteAction(action).into())
             }
+            DocumentTransition::Transfer(document_transfer_transition) => {
+                let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new();
+
+                let validation_result =
+                    Self::find_replaced_document_v0(transition, replaced_documents);
+
+                if !validation_result.is_valid_with_data() {
+                    result.merge(validation_result);
+                    return Ok(result);
+                }
+
+                let original_document = validation_result.into_data()?;
+
+                let validation_result = Self::check_ownership_of_old_replaced_document_v0(
+                    document_transfer_transition.base().id(),
+                    original_document,
+                    &owner_id,
+                );
+
+                if !validation_result.is_valid() {
+                    result.merge(validation_result);
+                    return Ok(result);
+                }
+
+                if validate_against_state {
+                    //there are situations where we don't want to validate this against the state
+                    // for example when we already applied the state transition action
+                    // and we are just validating it happened
+                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
+                        document_transfer_transition.revision(),
+                        document_transfer_transition.base().id(),
+                        original_document,
+                    );
+
+                    if !validation_result.is_valid() {
+                        result.merge(validation_result);
+                        return Ok(result);
+                    }
+                }
+
+                let document_transfer_action =
+                    DocumentTransferTransitionAction::try_from_borrowed_document_replace_transition(
+                        document_replace_transition,
+                        original_document_created_at,
+                        original_document_created_at_block_height,
+                        original_document_created_at_core_block_height,
+                        block_info,
+                        |_identifier| Ok(data_contract_fetch_info.clone()),
+                    )?;
+
+                if result.is_valid() {
+                    Ok(DocumentTransitionAction::TransferAction(document_transfer_transition).into())
+                } else {
+                    Ok(result)
+                }
+            }
         }
     }
 
@@ -447,7 +508,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
     }
 
     fn check_ownership_of_old_replaced_document_v0(
-        document_transition: &DocumentReplaceTransition,
+        document_id: Identifier,
         fetched_document: &Document,
         owner_id: &Identifier,
     ) -> SimpleConsensusValidationResult {
@@ -455,7 +516,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
         if fetched_document.owner_id() != owner_id {
             result.add_error(ConsensusError::StateError(
                 StateError::DocumentOwnerIdMismatchError(DocumentOwnerIdMismatchError::new(
-                    document_transition.base().id(),
+                    document_id,
                     owner_id.to_owned(),
                     fetched_document.owner_id(),
                 )),
@@ -464,33 +525,32 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
         result
     }
     fn check_revision_is_bumped_by_one_during_replace_v0(
-        document_transition: &DocumentReplaceTransition,
+        transition_revision: Revision,
+        document_id: Identifier,
         original_document: &Document,
     ) -> SimpleConsensusValidationResult {
         let mut result = SimpleConsensusValidationResult::default();
-
-        let revision = document_transition.revision();
 
         // If there was no previous revision this means that the document_type is not update-able
         // However this should have been caught earlier
         let Some(previous_revision) = original_document.revision() else {
             result.add_error(ConsensusError::StateError(
                 StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
-                    document_transition.base().id(),
+                    document_id,
                     None,
-                    revision,
+                    transition_revision,
                 )),
             ));
             return result;
         };
         // no need to check bounds here, because it would be impossible to hit the end on a u64
         let expected_revision = previous_revision + 1;
-        if revision != expected_revision {
+        if transition_revision != expected_revision {
             result.add_error(ConsensusError::StateError(
                 StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
-                    document_transition.base().id(),
+                    document_id,
                     Some(previous_revision),
-                    revision,
+                    transition_revision,
                 )),
             ))
         }

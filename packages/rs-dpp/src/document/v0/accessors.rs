@@ -181,6 +181,10 @@ impl DocumentV0Setters for DocumentV0 {
         self.updated_at = updated_at;
     }
 
+    fn set_transferred_at(&mut self, transferred_at: Option<TimestampMillis>) {
+        self.transferred_at = transferred_at;
+    }
+
     /// Sets the block height at which the document was created. This is applicable if the document's
     /// schema requires this information.
     ///
@@ -199,6 +203,10 @@ impl DocumentV0Setters for DocumentV0 {
     /// `None` indicates the block height is not available.
     fn set_updated_at_block_height(&mut self, updated_at_block_height: Option<u64>) {
         self.updated_at_block_height = updated_at_block_height;
+    }
+
+    fn set_transferred_at_block_height(&mut self, transferred_at_block_height: Option<u64>) {
+        self.transferred_at_block_height = transferred_at_block_height;
     }
 
     /// Sets the core network block height at which the document was created. This is applicable if the
@@ -220,4 +228,9 @@ impl DocumentV0Setters for DocumentV0 {
     fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>) {
         self.updated_at_core_block_height = updated_at_core_block_height;
     }
+
+    fn set_transferred_at_core_block_height(&mut self, transferred_at_core_block_height: Option<u32>) {
+        self.transferred_at_core_block_height = transferred_at_core_block_height;
+    }
+    
 }

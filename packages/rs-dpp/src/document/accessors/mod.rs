@@ -69,6 +69,12 @@ impl DocumentV0Getters for Document {
         }
     }
 
+    fn transferred_at(&self) -> Option<TimestampMillis> {
+        match self {
+            Document::V0(v0) => v0.transferred_at,
+        }
+    }
+
     fn created_at_block_height(&self) -> Option<BlockHeight> {
         match self {
             Document::V0(v0) => v0.created_at_block_height,
@@ -81,6 +87,12 @@ impl DocumentV0Getters for Document {
         }
     }
 
+    fn transferred_at_block_height(&self) -> Option<BlockHeight> {
+        match self {
+            Document::V0(v0) => v0.transferred_at_block_height,
+        }
+    }
+
     fn created_at_core_block_height(&self) -> Option<CoreBlockHeight> {
         match self {
             Document::V0(v0) => v0.created_at_core_block_height,
@@ -90,6 +102,12 @@ impl DocumentV0Getters for Document {
     fn updated_at_core_block_height(&self) -> Option<CoreBlockHeight> {
         match self {
             Document::V0(v0) => v0.updated_at_core_block_height,
+        }
+    }
+
+    fn transferred_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        match self {
+            Document::V0(v0) => v0.transferred_at_core_block_height,
         }
     }
 }
@@ -131,6 +149,12 @@ impl DocumentV0Setters for Document {
         }
     }
 
+    fn set_transferred_at(&mut self, transferred_at: Option<TimestampMillis>) {
+        match self {
+            Document::V0(v0) => v0.transferred_at = transferred_at,
+        }
+    }
+
     fn set_created_at_block_height(&mut self, created_at_block_height: Option<u64>) {
         match self {
             Document::V0(v0) => v0.created_at_block_height = created_at_block_height,
@@ -143,6 +167,13 @@ impl DocumentV0Setters for Document {
         }
     }
 
+    fn set_transferred_at_block_height(&mut self, transferred_at_block_height: Option<u64>) {
+        match self {
+            Document::V0(v0) => v0.transferred_at_block_height = transferred_at_block_height,
+        }
+    }
+
+
     fn set_created_at_core_block_height(&mut self, created_at_core_block_height: Option<u32>) {
         match self {
             Document::V0(v0) => v0.created_at_core_block_height = created_at_core_block_height,
@@ -152,6 +183,12 @@ impl DocumentV0Setters for Document {
     fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>) {
         match self {
             Document::V0(v0) => v0.updated_at_core_block_height = updated_at_core_block_height,
+        }
+    }
+
+    fn set_transferred_at_core_block_height(&mut self, transferred_at_core_block_height: Option<u32>) {
+        match self {
+            Document::V0(v0) => v0.transferred_at_core_block_height = transferred_at_core_block_height,
         }
     }
 }
