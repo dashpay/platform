@@ -79,6 +79,11 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
+            use get_identities_contract_keys_response_v0::IdentitiesKeys;
+            use get_identities_contract_keys_response_v0::IdentityKeys;
+            use get_identities_contract_keys_response_v0::PurposeKeys;
+            use get_identities_contract_keys_response_v0::Result;
+
             let keys = self.drive.get_identities_contract_keys(
                 identities_ids.as_slice(),
                 &contract_id,
@@ -88,17 +93,30 @@ impl<C> Platform<C> {
                 &platform_version,
             )?;
 
-            println!("asdasd");
-            // let identities_keys = get_identities_contract_keys_response_v0::IdentitiesKeys {
-            //
-            // }
+            let identities_keys = keys
+                .iter()
+                .map(|(identity_id, keys)| {
+                    let keys = keys
+                        .iter()
+                        .map(|(purpose, key)| PurposeKeys {
+                            purpose: *purpose as i32,
+                            keys_bytes: vec![key.to_owned()],
+                        })
+                        .collect::<Vec<PurposeKeys>>();
 
-            // GetIdentitiesContractKeysResponseV0 {
-            //     result: Some(get_identities_contract_keys_response_v0::Result::IdentitiesKeys(keys)),
-            //     metadata: Some(self.response_metadata_v0(platform_state)),
-            // }
+                    IdentityKeys {
+                        identity_id: identity_id.to_vec(),
+                        keys,
+                    }
+                })
+                .collect::<Vec<IdentityKeys>>();
 
-            todo!()
+            GetIdentitiesContractKeysResponseV0 {
+                result: Some(Result::IdentitiesKeys(IdentitiesKeys {
+                    entries: identities_keys,
+                })),
+                metadata: Some(self.response_metadata_v0(platform_state)),
+            }
         };
 
         Ok(QueryValidationResult::new_with_data(response))
@@ -166,7 +184,7 @@ mod tests {
                 None,
                 platform_version,
             )
-                .expect("expected to create a test identity");
+            .expect("expected to create a test identity");
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -182,7 +200,7 @@ mod tests {
                 }),
                 platform_version,
             )
-                .unwrap();
+            .unwrap();
 
             let db_transaction = platform.drive.grove.start_transaction();
 
@@ -211,7 +229,7 @@ mod tests {
                 None,
                 platform_version,
             )
-                .expect("expected to create a test identity");
+            .expect("expected to create a test identity");
             (alice, bob)
         };
 
@@ -276,7 +294,7 @@ mod tests {
                 None,
                 platform_version,
             )
-                .expect("expected to create a test identity");
+            .expect("expected to create a test identity");
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -292,7 +310,7 @@ mod tests {
                 }),
                 platform_version,
             )
-                .unwrap();
+            .unwrap();
 
             let db_transaction = platform.drive.grove.start_transaction();
 
@@ -321,7 +339,7 @@ mod tests {
                 None,
                 platform_version,
             )
-                .expect("expected to create a test identity");
+            .expect("expected to create a test identity");
             (alice, bob)
         };
 
