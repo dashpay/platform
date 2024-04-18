@@ -137,13 +137,18 @@ mod tests {
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::{Identity, IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::IdentityPublicKey;
-    use dpp::serialization::PlatformSerializableWithPlatformVersion;
+    use dpp::serialization::{PlatformDeserializable, PlatformSerializableWithPlatformVersion};
     use drive::common::test_utils::identities::create_test_identity_with_rng;
     use drive::drive::batch::{DataContractOperationType, DriveOperation};
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use std::borrow::Cow;
     use std::collections::BTreeMap;
+    use itertools::Itertools;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+
+    // TODO: test not found keys
+
 
     #[test]
     fn test_identities_contract_keys() {
@@ -177,64 +182,99 @@ mod tests {
 
             let alice_id = rng.gen::<[u8; 32]>();
             let bob_id = rng.gen::<[u8; 32]>();
-            let alice = create_test_identity_with_rng(
-                &platform.drive,
-                alice_id,
-                &mut rng,
-                None,
-                platform_version,
-            )
-            .expect("expected to create a test identity");
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
-
-            let (alice_enc_key, _) = IdentityPublicKey::random_key_with_known_attributes(
-                2,
-                &mut rng,
-                Purpose::ENCRYPTION,
-                SecurityLevel::MEDIUM,
-                KeyType::ECDSA_SECP256K1,
-                Some(ContractBounds::SingleContractDocumentType {
-                    id: dashpay.id(),
-                    document_type_name: "contactRequest".to_string(),
-                }),
-                platform_version,
-            )
-            .unwrap();
-
-            let db_transaction = platform.drive.grove.start_transaction();
-
-            platform
-                .drive
-                .add_new_unique_keys_to_identity(
-                    alice.id().to_buffer(),
-                    vec![alice_enc_key],
-                    &block,
-                    true,
-                    Some(&db_transaction),
+            // Create alice and bob identities
+            let (mut alice, mut bob) = {
+                let mut alice = create_test_identity_with_rng(
+                    &platform.drive,
+                    alice_id,
+                    &mut rng,
+                    None,
                     platform_version,
-                )
-                .expect("expected to add a new key");
-            platform
-                .drive
-                .grove
-                .commit_transaction(db_transaction)
-                .unwrap()
-                .expect("expected to be able to commit a transaction");
+                ).expect("expected to create a test identity");
 
-            let bob = create_test_identity_with_rng(
-                &platform.drive,
-                bob_id,
-                &mut rng,
-                None,
-                platform_version,
-            )
-            .expect("expected to create a test identity");
+                let mut bob = create_test_identity_with_rng(
+                    &platform.drive,
+                    bob_id,
+                    &mut rng,
+                    None,
+                    platform_version,
+                ).expect("expected to create a test identity");
+
+                (alice, bob)
+            };
+
+            // Add keys to alice and bob
+            {
+                let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
+                let db_transaction = platform.drive.grove.start_transaction();
+
+                let (alice_enc_key, _) = IdentityPublicKey::random_key_with_known_attributes(
+                    2,
+                    &mut rng,
+                    Purpose::ENCRYPTION,
+                    SecurityLevel::MEDIUM,
+                    KeyType::ECDSA_SECP256K1,
+                    Some(ContractBounds::SingleContractDocumentType {
+                        id: dashpay.id(),
+                        document_type_name: "contactRequest".to_string(),
+                    }),
+                    platform_version,
+                ).unwrap();
+
+                alice.public_keys_mut().insert(alice_enc_key.id(), alice_enc_key.clone());
+
+                let (bob_enc_key, _) = IdentityPublicKey::random_key_with_known_attributes(
+                    2,
+                    &mut rng,
+                    Purpose::ENCRYPTION,
+                    SecurityLevel::MEDIUM,
+                    KeyType::ECDSA_SECP256K1,
+                    Some(ContractBounds::SingleContractDocumentType {
+                        id: dashpay.id(),
+                        document_type_name: "contactRequest".to_string(),
+                    }),
+                    platform_version,
+                ).unwrap();
+                bob.public_keys_mut().insert(bob_enc_key.id(), bob_enc_key.clone());
+
+                platform
+                    .drive
+                    .add_new_unique_keys_to_identity(
+                        alice.id().to_buffer(),
+                        vec![alice_enc_key],
+                        &block,
+                        true,
+                        Some(&db_transaction),
+                        platform_version,
+                    )
+                    .expect("expected to add a new key");
+
+                platform
+                    .drive
+                    .add_new_unique_keys_to_identity(
+                        bob.id().to_buffer(),
+                        vec![bob_enc_key],
+                        &block,
+                        true,
+                        Some(&db_transaction),
+                        platform_version,
+                    )
+                    .expect("expected to add a new key");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(db_transaction)
+                    .unwrap()
+                    .expect("expected to be able to commit a transaction");
+            }
+
             (alice, bob)
         };
 
         let request = GetIdentitiesContractKeysRequestV0 {
-            identities_ids: vec![alice.id().to_vec()],
+            identities_ids: vec![alice.id().to_vec(), bob.id().to_vec()],
             contract_id: dashpay.id().to_vec(),
             document_type_name: Some("contactRequest".to_string()),
             purposes: vec![Purpose::ENCRYPTION as i32, Purpose::DECRYPTION as i32],
@@ -245,14 +285,69 @@ mod tests {
             .query_identities_contract_keys_v0(request, &state, platform_version)
             .expect("query failed");
 
-        assert!(result.is_valid());
-        assert!(matches!(
-            result.data,
-            Some(GetIdentitiesContractKeysResponseV0 {
-                result: Some(get_identities_contract_keys_response_v0::Result::Proof(_)),
-                metadata: Some(_),
-            })
-        ));
+        use get_identities_contract_keys_response_v0::Result;
+        use get_identities_contract_keys_response_v0::IdentitiesKeys;
+
+        let GetIdentitiesContractKeysResponseV0 {
+           result,
+            ..
+        } = result.data.expect("expected data");
+
+        let Result::IdentitiesKeys(IdentitiesKeys { entries: keys } ) = result.expect("expected result") else {
+            panic!("expected IdentitiesKeys");
+        };
+
+        let alice_keys_result = keys.iter().find(|key| key.identity_id == alice.id().to_vec());
+        let bob_keys_result = keys.iter().find(|key| key.identity_id ==  bob.id().to_vec());
+
+        assert_eq!(alice_keys_result.is_some(), true);
+        assert_eq!(bob_keys_result.is_some(), true);
+
+        let alice_keys_result = alice_keys_result.unwrap();
+        let bob_keys_result = bob_keys_result.unwrap();
+
+
+        let alice_enc_keys = alice.public_keys()
+            .iter()
+            .filter(|(_, key)| key.purpose() == Purpose::ENCRYPTION)
+            .map(|(key_id, _)| *key_id)
+            .sorted()
+            .collect::<Vec<KeyID>>();
+
+        let mut alice_enc_keys_result = alice_keys_result
+            .keys.iter().filter(|key| key.purpose == Purpose::ENCRYPTION as i32)
+            .fold(vec![], |mut acc, keys| {
+                let keys = keys.keys_bytes
+                    .iter()
+                    .map(|key_bytes| IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice()).unwrap().id());
+                acc.extend(keys);
+                acc
+            });
+        alice_enc_keys_result.sort();
+
+        assert_eq!(alice_enc_keys, alice_enc_keys_result);
+
+        let bob_enc_keys = alice.public_keys()
+            .iter()
+            .filter(|(_, key)| key.purpose() == Purpose::ENCRYPTION)
+            .map(|(key_id, _)| *key_id)
+            .collect::<Vec<KeyID>>();
+
+        //
+        // let alice_dec_keys = alice.public_keys()
+        //     .iter()
+        //     .filter(|(_, key)| key.purpose() == Purpose::DECRYPTION)
+        //     .map(|(key_id, _)| *key_id)
+        //     .collect::<Vec<KeyID>>();
+
+        // assert!(result.is_valid());
+        // assert!(matches!(
+        //     result.data,
+        //     Some(GetIdentitiesContractKeysResponseV0 {
+        //         result: Some(get_identities_contract_keys_response_v0::Result::Proof(_)),
+        //         metadata: Some(_),
+        //     })
+        // ));
     }
 
     #[test]
