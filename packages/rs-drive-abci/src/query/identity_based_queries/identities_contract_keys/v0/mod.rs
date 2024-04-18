@@ -136,7 +136,7 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::{Identity, IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
-    use dpp::prelude::IdentityPublicKey;
+    use dpp::prelude::{DataContract, IdentityPublicKey};
     use dpp::serialization::{PlatformDeserializable, PlatformSerializableWithPlatformVersion};
     use drive::common::test_utils::identities::create_test_identity_with_rng;
     use drive::drive::batch::{DataContractOperationType, DriveOperation};
@@ -144,16 +144,18 @@ mod tests {
     use rand::{Rng, SeedableRng};
     use std::borrow::Cow;
     use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use arc_swap::Guard;
     use itertools::Itertools;
+    use dapi_grpc::platform::v0::get_identities_contract_keys_response::get_identities_contract_keys_response_v0::IdentityKeys;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use platform_version::version::PlatformVersion;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
 
     // TODO: test not found keys
 
-
-    #[test]
-    fn test_identities_contract_keys() {
-        let (platform, state, platform_version) = setup_platform();
-
+    fn init_dashpay(platform: &TempPlatform<MockCoreRPCLike>, platform_version: &PlatformVersion) -> Guard<Arc<DataContract>> {
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
         let serialization = dashpay
@@ -176,6 +178,15 @@ mod tests {
                 platform_version,
             )
             .expect("expected to register dashpay contract");
+
+        dashpay
+    }
+
+    #[test]
+    fn test_identities_contract_keys() {
+        let (platform, state, platform_version) = setup_platform();
+
+        let dashpay = init_dashpay(&platform, platform_version);
 
         let (alice, bob) = {
             let mut rng = StdRng::seed_from_u64(10);
@@ -296,58 +307,34 @@ mod tests {
         let Result::IdentitiesKeys(IdentitiesKeys { entries: keys } ) = result.expect("expected result") else {
             panic!("expected IdentitiesKeys");
         };
+        fn assert_keys(identity: &Identity, result_keys: &Vec<IdentityKeys>) {
+            let identity_keys_result = result_keys.iter().find(|key| key.identity_id == identity.id().to_vec());
+            assert_eq!(identity_keys_result.is_some(), true);
+            let identity_keys_result = identity_keys_result.unwrap();
 
-        let alice_keys_result = keys.iter().find(|key| key.identity_id == alice.id().to_vec());
-        let bob_keys_result = keys.iter().find(|key| key.identity_id ==  bob.id().to_vec());
+            let enc_keys_expected = identity.public_keys()
+                .iter()
+                .filter(|(_, key)| key.purpose() == Purpose::ENCRYPTION)
+                .map(|(key_id, _)| *key_id)
+                .sorted()
+                .collect::<Vec<KeyID>>();
 
-        assert_eq!(alice_keys_result.is_some(), true);
-        assert_eq!(bob_keys_result.is_some(), true);
+            let mut enc_keys_result = identity_keys_result
+                .keys.iter().filter(|key| key.purpose == Purpose::ENCRYPTION as i32)
+                .fold(vec![], |mut acc, keys| {
+                    let keys = keys.keys_bytes
+                        .iter()
+                        .map(|key_bytes| IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice()).unwrap().id());
+                    acc.extend(keys);
+                    acc
+                });
+            enc_keys_result.sort();
 
-        let alice_keys_result = alice_keys_result.unwrap();
-        let bob_keys_result = bob_keys_result.unwrap();
+            assert_eq!(enc_keys_result, enc_keys_expected);
+        }
 
-
-        let alice_enc_keys = alice.public_keys()
-            .iter()
-            .filter(|(_, key)| key.purpose() == Purpose::ENCRYPTION)
-            .map(|(key_id, _)| *key_id)
-            .sorted()
-            .collect::<Vec<KeyID>>();
-
-        let mut alice_enc_keys_result = alice_keys_result
-            .keys.iter().filter(|key| key.purpose == Purpose::ENCRYPTION as i32)
-            .fold(vec![], |mut acc, keys| {
-                let keys = keys.keys_bytes
-                    .iter()
-                    .map(|key_bytes| IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice()).unwrap().id());
-                acc.extend(keys);
-                acc
-            });
-        alice_enc_keys_result.sort();
-
-        assert_eq!(alice_enc_keys, alice_enc_keys_result);
-
-        let bob_enc_keys = alice.public_keys()
-            .iter()
-            .filter(|(_, key)| key.purpose() == Purpose::ENCRYPTION)
-            .map(|(key_id, _)| *key_id)
-            .collect::<Vec<KeyID>>();
-
-        //
-        // let alice_dec_keys = alice.public_keys()
-        //     .iter()
-        //     .filter(|(_, key)| key.purpose() == Purpose::DECRYPTION)
-        //     .map(|(key_id, _)| *key_id)
-        //     .collect::<Vec<KeyID>>();
-
-        // assert!(result.is_valid());
-        // assert!(matches!(
-        //     result.data,
-        //     Some(GetIdentitiesContractKeysResponseV0 {
-        //         result: Some(get_identities_contract_keys_response_v0::Result::Proof(_)),
-        //         metadata: Some(_),
-        //     })
-        // ));
+        assert_keys(&alice, &keys);
+        assert_keys(&bob, &keys);
     }
 
     #[test]
