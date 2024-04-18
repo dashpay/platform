@@ -8,6 +8,7 @@ use dpp::consensus::ConsensusError as DPPConsensusError;
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
     IdentityAssetLockProofLockedTransactionMismatchErrorWasm,
+    IdentityAssetLockStateTransitionReplayErrorWasm,
     IdentityAssetLockTransactionIsNotFoundErrorWasm,
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceErrorWasm,
@@ -31,11 +32,12 @@ use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
     InvalidIdentityNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
 };
+use dpp::consensus::basic::decode::VersionError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
-    IdentityAssetLockTransactionIsNotFoundError,
+    IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
@@ -47,34 +49,37 @@ use dpp::consensus::basic::BasicError::{
     InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
     InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityPublicKeyDataError,
     InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError,
-    InvalidInstantAssetLockProofSignatureError, JsonSchemaError, MissingMasterPublicKeyError,
+    InvalidInstantAssetLockProofSignatureError, MissingMasterPublicKeyError,
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
-    SerializedObjectParsingError, UnsupportedProtocolVersionError, UnsupportedVersionError,
+    UnsupportedProtocolVersionError, UnsupportedVersionError,
 };
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
-
-// TODO(versioning): remove
-// use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 
 use dpp::consensus::state::data_trigger::DataTriggerError::{
     DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
+use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLevelError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError};
+use dpp::consensus::basic::document::{MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
+use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
+use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 
 use crate::errors::consensus::basic::data_contract::{
-    DataContractEmptySchemaErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
-    DataContractImmutablePropertiesUpdateErrorWasm,
+    DataContractEmptySchemaErrorWasm, DataContractErrorWasm,
+    DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
     IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
     InvalidDocumentTypeNameErrorWasm,
 };
 use crate::errors::consensus::basic::document::{
-    DuplicateDocumentTransitionsWithIdsErrorWasm, DuplicateDocumentTransitionsWithIndicesErrorWasm,
-    IdentityContractNonceOutOfBoundsErrorWasm, InvalidDocumentTransitionActionErrorWasm,
-    InvalidDocumentTransitionIdErrorWasm, MissingDataContractIdErrorWasm,
-    MissingDocumentTypeErrorWasm,
+    DocumentTransitionsAreAbsentErrorWasm, DuplicateDocumentTransitionsWithIdsErrorWasm,
+    DuplicateDocumentTransitionsWithIndicesErrorWasm, IdentityContractNonceOutOfBoundsErrorWasm,
+    InvalidDocumentTransitionActionErrorWasm, InvalidDocumentTransitionIdErrorWasm,
+    MissingDataContractIdErrorWasm, MissingDocumentTypeErrorWasm,
 };
 use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
@@ -129,6 +134,7 @@ use crate::errors::consensus::basic::{
 use crate::errors::consensus::fee::BalanceIsNotEnoughErrorWasm;
 
 use crate::errors::consensus::value_error::ValueErrorWasm;
+use crate::generic_consensus_error;
 
 use super::state::document::DocumentTimestampsAreEqualErrorWasm;
 
@@ -213,8 +219,16 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
             DataContractConfigUpdateErrorWasm::from(e).into()
         }
         StateError::InvalidIdentityNonceError(e) => InvalidIdentityNonceErrorWasm::from(e).into(),
-        // TODO(versioning): restore
-        _ => todo!(),
+        StateError::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(e) => {
+            generic_consensus_error!(
+                IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError,
+                e
+            )
+            .into()
+        }
+        StateError::DocumentTypeUpdateError(e) => {
+            generic_consensus_error!(DocumentTypeUpdateError, e).into()
+        }
     }
 }
 
@@ -327,8 +341,10 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             InvalidDocumentTypeNameErrorWasm::from(err).into()
         }
         ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::from(e).into(),
-        SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::from(e).into(),
-        JsonSchemaError(e) => JsonSchemaErrorWasm::from(e).into(),
+        BasicError::SerializedObjectParsingError(e) => {
+            SerializedObjectParsingErrorWasm::from(e).into()
+        }
+        BasicError::JsonSchemaError(e) => JsonSchemaErrorWasm::from(e).into(),
         UnsupportedProtocolVersionError(e) => UnsupportedProtocolVersionErrorWasm::from(e).into(),
         UnsupportedVersionError(e) => UnsupportedVersionErrorWasm::from(e).into(),
         IncompatibleProtocolVersionError(e) => IncompatibleProtocolVersionErrorWasm::from(e).into(),
@@ -348,8 +364,14 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         IdentityAssetLockTransactionOutPointAlreadyConsumedError(e) => {
             IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm::from(e).into()
         }
+        IdentityAssetLockTransactionOutPointNotEnoughBalanceError(e) => {
+            IdentityAssetLockTransactionOutPointNotEnoughBalanceErrorWasm::from(e).into()
+        }
         InvalidIdentityAssetLockTransactionOutputError(e) => {
             InvalidIdentityAssetLockTransactionOutputErrorWasm::from(e).into()
+        }
+        IdentityAssetLockStateTransitionReplayError(e) => {
+            IdentityAssetLockStateTransitionReplayErrorWasm::from(e).into()
         }
         InvalidAssetLockTransactionOutputReturnSizeError(e) => {
             InvalidAssetLockTransactionOutputReturnSizeErrorWasm::from(e).into()
@@ -393,12 +415,48 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         NotImplementedIdentityCreditWithdrawalTransitionPoolingError(e) => {
             NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm::from(e).into()
         }
-        IdentityAssetLockTransactionOutPointNotEnoughBalanceError(e) => {
-            IdentityAssetLockTransactionOutPointNotEnoughBalanceErrorWasm::from(e).into()
-        }
         IncompatibleRe2PatternError(err) => IncompatibleRe2PatternErrorWasm::from(err).into(),
-        // TODO(versioning): cover other errors
-        _ => todo!(),
+        BasicError::VersionError(err) => generic_consensus_error!(VersionError, err).into(),
+        BasicError::ContractError(e) => DataContractErrorWasm::from(e).into(),
+        BasicError::UnknownSecurityLevelError(e) => {
+            generic_consensus_error!(UnknownSecurityLevelError, e).into()
+        }
+        BasicError::UnknownStorageKeyRequirementsError(e) => {
+            generic_consensus_error!(UnknownStorageKeyRequirementsError, e).into()
+        }
+        BasicError::DataContractBoundsNotPresentError(e) => {
+            generic_consensus_error!(DataContractBoundsNotPresentError, e).into()
+        }
+        BasicError::MissingPositionsInDocumentTypePropertiesError(e) => {
+            generic_consensus_error!(MissingPositionsInDocumentTypePropertiesError, e).into()
+        }
+        BasicError::MaxDocumentsTransitionsExceededError(e) => {
+            generic_consensus_error!(MaxDocumentsTransitionsExceededError, e).into()
+        }
+        BasicError::DisablingKeyIdAlsoBeingAddedInSameTransitionError(e) => {
+            generic_consensus_error!(DisablingKeyIdAlsoBeingAddedInSameTransitionError, e).into()
+        }
+        BasicError::TooManyMasterPublicKeyError(e) => {
+            generic_consensus_error!(TooManyMasterPublicKeyError, e).into()
+        }
+        BasicError::MasterPublicKeyUpdateError(e) => {
+            generic_consensus_error!(MasterPublicKeyUpdateError, e).into()
+        }
+        BasicError::InvalidDocumentTypeRequiredSecurityLevelError(e) => {
+            generic_consensus_error!(InvalidDocumentTypeRequiredSecurityLevelError, e).into()
+        }
+        BasicError::InvalidIdentityCreditWithdrawalTransitionAmountError(e) => {
+            generic_consensus_error!(InvalidIdentityCreditWithdrawalTransitionAmountError, e).into()
+        }
+        BasicError::InvalidIdentityUpdateTransitionEmptyError(e) => {
+            generic_consensus_error!(InvalidIdentityUpdateTransitionEmptyError, e).into()
+        }
+        BasicError::InvalidIdentityUpdateTransitionDisableKeysError(e) => {
+            generic_consensus_error!(InvalidIdentityUpdateTransitionDisableKeysError, e).into()
+        }
+        BasicError::DocumentTransitionsAreAbsentError(e) => {
+            DocumentTransitionsAreAbsentErrorWasm::from(e).into()
+        }
     }
 }
 

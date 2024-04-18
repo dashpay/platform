@@ -343,10 +343,10 @@ mod tests {
     fn run_chain_query_epoch_info() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -441,10 +441,10 @@ mod tests {
     fn run_chain_query_epoch_info_latest() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -540,10 +540,10 @@ mod tests {
     fn run_chain_prove_epoch_info() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: IdentityInsertInfo::default(),
+                identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: None,

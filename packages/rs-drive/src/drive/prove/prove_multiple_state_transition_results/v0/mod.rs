@@ -18,14 +18,14 @@ impl Drive {
     /// - `document_queries`: A list of [SingleDocumentDriveQuery]. These specify the documents
     ///   to be proven.
     /// - `transaction`: An optional grovedb transaction
-    /// - `drive_version`: A reference to the [DriveVersion] object that specifies the version of
+    /// - `platform_version`: A reference to the [PlatformVersion] object that specifies the version of
     ///   the function to call.
     ///
     /// # Returns
     /// Returns a `Result` with a `Vec<u8>` containing the proof data if the function succeeds,
     /// or an `Error` if the function fails.
     #[inline(always)]
-    pub(super) fn prove_multiple_v0(
+    pub(super) fn prove_multiple_state_transition_results_v0(
         &self,
         identity_queries: &[IdentityDriveQuery],
         contract_ids: &[([u8; 32], Option<bool>)], //bool is history

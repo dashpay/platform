@@ -635,7 +635,7 @@ pub fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
     extra_keys: &KeyMaps,
-    balance: u64,
+    _balance: u64,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
     asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
@@ -713,6 +713,7 @@ pub fn create_identities_state_transitions(
                     &pk,
                     signer,
                     &NativeBlsModule,
+                    0,
                     platform_version,
                 ) {
                     Ok(identity_create_transition) => {
@@ -790,6 +791,7 @@ pub fn create_state_transitions_for_identities(
                     pk.as_slice(),
                     signer,
                     &NativeBlsModule,
+                    0,
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");

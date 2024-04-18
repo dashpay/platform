@@ -9,7 +9,7 @@ authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 crate-type = ["cdylib"]
 
 [dependencies]
-serde = { version = "1.0.152", features = ["derive"] }
+serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 # TODO: Build wasm with build.rs
 # Meantime if you want to update wasm-bindgen you also need to update version in:
@@ -18,7 +18,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 wasm-bindgen = { version = "=0.2.86" }
 js-sys = "0.3.53"
 web-sys = { version = "0.3.6", features = ["console"] }
-thiserror = { version = "1.0" }
+thiserror = { version = "1.0.58" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-serde-conversion",
@@ -46,7 +46,7 @@ log = { version = "0.4.6" }
 wasm-logger = { version = "0.2.0" }
 num_enum = "0.5.7"
 hex = { version = "0.4" }
-
+paste = "1.0.14"
 anyhow = { version = "1.0.75" }
 # required, cargo-machete false positive
 wasm-bindgen-futures = "0.4.33"

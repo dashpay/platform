@@ -97,7 +97,7 @@ where
 
 /// Mock ContextProvider that can read quorum keys from files.
 ///
-/// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.
+/// Use [dash_sdk::SdkBuilder::with_dump_dir()] to generate quorum keys files.
 #[cfg(feature = "mocks")]
 #[derive(Debug)]
 pub struct MockContextProvider {
@@ -122,7 +122,7 @@ impl MockContextProvider {
 
     /// Set the directory where quorum keys are stored.
     ///
-    /// This directory should contain quorum keys files generated using `rs_sdk::SdkBuilder::with_dump_dir()`.
+    /// This directory should contain quorum keys files generated using [dash_sdk::SdkBuilder::with_dump_dir()].
     pub fn quorum_keys_dir(&mut self, quorum_keys_dir: Option<std::path::PathBuf>) {
         self.quorum_keys_dir = quorum_keys_dir;
     }
@@ -139,7 +139,7 @@ impl Default for MockContextProvider {
 impl ContextProvider for MockContextProvider {
     /// Mock implementation of [ContextProvider] that returns keys from files saved on disk.
     ///
-    /// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.
+    /// Use [dash_sdk::SdkBuilder::with_dump_dir()] to generate quorum keys files.
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,

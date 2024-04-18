@@ -4,7 +4,7 @@ use toml::Value;
 
 fn main() {
     let crates = [
-        "rs-sdk",
+        "dash-sdk",
         "rs-drive-abci",
         "rs-dpp",
         "rs-drive",
@@ -21,7 +21,7 @@ fn check_crate(crate_name: &str) {
     let cargo_toml_path = format!("packages/{}/Cargo.toml", crate_name);
 
     // Read and parse the Cargo.toml file
-    let cargo_toml_content = fs::read_to_string(&cargo_toml_path)
+    let cargo_toml_content = fs::read_to_string(cargo_toml_path)
         .unwrap_or_else(|_| panic!("Failed to read Cargo.toml for {}", crate_name));
 
     let cargo_toml: Value = cargo_toml_content

@@ -6,6 +6,8 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::serialization::Signable;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::ProtocolError;
 
 use dpp::state_transition::StateTransition;
@@ -200,10 +202,13 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
         }
         CheckTxLevel::Recheck => {
             if let Some(asset_lock_proof) = state_transition.optional_asset_lock_proof() {
+                let mut signable_bytes_hasher =
+                    SignableBytesHasher::Bytes(state_transition.signable_bytes()?);
                 // we should check that the asset lock is still valid
                 let validation_result = asset_lock_proof
                     .verify_is_not_spent_and_has_enough_balance(
                         platform,
+                        &mut signable_bytes_hasher,
                         state_transition
                             .required_asset_lock_balance_for_processing_start(platform_version),
                         None,

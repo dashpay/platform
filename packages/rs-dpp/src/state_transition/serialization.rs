@@ -58,7 +58,7 @@ mod tests {
         let platform_version = LATEST_PLATFORM_VERSION;
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
-        let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
+        let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None, None);
 
         let identity_create_transition = IdentityCreateTransition::V0(
             IdentityCreateTransitionV0::try_from_identity(
@@ -84,7 +84,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
-        let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
+        let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None, None);
 
         let identity_topup_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof: AssetLockProof::Instant(asset_lock_proof),

@@ -29,6 +29,7 @@ pub struct DriveMethodVersions {
     pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,
+    pub fetch: DriveFetchMethodVersions,
     pub prove: DriveProveMethodVersions,
     pub state_transitions: DriveStateTransitionMethodVersions,
     pub platform_state: DrivePlatformStateMethodVersions,
@@ -57,8 +58,14 @@ pub struct DriveDataContractOperationMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct DriveFetchMethodVersions {
+    pub fetch_elements: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveProveMethodVersions {
-    pub prove_multiple: FeatureVersion,
+    pub prove_elements: FeatureVersion,
+    pub prove_multiple_state_transition_results: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -101,6 +108,7 @@ pub struct DriveVerifyIdentityMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifySystemMethodVersions {
     pub verify_epoch_infos: FeatureVersion,
+    pub verify_elements: FeatureVersion,
     pub verify_upgrade_state: FeatureVersion,
     pub verify_upgrade_vote_status: FeatureVersion,
 }
