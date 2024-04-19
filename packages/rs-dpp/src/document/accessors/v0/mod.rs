@@ -3,7 +3,6 @@ use platform_value::btreemap_extensions::{
 };
 use platform_value::Value;
 use std::collections::BTreeMap;
-use crate::document::Document;
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Identifier;
@@ -137,7 +136,10 @@ pub trait DocumentV0Setters: DocumentV0Getters {
     fn set_updated_at_block_height(&mut self, updated_at_block_height: Option<u64>);
     fn set_created_at_core_block_height(&mut self, created_at_core_block_height: Option<u32>);
     fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>);
-    fn set_transferred_at_core_block_height(&mut self, transferred_at_core_block_height: Option<u32>);
+    fn set_transferred_at_core_block_height(
+        &mut self,
+        transferred_at_core_block_height: Option<u32>,
+    );
     fn set_transferred_at_block_height(&mut self, transferred_at_block_height: Option<u64>);
     fn set_transferred_at(&mut self, transferred_at: Option<TimestampMillis>);
 }

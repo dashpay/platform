@@ -1,5 +1,5 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::document::{Document, DocumentV0Setters, property_names};
+use dpp::document::{property_names, Document, DocumentV0Setters};
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 
@@ -27,21 +27,21 @@ impl DocumentTransferTransitionActionV0 {
                 base,
                 get_data_contract,
             )?;
-        
+
         let mut modified_document = original_document;
 
         modified_document.set_owner_id(*recipient_owner_id);
-        
+
         if base.document_type_field_is_required(property_names::TRANSFERRED_AT)? {
-            modified_document.set_updated_at(Some(block_info.time_ms));
+            modified_document.set_transferred_at(Some(block_info.time_ms));
         }
 
         if base.document_type_field_is_required(property_names::TRANSFERRED_AT_BLOCK_HEIGHT)? {
-            modified_document.set_updated_at_block_height(Some(block_info.height));
+            modified_document.set_transferred_at_block_height(Some(block_info.height));
         }
 
         if base.document_type_field_is_required(property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT)? {
-            modified_document.set_updated_at_core_block_height(Some(block_info.core_height));
+            modified_document.set_transferred_at_core_block_height(Some(block_info.core_height));
         }
 
         Ok(DocumentTransferTransitionActionV0 {

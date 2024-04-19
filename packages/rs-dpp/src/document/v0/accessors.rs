@@ -65,6 +65,15 @@ impl DocumentV0Getters for DocumentV0 {
         self.updated_at
     }
 
+    /// Returns the timestamp of the last time the document was transferred, if it is part
+    /// of the document. The document will have this field if it's schema has it set as required.
+    ///
+    /// # Returns
+    /// An `Option<TimestampMillis>` representing the transferred at time in milliseconds, or `None` if not available.
+    fn transferred_at(&self) -> Option<TimestampMillis> {
+        self.transferred_at
+    }
+
     /// Provides a reference to the document's unique identifier.
     ///
     /// # Returns
@@ -107,6 +116,15 @@ impl DocumentV0Getters for DocumentV0 {
         self.updated_at_block_height
     }
 
+    /// Returns the block height of the last time the document was transferred, if it is part
+    /// of the document. The document will have this field if it's schema has it set as required.
+    ///
+    /// # Returns
+    /// An `Option<u64>` representing the transfer block height, or `None` if not available.
+    fn transferred_at_block_height(&self) -> Option<u64> {
+        self.transferred_at_block_height
+    }
+
     /// Returns the core network block height at which the document was created, if it is part
     /// of the document. The document will have this field if it's schema has it set as required.
     ///
@@ -123,6 +141,15 @@ impl DocumentV0Getters for DocumentV0 {
     /// An `Option<u32>` representing the update core block height, or `None` if not available.
     fn updated_at_core_block_height(&self) -> Option<u32> {
         self.updated_at_core_block_height
+    }
+
+    /// Returns the core network block height of the last time the document was transferred, if it is part
+    /// of the document. The document will have this field if it's schema has it set as required.
+    ///
+    /// # Returns
+    /// An `Option<u32>` representing the transfer core block height, or `None` if not available.
+    fn transferred_at_core_block_height(&self) -> Option<u32> {
+        self.transferred_at_core_block_height
     }
 }
 
@@ -229,8 +256,10 @@ impl DocumentV0Setters for DocumentV0 {
         self.updated_at_core_block_height = updated_at_core_block_height;
     }
 
-    fn set_transferred_at_core_block_height(&mut self, transferred_at_core_block_height: Option<u32>) {
+    fn set_transferred_at_core_block_height(
+        &mut self,
+        transferred_at_core_block_height: Option<u32>,
+    ) {
         self.transferred_at_core_block_height = transferred_at_core_block_height;
     }
-    
 }

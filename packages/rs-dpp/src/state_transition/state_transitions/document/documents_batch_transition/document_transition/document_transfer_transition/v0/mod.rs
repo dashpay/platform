@@ -9,10 +9,7 @@ use platform_value::Identifier;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 
 mod property_names {
@@ -23,22 +20,27 @@ mod property_names {
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
 #[cfg_attr(
-feature = "state-transition-serde-conversion",
-derive(Serialize, Deserialize),
-serde(rename_all = "camelCase")
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
-#[display(fmt = "Base: {}, Revision: {}, Recipient: {:?}", "base", "revision", "recipient_owner_id")]
+#[display(
+    fmt = "Base: {}, Revision: {}, Recipient: {:?}",
+    "base",
+    "revision",
+    "recipient_owner_id"
+)]
 pub struct DocumentTransferTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
     #[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    serde(rename = "$revision")
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$revision")
     )]
     pub revision: Revision,
     #[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    serde(rename = "recipientOwnerId")
+        feature = "state-transition-serde-conversion",
+        serde(rename = "recipientOwnerId")
     )]
     pub recipient_owner_id: Identifier,
 }

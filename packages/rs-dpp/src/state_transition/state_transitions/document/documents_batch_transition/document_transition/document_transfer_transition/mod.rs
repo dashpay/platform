@@ -10,8 +10,8 @@ pub use v0::*;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
 #[cfg_attr(
-feature = "state-transition-serde-conversion",
-derive(Serialize, Deserialize)
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize)
 )]
 pub enum DocumentTransferTransition {
     #[display(fmt = "V0({})", "_0")]

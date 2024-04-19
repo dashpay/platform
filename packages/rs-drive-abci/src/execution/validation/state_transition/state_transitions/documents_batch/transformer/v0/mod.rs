@@ -16,9 +16,9 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::prelude::Revision;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
-use dpp::prelude::Revision;
 
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -267,7 +267,12 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
         let replace_and_transfer_transitions = document_transitions
             .iter()
-            .filter(|transition| matches!(transition, DocumentTransition::Replace(_) | DocumentTransition::Transfer(_)))
+            .filter(|transition| {
+                matches!(
+                    transition,
+                    DocumentTransition::Replace(_) | DocumentTransition::Transfer(_)
+                )
+            })
             .copied()
             .collect::<Vec<_>>();
 
@@ -480,7 +485,10 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     )?;
 
                 if result.is_valid() {
-                    Ok(DocumentTransitionAction::TransferAction(document_transfer_transition).into())
+                    Ok(
+                        DocumentTransitionAction::TransferAction(document_transfer_transition)
+                            .into(),
+                    )
                 } else {
                     Ok(result)
                 }

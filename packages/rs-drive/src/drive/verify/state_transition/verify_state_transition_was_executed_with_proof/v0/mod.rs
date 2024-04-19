@@ -24,6 +24,7 @@ use dpp::state_transition::documents_batch_transition::document_create_transitio
 use dpp::state_transition::documents_batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_replace_transition::DocumentFromReplaceTransition;
 use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedPartialIdentity};
 use platform_version::TryIntoPlatformVersioned;
@@ -152,6 +153,9 @@ impl Drive {
                             document.created_at(), //we can trust the created at (as we don't care)
                             document.created_at_block_height(), //we can trust the created at block height (as we don't care)
                             document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
+                            document.created_at(), //we can trust the created at (as we don't care)
+                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
+                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
                             block_info,
                             &document_type,
                             platform_version,
@@ -162,6 +166,34 @@ impl Drive {
                             platform_version,
                         )? {
                             return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after replace with id {}", replace_transition.base().id()))));
+                        }
+
+                        Ok((
+                            root_hash,
+                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
+                        ))
+                    }
+                    DocumentTransition::Transfer(transfer_transition) => {
+                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (transfer)", transfer_transition.base().id()))))?;
+                        let expected_document = Document::try_from_tran(
+                            replace_transition,
+                            documents_batch_transition.owner_id(),
+                            document.created_at(), //we can trust the created at (as we don't care)
+                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
+                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
+                            document.created_at(), //we can trust the created at (as we don't care)
+                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
+                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
+                            block_info,
+                            &document_type,
+                            platform_version,
+                        )?;
+
+                        if !document.is_equal_ignoring_time_based_fields(
+                            &expected_document,
+                            platform_version,
+                        )? {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after transfer with id {}", transfer_transition.base().id()))));
                         }
 
                         Ok((

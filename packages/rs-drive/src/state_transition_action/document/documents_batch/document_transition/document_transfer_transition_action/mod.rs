@@ -1,13 +1,9 @@
 mod v0;
 
-use std::collections::BTreeMap;
-
 use derive_more::From;
-
 use dpp::document::Document;
-use dpp::identity::TimestampMillis;
-use dpp::platform_value::{Identifier, Value};
-use dpp::prelude::{BlockHeight, CoreBlockHeight, Revision};
+
+use dpp::platform_value::Identifier;
 use dpp::ProtocolError;
 pub use v0::*;
 

@@ -37,13 +37,13 @@ impl DocumentTransferTransitionV0Methods for DocumentTransferTransition {
 
     fn recipient_owner_id(&self) -> Identifier {
         match self {
-            DocumentTransferTransition::V0(v0) => v0.recipient_owner_id
+            DocumentTransferTransition::V0(v0) => v0.recipient_owner_id,
         }
     }
 
     fn recipient_owner_id_ref(&self) -> &Identifier {
         match self {
-            DocumentTransferTransition::V0(v0) => &v0.recipient_owner_id
+            DocumentTransferTransition::V0(v0) => &v0.recipient_owner_id,
         }
     }
 

@@ -11,7 +11,7 @@ use dpp::document::DocumentV0Getters;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use crate::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::{DocumentFromTransferTransitionAction, DocumentTransferTransitionAction, DocumentTransferTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::{DocumentTransferTransitionAction, DocumentTransferTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentTransferTransitionAction {
@@ -25,13 +25,14 @@ impl DriveHighLevelDocumentOperationConverter for DocumentTransferTransitionActi
         let document_type_name = self.base().document_type_name().clone();
         let identity_contract_nonce = self.base().identity_contract_nonce();
         let document = self.document_owned();
-        
+
         // we are transferring the document so the new storage flags should be on the new owner
-        
+
         let new_document_owner_id = document.owner_id();
 
-        let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(new_document_owner_id.to_buffer()));
-        
+        let storage_flags =
+            StorageFlags::new_single_epoch(epoch.index, Some(new_document_owner_id.to_buffer()));
+
         Ok(vec![
             IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id: owner_id.into_buffer(),

@@ -173,7 +173,6 @@ impl DocumentV0Setters for Document {
         }
     }
 
-
     fn set_created_at_core_block_height(&mut self, created_at_core_block_height: Option<u32>) {
         match self {
             Document::V0(v0) => v0.created_at_core_block_height = created_at_core_block_height,
@@ -186,9 +185,14 @@ impl DocumentV0Setters for Document {
         }
     }
 
-    fn set_transferred_at_core_block_height(&mut self, transferred_at_core_block_height: Option<u32>) {
+    fn set_transferred_at_core_block_height(
+        &mut self,
+        transferred_at_core_block_height: Option<u32>,
+    ) {
         match self {
-            Document::V0(v0) => v0.transferred_at_core_block_height = transferred_at_core_block_height,
+            Document::V0(v0) => {
+                v0.transferred_at_core_block_height = transferred_at_core_block_height
+            }
         }
     }
 }
