@@ -13,7 +13,7 @@ use dpp::version::PlatformVersion;
 mod v0;
 
 impl<C> Platform<C> {
-    /// Querying of an identity by a public key hash
+    /// Querying identities keys bound to specified contract
     pub fn query_identities_contract_keys(
         &self,
         GetIdentitiesContractKeysRequest { version }: GetIdentitiesContractKeysRequest,
@@ -38,7 +38,7 @@ impl<C> Platform<C> {
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::UnsupportedQueryVersion(
-                    "identities".to_string(),
+                    "identities_contract_keys".to_string(),
                     feature_version_bounds.min_version,
                     feature_version_bounds.max_version,
                     platform_version.protocol_version,

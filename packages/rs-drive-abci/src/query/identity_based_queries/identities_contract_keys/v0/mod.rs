@@ -152,7 +152,10 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
 
-    fn init_dashpay(platform: &TempPlatform<MockCoreRPCLike>, platform_version: &PlatformVersion) -> Guard<Arc<DataContract>> {
+    fn init_dashpay(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> Guard<Arc<DataContract>> {
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
         let serialization = dashpay
@@ -197,12 +200,12 @@ mod tests {
             .query_identities_contract_keys_v0(request, &state, platform_version)
             .expect("query failed");
 
-        let GetIdentitiesContractKeysResponseV0 {
-            result,
-            ..
-        } = result.data.expect("expected data");
+        let GetIdentitiesContractKeysResponseV0 { result, .. } =
+            result.data.expect("expected data");
 
-        let Result::IdentitiesKeys(IdentitiesKeys { entries: keys }) = result.expect("expected result") else {
+        let Result::IdentitiesKeys(IdentitiesKeys { entries: keys }) =
+            result.expect("expected result")
+        else {
             panic!("expected IdentitiesKeys");
         };
 
@@ -228,7 +231,8 @@ mod tests {
             &mut rng,
             None,
             platform_version,
-        ).expect("expected to create a test identity");
+        )
+        .expect("expected to create a test identity");
 
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: vec![alice.id().to_vec()],
@@ -242,12 +246,12 @@ mod tests {
             .query_identities_contract_keys_v0(request, &state, platform_version)
             .expect("query failed");
 
-        let GetIdentitiesContractKeysResponseV0 {
-            result,
-            ..
-        } = result.data.expect("expected data");
+        let GetIdentitiesContractKeysResponseV0 { result, .. } =
+            result.data.expect("expected data");
 
-        let Result::IdentitiesKeys(IdentitiesKeys { entries: keys }) = result.expect("expected result") else {
+        let Result::IdentitiesKeys(IdentitiesKeys { entries: keys }) =
+            result.expect("expected result")
+        else {
             panic!("expected IdentitiesKeys");
         };
 
@@ -275,7 +279,8 @@ mod tests {
                     &mut rng,
                     None,
                     platform_version,
-                ).expect("expected to create a test identity");
+                )
+                .expect("expected to create a test identity");
 
                 let bob = create_test_identity_with_rng(
                     &platform.drive,
@@ -283,7 +288,8 @@ mod tests {
                     &mut rng,
                     None,
                     platform_version,
-                ).expect("expected to create a test identity");
+                )
+                .expect("expected to create a test identity");
 
                 (alice, bob)
             };
@@ -293,41 +299,45 @@ mod tests {
                 let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
                 let db_transaction = platform.drive.grove.start_transaction();
 
-                let mut add_key_to_identity = |identity: &mut Identity, key_id: KeyID, purpose: Purpose| {
-                    let (key, _) = IdentityPublicKey::random_key_with_known_attributes(
-                        key_id,
-                        &mut rng,
-                        purpose,
-                        SecurityLevel::MEDIUM,
-                        KeyType::ECDSA_SECP256K1,
-                        Some(ContractBounds::SingleContractDocumentType {
-                            id: dashpay.id(),
-                            document_type_name: "contactRequest".to_string(),
-                        }),
-                        platform_version,
-                    ).unwrap();
-
-                    platform
-                        .drive
-                        .add_new_unique_keys_to_identity(
-                            identity.id().to_buffer(),
-                            vec![key.clone()],
-                            &block,
-                            true,
-                            Some(&db_transaction),
+                let mut add_key_to_identity =
+                    |identity: &mut Identity, key_id: KeyID, purpose: Purpose| {
+                        let (key, _) = IdentityPublicKey::random_key_with_known_attributes(
+                            key_id,
+                            &mut rng,
+                            purpose,
+                            SecurityLevel::MEDIUM,
+                            KeyType::ECDSA_SECP256K1,
+                            Some(ContractBounds::SingleContractDocumentType {
+                                id: dashpay.id(),
+                                document_type_name: "contactRequest".to_string(),
+                            }),
                             platform_version,
                         )
-                        .expect("expected to add a new key");
+                        .unwrap();
 
-                    identity.public_keys_mut().insert(key.id(), key);
-                };
+                        platform
+                            .drive
+                            .add_new_unique_keys_to_identity(
+                                identity.id().to_buffer(),
+                                vec![key.clone()],
+                                &block,
+                                true,
+                                Some(&db_transaction),
+                                platform_version,
+                            )
+                            .expect("expected to add a new key");
+
+                        identity.public_keys_mut().insert(key.id(), key);
+                    };
 
                 add_key_to_identity(&mut alice, 2, Purpose::ENCRYPTION);
                 add_key_to_identity(&mut alice, 3, Purpose::DECRYPTION);
                 add_key_to_identity(&mut bob, 2, Purpose::ENCRYPTION);
                 add_key_to_identity(&mut bob, 3, Purpose::DECRYPTION);
 
-                platform.drive.grove
+                platform
+                    .drive
+                    .grove
                     .commit_transaction(db_transaction)
                     .unwrap()
                     .expect("expected to be able to commit a transaction");
@@ -348,21 +358,24 @@ mod tests {
             .query_identities_contract_keys_v0(request, &state, platform_version)
             .expect("query failed");
 
-        let GetIdentitiesContractKeysResponseV0 {
-            result,
-            ..
-        } = result.data.expect("expected data");
+        let GetIdentitiesContractKeysResponseV0 { result, .. } =
+            result.data.expect("expected data");
 
-        let Result::IdentitiesKeys(IdentitiesKeys { entries: keys }) = result.expect("expected result") else {
+        let Result::IdentitiesKeys(IdentitiesKeys { entries: keys }) =
+            result.expect("expected result")
+        else {
             panic!("expected IdentitiesKeys");
         };
         fn assert_keys(identity: &Identity, result_keys: &Vec<IdentityKeys>) {
-            let identity_keys_result = result_keys.iter().find(|key| key.identity_id == identity.id().to_vec());
+            let identity_keys_result = result_keys
+                .iter()
+                .find(|key| key.identity_id == identity.id().to_vec());
             assert_eq!(identity_keys_result.is_some(), true);
             let identity_keys_result = identity_keys_result.unwrap();
 
             let get_expected_keys = |identity: &Identity, purpose: Purpose| {
-                identity.public_keys()
+                identity
+                    .public_keys()
                     .iter()
                     .filter(|(_, key)| key.purpose() == purpose)
                     .map(|(key_id, _)| *key_id)
@@ -371,11 +384,16 @@ mod tests {
             };
 
             let get_keys_from_result = |keys: &IdentityKeys, purpose: Purpose| {
-                let mut keys_result = keys.keys.iter().filter(|key| key.purpose == purpose as i32)
+                let mut keys_result = keys
+                    .keys
+                    .iter()
+                    .filter(|key| key.purpose == purpose as i32)
                     .fold(vec![], |mut acc, keys| {
-                        let keys = keys.keys_bytes
-                            .iter()
-                            .map(|key_bytes| IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice()).unwrap().id());
+                        let keys = keys.keys_bytes.iter().map(|key_bytes| {
+                            IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice())
+                                .unwrap()
+                                .id()
+                        });
                         acc.extend(keys);
                         acc
                     });
@@ -415,7 +433,7 @@ mod tests {
                 None,
                 platform_version,
             )
-                .expect("expected to create a test identity");
+            .expect("expected to create a test identity");
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -431,7 +449,7 @@ mod tests {
                 }),
                 platform_version,
             )
-                .unwrap();
+            .unwrap();
 
             let db_transaction = platform.drive.grove.start_transaction();
 
