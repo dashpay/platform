@@ -1222,6 +1222,7 @@ impl NetworkStrategy {
                                 *purpose,
                                 *security_level,
                                 *key_type,
+                                None,
                                 platform_version,
                             )
                             .expect("expected to create key");
