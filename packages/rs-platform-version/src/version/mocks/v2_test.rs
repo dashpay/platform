@@ -201,6 +201,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     validate_document_uniqueness: 0,
                     validate_document_create_transition_action_uniqueness: 0,
                     validate_document_replace_transition_action_uniqueness: 0,
+                    validate_document_transfer_transition_action_uniqueness: 0,
                     validate_uniqueness_of_data: 0,
                 },
             },

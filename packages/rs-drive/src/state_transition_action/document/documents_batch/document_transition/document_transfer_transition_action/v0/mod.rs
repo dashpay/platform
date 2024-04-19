@@ -19,7 +19,8 @@ pub trait DocumentTransferTransitionActionAccessorsV0 {
     fn base(&self) -> &DocumentBaseTransitionAction;
     /// base owned
     fn base_owned(self) -> DocumentBaseTransitionAction;
-    /// created at
+    /// the document to be inserted as a ref
     fn document(&self) -> &Document;
+    /// the document to be inserted as owned
     fn document_owned(self) -> Document;
 }

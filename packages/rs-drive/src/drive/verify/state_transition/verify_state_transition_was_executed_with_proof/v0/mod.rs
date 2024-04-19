@@ -175,25 +175,10 @@ impl Drive {
                     }
                     DocumentTransition::Transfer(transfer_transition) => {
                         let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (transfer)", transfer_transition.base().id()))))?;
-                        let expected_document = Document::try_from_tran(
-                            replace_transition,
-                            documents_batch_transition.owner_id(),
-                            document.created_at(), //we can trust the created at (as we don't care)
-                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
-                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
-                            document.created_at(), //we can trust the created at (as we don't care)
-                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
-                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
-                            block_info,
-                            &document_type,
-                            platform_version,
-                        )?;
+                        let recipient_owner_id = transfer_transition.recipient_owner_id();
 
-                        if !document.is_equal_ignoring_time_based_fields(
-                            &expected_document,
-                            platform_version,
-                        )? {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after transfer with id {}", transfer_transition.base().id()))));
+                        if document.owner_id() != recipient_owner_id {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", transfer_transition.base().id()))));
                         }
 
                         Ok((

@@ -23,7 +23,7 @@ use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusV
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentReplaceTransition, DocumentTransitionV0Methods};
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
@@ -385,6 +385,14 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 let original_document_created_at_core_block_height =
                     original_document.created_at_core_block_height();
 
+                let original_document_transferred_at = original_document.transferred_at();
+
+                let original_document_transferred_at_block_height =
+                    original_document.transferred_at_block_height();
+
+                let original_document_transferred_at_core_block_height =
+                    original_document.transferred_at_core_block_height();
+
                 let validation_result = Self::check_ownership_of_old_replaced_document_v0(
                     document_replace_transition.base().id(),
                     original_document,
@@ -418,6 +426,9 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                         original_document_created_at,
                         original_document_created_at_block_height,
                         original_document_created_at_core_block_height,
+                        original_document_transferred_at,
+                        original_document_transferred_at_block_height,
+                        original_document_transferred_at_core_block_height,
                         block_info,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
@@ -475,20 +486,15 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 }
 
                 let document_transfer_action =
-                    DocumentTransferTransitionAction::try_from_borrowed_document_replace_transition(
-                        document_replace_transition,
-                        original_document_created_at,
-                        original_document_created_at_block_height,
-                        original_document_created_at_core_block_height,
+                    DocumentTransferTransitionAction::try_from_borrowed_document_transfer_transition(
+                        document_transfer_transition,
+                        original_document.clone(), //todo: remove clone
                         block_info,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
                 if result.is_valid() {
-                    Ok(
-                        DocumentTransitionAction::TransferAction(document_transfer_transition)
-                            .into(),
-                    )
+                    Ok(DocumentTransitionAction::TransferAction(document_transfer_action).into())
                 } else {
                     Ok(result)
                 }
