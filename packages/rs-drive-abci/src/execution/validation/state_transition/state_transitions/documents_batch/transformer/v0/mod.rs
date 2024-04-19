@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
+use dpp::consensus::basic::document::{
+    DataContractNotPresentError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+};
 use dpp::consensus::basic::BasicError;
 
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -16,7 +18,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::prelude::Revision;
+use dpp::prelude::{Revision, UserFeeIncrease};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
 
@@ -40,6 +42,7 @@ use dpp::state_transition::documents_batch_transition::document_transition::docu
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionAction;
+use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchTransitionTransformerV0
@@ -163,15 +166,17 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
             .collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, Error>>()?;
         let validation_result = ConsensusValidationResult::flatten(validation_result);
 
-        if validation_result.is_valid() {
+        if validation_result.has_data() {
+            let (transitions, errors) = validation_result.into_data_and_errors()?;
             let batch_transition_action = DocumentsBatchTransitionActionV0 {
                 owner_id,
-                transitions: validation_result.into_data()?,
+                transitions,
                 user_fee_increase,
             }
             .into();
-            Ok(ConsensusValidationResult::new_with_data(
+            Ok(ConsensusValidationResult::new_with_data_and_errors(
                 batch_transition_action,
+                errors,
             ))
         } else {
             Ok(ConsensusValidationResult::new_with_errors(
@@ -299,7 +304,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
         let replaced_documents = fetched_documents_validation_result.into_data()?;
 
-        let document_transition_actions_result = if !dry_run {
+        Ok(if !dry_run {
             let document_transition_actions_validation_result = document_transitions
                 .iter()
                 .map(|transition| {
@@ -326,17 +331,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             result
         } else {
             ConsensusValidationResult::default()
-        };
-
-        if !document_transition_actions_result.is_valid() {
-            return Ok(document_transition_actions_result);
-        }
-
-        let document_transition_actions = document_transition_actions_result.into_data()?;
-
-        Ok(ConsensusValidationResult::new_with_data(
-            document_transition_actions,
-        ))
+        })
     }
 
     /// The data contract can be of multiple difference versions
@@ -369,8 +364,18 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    // We can set the user fee increase to 0 here because it is decided by the Documents Batch instead
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_replace_transition.base(),
+                            owner_id,
+                            0,
+                        );
+
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        bump_action.into(),
+                        validation_result.errors,
+                    ));
                 }
 
                 let original_document = validation_result.into_data()?;

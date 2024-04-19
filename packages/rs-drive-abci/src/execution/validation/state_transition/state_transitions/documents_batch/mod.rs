@@ -231,3 +231,449 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::{
+        CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+    };
+    use dpp::document::document_methods::DocumentMethodsV0;
+    use dpp::document::DocumentV0Setters;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+    use dpp::platform_value::{Bytes32, Value};
+    use dpp::prelude::Identifier;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+    use platform_version::version::PlatformVersion;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
+    use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
+
+    fn setup_identity(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey, Vec<u8>) {
+        let platform_version = PlatformVersion::latest();
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
+        let (critical_public_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
+                1,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(critical_public_key.clone(), private_key.clone());
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, master_key.clone()),
+                (1, critical_public_key.clone()),
+            ]),
+            balance: 10000000000,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        (identity, signer, critical_public_key, private_key)
+    }
+
+    #[test]
+    fn test_document_replace_on_document_type_that_is_mutable() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay_contract = dashpay.clone();
+
+        let profile = dashpay_contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+
+        assert!(profile.documents_mutable());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
+
+        let mut altered_document = document.clone();
+
+        altered_document.increment_revision().unwrap();
+        altered_document.set("displayName", "Samuel".into());
+        altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
+
+        let documents_batch_create_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                document,
+                profile,
+                entropy.0,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let documents_batch_update_transition =
+            DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                altered_document,
+                profile,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_update_serialized_transition = documents_batch_update_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_update_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.invalid_paid_count(), 0);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 5074230);
+    }
+
+    #[test]
+    fn test_document_replace_on_document_type_that_is_not_mutable() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(437);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+
+        let (other_identity, ..) = setup_identity(&mut platform, 495);
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay_contract = dashpay.clone();
+
+        let contact_request_document_type = dashpay_contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a profile document type");
+
+        assert!(!contact_request_document_type.documents_mutable());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = contact_request_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set(
+            "toUserId",
+            Value::Identifier(other_identity.id().to_buffer()),
+        );
+        document.set("recipientKeyIndex", Value::U32(1));
+        document.set("senderKeyIndex", Value::U32(1));
+        document.set("accountReference", Value::U32(0));
+        document.set("coreHeightCreatedAt", Value::U32(5));
+
+        let mut altered_document = document.clone();
+
+        altered_document.set_revision(Some(1));
+        altered_document.set("senderKeyIndex", Value::U32(2));
+
+        let documents_batch_create_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                document,
+                contact_request_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let documents_batch_update_transition =
+            DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                altered_document,
+                contact_request_document_type,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_update_serialized_transition = documents_batch_update_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_update_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+        assert_eq!(processing_result.valid_count(), 0);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 102690);
+    }
+
+    #[test]
+    fn test_document_replace_that_does_not_yet_exist() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay_contract = dashpay.clone();
+
+        let profile = dashpay_contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
+
+        let mut altered_document = document.clone();
+
+        altered_document.increment_revision().unwrap();
+        altered_document.set("displayName", "Samuel".into());
+        altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
+
+        let documents_batch_update_transition =
+            DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                altered_document,
+                profile,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_update_serialized_transition = documents_batch_update_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_update_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+        assert_eq!(processing_result.valid_count(), 0);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1244470);
+    }
+}

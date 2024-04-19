@@ -11,9 +11,8 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
-    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
-    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT,
+    UPDATED_AT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::document::{Document, DocumentV0};
 use crate::identity::accessors::IdentityGettersV0;

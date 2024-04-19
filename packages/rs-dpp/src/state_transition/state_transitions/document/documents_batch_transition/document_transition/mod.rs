@@ -123,7 +123,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => t.data().get(path),
             DocumentTransition::Replace(t) => t.data().get(path),
             DocumentTransition::Delete(_) => None,
-            DocumentTransition::Transfer(t) => None,
+            DocumentTransition::Transfer(_) => None,
         }
     }
 
