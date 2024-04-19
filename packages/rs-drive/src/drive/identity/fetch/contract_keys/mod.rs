@@ -37,8 +37,9 @@ impl Drive {
             .drive
             .methods
             .identity
+            .keys
             .fetch
-            .identities_contract_keys
+            .fetch_identities_contract_keys
         {
             0 => self.get_identities_contract_keys_v0(
                 identity_ids,
