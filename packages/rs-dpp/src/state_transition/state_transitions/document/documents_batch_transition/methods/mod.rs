@@ -125,4 +125,48 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
             }),
         }
     }
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_document_deletion_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        delete_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        match batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .documents_batch_state_transition
+                .default_current_version,
+        ) {
+            0 => Ok(
+                DocumentsBatchTransitionV0::new_document_deletion_transition_from_document(
+                    document,
+                    document_type,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    batch_feature_version,
+                    delete_feature_version,
+                    base_feature_version,
+                )?,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method:
+                "DocumentsBatchTransition::new_document_deletion_transition_from_document"
+                    .to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }
