@@ -111,7 +111,12 @@ fn store_transaction_failures(
     dir_path: &Path,
 ) -> std::io::Result<()> {
     // Ensure the directory exists
-    fs::create_dir_all(dir_path)?;
+    fs::create_dir_all(dir_path).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("cannot create dir {}: {}", dir_path.display(), e),
+        )
+    })?;
 
     // Get the current timestamp
     let timestamp = SystemTime::now()
@@ -124,8 +129,18 @@ fn store_transaction_failures(
         let file_name = dir_path.join(format!("tx_{}_{}.dat", timestamp, tx_id));
 
         // Write the bytes to the file
-        let mut file = File::create(file_name)?;
-        file.write_all(&transaction)?;
+        let mut file = File::create(&file_name).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("cannot create file {}: {}", file_name.display(), e),
+            )
+        })?;
+        file.write_all(&transaction).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("cannot write to file {}: {}", file_name.display(), e),
+            )
+        })?;
     }
 
     Ok(())
