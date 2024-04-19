@@ -9,19 +9,22 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Proves identities contract keys given identity ids and contract id.
+    /// Proves identities contract keys given identity ids, contract id, optional document type name and purposes
     ///
     /// This function uses the versioning system to call the appropriate handler based on the provided `DriveVersion`.
     ///
     /// # Arguments
     ///
     /// * `identity_ids` - The slice of identity ids to prove
+    /// * `contract_id` - The contract id
+    /// * `document_type_name` - The optional document type name
+    /// * `purposes` - Key purposes
     /// * `transaction` - Transaction arguments.
     /// * `drive_version` - A reference to the drive version.
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing a vector of bytes representing the proved identities, otherwise an `Error` if the operation fails or the version is not supported.
+    /// Returns a `Result` containing a vector of bytes representing the proved identities keys bound to specified contract, otherwise an `Error` if the operation fails or the version is not supported.
     pub fn prove_identities_contract_keys(
         &self,
         identity_ids: &[[u8; 32]],

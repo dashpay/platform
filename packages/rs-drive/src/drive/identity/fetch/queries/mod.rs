@@ -1,8 +1,6 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::drive::{
-    identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive,
-};
+use crate::drive::{identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::Error;
 
@@ -10,13 +8,12 @@ use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeNonce, IdentityTreeRevision};
 use crate::drive::identity::{
-    identity_contract_info_group_path_vec,
-    identity_path_vec, IdentityRootStructure,
+    identity_contract_info_group_path_vec, identity_path_vec, IdentityRootStructure,
 };
 use crate::error::query::QuerySyntaxError;
 use dpp::identity::Purpose;
-use grovedb::{PathQuery, Query, SizedQuery};
 use grovedb::query_result_type::Key;
+use grovedb::{PathQuery, Query, SizedQuery};
 
 /// An enumeration representing the types of identity prove requests.
 ///

@@ -6,7 +6,7 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Proves identities with all its information from an identity ids.
+    /// Proves identities keys bound to specified contract
     pub(super) fn prove_identities_contract_keys_v0(
         &self,
         identity_ids: &[[u8; 32]],
@@ -17,7 +17,12 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let query = Self::identities_contract_keys_query(identity_ids, contract_id, &document_type_name, &purposes);
+        let query = Self::identities_contract_keys_query(
+            identity_ids,
+            contract_id,
+            &document_type_name,
+            &purposes,
+        );
         self.grove_get_proved_path_query(
             &query,
             false,
@@ -26,23 +31,4 @@ impl Drive {
             drive_version,
         )
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::block_info::BlockInfo;
-
-    use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::Identity;
-    use grovedb::query_result_type::QueryResultType;
-    use grovedb::GroveDb;
-    use grovedb::QueryItem;
-    use std::borrow::Borrow;
-    use std::collections::BTreeMap;
-    use std::ops::RangeFull;
-
-    use crate::drive::Drive;
-
-    use dpp::version::PlatformVersion;
 }

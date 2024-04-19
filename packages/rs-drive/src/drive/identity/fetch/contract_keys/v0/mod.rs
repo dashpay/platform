@@ -1,16 +1,16 @@
-use std::collections::BTreeMap;
-use grovedb::query_result_type::QueryResultType;
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::identity::{Purpose};
-use grovedb::TransactionArg;
+use dpp::identity::Purpose;
 use dpp::prelude::Identifier;
+use grovedb::query_result_type::QueryResultType;
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use crate::error::query::QuerySyntaxError;
+use std::collections::BTreeMap;
 
 impl Drive {
-    /// Proves identities with all its information from an identity ids.
+    /// Fetches identities keys bound to specified contract
     pub(super) fn get_identities_contract_keys_v0(
         &self,
         identity_ids: &[[u8; 32]],
@@ -68,54 +68,50 @@ impl Drive {
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let query = Self::identities_contract_keys_query(identity_ids, contract_id, &document_type_name, &purposes);
+        let query = Self::identities_contract_keys_query(
+            identity_ids,
+            contract_id,
+            &document_type_name,
+            &purposes,
+        );
 
-        let result = self.grove_get_path_query(
-            &query,
-            transaction,
-            QueryResultType::QueryPathKeyElementTrioResultType,
-            &mut drive_operations,
-            &platform_version.drive,
-        )?.0.to_path_key_elements();
+        let result = self
+            .grove_get_path_query(
+                &query,
+                transaction,
+                QueryResultType::QueryPathKeyElementTrioResultType,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?
+            .0
+            .to_path_key_elements();
 
         let mut partial_identities = BTreeMap::new();
 
         for (path, _, element) in result {
             if let Some(identity_id_bytes) = path.get(1) {
                 let identity_id = Identifier::from_vec(identity_id_bytes.to_owned())?;
-                let purpose= *path.last().expect("last path element is the purpose")
-                    .first().ok_or(Error::Query(QuerySyntaxError::InvalidKeyParameter("invalid purpose".to_string())))?;
-                let purpose = Purpose::try_from(purpose)
-                    .map_err(|_| Error::Query(QuerySyntaxError::InvalidKeyParameter("invalid purpose".to_string())))?;
+                let purpose = *path
+                    .last()
+                    .expect("last path element is the purpose")
+                    .first()
+                    .ok_or(Error::Query(QuerySyntaxError::InvalidKeyParameter(
+                        "invalid purpose".to_string(),
+                    )))?;
+                let purpose = Purpose::try_from(purpose).map_err(|_| {
+                    Error::Query(QuerySyntaxError::InvalidKeyParameter(
+                        "invalid purpose".to_string(),
+                    ))
+                })?;
 
-                let entry = partial_identities.entry(identity_id)
+                let entry = partial_identities
+                    .entry(identity_id)
                     .or_insert(BTreeMap::new());
 
                 entry.insert(purpose, element.into_item_bytes()?);
             }
         }
 
-
         Ok(partial_identities)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::block_info::BlockInfo;
-
-    use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::Identity;
-    use grovedb::query_result_type::QueryResultType;
-    use grovedb::GroveDb;
-    use grovedb::QueryItem;
-    use std::borrow::Borrow;
-    use std::collections::BTreeMap;
-    use std::ops::RangeFull;
-
-    use crate::drive::Drive;
-
-    use dpp::version::PlatformVersion;
-}
-
