@@ -110,6 +110,10 @@ fn store_transaction_failures(
     failures: Vec<(Txid, Vec<u8>)>,
     dir_path: &Path,
 ) -> std::io::Result<()> {
+    if failures.is_empty() {
+        return Ok(());
+    }
+
     // Ensure the directory exists
     fs::create_dir_all(dir_path).map_err(|e| {
         std::io::Error::new(
