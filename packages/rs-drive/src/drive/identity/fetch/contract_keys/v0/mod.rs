@@ -3,18 +3,10 @@ use grovedb::query_result_type::QueryResultType;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::identity::{PartialIdentity, Purpose};
-use dpp::version::drive_versions::DriveVersion;
+use dpp::identity::{Purpose};
 use grovedb::TransactionArg;
-use dpp::consensus::basic::BasicError::DataContractBoundsNotPresentError;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use dpp::prelude::Identifier;
 use platform_version::version::PlatformVersion;
-use crate::error::contract::DataContractError;
-use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 
 impl Drive {

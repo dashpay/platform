@@ -135,7 +135,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
-    use dpp::identity::{Identity, IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{DataContract, IdentityPublicKey};
     use dpp::serialization::{PlatformDeserializable, PlatformSerializableWithPlatformVersion};
     use drive::common::test_utils::identities::create_test_identity_with_rng;
@@ -143,17 +143,14 @@ mod tests {
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use std::borrow::Cow;
-    use std::collections::BTreeMap;
     use std::sync::Arc;
     use arc_swap::Guard;
     use itertools::Itertools;
-    use dapi_grpc::platform::v0::get_identities_contract_keys_response::get_identities_contract_keys_response_v0::IdentityKeys;
+    use dapi_grpc::platform::v0::get_identities_contract_keys_response::get_identities_contract_keys_response_v0::{IdentitiesKeys, IdentityKeys, Result};
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use platform_version::version::PlatformVersion;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
-
-    // TODO: test not found keys
 
     fn init_dashpay(platform: &TempPlatform<MockCoreRPCLike>, platform_version: &PlatformVersion) -> Guard<Arc<DataContract>> {
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
@@ -183,10 +180,82 @@ mod tests {
     }
 
     #[test]
-    fn test_identities_contract_keys() {
-        use get_identities_contract_keys_response_v0::Result;
-        use get_identities_contract_keys_response_v0::IdentitiesKeys;
+    fn test_identities_contract_keys_missing_identity() {
+        let (platform, state, platform_version) = setup_platform();
 
+        let dashpay = init_dashpay(&platform, platform_version);
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![vec![1; 32]],
+            contract_id: dashpay.id().to_vec(),
+            document_type_name: Some("contactRequest".to_string()),
+            purposes: vec![Purpose::ENCRYPTION as i32, Purpose::DECRYPTION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("query failed");
+
+        let GetIdentitiesContractKeysResponseV0 {
+            result,
+            ..
+        } = result.data.expect("expected data");
+
+        let Result::IdentitiesKeys(IdentitiesKeys { entries: keys }) = result.expect("expected result") else {
+            panic!("expected IdentitiesKeys");
+        };
+
+        assert_eq!(keys.len(), 0);
+    }
+
+    // TODO: fix
+    #[ignore]
+    #[test]
+    fn test_identities_contract_keys_missing_identity_keys() {
+        let (platform, state, platform_version) = setup_platform();
+
+        let dashpay = init_dashpay(&platform, platform_version);
+
+        let mut rng = StdRng::seed_from_u64(10);
+
+        let alice_id = rng.gen::<[u8; 32]>();
+
+        // Create alice identity
+        let alice = create_test_identity_with_rng(
+            &platform.drive,
+            alice_id,
+            &mut rng,
+            None,
+            platform_version,
+        ).expect("expected to create a test identity");
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![alice.id().to_vec()],
+            contract_id: dashpay.id().to_vec(),
+            document_type_name: Some("contactRequest".to_string()),
+            purposes: vec![Purpose::ENCRYPTION as i32, Purpose::DECRYPTION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("query failed");
+
+        let GetIdentitiesContractKeysResponseV0 {
+            result,
+            ..
+        } = result.data.expect("expected data");
+
+        let Result::IdentitiesKeys(IdentitiesKeys { entries: keys }) = result.expect("expected result") else {
+            panic!("expected IdentitiesKeys");
+        };
+
+        assert_eq!(keys.len(), 0);
+    }
+
+    #[test]
+    fn test_identities_contract_keys() {
         let (platform, state, platform_version) = setup_platform();
 
         let dashpay = init_dashpay(&platform, platform_version);
@@ -333,34 +402,12 @@ mod tests {
     fn test_identities_contract_keys_proof() {
         let (platform, state, platform_version) = setup_platform();
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = init_dashpay(&platform, platform_version);
 
-        let serialization = dashpay
-            .serialize_to_bytes_with_platform_version(platform_version)
-            .expect("expected to serialize data contract");
-
-        platform
-            .drive
-            .apply_drive_operations(
-                vec![DriveOperation::DataContractOperation(
-                    DataContractOperationType::ApplyContractWithSerialization {
-                        contract: Cow::Borrowed(dashpay.as_ref()),
-                        serialized_contract: serialization,
-                        storage_flags: None,
-                    },
-                )],
-                true,
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("expected to register dashpay contract");
-
-        let (alice, bob) = {
+        let alice = {
             let mut rng = StdRng::seed_from_u64(10);
 
             let alice_id = rng.gen::<[u8; 32]>();
-            let bob_id = rng.gen::<[u8; 32]>();
             let alice = create_test_identity_with_rng(
                 &platform.drive,
                 alice_id,
@@ -406,15 +453,7 @@ mod tests {
                 .unwrap()
                 .expect("expected to be able to commit a transaction");
 
-            let bob = create_test_identity_with_rng(
-                &platform.drive,
-                bob_id,
-                &mut rng,
-                None,
-                platform_version,
-            )
-                .expect("expected to create a test identity");
-            (alice, bob)
+            alice
         };
 
         let request = GetIdentitiesContractKeysRequestV0 {
@@ -433,7 +472,7 @@ mod tests {
         assert!(matches!(
             result.data,
             Some(GetIdentitiesContractKeysResponseV0 {
-                result: Some(get_identities_contract_keys_response_v0::Result::Proof(_)),
+                result: Some(Result::Proof(_)),
                 metadata: Some(_),
             })
         ));
@@ -442,7 +481,7 @@ mod tests {
     #[test]
     fn test_identities_contract_keys_absence_proof() {
         let (platform, state, version) = setup_platform();
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = init_dashpay(&platform, &version);
 
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: vec![vec![0; 32]],

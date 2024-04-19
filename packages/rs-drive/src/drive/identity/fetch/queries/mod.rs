@@ -1,7 +1,7 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{
-    identity_tree_path, identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive, RootTree,
+    identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive,
 };
 
 use crate::error::Error;
@@ -10,7 +10,7 @@ use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeNonce, IdentityTreeRevision};
 use crate::drive::identity::{
-    identity_contract_info_group_path_key_purpose_vec, identity_contract_info_group_path_vec,
+    identity_contract_info_group_path_vec,
     identity_path_vec, IdentityRootStructure,
 };
 use crate::error::query::QuerySyntaxError;
@@ -220,7 +220,7 @@ impl Drive {
                 .map(|purpose| vec![*purpose as u8])
                 .collect(),
         );
-        
+
         sub_query.set_subquery_key(Key::new());
 
         query.default_subquery_branch.subquery = Some(sub_query.into());

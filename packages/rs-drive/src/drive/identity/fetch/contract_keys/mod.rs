@@ -6,7 +6,6 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::identity::Purpose;
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use dpp::identifier::Identifier;
 use platform_version::version::PlatformVersion;
