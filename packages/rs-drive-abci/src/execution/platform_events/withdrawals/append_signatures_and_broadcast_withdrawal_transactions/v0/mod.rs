@@ -14,6 +14,7 @@ use dpp::dashcore::{consensus, Txid};
 
 use std::fs::{self, File};
 use std::io::Write;
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 impl<C> Platform<C>
@@ -95,18 +96,31 @@ where
             }
         }
 
-        store_transaction_failures(transaction_submission_failures)
-            .map_err(|e| Error::Execution(e.into()))?;
+        if let Some(ref rejections_path) = self.config.rejections_path {
+            store_transaction_failures(transaction_submission_failures, rejections_path)
+                .map_err(|e| Error::Execution(e.into()))?;
+        }
 
         Ok(())
     }
 }
 
 // Function to handle the storage of transaction submission failures
-fn store_transaction_failures(failures: Vec<(Txid, Vec<u8>)>) -> std::io::Result<()> {
+fn store_transaction_failures(
+    failures: Vec<(Txid, Vec<u8>)>,
+    dir_path: &Path,
+) -> std::io::Result<()> {
+    if failures.is_empty() {
+        return Ok(());
+    }
+
     // Ensure the directory exists
-    let dir_path = "transaction_submission_failures";
-    fs::create_dir_all(dir_path)?;
+    fs::create_dir_all(dir_path).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("cannot create dir {}: {}", dir_path.display(), e),
+        )
+    })?;
 
     // Get the current timestamp
     let timestamp = SystemTime::now()
@@ -116,11 +130,21 @@ fn store_transaction_failures(failures: Vec<(Txid, Vec<u8>)>) -> std::io::Result
 
     for (tx_id, transaction) in failures {
         // Create the file name
-        let file_name = format!("{}/tx_{}_{}.dat", dir_path, timestamp, tx_id);
+        let file_name = dir_path.join(format!("tx_{}_{}.dat", timestamp, tx_id));
 
         // Write the bytes to the file
-        let mut file = File::create(file_name)?;
-        file.write_all(&transaction)?;
+        let mut file = File::create(&file_name).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("cannot create file {}: {}", file_name.display(), e),
+            )
+        })?;
+        file.write_all(&transaction).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("cannot write to file {}: {}", file_name.display(), e),
+            )
+        })?;
     }
 
     Ok(())
