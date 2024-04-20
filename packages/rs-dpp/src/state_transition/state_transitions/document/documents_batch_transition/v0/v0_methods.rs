@@ -16,16 +16,16 @@ use crate::state_transition::documents_batch_transition::accessors::DocumentsBat
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::document_transition::{
-    DocumentReplaceTransition, DocumentTransferTransition
+    DocumentReplaceTransition, DocumentTransferTransition,
 };
 use crate::state_transition::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::documents_batch_transition::{DocumentDeleteTransition, DocumentsBatchTransition};
 use crate::state_transition::documents_batch_transition::{
-    DocumentsBatchTransitionV0,
+    DocumentDeleteTransition, DocumentsBatchTransition,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
