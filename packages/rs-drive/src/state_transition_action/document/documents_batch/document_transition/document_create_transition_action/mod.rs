@@ -5,12 +5,10 @@ mod v0;
 use derive_more::From;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 use dpp::document::Document;
-use dpp::prelude::{BlockHeight, CoreBlockHeight};
 
 use dpp::ProtocolError;
 

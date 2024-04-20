@@ -1411,7 +1411,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 5327760);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 9350380);
 
         let query_sender_results = platform
             .drive
@@ -1803,7 +1803,7 @@ mod tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958);
 
-        let (receiver, _, _) = setup_identity(&mut platform, 450);
+        let (receiver, recipient_signer, recipient_key) = setup_identity(&mut platform, 450);
 
         let card_document_type = contract
             .document_type_for_name("card")
@@ -1920,7 +1920,7 @@ mod tests {
 
         let documents_batch_transfer_transition =
             DocumentsBatchTransition::new_document_transfer_transition_from_document(
-                document,
+                document.clone(),
                 card_document_type,
                 receiver.id(),
                 &key,
@@ -1964,7 +1964,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 5327760);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 10277100);
 
         let query_sender_results = platform
             .drive
@@ -1982,5 +1982,54 @@ mod tests {
         assert_eq!(query_receiver_results.documents().len(), 1);
 
         // Now let's try to delete the transferred document
+
+        document.set_owner_id(receiver.id());
+
+        let documents_batch_deletion_transition =
+            DocumentsBatchTransition::new_document_deletion_transition_from_document(
+                document,
+                card_document_type,
+                &recipient_key,
+                2,
+                0,
+                &recipient_signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_deletion_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+        assert_eq!(processing_result.valid_count(), 0);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1107610);
     }
 }

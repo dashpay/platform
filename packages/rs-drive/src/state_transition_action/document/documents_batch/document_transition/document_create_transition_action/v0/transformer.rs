@@ -1,5 +1,4 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::document::property_names;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 
