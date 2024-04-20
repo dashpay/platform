@@ -1,6 +1,6 @@
 use crate::drive::defaults::{
-    DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8, U32_SIZE_U16, U32_SIZE_U8,
-    U64_SIZE_U16, U64_SIZE_U8,
+    DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8, U32_SIZE_U16, U32_SIZE_U8, U64_SIZE_U16,
+    U64_SIZE_U8,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeySize};
