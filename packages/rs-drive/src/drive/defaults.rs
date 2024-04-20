@@ -64,12 +64,16 @@ pub const OPTIMIZED_DOCUMENT_REFERENCE: u16 = 34; // 1 + hops + DEFAULT_HASH_SIZ
 pub const DEFAULT_FLOAT_SIZE: u32 = 8;
 /// u64 size
 pub const U64_SIZE: u32 = 8;
-
+/// u64 size
+pub const U64_SIZE_U16: u16 = 8;
 /// u64 size
 pub const U64_SIZE_U8: u8 = 8;
 
 /// u32 size
 pub const U32_SIZE: u32 = 4;
+
+/// u32 size
+pub const U32_SIZE_U16: u16 = 4;
 
 /// u32 size
 pub const U32_SIZE_U8: u8 = 4;

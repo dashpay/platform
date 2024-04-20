@@ -81,10 +81,48 @@
               "defense": "asc"
             }
           ]
+        },
+        {
+          "name": "transferredAt",
+          "properties": [
+            {
+              "$transferredAt": "asc"
+            }
+          ]
+        },
+        {
+          "name": "ownerTransferredAt",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "$transferredAt": "asc"
+            }
+          ]
+        },
+        {
+          "name": "transferredAtBlockHeight",
+          "properties": [
+            {
+              "$transferredAtBlockHeight": "asc"
+            }
+          ]
+        },
+        {
+          "name": "transferredAtCoreBlockHeight",
+          "properties": [
+            {
+              "$transferredAtCoreBlockHeight": "asc"
+            }
+          ]
         }
       ],
       "required": [
         "name",
+        "$transferredAt",
+        "$transferredAtBlockHeight",
+        "$transferredAtCoreBlockHeight",
         "attack",
         "defense"
       ],

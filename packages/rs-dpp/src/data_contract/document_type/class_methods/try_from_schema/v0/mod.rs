@@ -48,7 +48,19 @@ use platform_value::{Identifier, Value};
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
-const SYSTEM_PROPERTIES: [&str; 4] = ["$id", "$ownerId", "$createdAt", "$updatedAt"];
+const SYSTEM_PROPERTIES: [&str; 11] = [
+    "$id",
+    "$ownerId",
+    "$createdAt",
+    "$updatedAt",
+    "$transferredAt",
+    "$createdAtBlockHeight",
+    "$updatedAtBlockHeight",
+    "$transferredAtBlockHeight",
+    "$createdAtCoreBlockHeight",
+    "$updatedAtCoreBlockHeight",
+    "$transferredAtCoreBlockHeight",
+];
 
 const MAX_INDEXED_STRING_PROPERTY_LENGTH: u16 = 63;
 const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: u16 = 255;

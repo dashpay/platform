@@ -533,7 +533,14 @@
         "$ownerId": true,
         "$revision": true,
         "$createdAt": true,
-        "$updatedAt": true
+        "$updatedAt": true,
+        "$transferredAt": true,
+        "$createdAtBlockHeight": true,
+        "$updatedAtBlockHeight": true,
+        "$transferredAtBlockHeight": true,
+        "$createdAtCoreBlockHeight": true,
+        "$updatedAtCoreBlockHeight": true,
+        "$transferredAtCoreBlockHeight": true
       },
       "propertyNames": {
         "oneOf": [
@@ -548,7 +555,14 @@
               "$ownerId",
               "$revision",
               "$createdAt",
-              "$updatedAt"
+              "$updatedAt",
+              "$transferredAt",
+              "$createdAtBlockHeight",
+              "$updatedAtBlockHeight",
+              "$transferredAtBlockHeight",
+              "$createdAtCoreBlockHeight",
+              "$updatedAtCoreBlockHeight",
+              "$transferredAtCoreBlockHeight"
             ]
           }
         ]

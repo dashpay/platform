@@ -1,5 +1,6 @@
 use crate::drive::defaults::{
-    DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8, U32_SIZE_U8, U64_SIZE_U8,
+    DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8, U32_SIZE_U16, U32_SIZE_U8,
+    U64_SIZE_U16, U64_SIZE_U8,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeySize};
@@ -113,7 +114,13 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
     ) -> Result<u16, Error> {
         match key_path {
             "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
-            "$createdAt" | "$updatedAt" => Ok(DEFAULT_FLOAT_SIZE_U16),
+            "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(U64_SIZE_U16),
+            "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
+                Ok(U64_SIZE_U16)
+            }
+            "$createdAtCoreBlockHeight"
+            | "$updatedAtCoreBlockHeight"
+            | "$transferredAtCoreBlockHeight" => Ok(U32_SIZE_U16),
             _ => {
                 let property = document_type.flattened_properties().get(key_path).ok_or({
                     Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
