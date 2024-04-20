@@ -485,19 +485,9 @@
       "type": "integer",
       "enum": [
         0,
-        1,
-        2
+        1
       ],
-      "description": "Transferable without a marketplace sell. 0 - Never, 1 - Always, 2 - Yes, but individual documents can be marked at creation as non transferable."
-    },
-    "marketplace": {
-      "type": "integer",
-      "enum": [
-        0,
-        1,
-        2
-      ],
-      "description": "Built in marketplace system. 0 - None, 1 - Public Offer, a user will make an offer that needs to be accepted, 2 - Private Offer, a user will make an offer that needs to be accepted, 3 - Direct purchase (The user can buy the item without the need for an approval), 4 - Public Bidding, 5 - Private Bidding, 6 - Set at Document Level."
+      "description": "Transferable without a marketplace sell. 0 - Never, 1 - Always"
     },
     "requiresIdentityEncryptionBoundedKey": {
       "type": "integer",
