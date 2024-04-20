@@ -8,6 +8,7 @@ use crate::data_contract::storage_requirements::keys_for_document_type::StorageK
 use crate::identity::SecurityLevel;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
+use crate::document::transfer::Transferable;
 
 pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
@@ -43,6 +44,9 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the documents mutable flag of the document type.
     fn documents_mutable(&self) -> bool;
+
+    /// Returns the documents transferable flag of the document type.
+    fn documents_transferable(&self) -> Transferable;
 
     /// Returns the data contract id of the document type.
     fn data_contract_id(&self) -> Identifier;

@@ -67,6 +67,21 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
 
+    #[cfg(feature = "state-transition-signing")]
+    fn new_document_transfer_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        recipient_owner_id: Identifier,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        delete_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
     fn contract_based_security_level_requirement(
         &self,
         get_data_contract_security_level_requirement: impl Fn(

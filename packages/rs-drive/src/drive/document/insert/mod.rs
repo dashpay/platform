@@ -76,7 +76,7 @@ mod tests {
     use std::option::Option::None;
 
     use dpp::block::block_info::BlockInfo;
-    use rand::Rng;
+    use rand::{random, Rng};
 
     use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
@@ -201,7 +201,7 @@ mod tests {
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
@@ -479,7 +479,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -553,7 +553,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let document_type = contract
             .document_type_for_name("contactRequest")

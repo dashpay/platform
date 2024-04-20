@@ -16,6 +16,7 @@ pub mod serialization_traits;
 #[cfg(feature = "factories")]
 pub mod specialized_document_factory;
 mod v0;
+pub mod transfer;
 
 pub use accessors::*;
 pub use v0::*;

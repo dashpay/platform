@@ -10,6 +10,7 @@ pub mod put_settings;
 pub mod top_up_identity;
 mod txid;
 pub mod withdraw_from_identity;
+mod transfer_document;
 
 pub use context::*;
 

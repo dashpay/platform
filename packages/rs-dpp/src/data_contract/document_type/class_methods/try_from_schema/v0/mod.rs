@@ -44,6 +44,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
+use crate::document::transfer::Transferable;
 
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
@@ -208,6 +209,14 @@ impl DocumentTypeV0 {
             Value::inner_optional_bool_value(schema_map, "documentsMutable")
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_mutability);
+
+        // Are documents of this type mutable? (Overrides contract value)
+        let documents_transferable_u8: u8 =
+            Value::inner_optional_integer_value(schema_map, "transferable")
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+
+        let documents_transferable = documents_transferable_u8.try_into()?;
 
         // Extract the properties
         let property_values = Value::inner_optional_index_map::<u64>(
@@ -491,6 +500,7 @@ impl DocumentTypeV0 {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            documents_transferable,
             data_contract_id,
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,

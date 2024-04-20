@@ -16,6 +16,7 @@ use crate::version::PlatformVersion;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 impl DocumentTypeV0 {
     /// Creates a document at the current time based on document type information
@@ -136,7 +137,7 @@ impl DocumentTypeV0 {
                 transferred_at_core_block_height.or(Some(core_block_height));
         };
 
-        let revision = if self.documents_mutable {
+        let revision = if self.requires_revision() {
             Some(INITIAL_REVISION)
         } else {
             None

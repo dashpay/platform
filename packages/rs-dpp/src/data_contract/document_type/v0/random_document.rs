@@ -23,6 +23,7 @@ use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 impl CreateRandomDocument for DocumentTypeV0 {
     /// Creates a random Document using a seed if given, otherwise entropy.
@@ -156,7 +157,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
             })
             .collect();
 
-        let revision = if self.documents_mutable {
+        let revision = if self.requires_revision() {
             Some(1)
         } else {
             None

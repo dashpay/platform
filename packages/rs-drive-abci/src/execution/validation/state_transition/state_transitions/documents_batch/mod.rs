@@ -243,6 +243,7 @@ mod tests {
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
     use dpp::document::document_methods::DocumentMethodsV0;
+    use dpp::document::transfer::Transferable;
     use dpp::document::DocumentV0Setters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
@@ -251,6 +252,8 @@ mod tests {
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+    use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+    use drive::query::DriveQuery;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
@@ -586,6 +589,199 @@ mod tests {
         assert_eq!(processing_result.valid_count(), 0);
 
         assert_eq!(processing_result.aggregated_fees().processing_fee, 102690);
+    }
+
+    #[test]
+    fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable() {
+        let platform_version = PlatformVersion::latest();
+        let (mut platform, contract) = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure()
+            .with_crypto_card_game(Transferable::Always);
+
+        let mut rng = StdRng::seed_from_u64(435);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key, _) = setup_identity(&mut platform, 958);
+
+        let (receiver, _, _, _) = setup_identity(&mut platform, 452);
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a profile document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let sender_documents_sql_string =
+            format!("select * from card where $ownerId == '{}'", identity.id());
+
+        let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            sender_documents_sql_string.as_str(),
+            &contract,
+            Some(&platform.config.drive),
+        )
+        .expect("expected document query");
+
+        let receiver_documents_sql_string =
+            format!("select * from card where $ownerId == '{}'", receiver.id());
+
+        let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            receiver_documents_sql_string.as_str(),
+            &contract,
+            Some(&platform.config.drive),
+        )
+        .expect("expected document query");
+
+        let query_sender_results = platform
+            .drive
+            .query_documents(
+                query_sender_identity_documents.clone(),
+                None,
+                false,
+                None,
+                None,
+            )
+            .expect("expected query result");
+
+        let query_receiver_results = platform
+            .drive
+            .query_documents(
+                query_receiver_identity_documents.clone(),
+                None,
+                false,
+                None,
+                None,
+            )
+            .expect("expected query result");
+
+        // We expect the sender to have 1 document, and the receiver to have none
+        assert_eq!(query_sender_results.documents().len(), 1);
+
+        assert_eq!(query_receiver_results.documents().len(), 0);
+
+        document.set_revision(Some(2));
+
+        document.set("attack", 6.into());
+        document.set("defense", 0.into());
+
+        let documents_batch_transfer_transition =
+            DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                document,
+                card_document_type,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition for transfer");
+
+        let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_transfer_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+        assert_eq!(processing_result.valid_count(), 0);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1253950);
+
+        let query_sender_results = platform
+            .drive
+            .query_documents(query_sender_identity_documents, None, false, None, None)
+            .expect("expected query result");
+
+        let query_receiver_results = platform
+            .drive
+            .query_documents(query_receiver_identity_documents, None, false, None, None)
+            .expect("expected query result");
+
+        // We expect the sender to still have their document, and the receiver to have none
+        assert_eq!(query_sender_results.documents().len(), 1);
+
+        assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
     #[test]
@@ -1017,6 +1213,479 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![documents_batch_delete_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+        assert_eq!(processing_result.valid_count(), 0);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1244470);
+    }
+
+    #[test]
+    fn test_document_transfer_on_document_type_that_is_transferable() {
+        let platform_version = PlatformVersion::latest();
+        let (mut platform, contract) = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure()
+            .with_crypto_card_game(Transferable::Always);
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key, _) = setup_identity(&mut platform, 958);
+
+        let (receiver, _, _, _) = setup_identity(&mut platform, 450);
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a profile document type");
+
+        assert!(!card_document_type.documents_mutable());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let sender_documents_sql_string =
+            format!("select * from card where $ownerId == '{}'", identity.id());
+
+        let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            sender_documents_sql_string.as_str(),
+            &contract,
+            Some(&platform.config.drive),
+        )
+        .expect("expected document query");
+
+        let receiver_documents_sql_string =
+            format!("select * from card where $ownerId == '{}'", receiver.id());
+
+        let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            receiver_documents_sql_string.as_str(),
+            &contract,
+            Some(&platform.config.drive),
+        )
+        .expect("expected document query");
+
+        let query_sender_results = platform
+            .drive
+            .query_documents(
+                query_sender_identity_documents.clone(),
+                None,
+                false,
+                None,
+                None,
+            )
+            .expect("expected query result");
+
+        let query_receiver_results = platform
+            .drive
+            .query_documents(
+                query_receiver_identity_documents.clone(),
+                None,
+                false,
+                None,
+                None,
+            )
+            .expect("expected query result");
+
+        // We expect the sender to have 1 document, and the receiver to have none
+        assert_eq!(query_sender_results.documents().len(), 1);
+
+        assert_eq!(query_receiver_results.documents().len(), 0);
+
+        document.set_revision(Some(2));
+
+        let documents_batch_transfer_transition =
+            DocumentsBatchTransition::new_document_transfer_transition_from_document(
+                document,
+                card_document_type,
+                receiver.id(),
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition for transfer");
+
+        let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_transfer_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.invalid_paid_count(), 0);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 5327760);
+
+        let query_sender_results = platform
+            .drive
+            .query_documents(query_sender_identity_documents, None, false, None, None)
+            .expect("expected query result");
+
+        let query_receiver_results = platform
+            .drive
+            .query_documents(query_receiver_identity_documents, None, false, None, None)
+            .expect("expected query result");
+
+        // We expect the sender to have no documents, and the receiver to have 1
+        assert_eq!(query_sender_results.documents().len(), 0);
+
+        assert_eq!(query_receiver_results.documents().len(), 1);
+    }
+
+    #[test]
+    fn test_document_transfer_on_document_type_that_is_not_transferable() {
+        let platform_version = PlatformVersion::latest();
+        let (mut platform, contract) = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure()
+            .with_crypto_card_game(Transferable::Never);
+
+        let mut rng = StdRng::seed_from_u64(435);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key, _) = setup_identity(&mut platform, 958);
+
+        let (receiver, _, _, _) = setup_identity(&mut platform, 452);
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a profile document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let sender_documents_sql_string =
+            format!("select * from card where $ownerId == '{}'", identity.id());
+
+        let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            sender_documents_sql_string.as_str(),
+            &contract,
+            Some(&platform.config.drive),
+        )
+        .expect("expected document query");
+
+        let receiver_documents_sql_string =
+            format!("select * from card where $ownerId == '{}'", receiver.id());
+
+        let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            receiver_documents_sql_string.as_str(),
+            &contract,
+            Some(&platform.config.drive),
+        )
+        .expect("expected document query");
+
+        let query_sender_results = platform
+            .drive
+            .query_documents(
+                query_sender_identity_documents.clone(),
+                None,
+                false,
+                None,
+                None,
+            )
+            .expect("expected query result");
+
+        let query_receiver_results = platform
+            .drive
+            .query_documents(
+                query_receiver_identity_documents.clone(),
+                None,
+                false,
+                None,
+                None,
+            )
+            .expect("expected query result");
+
+        // We expect the sender to have 1 document, and the receiver to have none
+        assert_eq!(query_sender_results.documents().len(), 1);
+
+        assert_eq!(query_receiver_results.documents().len(), 0);
+
+        document.set_revision(Some(2));
+
+        let documents_batch_transfer_transition =
+            DocumentsBatchTransition::new_document_transfer_transition_from_document(
+                document,
+                card_document_type,
+                receiver.id(),
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition for transfer");
+
+        let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_transfer_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+        assert_eq!(processing_result.valid_count(), 0);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1253950);
+
+        let query_sender_results = platform
+            .drive
+            .query_documents(query_sender_identity_documents, None, false, None, None)
+            .expect("expected query result");
+
+        let query_receiver_results = platform
+            .drive
+            .query_documents(query_receiver_identity_documents, None, false, None, None)
+            .expect("expected query result");
+
+        // We expect the sender to still have their document, and the receiver to have none
+        assert_eq!(query_sender_results.documents().len(), 1);
+
+        assert_eq!(query_receiver_results.documents().len(), 0);
+    }
+
+    #[test]
+    fn test_document_transfer_that_does_not_yet_exist() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay_contract = dashpay.clone();
+
+        let profile = dashpay_contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
+
+        let mut altered_document = document.clone();
+
+        altered_document.increment_revision().unwrap();
+        altered_document.set("displayName", "Samuel".into());
+        altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
+
+        let documents_batch_update_transition =
+            DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                altered_document,
+                profile,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_update_serialized_transition = documents_batch_update_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_update_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,

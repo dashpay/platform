@@ -15,7 +15,7 @@ use crate::consensus::basic::data_contract::{
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, UnknownSecurityLevelError,
-    UnknownStorageKeyRequirementsError,
+    UnknownStorageKeyRequirementsError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -89,6 +89,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     UnknownStorageKeyRequirementsError(UnknownStorageKeyRequirementsError),
+
+    #[error(transparent)]
+    UnknownTransferableTypeError(UnknownTransferableTypeError),
 
     #[error(transparent)]
     SerializedObjectParsingError(SerializedObjectParsingError),
