@@ -15,20 +15,23 @@ use crate::state_transition::documents_batch_transition::accessors::DocumentsBat
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
 use crate::state_transition::documents_batch_transition::document_transition::{
-    DocumentTransferTransition, DocumentTransition, DocumentTransitionV0Methods,
+    DocumentReplaceTransition, DocumentTransferTransition
+};
+use crate::state_transition::documents_batch_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
 };
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use crate::state_transition::documents_batch_transition::{DocumentDeleteTransition, DocumentsBatchTransition};
 use crate::state_transition::documents_batch_transition::{
-    DocumentDeleteTransition, DocumentsBatchTransitionV0,
+    DocumentsBatchTransitionV0,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+#[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};

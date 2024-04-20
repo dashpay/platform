@@ -906,7 +906,7 @@ mod tests {
             .serialize_consume(document_type, platform_version)
             .expect("expected to serialize document");
 
-        assert_eq!(document_serialized.len(), 119);
+        assert_eq!(document_serialized.len(), 120);
         let original_fees = apply_person(
             &drive,
             &contract,
@@ -924,7 +924,7 @@ mod tests {
             //Explanation for 1237
 
             //todo
-            1237
+            1238
         } else {
             //Explanation for 959
 
@@ -1059,7 +1059,7 @@ mod tests {
 
             //// 359 + 179 + 145 + 278
 
-            961
+            962
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1082,14 +1082,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25913567);
+            assert_eq!(*removed_credits, 25940733);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 959); // we refunded 959 instead of 962
+            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 963
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1127,7 +1127,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 312 } else { 1 };
+        let expected_added_bytes = if using_history { 313 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1197,7 +1197,7 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        let expected_added_bytes = if using_history { 1237 } else { 961 };
+        let expected_added_bytes = if using_history { 1238 } else { 962 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1217,14 +1217,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25913567);
+            assert_eq!(*removed_credits, 25940733);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 959); // we refunded 959 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 1012
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1395,7 +1395,7 @@ mod tests {
             //Explanation for 1237
 
             //todo
-            1237
+            1238
         } else {
             //Explanation for 959
 
@@ -1530,7 +1530,7 @@ mod tests {
 
             // 360 + 179 + 145 + 278 = 960
 
-            961
+            962
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1551,7 +1551,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 1238 } else { 962 };
+        let expected_added_bytes = if using_history { 1239 } else { 963 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 

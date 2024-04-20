@@ -18,6 +18,7 @@ use crate::state_transition::documents_batch_transition::DocumentsBatchTransitio
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+#[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
