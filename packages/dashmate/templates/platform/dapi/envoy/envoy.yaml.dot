@@ -9,9 +9,9 @@
       # Settings applied both to HTTP1 and HTTP2
       common_http_protocol_options:
         # A single HTTP connection timeout.
-        max_connection_duration: 10m
+        max_connection_duration: 600s
         # How long to keep the connection alive when there are no streams (requests).
-        idle_timeout: 5m
+        idle_timeout: 300s
         # Request (stream) timeout.
         # HTTP2 support multiple streams (requests) per connection.
         # For HTTP1 it applies for single request.
@@ -106,13 +106,13 @@
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
                 route:
                   cluster: dapi_core_streams
-                  idle_timeout: 5m
+                  idle_timeout: 300s
                   # Upstream response timeout
-                  timeout: 10m
+                  timeout: 600s
                   max_stream_duration:
                     # Entire stream/request timeout
-                    max_stream_duration: 10m
-                    grpc_timeout_header_max: 10m
+                    max_stream_duration: 600s
+                    grpc_timeout_header_max: 600s
               # Other DAPI Core endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core"
