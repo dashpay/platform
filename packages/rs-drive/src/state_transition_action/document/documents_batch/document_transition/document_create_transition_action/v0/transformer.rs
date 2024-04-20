@@ -5,7 +5,7 @@ use std::sync::Arc;
 use dpp::ProtocolError;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
-use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
 
 impl DocumentCreateTransitionActionV0 {

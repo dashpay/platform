@@ -1656,26 +1656,6 @@ mod tests {
         document.set("attack", 4.into());
         document.set("defense", 7.into());
 
-        let documents_batch_create_transition =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
-                document.clone(),
-                card_document_type,
-                entropy.0,
-                &key,
-                2,
-                0,
-                &signer,
-                platform_version,
-                None,
-                None,
-                None,
-            )
-            .expect("expect to create documents batch transition");
-
-        let documents_batch_create_serialized_transition = documents_batch_create_transition
-            .serialize_to_bytes()
-            .expect("expected documents batch serialized state transition");
-
         let sender_documents_sql_string =
             format!("select * from card where $ownerId == '{}'", identity.id());
 

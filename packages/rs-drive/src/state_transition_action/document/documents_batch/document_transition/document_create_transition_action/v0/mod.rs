@@ -2,7 +2,6 @@ pub mod transformer;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::document::{Document, DocumentV0};
-use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
@@ -16,7 +15,6 @@ use dpp::document::property_names::{
     TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
-use dpp::prelude::{BlockHeight, CoreBlockHeight};
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 
