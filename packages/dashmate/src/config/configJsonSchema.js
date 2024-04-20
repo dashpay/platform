@@ -84,6 +84,28 @@ export default {
       type: 'string',
       pattern: '^[0-9]+(\\.[0-9]+)?s$',
     },
+    envoyUpstream: {
+      type: 'object',
+      properties: {
+        maxConnections: {
+          type: 'integer',
+          minimum: 1,
+          description: 'The maximum number of connections that Envoy will establish to all hosts in a cluster',
+        },
+        maxPendingRequests: {
+          type: 'integer',
+          minimum: 1,
+          description: 'The maximum number of requests that will be queued if `maxRequests` is reached.',
+        },
+        maxRequests: {
+          type: 'integer',
+          minimum: 1,
+          description: 'The maximum number of parallel requests',
+        },
+      },
+      required: ['maxConnections', 'maxPendingRequests', 'maxRequests'],
+      additionalProperties: false,
+    },
   },
   properties: {
     description: {
@@ -356,6 +378,32 @@ export default {
                 docker: {
                   $ref: '#/definitions/docker',
                 },
+                maxConnections: {
+                  type: 'integer',
+                  minimum: 1,
+                  description: 'Maximum number of connections that Envoy accepts from downstream clients',
+                },
+                maxHeapSizeInBytes: {
+                  type: 'integer',
+                  minimum: 1,
+                  description: 'Maximum heap size in bytes. If the heap size exceeds this value, Envoy will take actions to reduce memory usage',
+                },
+                upstreams: {
+                  type: 'object',
+                  properties: {
+                    driveGrpc: {
+                      $ref: '#/definitions/envoyUpstream',
+                    },
+                    dapiApi: {
+                      $ref: '#/definitions/envoyUpstream',
+                    },
+                    dapiCoreStreams: {
+                      $ref: '#/definitions/envoyUpstream',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['driveGrpc', 'dapiApi', 'dapiCoreStreams'],
+                },
                 http: {
                   type: 'object',
                   properties: {
@@ -367,14 +415,8 @@ export default {
                     port: {
                       $ref: '#/definitions/port',
                     },
-                    connectTimeout: {
-                      $ref: '#/definitions/durationInSeconds',
-                    },
-                    responseTimeout: {
-                      $ref: '#/definitions/durationInSeconds',
-                    },
                   },
-                  required: ['host', 'port', 'connectTimeout', 'responseTimeout'],
+                  required: ['host', 'port'],
                   additionalProperties: false,
                 },
                 rateLimiter: {
@@ -433,7 +475,7 @@ export default {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'http', 'rateLimiter', 'ssl'],
+              required: ['docker', 'http', 'rateLimiter', 'ssl', 'maxHeapSizeInBytes', 'maxConnections', 'upstreams'],
               additionalProperties: false,
             },
             api: {

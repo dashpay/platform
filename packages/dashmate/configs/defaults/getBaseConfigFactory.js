@@ -130,11 +130,28 @@ export default function getBaseConfigFactory(homeDir) {
             docker: {
               image: 'dashpay/envoy:1.22.11',
             },
+            maxConnections: 10000,
+            maxHeapSizeInBytes: 125000000, // 1 Gb
+            upstreams: {
+              driveGrpc: {
+                maxConnections: 1500,
+                maxRequests: 10000,
+                maxPendingRequests: 1000,
+              },
+              dapiApi: {
+                maxConnections: 1500,
+                maxRequests: 10000,
+                maxPendingRequests: 1000,
+              },
+              dapiCoreStreams: {
+                maxConnections: 100,
+                maxRequests: 100,
+                maxPendingRequests: 50,
+              },
+            },
             http: {
               host: '0.0.0.0',
               port: 443,
-              connectTimeout: '5s',
-              responseTimeout: '15s',
             },
             rateLimiter: {
               maxTokens: 300,

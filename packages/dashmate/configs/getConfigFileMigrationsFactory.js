@@ -401,8 +401,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.20': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            options.platform.dapi.envoy.http.connectTimeout = base.get('platform.dapi.envoy.http.connectTimeout');
-            options.platform.dapi.envoy.http.responseTimeout = base.get('platform.dapi.envoy.http.responseTimeout');
+            // Removed in the future version
+            // options.platform.dapi.envoy.http.connectTimeout =
+            // base.get('platform.dapi.envoy.http.connectTimeout');
+            // options.platform.dapi.envoy.http.responseTimeout =
+            // base.get('platform.dapi.envoy.http.responseTimeout');
 
             options.platform.drive.tenderdash.rpc.maxOpenConnections = base.get('platform.drive.tenderdash.rpc.maxOpenConnections');
 
@@ -517,6 +520,25 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.12': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.dapi.envoy.maxConnections = base.get('platform.dapi.envoy.maxConnections');
+            options.platform.dapi.envoy.maxHeapSizeInBytes = base.get('platform.dapi.envoy.maxHeapSizeInBytes');
+
+            if (typeof options.platform.dapi.envoy.http.connectTimeout) {
+              delete options.platform.dapi.envoy.http.connectTimeout;
+            }
+
+            if (options.platform.dapi.envoy.http.responseTimeout) {
+              delete options.platform.dapi.envoy.http.responseTimeout;
+            }
+
+            options.platform.dapi.envoy.upstreams = base.get('platform.dapi.envoy.upstreams');
           });
 
         return configFile;
