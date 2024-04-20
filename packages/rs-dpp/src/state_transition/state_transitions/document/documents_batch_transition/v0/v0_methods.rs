@@ -1,4 +1,3 @@
-use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transition-signing")]
@@ -17,15 +16,20 @@ use crate::state_transition::documents_batch_transition::accessors::DocumentsBat
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
-use crate::state_transition::documents_batch_transition::document_transition::{DocumentTransferTransition, DocumentTransition, DocumentTransitionV0Methods};
+use crate::state_transition::documents_batch_transition::document_transition::{
+    DocumentTransferTransition, DocumentTransition, DocumentTransitionV0Methods,
+};
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use crate::state_transition::documents_batch_transition::{DocumentDeleteTransition, DocumentsBatchTransitionV0};
+use crate::state_transition::documents_batch_transition::{
+    DocumentDeleteTransition, DocumentsBatchTransitionV0,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
@@ -151,7 +155,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
             signature_public_key_id: 0,
             signature: Default::default(),
         }
-            .into();
+        .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         state_transition.sign_external(
             identity_public_key,
@@ -184,13 +188,13 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
             base_feature_version,
         )?;
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
-                owner_id,
-                transitions: vec![delete_transition.into()],
-                user_fee_increase,
-                signature_public_key_id: 0,
-                signature: Default::default(),
-            }
-                .into();
+            owner_id,
+            transitions: vec![delete_transition.into()],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         state_transition.sign_external(
             identity_public_key,
@@ -199,7 +203,6 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         )?;
         Ok(state_transition)
     }
-
 
     fn set_transitions(&mut self, transitions: Vec<DocumentTransition>) {
         self.transitions = transitions;

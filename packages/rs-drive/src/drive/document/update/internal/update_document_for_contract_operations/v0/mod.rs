@@ -51,7 +51,12 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if !document_and_contract_info.document_type.documents_mutable() && !document_and_contract_info.document_type.documents_transferable().is_transferable() {
+        if !document_and_contract_info.document_type.documents_mutable()
+            && !document_and_contract_info
+                .document_type
+                .documents_transferable()
+                .is_transferable()
+        {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
             )));

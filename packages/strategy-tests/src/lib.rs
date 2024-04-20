@@ -946,19 +946,17 @@ impl Strategy {
 
                     // Generate state transition for document replace operation
                     OperationType::Document(DocumentOp {
-                                                action: DocumentAction::DocumentActionTransferRandom,
-                                                document_type,
-                                                contract,
-                                            }) => {
+                        action: DocumentAction::DocumentActionTransferRandom,
+                        document_type,
+                        contract,
+                    }) => {
                         let mut items = document_query_callback(
                             LocalDocumentQuery::RandomDocumentQuery(RandomDocumentQuery {
                                 data_contract: contract,
                                 document_type,
                             }),
                         );
-                        
 
-                        
                         items.retain(|item| !deleted.contains(&item.id()));
 
                         items.retain(|item| !replaced.contains(&item.id()));
@@ -982,10 +980,9 @@ impl Strategy {
                                     random_identity_id = current_identities[random_index + 1].id();
                                 }
                             }
-                                
 
                             transferred.push(document.id());
-                            
+
                             let request = IdentityKeysRequest {
                                 identity_id: document.owner_id().to_buffer(),
                                 request_type: KeyRequestType::SpecificKeys(vec![1]),
@@ -1009,14 +1006,14 @@ impl Strategy {
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
                                     }
-                                        .into(),
+                                    .into(),
                                     revision: document
                                         .revision()
                                         .expect("expected to unwrap revision")
                                         + 1,
                                     recipient_owner_id: random_identity_id,
                                 }
-                                    .into();
+                                .into();
 
                             let document_batch_transition: DocumentsBatchTransition =
                                 DocumentsBatchTransitionV0 {
@@ -1026,7 +1023,7 @@ impl Strategy {
                                     signature_public_key_id: 1,
                                     signature: BinaryData::default(),
                                 }
-                                    .into();
+                                .into();
 
                             let mut document_batch_transition: StateTransition =
                                 document_batch_transition.into();

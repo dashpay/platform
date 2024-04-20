@@ -263,7 +263,7 @@ mod tests {
     fn setup_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
-    ) -> (Identity, SimpleSigner, IdentityPublicKey, Vec<u8>) {
+    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
         let platform_version = PlatformVersion::latest();
         let mut signer = SimpleSigner::default();
 
@@ -314,7 +314,7 @@ mod tests {
             )
             .expect("expected to add a new identity");
 
-        (identity, signer, critical_public_key, private_key)
+        (identity, signer, critical_public_key)
     }
 
     #[test]
@@ -328,7 +328,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
         let dashpay_contract = dashpay.clone();
@@ -461,7 +461,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
         let (other_identity, ..) = setup_identity(&mut platform, 495);
 
@@ -603,9 +603,9 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, _) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
-        let (receiver, _, _, _) = setup_identity(&mut platform, 452);
+        let (receiver, _, _) = setup_identity(&mut platform, 452);
 
         let card_document_type = contract
             .document_type_for_name("card")
@@ -795,7 +795,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
         let dashpay_contract = dashpay.clone();
@@ -884,7 +884,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
         let dashpay_contract = dashpay.clone();
@@ -1017,7 +1017,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
         let (other_identity, ..) = setup_identity(&mut platform, 495);
 
@@ -1158,7 +1158,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
         let dashpay_contract = dashpay.clone();
@@ -1248,9 +1248,9 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, _) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
-        let (receiver, _, _, _) = setup_identity(&mut platform, 450);
+        let (receiver, _, _) = setup_identity(&mut platform, 450);
 
         let card_document_type = contract
             .document_type_for_name("card")
@@ -1441,9 +1441,9 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, _) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
-        let (receiver, _, _, _) = setup_identity(&mut platform, 452);
+        let (receiver, _, _) = setup_identity(&mut platform, 452);
 
         let card_document_type = contract
             .document_type_for_name("card")
@@ -1631,7 +1631,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key, private_key) = setup_identity(&mut platform, 958);
+        let (identity, signer, key) = setup_identity(&mut platform, 958);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
         let dashpay_contract = dashpay.clone();

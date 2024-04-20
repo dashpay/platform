@@ -6,12 +6,12 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 #[derive(
-Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-"Unrecognized transferable type: allowed {:?}, got {}",
-allowed_values,
-received
+    "Unrecognized transferable type: allowed {:?}, got {}",
+    allowed_values,
+    received
 )]
 #[platform_serialize(unversioned)]
 pub struct UnknownTransferableTypeError {

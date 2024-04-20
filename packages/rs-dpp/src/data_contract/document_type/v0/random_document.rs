@@ -10,9 +10,10 @@ use crate::data_contract::document_type::random_document::{
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT,
-    UPDATED_AT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::document::{Document, DocumentV0};
 use crate::identity::accessors::IdentityGettersV0;
@@ -23,7 +24,6 @@ use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 impl CreateRandomDocument for DocumentTypeV0 {
     /// Creates a random Document using a seed if given, otherwise entropy.

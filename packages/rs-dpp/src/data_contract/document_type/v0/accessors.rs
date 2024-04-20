@@ -7,10 +7,10 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use platform_value::{Identifier, Value};
 
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
-use crate::document::transfer::Transferable;
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
     fn name(&self) -> &String {
@@ -64,7 +64,6 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
     fn documents_transferable(&self) -> Transferable {
         self.documents_transferable
     }
-
 
     fn data_contract_id(&self) -> Identifier {
         self.data_contract_id

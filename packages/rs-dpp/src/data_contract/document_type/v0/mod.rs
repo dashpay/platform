@@ -9,9 +9,9 @@ use crate::data_contract::storage_requirements::keys_for_document_type::StorageK
 #[cfg(feature = "validation")]
 pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
 
+use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use platform_value::{Identifier, Value};
-use crate::document::transfer::Transferable;
 
 mod accessors;
 #[cfg(feature = "random-documents")]

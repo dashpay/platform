@@ -4,9 +4,7 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::consensus::basic::document::{
-    DataContractNotPresentError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
-};
+use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
 
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -18,7 +16,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::prelude::{Revision, UserFeeIncrease};
+use dpp::prelude::Revision;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
 

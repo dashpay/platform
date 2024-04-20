@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
 use crate::consensus::basic::data_contract::UnknownTransferableTypeError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
 
@@ -9,7 +9,7 @@ use crate::ProtocolError;
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 #[repr(u8)]
 pub enum Transferable {
-    #[default] 
+    #[default]
     Never = 0,
     Always = 1,
 }
@@ -34,7 +34,7 @@ impl TryFrom<u8> for Transferable {
                 ConsensusError::BasicError(BasicError::UnknownTransferableTypeError(
                     UnknownTransferableTypeError::new(vec![0, 1, 3], value.into()),
                 ))
-                    .into(),
+                .into(),
             )),
         }
     }

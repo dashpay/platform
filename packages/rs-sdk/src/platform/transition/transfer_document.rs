@@ -5,6 +5,7 @@ use crate::{Error, Sdk};
 
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::Identifier;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
@@ -18,7 +19,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
-use crate::platform::Identifier;
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform
@@ -160,10 +160,14 @@ impl<S: Signer> TransferDocument<S> for Document {
                 None,
             )
             .await?;
-        
-        let document =
-            <Self as TransferDocument<S>>::wait_for_response(self, sdk, state_transition, data_contract)
-                .await?;
+
+        let document = <Self as TransferDocument<S>>::wait_for_response(
+            self,
+            sdk,
+            state_transition,
+            data_contract,
+        )
+        .await?;
 
         Ok(document)
     }

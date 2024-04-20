@@ -8,11 +8,11 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, Docu
 use platform_value::{Identifier, Value};
 
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
 pub use v0::*;
-use crate::document::transfer::Transferable;
 
 impl DocumentTypeV0Getters for DocumentType {
     fn name(&self) -> &String {

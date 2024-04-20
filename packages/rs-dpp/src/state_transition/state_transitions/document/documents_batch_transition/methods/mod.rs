@@ -1,4 +1,3 @@
-use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transition-signing")]
@@ -19,6 +18,7 @@ use crate::state_transition::documents_batch_transition::DocumentsBatchTransitio
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
@@ -165,8 +165,8 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method:
-                "DocumentsBatchTransition::new_document_replacement_transition_from_document"
-                    .to_string(),
+                    "DocumentsBatchTransition::new_document_replacement_transition_from_document"
+                        .to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
@@ -208,8 +208,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
                 )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method:
-                "DocumentsBatchTransition::new_document_deletion_transition_from_document"
+                method: "DocumentsBatchTransition::new_document_deletion_transition_from_document"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,

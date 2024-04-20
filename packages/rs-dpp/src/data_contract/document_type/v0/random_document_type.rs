@@ -104,6 +104,7 @@ use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
     v0::DocumentTypeV0, DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
+use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -117,7 +118,6 @@ use rand::Rng;
 use serde_json::json;
 use std::collections::BTreeSet;
 use std::ops::Range;
-use crate::document::transfer::Transferable;
 
 impl DocumentTypeV0 {
     pub fn random_document_type(
