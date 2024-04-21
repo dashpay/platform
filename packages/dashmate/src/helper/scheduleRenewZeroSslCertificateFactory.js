@@ -61,6 +61,9 @@ export default function scheduleRenewZeroSslCertificateFactory(
       configFileRepository.write(configFile);
       writeConfigTemplates(config);
 
+      // TODO: We can use https://www.envoyproxy.io/docs/envoy/v1.30.1/start/quick-start/configuration-dynamic-filesystem.html#start-quick-start-dynamic-fs-dynamic-lds
+      //  to dynamically update envoy configuration without restarting it
+
       // Restart Envoy to catch up new SSL certificates
       await dockerCompose.execCommand(config, 'dapi_envoy', 'kill -SIGHUP 1');
 

@@ -17,9 +17,6 @@
         # For HTTP1 it applies for single request.
         # This param is overwritten in specific routes.
         max_stream_duration: 15s
-        # This option sets the maximum number of concurrent streams allowed for each connection.
-        # It means 100 requests can be in flight at the same time on a single connection.
-        max_concurrent_streams: 100
         # Reject malformed requests with headers containing underscores.
         headers_with_underscores_action: REJECT_REQUEST
       # HTTP2 specific settings
@@ -30,6 +27,9 @@
         initial_stream_window_size: 65536  # 64 KiB
         # The same but for connection-level flow-control
         initial_connection_window_size: 1048576  # 1 MiB
+        # This option sets the maximum number of concurrent streams allowed for each connection.
+        # It means 100 requests can be in flight at the same time on a single connection.
+        max_concurrent_streams: 100
       # Stream idle timeout
       stream_idle_timeout: 15s
       access_log:
@@ -157,7 +157,6 @@
               # core static response
               - match:
                   safe_regex:
-                    google_re2: { }
                     regex: "\/org\\.dash\\.platform\\.dapi\\.v[1-9]+\\."
                 response_headers_to_add:
                   - header:
@@ -178,13 +177,15 @@
                   cluster: dapi_json_rpc
                   # Upstream response timeout
                   timeout: 10s
-            cors:
-              allow_origin_string_match:
-                - prefix: "*"
-              allow_methods: GET, PUT, DELETE, POST, OPTIONS
-              allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout
-              max_age: "1728000"
-              expose_headers: custom-header-1,grpc-status,grpc-message
+            typed_per_filter_config:
+              envoy.filters.http.cors:
+                "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
+                allow_origin_string_match:
+                  - prefix: "*"
+                allow_methods: GET, PUT, DELETE, POST, OPTIONS
+                allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout
+                max_age: "1728000"
+                expose_headers: custom-header-1,grpc-status,grpc-message
 
 static_resources:
   listeners:
@@ -234,6 +235,7 @@ static_resources:
         {{?}}
   clusters:
    - name: dapi_api
+     type: STRICT_DNS
      per_connection_buffer_limit_bytes: 32768  # 32 KiB
      typed_extension_protocol_options:
        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
@@ -264,6 +266,7 @@ static_resources:
                      address: dapi_api
                      port_value: 3005
    - name: dapi_core_streams
+     type: STRICT_DNS
      per_connection_buffer_limit_bytes: 32768  # 32 KiB
      typed_extension_protocol_options:
        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
@@ -294,6 +297,7 @@ static_resources:
                      address: dapi_core_streams
                      port_value: 3006
    - name: dapi_json_rpc
+     type: STRICT_DNS
      per_connection_buffer_limit_bytes: 32768  # 32 KiB
      typed_extension_protocol_options:
        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
@@ -315,6 +319,7 @@ static_resources:
                      address: dapi_api
                      port_value: 3004
    - name: drive_grpc
+     type: STRICT_DNS
      per_connection_buffer_limit_bytes: 32768  # 32 KiB
      typed_extension_protocol_options:
        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
@@ -351,45 +356,61 @@ admin:
      address: 0.0.0.0 # For docker container only. Must be a local/private interface.
      port_value: 8081
 
+# Dynamically adjust limits based on memory usage and number of active connections
+# TODO: We can use data provided by drive, tenderdash, or dapi to configure adaptive limits based on load
+# https://www.envoyproxy.io/docs/envoy/v1.30.1/api-v3/extensions/resource_monitors/injected_resource/v3/injected_resource.proto
 overload_manager:
   refresh_interval: 0.25s
   resource_monitors:
+    # Monitor heap size
     - name: "envoy.resource_monitors.fixed_heap"
       typed_config:
         "@type": type.googleapis.com/envoy.extensions.resource_monitors.fixed_heap.v3.FixedHeapConfig
         # Maximum heap size in bytes. If the heap size exceeds this value, Envoy will take actions to reduce memory usage.
-        max_heap_size_bytes: {{= it.platform.dapi.envoy.maxHeapSizeInBytes }} #2147483648  # 2 GiB
+        max_heap_size_bytes: {{= it.platform.dapi.envoy.maxHeapSizeInBytes }}
+    # Monitor the number of active downstream connections
+    - name: "envoy.resource_monitors.global_downstream_max_connections"
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.resource_monitors.downstream_connections.v3.DownstreamConnectionsConfig
+        max_active_downstream_connections: {{= it.platform.dapi.envoy.maxConnections }}
   actions:
-    # Reduce the heap size by releasing free memory.
+    # Reduce the heap size by releasing free memory if the current heap size is 92% of the maximum heap size.
     - name: "envoy.overload_actions.shrink_heap"
       triggers:
         - name: "envoy.resource_monitors.fixed_heap"
           threshold:
             value: 0.92
-    # Disable HTTP keepalive connections.
+    # Disable HTTP keepalive connections if the current heap size is 92% of the maximum heap size
+    # OR the number of active downstream connections is 95% of the maximum number of connections.
+    # Envoy will drain HTTP/2 and HTTP/3 connections using GOAWAY with a drain grace period.
+    # For HTTP/1, Envoy will set a drain timer to close the more idle recently used connections.
     - name: "envoy.overload_actions.disable_http_keepalive"
       triggers:
         - name: "envoy.resource_monitors.fixed_heap"
           threshold:
             value: 0.92
-    # Stop accepting new HTTP requests.
+        - name: "envoy.resource_monitors.global_downstream_max_connections"
+          threshold:
+            value: 0.95
+    # Stop accepting new HTTP connections in configured listeners if the number of active downstream
+    # connections reached the maximum.
+    # TODO: Use `envoy.load_shed_points.tcp_listener_accept` instead `envoy.overload_actions.stop_accepting_connections`
+    #   when `loadshed_points` start to support `global_downstream_max_connections` monitor.
+    - name: "envoy.overload_actions.stop_accepting_connections"
+      triggers:
+        - name: "envoy.resource_monitors.global_downstream_max_connections"
+          threshold:
+              value: 1.0
+    # Stop accepting new HTTP requests if the current heap size is 95% of the maximum heap size.
     - name: "envoy.overload_actions.stop_accepting_requests"
       triggers:
         - name: "envoy.resource_monitors.fixed_heap"
           threshold:
             value: 0.95
   loadshed_points:
-    # Stop accepting new TCP connections
+    # Stop accepting new TCP connections if the current heap size is 95% of the maximum heap size
     - name: "envoy.load_shed_points.tcp_listener_accept"
       triggers:
         - name: "envoy.resource_monitors.fixed_heap"
           threshold:
             value: 0.95
-
-layered_runtime:
-  layers:
-    - name: static_layer_0
-      static_layer:
-        overload:
-          # Maximum number of connections that Envoy accepts from downstream clients.
-          global_downstream_max_connections: {{= it.platform.dapi.envoy.maxConnections }}

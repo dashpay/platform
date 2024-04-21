@@ -128,7 +128,7 @@ export default function getBaseConfigFactory(homeDir) {
         dapi: {
           envoy: {
             docker: {
-              image: 'dashpay/envoy:1.22.11',
+              image: 'dashpay/envoy:1.30.1',
             },
             maxConnections: 10000,
             maxHeapSizeInBytes: 125000000, // 1 Gb
