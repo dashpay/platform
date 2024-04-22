@@ -277,7 +277,10 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             .filter(|transition| {
                 matches!(
                     transition,
-                    DocumentTransition::Replace(_) | DocumentTransition::Transfer(_) | DocumentTransition::Purchase(_) | DocumentTransition::UpdatePrice(_)
+                    DocumentTransition::Replace(_)
+                        | DocumentTransition::Transfer(_)
+                        | DocumentTransition::Purchase(_)
+                        | DocumentTransition::UpdatePrice(_)
                 )
             })
             .copied()
@@ -555,7 +558,10 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     )?;
 
                 if result.is_valid() {
-                    Ok(DocumentTransitionAction::UpdatePriceAction(document_update_price_action).into())
+                    Ok(
+                        DocumentTransitionAction::UpdatePriceAction(document_update_price_action)
+                            .into(),
+                    )
                 } else {
                     Ok(result)
                 }
@@ -572,7 +578,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 }
 
                 let original_document = validation_result.into_data()?;
-                
+
                 if validate_against_state {
                     //there are situations where we don't want to validate this against the state
                     // for example when we already applied the state transition action

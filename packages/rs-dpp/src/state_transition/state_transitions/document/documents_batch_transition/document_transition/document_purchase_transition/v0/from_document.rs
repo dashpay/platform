@@ -24,7 +24,7 @@ impl DocumentPurchaseTransitionV0 {
                 },
             )));
         };
-        
+
         Ok(DocumentPurchaseTransitionV0 {
             base: DocumentBaseTransition::from_document(
                 &document,

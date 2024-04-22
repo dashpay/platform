@@ -28,6 +28,7 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -35,7 +36,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 impl Drive {
     /// Gathers operations for updating a document.
@@ -52,7 +52,8 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if !document_and_contract_info.document_type.requires_revision() // if it requires revision then there are reasons for us to be able to update in drive
+        if !document_and_contract_info.document_type.requires_revision()
+        // if it requires revision then there are reasons for us to be able to update in drive
         {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",

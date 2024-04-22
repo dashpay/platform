@@ -50,9 +50,8 @@ impl DocumentPurchaseTransitionActionStateValidationV0 for DocumentPurchaseTrans
         // transforming into an action
 
         // We need to verify that the resultant document doesn't violate any unique properties
-        
-        if document_type
-            .indices().iter().any(|index| index.unique) {
+
+        if document_type.indices().iter().any(|index| index.unique) {
             platform
                 .drive
                 .validate_document_purchase_transition_action_uniqueness(

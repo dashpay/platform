@@ -17,11 +17,7 @@ impl DocumentUpdatePriceTransitionActionV0 {
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
-        let DocumentUpdatePriceTransitionV0 {
-            base,
-            price,
-            ..
-        } = document_update_price_transition;
+        let DocumentUpdatePriceTransitionV0 { base, price, .. } = document_update_price_transition;
         let base =
             DocumentBaseTransitionAction::from_borrowed_base_transition_with_contract_lookup(
                 base,

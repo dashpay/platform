@@ -15,7 +15,7 @@ use crate::consensus::basic::data_contract::{
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, UnknownSecurityLevelError,
-    UnknownStorageKeyRequirementsError, UnknownTransferableTypeError, UnknownTradeModeError,
+    UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,

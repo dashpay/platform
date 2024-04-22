@@ -107,6 +107,7 @@ use crate::data_contract::document_type::{
 };
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
+use crate::nft::TradeMode;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -119,7 +120,6 @@ use rand::Rng;
 use serde_json::json;
 use std::collections::BTreeSet;
 use std::ops::Range;
-use crate::nft::TradeMode;
 
 impl DocumentTypeV0 {
     pub fn random_document_type(

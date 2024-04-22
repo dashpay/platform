@@ -2,6 +2,7 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transition-signing")]
 use crate::document::Document;
+use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
@@ -22,7 +23,6 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
-use crate::fee::Credits;
 
 pub mod v0;
 
@@ -217,7 +217,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
             }),
         }
     }
-    
+
     #[cfg(feature = "state-transition-signing")]
     fn new_document_update_price_transition_from_document<S: Signer>(
         document: Document,
@@ -256,8 +256,8 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method:
-                "DocumentsBatchTransition::new_document_update_price_transition_from_document"
-                    .to_string(),
+                    "DocumentsBatchTransition::new_document_update_price_transition_from_document"
+                        .to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
@@ -303,8 +303,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
                 )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method:
-                "DocumentsBatchTransition::new_document_purchase_transition_from_document"
+                method: "DocumentsBatchTransition::new_document_purchase_transition_from_document"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,

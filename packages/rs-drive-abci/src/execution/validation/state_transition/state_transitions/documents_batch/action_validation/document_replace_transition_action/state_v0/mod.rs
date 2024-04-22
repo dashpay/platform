@@ -49,8 +49,7 @@ impl DocumentReplaceTransitionActionStateValidationV0 for DocumentReplaceTransit
         // There is no need to verify that the document already existed, since this is done when
         // transforming into an action
 
-        if document_type
-            .indices().iter().any(|index| index.unique) {
+        if document_type.indices().iter().any(|index| index.unique) {
             platform
                 .drive
                 .validate_document_replace_transition_action_uniqueness(

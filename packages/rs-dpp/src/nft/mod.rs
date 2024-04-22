@@ -1,9 +1,9 @@
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use crate::consensus::basic::BasicError;
 use crate::consensus::basic::data_contract::UnknownTradeModeError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TradeMode {
@@ -18,7 +18,7 @@ impl TradeMode {
         match self {
             TradeMode::None => false,
             TradeMode::DirectPurchase => true,
-            TradeMode::PublicOffer => true, //min price
+            TradeMode::PublicOffer => true,  //min price
             TradeMode::PrivateOffer => true, //min price
         }
     }
@@ -48,7 +48,7 @@ impl TryFrom<u8> for TradeMode {
                 ConsensusError::BasicError(BasicError::UnknownTradeModeError(
                     UnknownTradeModeError::new(vec![0, 1, 2, 3], value.into()),
                 ))
-                    .into(),
+                .into(),
             )),
         }
     }

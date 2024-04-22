@@ -216,7 +216,9 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn requires_revision(&self) -> bool {
-        self.documents_mutable || self.documents_transferable.is_transferable() || self.trade_mode.seller_sets_price()
+        self.documents_mutable
+            || self.documents_transferable.is_transferable()
+            || self.trade_mode.seller_sets_price()
     }
 
     fn top_level_indices(&self) -> Vec<&IndexProperty> {

@@ -61,7 +61,6 @@ impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
                 bump_identity_contract_nonce_action,
             ) => bump_identity_contract_nonce_action
                 .into_high_level_drive_operations(epoch, platform_version),
-
         }
     }
 }

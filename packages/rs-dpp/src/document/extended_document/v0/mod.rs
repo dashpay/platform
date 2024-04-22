@@ -32,6 +32,7 @@ use std::collections::BTreeMap;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(feature = "validation")]
 use crate::data_contract::validation::DataContractValidationMethodsV0;
 #[cfg(feature = "document-json-conversion")]
@@ -46,7 +47,6 @@ use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]
 use serde_json::Value as JsonValue;
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]

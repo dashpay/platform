@@ -10,10 +10,10 @@ use platform_value::{Identifier, Value};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
+use crate::nft::TradeMode;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
 pub use v0::*;
-use crate::nft::TradeMode;
 
 impl DocumentTypeV0Getters for DocumentType {
     fn name(&self) -> &String {
@@ -87,13 +87,13 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.documents_mutable(),
         }
     }
-    
+
     fn trade_mode(&self) -> TradeMode {
         match self {
             DocumentType::V0(v0) => v0.trade_mode(),
         }
     }
-    
+
     fn documents_transferable(&self) -> Transferable {
         match self {
             DocumentType::V0(v0) => v0.documents_transferable(),
@@ -203,13 +203,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
             DocumentTypeRef::V0(v0) => v0.documents_transferable(),
         }
     }
-    
+
     fn trade_mode(&self) -> TradeMode {
         match self {
             DocumentTypeRef::V0(v0) => v0.trade_mode(),
         }
     }
-    
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentTypeRef::V0(v0) => v0.data_contract_id(),
@@ -313,13 +313,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
             DocumentTypeMutRef::V0(v0) => v0.documents_transferable(),
         }
     }
-    
+
     fn trade_mode(&self) -> TradeMode {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.trade_mode(),
         }
     }
-    
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.data_contract_id(),

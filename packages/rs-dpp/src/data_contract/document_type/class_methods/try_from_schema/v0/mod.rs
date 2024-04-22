@@ -32,6 +32,9 @@ use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityL
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
+use crate::data_contract::document_type::property_names::{
+    CAN_BE_DELETED, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, TRADE_MODE, TRANSFERABLE,
+};
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
@@ -44,7 +47,6 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
-use crate::data_contract::document_type::property_names::{CAN_BE_DELETED, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, TRADE_MODE, TRANSFERABLE};
 
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
@@ -209,7 +211,7 @@ impl DocumentTypeV0 {
                 format!("document schema must be an object: {err}"),
             ))
         })?;
-        
+
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
             Value::inner_optional_bool_value(schema_map, DOCUMENTS_KEEP_HISTORY)
@@ -221,13 +223,12 @@ impl DocumentTypeV0 {
             Value::inner_optional_bool_value(schema_map, DOCUMENTS_MUTABLE)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_mutability);
-        
+
         // Can documents of this type be deleted? (Overrides contract value)
         let documents_can_be_deleted: bool =
             Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_can_be_deleted);
-
 
         // Are documents of this type transferable?
         let documents_transferable_u8: u8 =
@@ -244,14 +245,6 @@ impl DocumentTypeV0 {
                 .unwrap_or_default();
 
         let trade_mode = documents_trade_mode_u8.try_into()?;
-
-        // Are documents of this type transferable? (Overrides contract value)
-        let documents_transferable_u8: u8 =
-            Value::inner_optional_integer_value(schema_map, "transferable")
-                .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or_default();
-
-        let documents_transferable = documents_transferable_u8.try_into()?;
 
         // Extract the properties
         let property_values = Value::inner_optional_index_map::<u64>(

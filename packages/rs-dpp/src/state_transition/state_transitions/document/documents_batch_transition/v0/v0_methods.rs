@@ -2,6 +2,7 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transition-signing")]
 use crate::document::{Document, DocumentV0Getters};
+use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
@@ -14,11 +15,14 @@ use crate::prelude::UserFeeIncrease;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
+use crate::state_transition::documents_batch_transition::document_transition::{
+    DocumentPurchaseTransition, DocumentTransition, DocumentTransitionV0Methods,
+    DocumentUpdatePriceTransition,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::document_transition::{
     DocumentReplaceTransition, DocumentTransferTransition,
 };
-use crate::state_transition::documents_batch_transition::document_transition::{DocumentPurchaseTransition, DocumentTransition, DocumentTransitionV0Methods, DocumentUpdatePriceTransition};
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
 #[cfg(feature = "state-transition-signing")]
@@ -33,7 +37,6 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
-use crate::fee::Credits;
 
 impl DocumentsBatchTransitionAccessorsV0 for DocumentsBatchTransitionV0 {
     fn transitions(&self) -> &Vec<DocumentTransition> {
@@ -205,7 +208,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         )?;
         Ok(state_transition)
     }
-    
+
     #[cfg(feature = "state-transition-signing")]
     fn new_document_update_price_transition_from_document<S: Signer>(
         document: Document,
@@ -237,7 +240,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
             signature_public_key_id: 0,
             signature: Default::default(),
         }
-            .into();
+        .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         state_transition.sign_external(
             identity_public_key,
@@ -246,7 +249,6 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         )?;
         Ok(state_transition)
     }
-
 
     #[cfg(feature = "state-transition-signing")]
     fn new_document_purchase_transition_from_document<S: Signer>(
@@ -279,7 +281,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
             signature_public_key_id: 0,
             signature: Default::default(),
         }
-            .into();
+        .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
         state_transition.sign_external(
             identity_public_key,
@@ -288,7 +290,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         )?;
         Ok(state_transition)
     }
-    
+
     fn set_transitions(&mut self, transitions: Vec<DocumentTransition>) {
         self.transitions = transitions;
     }

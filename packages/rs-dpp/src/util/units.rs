@@ -4,7 +4,6 @@ macro_rules! dash_to_credits {
     ($dash:expr) => {{
         let dash_str = stringify!($dash);
 
-               
         // Parsing the input string to separate the whole and fractional parts.
         let parts: Vec<&str> = dash_str.split('.').collect();
         let mut credits: u128 = 0;

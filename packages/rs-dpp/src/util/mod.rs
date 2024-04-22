@@ -13,5 +13,5 @@ pub mod json_value;
 pub mod protocol_data;
 
 pub mod strings;
-pub mod vec;
 pub mod units;
+pub mod vec;

@@ -72,8 +72,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
         // we also need to validate that the new document wouldn't conflict with any other document
         // this means for example having overlapping unique indexes
 
-        if document_type
-            .indices().iter().any(|index| index.unique) {
+        if document_type.indices().iter().any(|index| index.unique) {
             platform
                 .drive
                 .validate_document_create_transition_action_uniqueness(

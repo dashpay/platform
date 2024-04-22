@@ -1,7 +1,11 @@
 use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 
-use crate::document::property_names::{CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, PRICE, TRANSFERRED_AT, TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT};
+use crate::document::property_names::{
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, PRICE, TRANSFERRED_AT,
+    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+};
 
 #[cfg(feature = "validation")]
 use crate::prelude::ConsensusValidationResult;
@@ -616,15 +620,13 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         let price = if document_type.trade_mode().seller_sets_price() {
             let has_price = buf.read_u8().map_err(|_| {
                 DataContractError::CorruptedSerialization(
-                    "error reading has price bool from serialized document"
-                        .to_string(),
+                    "error reading has price bool from serialized document".to_string(),
                 )
             })?;
             if has_price > 0 {
                 let price = buf.read_u64::<BigEndian>().map_err(|_| {
                     DataContractError::CorruptedSerialization(
-                        "error reading price u64 from serialized document"
-                            .to_string(),
+                        "error reading price u64 from serialized document".to_string(),
                     )
                 })?;
                 Some(price)
@@ -663,7 +665,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                 }
             })
             .collect::<Result<BTreeMap<String, Value>, DataContractError>>()?;
-        
+
         if let Some(price) = price {
             properties.insert(PRICE.to_string(), price.into());
         }

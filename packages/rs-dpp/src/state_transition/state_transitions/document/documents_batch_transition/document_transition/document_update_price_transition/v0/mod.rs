@@ -13,10 +13,10 @@ use crate::block::block_info::BlockInfo;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
+use crate::fee::Credits;
 use crate::{document, ProtocolError};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-use crate::fee::Credits;
 
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -42,12 +42,12 @@ pub struct DocumentUpdatePriceTransitionV0 {
     )]
     pub revision: Revision,
     #[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    serde(rename = "$price")
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$price")
     )]
     pub price: Credits,
 }
-// 
+//
 // /// document from update_price transition v0
 // pub trait DocumentFromUpdatePriceTransitionV0 {
 //     /// Attempts to create a new `Document` from the given `DocumentUpdatePriceTransitionV0` reference. This operation is typically used to update_price or update an existing document with new information.
@@ -121,7 +121,7 @@ pub struct DocumentUpdatePriceTransitionV0 {
 //     where
 //         Self: Sized;
 // }
-// 
+//
 // impl DocumentFromUpdatePriceTransitionV0 for Document {
 //     fn try_from_update_price_transition_v0(
 //         value: &DocumentUpdatePriceTransitionV0,
@@ -141,41 +141,41 @@ pub struct DocumentUpdatePriceTransitionV0 {
 //             revision,
 //             price,
 //         } = value;
-// 
+//
 //         let id = base.id();
-// 
+//
 //         let requires_updated_at = document_type
 //             .required_fields()
 //             .contains(document::property_names::UPDATED_AT);
-// 
+//
 //         let requires_updated_at_block_height = document_type
 //             .required_fields()
 //             .contains(document::property_names::UPDATED_AT_BLOCK_HEIGHT);
-// 
+//
 //         let requires_updated_at_core_block_height = document_type
 //             .required_fields()
 //             .contains(document::property_names::UPDATED_AT_CORE_BLOCK_HEIGHT);
-// 
+//
 //         let updated_at = if requires_updated_at {
 //             Some(block_info.time_ms)
 //         } else {
 //             None
 //         };
-// 
+//
 //         let updated_at_block_height = if requires_updated_at_block_height {
 //             Some(block_info.height)
 //         } else {
 //             None
 //         };
-// 
+//
 //         let updated_at_core_block_height = if requires_updated_at_core_block_height {
 //             Some(block_info.core_height)
 //         } else {
 //             None
 //         };
-//         
-//         data 
-// 
+//
+//         data
+//
 //         match platform_version
 //             .dpp
 //             .document_versions
@@ -204,7 +204,7 @@ pub struct DocumentUpdatePriceTransitionV0 {
 //             }),
 //         }
 //     }
-// 
+//
 //     fn try_from_owned_update_price_transition_v0(
 //         value: DocumentUpdatePriceTransitionV0,
 //         owner_id: Identifier,
@@ -223,33 +223,33 @@ pub struct DocumentUpdatePriceTransitionV0 {
 //             revision,
 //             price,
 //         } = value;
-// 
+//
 //         let id = base.id();
-// 
+//
 //         let requires_updated_at = document_type
 //             .required_fields()
 //             .contains(document::property_names::UPDATED_AT);
-// 
+//
 //         let requires_updated_at_block_height = document_type
 //             .required_fields()
 //             .contains(document::property_names::UPDATED_AT_BLOCK_HEIGHT);
-// 
+//
 //         let requires_updated_at_core_block_height = document_type
 //             .required_fields()
 //             .contains(document::property_names::UPDATED_AT_CORE_BLOCK_HEIGHT);
-// 
+//
 //         let updated_at = if requires_updated_at {
 //             Some(block_info.time_ms)
 //         } else {
 //             None
 //         };
-// 
+//
 //         let updated_at_block_height = if requires_updated_at_block_height {
 //             Some(block_info.height)
 //         } else {
 //             None
 //         };
-// 
+//
 //         let updated_at_core_block_height = if requires_updated_at_core_block_height {
 //             Some(block_info.core_height)
 //         } else {

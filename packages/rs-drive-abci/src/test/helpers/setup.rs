@@ -41,12 +41,12 @@ use crate::test::fixture::abci::static_system_identity_public_keys_v0;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use dpp::block::block_info::BlockInfo;
 use dpp::document::transfer::Transferable;
+use dpp::nft::TradeMode;
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use drive::drive::flags::StorageFlags;
 use tempfile::TempDir;
-use dpp::nft::TradeMode;
 
 /// A test platform builder.
 pub struct TestPlatformBuilder {
@@ -126,7 +126,10 @@ impl TempPlatform<MockCoreRPCLike> {
     }
 
     /// A function which adds the crypto card game to the state and returns it.
-    pub fn with_crypto_card_game_transfer_only(self, transferable: Transferable) -> (Self, DataContract) {
+    pub fn with_crypto_card_game_transfer_only(
+        self,
+        transferable: Transferable,
+    ) -> (Self, DataContract) {
         let card_game_path = match transferable {
             Transferable::Never => "tests/supporting_files/contract/crypto-card-game/crypto-card-game-not-transferable.json",
             Transferable::Always => "tests/supporting_files/contract/crypto-card-game/crypto-card-game-all-transferable.json",
@@ -186,7 +189,6 @@ impl TempPlatform<MockCoreRPCLike> {
 
         (self, card_game_contract)
     }
-
 
     /// Sets Platform to genesis state.
     pub fn set_genesis_state(self) -> Self {

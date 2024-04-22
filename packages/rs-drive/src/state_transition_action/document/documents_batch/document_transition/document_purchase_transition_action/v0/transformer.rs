@@ -1,5 +1,5 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::document::{property_names, Document, DocumentV0Setters, DocumentV0Getters};
+use dpp::document::{property_names, Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 
@@ -18,21 +18,17 @@ impl DocumentPurchaseTransitionActionV0 {
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
-        let DocumentPurchaseTransitionV0 {
-            base,
-            price,
-            ..
-        } = document_purchase_transition;
+        let DocumentPurchaseTransitionV0 { base, price, .. } = document_purchase_transition;
         let base =
             DocumentBaseTransitionAction::from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
             )?;
-        
+
         let original_owner_id = original_document.owner_id();
-        
+
         let mut modified_document = original_document;
-        
+
         modified_document.bump_revision();
 
         modified_document.set_owner_id(purchaser_id);

@@ -13,7 +13,9 @@ pub(super) trait DocumentUpdatePriceTransitionActionStructureValidationV0 {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
-impl DocumentUpdatePriceTransitionActionStructureValidationV0 for DocumentUpdatePriceTransitionAction {
+impl DocumentUpdatePriceTransitionActionStructureValidationV0
+    for DocumentUpdatePriceTransitionAction
+{
     fn validate_structure_v0(
         &self,
         _platform_version: &PlatformVersion,
@@ -34,8 +36,9 @@ impl DocumentUpdatePriceTransitionActionStructureValidationV0 for DocumentUpdate
         if !document_type.trade_mode().seller_sets_price() {
             Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
-                    "{} is in trade mode {} that does not support the seller setting the price", 
-                    document_type_name, document_type.trade_mode(),
+                    "{} is in trade mode {} that does not support the seller setting the price",
+                    document_type_name,
+                    document_type.trade_mode(),
                 ))
                 .into(),
             ))

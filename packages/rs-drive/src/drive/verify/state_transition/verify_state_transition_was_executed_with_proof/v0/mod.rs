@@ -97,7 +97,7 @@ impl Drive {
                         "no transition in a document batch transition".to_string(),
                     )));
                 };
-                
+
                 let owner_id = documents_batch_transition.owner_id();
 
                 let data_contract_id = transition.data_contract_id();
@@ -217,7 +217,7 @@ impl Drive {
                     }
                     DocumentTransition::Purchase(purchase_transition) => {
                         let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (purchase)", purchase_transition.base().id()))))?;
-                        
+
                         if document.owner_id() != owner_id {
                             return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", purchase_transition.base().id()))));
                         }

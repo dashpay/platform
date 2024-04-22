@@ -113,15 +113,16 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                         transaction,
                         platform_version,
                     )?,
-                DocumentTransitionAction::UpdatePriceAction(update_price_action) => update_price_action
-                    .validate_state(
+                DocumentTransitionAction::UpdatePriceAction(update_price_action) => {
+                    update_price_action.validate_state(
                         platform,
                         owner_id,
                         epoch,
                         execution_context,
                         transaction,
                         platform_version,
-                    )?,
+                    )?
+                }
                 DocumentTransitionAction::PurchaseAction(purchase_action) => purchase_action
                     .validate_state(
                         platform,

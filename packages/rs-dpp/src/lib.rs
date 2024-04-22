@@ -39,6 +39,7 @@ pub mod asset_lock;
 pub mod balances;
 pub mod block;
 pub mod fee;
+pub mod nft;
 pub mod serialization;
 #[cfg(any(
     feature = "message-signing",
@@ -48,7 +49,6 @@ pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
 pub mod withdrawal;
-pub mod nft;
 
 pub use async_trait;
 

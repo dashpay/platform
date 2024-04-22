@@ -1,9 +1,9 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
+use crate::fee::Credits;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
-use crate::fee::Credits;
 
 use crate::state_transition::documents_batch_transition::document_transition::{DocumentPurchaseTransition};
 use crate::state_transition::documents_batch_transition::document_transition::document_purchase_transition::DocumentPurchaseTransitionV0;

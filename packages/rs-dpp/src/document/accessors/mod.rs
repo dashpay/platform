@@ -139,9 +139,7 @@ impl DocumentV0Setters for Document {
 
     fn bump_revision(&mut self) {
         match self {
-            Document::V0(v0) => {
-                v0.bump_revision()
-            },
+            Document::V0(v0) => v0.bump_revision(),
         }
     }
 

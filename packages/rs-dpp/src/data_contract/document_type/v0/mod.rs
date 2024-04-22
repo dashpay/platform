@@ -11,8 +11,8 @@ pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
 
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
-use platform_value::{Identifier, Value};
 use crate::nft::TradeMode;
+use platform_value::{Identifier, Value};
 
 mod accessors;
 #[cfg(feature = "random-documents")]

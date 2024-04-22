@@ -11,8 +11,8 @@ use dpp::identifier::Identifier;
 
 use dpp::validation::SimpleConsensusValidationResult;
 
-use grovedb::TransactionArg;
 use dpp::document::DocumentV0Getters;
+use grovedb::TransactionArg;
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::{DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionAccessorsV0};
@@ -39,15 +39,24 @@ impl Drive {
             created_at: document_update_price_transition.document().created_at(),
             updated_at: document_update_price_transition.document().updated_at(),
             transferred_at: document_update_price_transition.document().transferred_at(),
-            created_at_block_height: document_update_price_transition.document().created_at_block_height(),
-            updated_at_block_height: document_update_price_transition.document().updated_at_block_height(),
-            transferred_at_block_height: document_update_price_transition.document().transferred_at_block_height(),
+            created_at_block_height: document_update_price_transition
+                .document()
+                .created_at_block_height(),
+            updated_at_block_height: document_update_price_transition
+                .document()
+                .updated_at_block_height(),
+            transferred_at_block_height: document_update_price_transition
+                .document()
+                .transferred_at_block_height(),
             created_at_core_block_height: document_update_price_transition
-                .document().created_at_core_block_height(),
+                .document()
+                .created_at_core_block_height(),
             updated_at_core_block_height: document_update_price_transition
-                .document().updated_at_core_block_height(),
+                .document()
+                .updated_at_core_block_height(),
             transferred_at_core_block_height: document_update_price_transition
-                .document().transferred_at_core_block_height(),
+                .document()
+                .transferred_at_core_block_height(),
             data: document_update_price_transition.document().properties(),
         };
         self.validate_uniqueness_of_data(request, transaction, platform_version)

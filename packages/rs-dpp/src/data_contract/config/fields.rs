@@ -11,7 +11,8 @@ pub mod property {
     pub const KEEPS_HISTORY: &str = "keepsHistory";
     pub const DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT: &str = "documentsKeepHistoryContractDefault";
     pub const DOCUMENTS_MUTABLE_CONTRACT_DEFAULT: &str = "documentsMutableContractDefault";
-    pub const DOCUMENTS_CAN_BE_DELETED_CONTRACT_DEFAULT: &str = "documentsCanBeDeletedContractDefault";
+    pub const DOCUMENTS_CAN_BE_DELETED_CONTRACT_DEFAULT: &str =
+        "documentsCanBeDeletedContractDefault";
     pub const REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityEncryptionBoundedKey";
     pub const REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY: &str =

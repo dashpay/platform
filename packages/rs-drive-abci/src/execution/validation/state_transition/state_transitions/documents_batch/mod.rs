@@ -234,9 +234,11 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
+    use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::{
@@ -245,8 +247,11 @@ mod tests {
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::transfer::Transferable;
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::fee::Credits;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+    use dpp::nft::TradeMode;
+    use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::{Bytes32, Value};
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
@@ -259,11 +264,6 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
-    use dpp::dash_to_credits;
-    use dpp::fee::Credits;
-    use dpp::nft::TradeMode;
-    use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 
     fn setup_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
         assert_eq!(processing_result.valid_count(), 1);
-        
+
         assert_eq!(processing_result.aggregated_fees().processing_fee, 5074630);
     }
 
@@ -1415,7 +1415,7 @@ mod tests {
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
         assert_eq!(processing_result.valid_count(), 1);
-        
+
         assert_eq!(processing_result.aggregated_fees().processing_fee, 9350780);
 
         let query_sender_results = platform
@@ -1948,7 +1948,7 @@ mod tests {
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
         assert_eq!(processing_result.valid_count(), 1);
-        
+
         assert_eq!(processing_result.aggregated_fees().processing_fee, 10277500);
 
         let query_sender_results = platform
@@ -2031,7 +2031,7 @@ mod tests {
         let platform_state = platform.state.load();
 
         let (identity, signer, key) = setup_identity(&mut platform, 958);
-        
+
         let card_document_type = contract
             .document_type_for_name("card")
             .expect("expected a profile document type");
@@ -2068,7 +2068,7 @@ mod tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
             .serialize_to_bytes()
@@ -2104,7 +2104,7 @@ mod tests {
             &contract,
             Some(&platform.config.drive),
         )
-            .expect("expected document query");
+        .expect("expected document query");
 
         let query_sender_results = platform
             .drive
@@ -2136,11 +2136,12 @@ mod tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition for the update price");
+            .expect("expect to create documents batch transition for the update price");
 
-        let documents_batch_transfer_serialized_transition = documents_batch_update_price_transition
-            .serialize_to_bytes()
-            .expect("expected documents batch serialized state transition");
+        let documents_batch_transfer_serialized_transition =
+            documents_batch_update_price_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -2161,9 +2162,9 @@ mod tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
-        
+
         let result = processing_result.into_execution_results().remove(0);
-        
+
         let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
             panic!("expected a paid consensus error");
         };
@@ -2222,7 +2223,7 @@ mod tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
             .serialize_to_bytes()
@@ -2258,7 +2259,7 @@ mod tests {
             &contract,
             Some(&platform.config.drive),
         )
-            .expect("expected document query");
+        .expect("expected document query");
 
         let receiver_documents_sql_string =
             format!("select * from card where $ownerId == '{}'", receiver.id());
@@ -2268,7 +2269,7 @@ mod tests {
             &contract,
             Some(&platform.config.drive),
         )
-            .expect("expected document query");
+        .expect("expected document query");
 
         let query_sender_results = platform
             .drive
@@ -2313,11 +2314,12 @@ mod tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition for the update price");
+            .expect("expect to create documents batch transition for the update price");
 
-        let documents_batch_transfer_serialized_transition = documents_batch_update_price_transition
-            .serialize_to_bytes()
-            .expect("expected documents batch serialized state transition");
+        let documents_batch_transfer_serialized_transition =
+            documents_batch_update_price_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -2363,11 +2365,14 @@ mod tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
 
         // The sender document should have the desired price
-        
+
         let document = query_sender_results.documents().first().unwrap();
-        
-        let price : Credits = document.properties().get_integer("$price").expect("expected to get back price");
-        
+
+        let price: Credits = document
+            .properties()
+            .get_integer("$price")
+            .expect("expected to get back price");
+
         assert_eq!(dash_to_credits!(0.1), price);
 
         assert_eq!(document.revision(), Some(2));
@@ -2425,7 +2430,7 @@ mod tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
             .serialize_to_bytes()
@@ -2461,7 +2466,7 @@ mod tests {
             &contract,
             Some(&platform.config.drive),
         )
-            .expect("expected document query");
+        .expect("expected document query");
 
         let receiver_documents_sql_string =
             format!("select * from card where $ownerId == '{}'", receiver.id());
@@ -2471,7 +2476,7 @@ mod tests {
             &contract,
             Some(&platform.config.drive),
         )
-            .expect("expected document query");
+        .expect("expected document query");
 
         let query_sender_results = platform
             .drive
@@ -2516,11 +2521,12 @@ mod tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition for the update price");
+            .expect("expect to create documents batch transition for the update price");
 
-        let documents_batch_transfer_serialized_transition = documents_batch_update_price_transition
-            .serialize_to_bytes()
-            .expect("expected documents batch serialized state transition");
+        let documents_batch_transfer_serialized_transition =
+            documents_batch_update_price_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -2552,12 +2558,24 @@ mod tests {
 
         let query_sender_results = platform
             .drive
-            .query_documents(query_sender_identity_documents.clone(), None, false, None, None)
+            .query_documents(
+                query_sender_identity_documents.clone(),
+                None,
+                false,
+                None,
+                None,
+            )
             .expect("expected query result");
 
         let query_receiver_results = platform
             .drive
-            .query_documents(query_receiver_identity_documents.clone(), None, false, None, None)
+            .query_documents(
+                query_receiver_identity_documents.clone(),
+                None,
+                false,
+                None,
+                None,
+            )
             .expect("expected query result");
 
         // We expect the sender to still have their document, and the receiver to have none
@@ -2569,12 +2587,15 @@ mod tests {
 
         let mut document = query_sender_results.documents_owned().remove(0);
 
-        let price : Credits = document.properties().get_integer("$price").expect("expected to get back price");
+        let price: Credits = document
+            .properties()
+            .get_integer("$price")
+            .expect("expected to get back price");
 
         assert_eq!(dash_to_credits!(0.1), price);
-        
+
         // At this point we want to have the receiver purchase the document
-        
+
         document.set_revision(Some(3));
 
         let documents_batch_purchase_transition =
@@ -2592,7 +2613,7 @@ mod tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition for the purchase");
+            .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
             .serialize_to_bytes()
@@ -2656,7 +2677,8 @@ mod tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958);
 
-        let (other_identity, other_identity_signer, other_identity_key) = setup_identity(&mut platform, 450);
+        let (other_identity, other_identity_signer, other_identity_key) =
+            setup_identity(&mut platform, 450);
 
         let card_document_type = contract
             .document_type_for_name("card")
@@ -2694,7 +2716,7 @@ mod tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
             .serialize_to_bytes()
@@ -2723,7 +2745,7 @@ mod tests {
             .expect("expected to commit transaction");
 
         document.set_revision(Some(2));
-        
+
         document.set_owner_id(other_identity.id()); // we do this to trick the system
 
         let documents_batch_update_price_transition =
@@ -2740,11 +2762,12 @@ mod tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition for the update price");
+            .expect("expect to create documents batch transition for the update price");
 
-        let documents_batch_transfer_serialized_transition = documents_batch_update_price_transition
-            .serialize_to_bytes()
-            .expect("expected documents batch serialized state transition");
+        let documents_batch_transfer_serialized_transition =
+            documents_batch_update_price_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -2782,7 +2805,7 @@ mod tests {
             &contract,
             Some(&platform.config.drive),
         )
-            .expect("expected document query");
+        .expect("expected document query");
 
         let query_sender_results = platform
             .drive
@@ -2793,6 +2816,12 @@ mod tests {
 
         let document = query_sender_results.documents().first().unwrap();
 
-        assert_eq!(document.properties().get_optional_integer::<u64>("$price").expect("expected None"), None);
+        assert_eq!(
+            document
+                .properties()
+                .get_optional_integer::<u64>("$price")
+                .expect("expected None"),
+            None
+        );
     }
 }

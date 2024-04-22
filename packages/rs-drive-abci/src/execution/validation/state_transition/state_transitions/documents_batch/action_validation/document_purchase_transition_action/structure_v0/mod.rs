@@ -32,7 +32,7 @@ impl DocumentPurchaseTransitionActionStructureValidationV0 for DocumentPurchaseT
                     .into(),
             ));
         };
-        
+
         // We can not purchase from ourselves
         // The document owner id is already our owner id, as the action we want to take is to
         //  insert this document into the state (with our owner id)
@@ -45,7 +45,6 @@ impl DocumentPurchaseTransitionActionStructureValidationV0 for DocumentPurchaseT
                     .into(),
             ));
         }
-        
 
         if document_type.trade_mode() != TradeMode::DirectPurchase {
             Ok(SimpleConsensusValidationResult::new_with_error(

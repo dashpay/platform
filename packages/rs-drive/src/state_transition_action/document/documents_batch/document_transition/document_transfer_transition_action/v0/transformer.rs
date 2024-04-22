@@ -31,9 +31,9 @@ impl DocumentTransferTransitionActionV0 {
         let mut modified_document = original_document;
 
         modified_document.set_owner_id(*recipient_owner_id);
-        
+
         modified_document.bump_revision();
-        
+
         if base.document_type_field_is_required(property_names::TRANSFERRED_AT)? {
             modified_document.set_transferred_at(Some(block_info.time_ms));
         }
