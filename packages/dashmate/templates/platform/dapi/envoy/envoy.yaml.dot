@@ -55,33 +55,46 @@
       http_filters:
         {{? it.platform.dapi.envoy.rateLimiter.enabled}}
         # Rate limiter
+        # Local HTTP Rate limiter can limit only connections or requests per connection.
         - name: envoy.filters.http.local_ratelimit
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
             stat_prefix: http_local_rate_limiter
             # The token_bucket configuration specifies the rate limit's behavior.
             token_bucket:
-              # `max_tokens` is the maximum number of tokens the bucket can hold.
+              # The maximum number of tokens the bucket can hold.
               # This is the maximum number of tokens that the bucket can hold at any given time.
               # You can think of it as the size of the bucket. If the bucket is full, any additional
               # tokens are discarded. When a request comes in, it takes a token from the bucket.
               # If there are no tokens left in the bucket, the request is rate limited (i.e., it is not processed).
               max_tokens: {{=it.platform.dapi.envoy.rateLimiter.maxTokens}}
-              # `tokens_per_fill` is the number of tokens added to the bucket at each fill interval.
+              # The number of tokens added to the bucket at each fill interval.
               # This is the frequency at which the token bucket is refilled. It determines
               # how often new tokens are added to the bucket. If the fill interval is short,
               # tokens are added frequently, allowing for a higher rate of requests.
               # If the fill interval is long, tokens are added less frequently, which reduces
               # the rate of requests.
               tokens_per_fill: {{=it.platform.dapi.envoy.rateLimiter.tokensPerFill}}
-              # `fill_interval` is the frequency at which the token bucket is refilled.
+              # Frequency at which the token bucket is refilled.
               # This is the frequency at which the token bucket is refilled. It determines how often
               # new tokens are added to the bucket. If the fill interval is short, tokens are added
               # frequently, allowing for a higher rate of requests. If the fill interval is long,
               # tokens are added less frequently, which reduces the rate of requests.
               fill_interval: {{=it.platform.dapi.envoy.rateLimiter.fillInterval}}
+            # Limit requests per connection
+            local_rate_limit_per_downstream_connection: true
+            filter_enabled:
+              runtime_key: local_rate_limit_enabled
+              default_value:
+                numerator: {{? it.platform.dapi.envoy.rateLimiter.enabled}}100{{??}}0{{?}}
+                denominator: HUNDRED
+              filter_enforced:
+                runtime_key: local_rate_limit_enforced
+                default_value:
+                  numerator: 100
+                  denominator: HUNDRED
             response_headers_to_add:
-              - append: false
+              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
                 header:
                   key: x-rate-limit
                   value: 'true'
