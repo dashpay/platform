@@ -112,6 +112,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 },
               },
               validator_quorum_type: 6,
+              initial_core_chain_locked_height: 918609,
             },
           },
         },

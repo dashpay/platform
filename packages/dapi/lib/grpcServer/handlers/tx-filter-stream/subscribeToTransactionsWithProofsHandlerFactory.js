@@ -1,4 +1,5 @@
 const { BloomFilter } = require('@dashevo/dashcore-lib');
+const crypto = require('crypto');
 
 const {
   server: {
@@ -22,6 +23,7 @@ const {
 
 const ProcessMediator = require('../../../transactionsFilter/ProcessMediator');
 const wait = require('../../../utils/wait');
+const logger = require('../../../logger');
 
 /**
  * Prepare the response and send transactions response
@@ -132,6 +134,24 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
     const isNewTransactionsRequested = count === 0;
 
+    const requestId = crypto.createHash('sha256')
+      .update(filter.toBuffer())
+      .digest('hex');
+
+    const requestLogger = logger.child({
+      requestId,
+    });
+
+    let countMessage = ` for ${count} blocks`;
+    if (isNewTransactionsRequested) {
+      countMessage = ' and upcoming new transactions';
+    }
+
+    requestLogger.debug({
+      from,
+      count,
+    }, `open transactions stream from block ${from}${countMessage}`);
+
     const acknowledgingCall = new AcknowledgingWritable(call);
 
     const mediator = new ProcessMediator();
@@ -139,6 +159,8 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     mediator.on(
       ProcessMediator.EVENTS.TRANSACTION,
       async (tx) => {
+        requestLogger.debug(`send transaction ${tx.hash}`);
+
         await sendTransactionsResponse(acknowledgingCall, [tx]);
       },
     );
@@ -146,6 +168,8 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     mediator.on(
       ProcessMediator.EVENTS.MERKLE_BLOCK,
       async (merkleBlock) => {
+        requestLogger.debug('send merkle block');
+
         await sendMerkleBlockResponse(acknowledgingCall, merkleBlock);
       },
     );
@@ -153,6 +177,10 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     mediator.on(
       ProcessMediator.EVENTS.INSTANT_LOCK,
       async (instantLock) => {
+        requestLogger.debug({
+          instantLock,
+        }, `send instant lock for ${instantLock.txid}`);
+
         await sendInstantLockResponse(acknowledgingCall, instantLock);
       },
     );
@@ -205,6 +233,13 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       historicalCount,
     );
 
+    requestLogger.debug({
+      fromHeight: fromBlock.height,
+      count: historicalCount,
+    }, 'sending requested historical data');
+
+    let blocksSent = 0;
+
     for await (const { merkleBlock, transactions, index } of historicalDataIterator) {
       if (index > 0) {
         // Wait a second between the calls to Core just to reduce the load
@@ -214,30 +249,62 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       await sendTransactionsResponse(acknowledgingCall, transactions);
       await sendMerkleBlockResponse(acknowledgingCall, merkleBlock);
 
+      requestLogger.debug(`sent historical block ${merkleBlock.header.hash} and ${transactions.length} transactions`);
+
       if (isNewTransactionsRequested) {
         // removing sent transactions and blocks from cache
         mediator.emit(ProcessMediator.EVENTS.HISTORICAL_BLOCK_SENT, merkleBlock.header.hash);
       }
+
+      blocksSent = index;
     }
 
     // notify new txs listener that we've sent historical data
+    requestLogger.debug(`${blocksSent} historical blocks sent`);
+
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
     if (isNewTransactionsRequested) {
       // Read and test transactions from mempool
       const memPoolTransactions = await getMemPoolTransactions();
+
+      requestLogger.debug(`received ${memPoolTransactions.length} transactions from mempool`);
+
       memPoolTransactions.forEach(
         bloomFilterEmitterCollection.test.bind(bloomFilterEmitterCollection),
       );
 
       mediator.emit(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT);
+
+      // Send empty response as a workaround for Rust tonic that expects at least one message
+      // to be sent to establish a stream connection
+      // https://github.com/hyperium/tonic/issues/515
+      if (blocksSent === 0 && memPoolTransactions.length === 0) {
+        requestLogger.debug('send empty response to kick off Rust tonic stream connection');
+        const response = new TransactionsWithProofsResponse();
+        await call.write(response);
+      }
     } else {
+      requestLogger.debug('close stream');
+
       // End stream if user asked only for historical data
       call.end();
+
+      // remove bloom filter emitter
+      mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
     }
+
+    call.on('end', () => {
+      call.end();
+
+      // remove bloom filter emitter
+      mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
+    });
 
     call.on('cancelled', () => {
       call.end();
+
+      requestLogger.debug('client cancelled the stream');
 
       // remove bloom filter emitter
       mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);

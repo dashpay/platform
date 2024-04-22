@@ -12,6 +12,15 @@ use(sinonChai);
 
 process.env.NODE_ENV = 'test';
 
+let faucetIndex = 1;
+if (process.env.MOCHA_WORKER_ID) {
+  const mochaWorkerId = parseInt(process.env.MOCHA_WORKER_ID, 10);
+  faucetIndex = mochaWorkerId + 1;
+}
+
+process.env.FAUCET_ADDRESS = process.env[`FAUCET_${faucetIndex}_ADDRESS`];
+process.env.FAUCET_PRIVATE_KEY = process.env[`FAUCET_${faucetIndex}_PRIVATE_KEY`];
+
 dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });

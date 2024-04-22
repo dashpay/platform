@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.25.16-rc.4",
+  "version": "0.25.22",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -57,6 +57,7 @@
     "@babel/core": "^7.23.3",
     "@babel/eslint-parser": "^7.23.3",
     "@dashevo/bls": "~1.2.9",
+    "@dashevo/dapi-client": "workspace:*",
     "@dashevo/dashcore-lib": "~0.21.0",
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
@@ -65,7 +66,6 @@
     "@dashevo/feature-flags-contract": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
-    "@dashevo/wasm-dpp": "workspace:*",
     "@dashevo/withdrawals-contract": "workspace:*",
     "@oclif/core": "^3.10.8",
     "@oclif/plugin-help": "^6.0.5",
@@ -75,7 +75,6 @@
     "begoo": "^2.0.2",
     "chalk": "^4.1.0",
     "cron": "^2.1.0",
-    "dash": "workspace:*",
     "dockerode": "^3.3.5",
     "dot": "^1.1.3",
     "dotenv": "^8.6.0",

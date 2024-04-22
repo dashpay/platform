@@ -1,5 +1,4 @@
 import jayson from 'jayson/promise/index.js';
-import oclif from '@oclif/core';
 
 export default function createHttpApiServerFactory() {
   /**
@@ -21,7 +20,8 @@ export default function createHttpApiServerFactory() {
 
         return new jayson.Method(async () => {
           try {
-            return await oclif.run([...argv]);
+            const { execute } = await import('@oclif/core');
+            return await execute({ dir: import.meta.url, args: argv });
           } catch (e) {
             throw server.error(501, e.message);
           }

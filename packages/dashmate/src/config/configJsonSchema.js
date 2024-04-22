@@ -72,9 +72,17 @@ export default {
       required: ['id', 'host', 'port'],
       additionalProperties: false,
     },
-    tenderdashLogModule: {
+    duration: {
       type: 'string',
-      enum: ['debug', 'info', 'error'],
+      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)$',
+    },
+    optionalDuration: {
+      type: ['null', 'string'],
+      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)$',
+    },
+    durationInSeconds: {
+      type: 'string',
+      pattern: '^[0-9]+(\\.[0-9]+)?s$',
     },
   },
   properties: {
@@ -93,13 +101,9 @@ export default {
             subnet: {
               type: 'string',
             },
-            bindIp: {
-              type: 'string',
-              format: 'ipv4',
-            },
           },
           additionalProperties: false,
-          required: ['subnet', 'bindIp'],
+          required: ['subnet'],
         },
         baseImage: {
           type: 'object',
@@ -168,6 +172,11 @@ export default {
         p2p: {
           type: 'object',
           properties: {
+            host: {
+              type: 'string',
+              minLength: 1,
+              format: 'ipv4',
+            },
             port: {
               $ref: '#/definitions/port',
             },
@@ -189,12 +198,17 @@ export default {
               },
             },
           },
-          required: ['port', 'seeds'],
+          required: ['host', 'port', 'seeds'],
           additionalProperties: false,
         },
         rpc: {
           type: 'object',
           properties: {
+            host: {
+              type: 'string',
+              minLength: 1,
+              format: 'ipv4',
+            },
             port: {
               $ref: '#/definitions/port',
             },
@@ -213,7 +227,7 @@ export default {
               },
             },
           },
-          required: ['port', 'user', 'password'],
+          required: ['host', 'port', 'user', 'password'],
           additionalProperties: false,
         },
         spork: {
@@ -256,8 +270,7 @@ export default {
               type: 'boolean',
             },
             interval: {
-              type: 'string',
-              pattern: '^[0-9]+(.[0-9]+)?(m|s|h)$',
+              $ref: '#/definitions/duration',
             },
             mediantime: {
               type: ['integer', 'null'],
@@ -346,11 +359,22 @@ export default {
                 http: {
                   type: 'object',
                   properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
+                    connectTimeout: {
+                      $ref: '#/definitions/durationInSeconds',
+                    },
+                    responseTimeout: {
+                      $ref: '#/definitions/durationInSeconds',
+                    },
                   },
-                  required: ['port'],
+                  required: ['host', 'port', 'connectTimeout', 'responseTimeout'],
                   additionalProperties: false,
                 },
                 rateLimiter: {
@@ -365,8 +389,7 @@ export default {
                       minimum: 0,
                     },
                     fillInterval: {
-                      type: 'string',
-                      pattern: '^[0-9]+(ms|s|m|h)$',
+                      $ref: '#/definitions/duration',
                     },
                     enabled: {
                       type: 'boolean',
@@ -417,7 +440,29 @@ export default {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerWithBuild',
+                  type: 'object',
+                  properties: {
+                    image: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    deploy: {
+                      type: 'object',
+                      properties: {
+                        replicas: {
+                          type: 'integer',
+                          minimum: 0,
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['replicas'],
+                    },
+                    build: {
+                      $ref: '#/definitions/dockerBuild',
+                    },
+                  },
+                  required: ['image', 'build', 'deploy'],
+                  additionalProperties: false,
                 },
               },
               required: ['docker'],
@@ -501,6 +546,11 @@ export default {
                 p2p: {
                   type: 'object',
                   properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
@@ -516,9 +566,39 @@ export default {
                         $ref: '#/definitions/tenderdashNodeAddress',
                       },
                     },
+                    flushThrottleTimeout: {
+                      $ref: '#/definitions/duration',
+                    },
+                    maxPacketMsgPayloadSize: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    sendRate: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    recvRate: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
-                  required: ['port', 'persistentPeers', 'seeds'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate'],
                   additionalProperties: false,
+                },
+                mempool: {
+                  type: 'object',
+                  properties: {
+                    size: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    maxTxsBytes: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['size', 'maxTxsBytes'],
                 },
                 consensus: {
                   type: 'object',
@@ -527,12 +607,70 @@ export default {
                       type: 'boolean',
                     },
                     createEmptyBlocksInterval: {
-                      type: 'string',
-                      pattern: '^[0-9]+(.[0-9]+)?(m|s|h)$',
+                      $ref: '#/definitions/duration',
+                    },
+                    peer: {
+                      type: 'object',
+                      properties: {
+                        gossipSleepDuration: {
+                          $ref: '#/definitions/duration',
+                        },
+                        queryMaj23SleepDuration: {
+                          $ref: '#/definitions/duration',
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['gossipSleepDuration', 'queryMaj23SleepDuration'],
+                    },
+                    unsafeOverride: {
+                      type: 'object',
+                      properties: {
+                        propose: {
+                          type: 'object',
+                          properties: {
+                            timeout: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                            delta: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                          },
+                          additionalProperties: false,
+                          required: ['timeout', 'delta'],
+                        },
+                        vote: {
+                          type: 'object',
+                          properties: {
+                            timeout: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                            delta: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                          },
+                          additionalProperties: false,
+                          required: ['timeout', 'delta'],
+                        },
+                        commit: {
+                          type: 'object',
+                          properties: {
+                            timeout: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                            bypass: {
+                              type: ['boolean', 'null'],
+                            },
+                          },
+                          additionalProperties: false,
+                          required: ['timeout', 'bypass'],
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['propose', 'vote', 'commit'],
                     },
                   },
                   additionalProperties: false,
-                  required: ['createEmptyBlocks', 'createEmptyBlocksInterval'],
+                  required: ['createEmptyBlocks', 'createEmptyBlocksInterval', 'peer', 'unsafeOverride'],
                 },
                 log: {
                   type: 'object',
@@ -556,11 +694,20 @@ export default {
                 rpc: {
                   type: 'object',
                   properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
+                    maxOpenConnections: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
-                  required: ['port'],
+                  required: ['host', 'port', 'maxOpenConnections'],
                   additionalProperties: false,
                 },
                 pprof: {
@@ -583,11 +730,16 @@ export default {
                     enabled: {
                       type: 'boolean',
                     },
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['enabled', 'port'],
+                  required: ['enabled', 'host', 'port'],
                   additionalProperties: false,
                 },
                 node: {
@@ -609,7 +761,7 @@ export default {
                   type: 'object',
                 },
               },
-              required: ['mode', 'docker', 'p2p', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
+              required: ['mode', 'docker', 'p2p', 'mempool', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
               additionalProperties: false,
             },
           },

@@ -21,6 +21,7 @@ const commonJSConfig = {
       events: require.resolve('events/'),
       string_decoder: require.resolve('string_decoder/'),
       zlib: require.resolve('browserify-zlib'),
+      process: require.resolve('process/browser'),
     },
   },
   plugins: [
