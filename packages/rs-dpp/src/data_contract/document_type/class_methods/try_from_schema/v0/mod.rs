@@ -245,6 +245,14 @@ impl DocumentTypeV0 {
 
         let trade_mode = documents_trade_mode_u8.try_into()?;
 
+        // Are documents of this type transferable? (Overrides contract value)
+        let documents_transferable_u8: u8 =
+            Value::inner_optional_integer_value(schema_map, "transferable")
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+
+        let documents_transferable = documents_transferable_u8.try_into()?;
+
         // Extract the properties
         let property_values = Value::inner_optional_index_map::<u64>(
             schema_map,

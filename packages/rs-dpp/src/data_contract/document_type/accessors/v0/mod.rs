@@ -49,6 +49,8 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the documents transferable flag of the document type.
     fn documents_transferable(&self) -> Transferable;
+
+    /// Returns the documents trade mode flag of the document type.
     fn trade_mode(&self) -> TradeMode;
 
     /// Returns the data contract id of the document type.

@@ -9,10 +9,8 @@ pub mod document_delete_transition_action;
 pub mod document_replace_transition_action;
 /// document_transfer_transition_action
 pub mod document_transfer_transition_action;
-
 /// document_purchase_transition_action
 pub mod document_purchase_transition_action;
-
 /// document_update_price_transition_action
 pub mod document_update_price_transition_action;
 

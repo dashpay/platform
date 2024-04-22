@@ -15,7 +15,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::Revision;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};

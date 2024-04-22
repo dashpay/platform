@@ -40,11 +40,11 @@ impl DocumentTransferTransitionActionStateValidationV0 for DocumentTransferTrans
         let document_type_name = self.base().document_type_name();
 
         let Some(document_type) = contract.document_type_optional_for_name(document_type_name)
-        else {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
-            ));
-        };
+            else {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
+                ));
+            };
 
         // There is no need to verify that the document already existed, since this is done when
         // transforming into an action

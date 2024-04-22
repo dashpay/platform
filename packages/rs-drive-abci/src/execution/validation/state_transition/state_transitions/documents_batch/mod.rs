@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
         assert_eq!(processing_result.valid_count(), 1);
-
+        
         assert_eq!(processing_result.aggregated_fees().processing_fee, 5074630);
     }
 
@@ -1415,7 +1415,7 @@ mod tests {
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
         assert_eq!(processing_result.valid_count(), 1);
-
+        
         assert_eq!(processing_result.aggregated_fees().processing_fee, 9350780);
 
         let query_sender_results = platform
@@ -1948,7 +1948,7 @@ mod tests {
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
         assert_eq!(processing_result.valid_count(), 1);
-
+        
         assert_eq!(processing_result.aggregated_fees().processing_fee, 10277500);
 
         let query_sender_results = platform

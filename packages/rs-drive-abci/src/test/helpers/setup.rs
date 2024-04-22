@@ -156,7 +156,6 @@ impl TempPlatform<MockCoreRPCLike> {
         (self, card_game_contract)
     }
 
-
     /// A function which adds the crypto card game to the state and returns it.
     pub fn with_crypto_card_game_nft(self, marketplace: TradeMode) -> (Self, DataContract) {
         let card_game_path = match marketplace {
@@ -187,6 +186,7 @@ impl TempPlatform<MockCoreRPCLike> {
 
         (self, card_game_contract)
     }
+
 
     /// Sets Platform to genesis state.
     pub fn set_genesis_state(self) -> Self {

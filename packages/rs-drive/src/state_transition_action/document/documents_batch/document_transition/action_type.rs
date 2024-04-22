@@ -9,7 +9,7 @@ impl TransitionActionTypeGetter for DocumentTransitionAction {
             DocumentTransitionAction::CreateAction(_) => DocumentTransitionActionType::Create,
             DocumentTransitionAction::DeleteAction(_) => DocumentTransitionActionType::Delete,
             DocumentTransitionAction::ReplaceAction(_) => DocumentTransitionActionType::Replace,
-            DocumentTransitionAction::TransferAction(_) => DocumentTransitionActionType::Transfer,
+            DocumentTransitionAction::TransferAction(_) => DocumentTransitionActionType::Transfer, HEAD
             DocumentTransitionAction::PurchaseAction(_) => DocumentTransitionActionType::Purchase,
             DocumentTransitionAction::UpdatePriceAction(_) => DocumentTransitionActionType::UpdatePrice,
             DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {

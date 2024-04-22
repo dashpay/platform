@@ -113,8 +113,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         purchase_feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
-
-
+    
     fn contract_based_security_level_requirement(
         &self,
         get_data_contract_security_level_requirement: impl Fn(

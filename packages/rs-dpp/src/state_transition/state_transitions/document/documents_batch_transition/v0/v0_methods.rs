@@ -205,7 +205,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         )?;
         Ok(state_transition)
     }
-
+    
     #[cfg(feature = "state-transition-signing")]
     fn new_document_update_price_transition_from_document<S: Signer>(
         document: Document,
@@ -288,7 +288,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         )?;
         Ok(state_transition)
     }
-
+    
     fn set_transitions(&mut self, transitions: Vec<DocumentTransition>) {
         self.transitions = transitions;
     }

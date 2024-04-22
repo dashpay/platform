@@ -61,6 +61,7 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_transferable: Transferable,
     /// How are these documents traded?
     pub(in crate::data_contract) trade_mode: TradeMode,
+
     pub(in crate::data_contract) data_contract_id: Identifier,
     /// Encryption key storage requirements
     pub(in crate::data_contract) requires_identity_encryption_bounded_key:
