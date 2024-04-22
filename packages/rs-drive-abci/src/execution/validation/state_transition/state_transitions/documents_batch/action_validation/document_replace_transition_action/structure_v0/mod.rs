@@ -35,7 +35,7 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
         if !document_type.documents_mutable() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
-                    "{} is not mutable and not be updated",
+                    "{} is not mutable and can not be replaced",
                     document_type_name
                 ))
                 .into(),
