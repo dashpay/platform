@@ -221,7 +221,7 @@ impl DocumentTypeV0 {
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_mutability);
 
-        // Are documents of this type mutable? (Overrides contract value)
+        // Are documents of this type transferable? (Overrides contract value)
         let documents_transferable_u8: u8 =
             Value::inner_optional_integer_value(schema_map, "transferable")
                 .map_err(consensus_or_protocol_value_error)?
