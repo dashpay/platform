@@ -5,7 +5,7 @@ const getBlockByHashFactory = require('./getBlockByHashFactory');
 const getBlockByHeightFactory = require('./getBlockByHeightFactory');
 const getBlockHashFactory = require('./getBlockHashFactory');
 const getMnListDiffFactory = require('./getMnListDiffFactory');
-const getStatusFactory = require('./getStatusFactory');
+const getCoreChainStatusFactory = require('./getCoreChainStatusFactory');
 const getTransactionFactory = require('./getTransaction/getTransactionFactory');
 const subscribeToTransactionsWithProofsFactory = require('./subscribeToTransactionsWithProofsFactory');
 const subscribeToBlockHeadersWithChainLocksFactory = require('./subscribeToBlockHeadersWithChainLocksFactory');
@@ -23,7 +23,7 @@ class CoreMethodsFacade {
     this.getBlockByHeight = getBlockByHeightFactory(grpcTransport);
     this.getBlockHash = getBlockHashFactory(jsonRpcTransport);
     this.getMnListDiff = getMnListDiffFactory(jsonRpcTransport);
-    this.getStatus = getStatusFactory(grpcTransport);
+    this.getCoreChainStatus = getCoreChainStatusFactory(grpcTransport);
     this.getTransaction = getTransactionFactory(grpcTransport);
     this.subscribeToTransactionsWithProofs = subscribeToTransactionsWithProofsFactory(
       grpcTransport,

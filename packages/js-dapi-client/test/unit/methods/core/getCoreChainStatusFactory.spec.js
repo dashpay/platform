@@ -1,30 +1,30 @@
 const {
   v0: {
-    GetStatusRequest,
-    GetStatusResponse,
+    GetCoreChainStatusRequest,
+    GetCoreChainStatusResponse,
     CorePromiseClient,
   },
 } = require('@dashevo/dapi-grpc');
 
-const getStatusFactory = require('../../../../lib/methods/core/getStatusFactory');
+const getCoreChainStatusFactory = require('../../../../lib/methods/core/getCoreChainStatusFactory');
 
-describe('getStatusFactory', () => {
-  let getStatus;
+describe('getCoreChainStatusFactory', () => {
+  let getCoreChainStatus;
   let grpcTransportMock;
 
   beforeEach(function beforeEach() {
     grpcTransportMock = {
       request: this.sinon.stub(),
     };
-    getStatus = getStatusFactory(grpcTransportMock);
+    getCoreChainStatus = getCoreChainStatusFactory(grpcTransportMock);
   });
 
   it('should return status', async () => {
-    const response = new GetStatusResponse();
+    const response = new GetCoreChainStatusResponse();
 
-    response.setStatus(GetStatusResponse.Status.READY);
+    response.setStatus(GetCoreChainStatusResponse.Status.READY);
 
-    const chain = new GetStatusResponse.Chain();
+    const chain = new GetCoreChainStatusResponse.Chain();
     chain.setBestBlockHash(Buffer.from('bestBlockHash'));
 
     response.setChain(chain);
@@ -35,15 +35,15 @@ describe('getStatusFactory', () => {
       timeout: 1000,
     };
 
-    const result = await getStatus(
+    const result = await getCoreChainStatus(
       options,
     );
 
-    const request = new GetStatusRequest();
+    const request = new GetCoreChainStatusRequest();
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       CorePromiseClient,
-      'getStatus',
+      'getCoreChainStatus',
       request,
       options,
     );

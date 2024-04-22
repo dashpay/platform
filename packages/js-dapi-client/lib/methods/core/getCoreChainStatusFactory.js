@@ -1,29 +1,29 @@
 const {
   v0: {
-    GetStatusRequest,
-    GetStatusResponse,
+    GetCoreChainStatusRequest,
+    GetCoreChainStatusResponse,
     CorePromiseClient,
   },
 } = require('@dashevo/dapi-grpc');
 
 /**
  * @param {GrpcTransport} grpcTransport
- * @returns {getStatus}
+ * @returns {getCoreChainStatus}
  */
-function getStatusFactory(grpcTransport) {
+function getCoreChainStatusFactory(grpcTransport) {
   /**
    * Get Core chain status
-   * @typedef {getStatus}
+   * @typedef {getCoreChainStatus}
    * @param {DAPIClientOptions} [options]
    * @returns {Promise<object>}
    */
-  async function getStatus(options = {}) {
-    const getStatusRequest = new GetStatusRequest();
+  async function getCoreChainStatus(options = {}) {
+    const getCoreChainStatusRequest = new GetCoreChainStatusRequest();
 
     const response = await grpcTransport.request(
       CorePromiseClient,
-      'getStatus',
-      getStatusRequest,
+      'getCoreChainStatus',
+      getCoreChainStatusRequest,
       options,
     );
 
@@ -47,13 +47,13 @@ function getStatusFactory(grpcTransport) {
 
     // Respond with constant names instead of constant values
 
-    responseObject.status = Object.keys(GetStatusResponse.Status)
-      .find((key) => GetStatusResponse.Status[key] === responseObject.status);
+    responseObject.status = Object.keys(GetCoreChainStatusResponse.Status)
+      .find((key) => GetCoreChainStatusResponse.Status[key] === responseObject.status);
 
     return responseObject;
   }
 
-  return getStatus;
+  return getCoreChainStatus;
 }
 
-module.exports = getStatusFactory;
+module.exports = getCoreChainStatusFactory;
