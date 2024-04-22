@@ -1,4 +1,5 @@
 use dpp::block::block_info::BlockInfo;
+use dpp::document::property_names::PRICE;
 use dpp::document::{property_names, Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
@@ -30,6 +31,9 @@ impl DocumentPurchaseTransitionActionV0 {
         let mut modified_document = original_document;
 
         modified_document.bump_revision();
+
+        // We must remove the price if there is one
+        modified_document.properties_mut().remove(PRICE);
 
         modified_document.set_owner_id(purchaser_id);
 

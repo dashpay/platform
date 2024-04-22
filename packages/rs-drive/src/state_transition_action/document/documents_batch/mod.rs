@@ -8,7 +8,6 @@ use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 
 /// document transition

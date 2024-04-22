@@ -1,4 +1,5 @@
 use dpp::block::block_info::BlockInfo;
+use dpp::document::property_names::PRICE;
 use dpp::document::{property_names, Document, DocumentV0Setters};
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
@@ -26,7 +27,7 @@ impl DocumentUpdatePriceTransitionActionV0 {
 
         let mut modified_document = original_document;
 
-        modified_document.set_u64("$price", *price);
+        modified_document.set_u64(PRICE, *price);
 
         modified_document.bump_revision();
 

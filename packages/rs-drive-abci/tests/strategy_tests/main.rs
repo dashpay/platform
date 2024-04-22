@@ -1217,6 +1217,7 @@ mod tests {
                             },
                             keep_history_chance: 1.0,
                             documents_mutable_chance: 1.0,
+                            documents_can_be_deleted_chance: 1.0,
                         },
                         30..31,
                     ),

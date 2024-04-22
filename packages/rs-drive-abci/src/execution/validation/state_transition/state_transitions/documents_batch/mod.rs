@@ -1248,7 +1248,6 @@ mod tests {
 
     #[test]
     fn test_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices() {
-        let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -2358,8 +2357,7 @@ mod tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let (receiver, recipient_signer, recipient_key) =
-            setup_identity(&mut platform, 450, dash_to_credits!(0.1));
+        let (receiver, _, _) = setup_identity(&mut platform, 450, dash_to_credits!(0.1));
 
         let card_document_type = contract
             .document_type_for_name("card")
