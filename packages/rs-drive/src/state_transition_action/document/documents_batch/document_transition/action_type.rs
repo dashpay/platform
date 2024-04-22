@@ -9,6 +9,7 @@ impl TransitionActionTypeGetter for DocumentTransitionAction {
             DocumentTransitionAction::CreateAction(_) => DocumentTransitionActionType::Create,
             DocumentTransitionAction::DeleteAction(_) => DocumentTransitionActionType::Delete,
             DocumentTransitionAction::ReplaceAction(_) => DocumentTransitionActionType::Replace,
+            DocumentTransitionAction::TransferAction(_) => DocumentTransitionActionType::Transfer,
             DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
                 DocumentTransitionActionType::IgnoreWhileBumpingRevision
             }

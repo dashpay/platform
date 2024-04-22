@@ -104,6 +104,7 @@ use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
     v0::DocumentTypeV0, DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
+use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -422,6 +423,7 @@ impl DocumentTypeV0 {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            documents_transferable: Transferable::Never,
             data_contract_id,
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
@@ -585,6 +587,7 @@ impl DocumentTypeV0 {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            documents_transferable: Transferable::Never,
             data_contract_id,
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,

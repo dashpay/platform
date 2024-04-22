@@ -18,6 +18,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+use crate::document::transfer::Transferable;
 use platform_value::{Identifier, Value};
 
 // TODO: Some of those methods are only for tests. Hide under feature
@@ -207,7 +208,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn initial_revision(&self) -> Option<Revision> {
-        if self.documents_mutable {
+        if self.requires_revision() {
             Some(INITIAL_REVISION)
         } else {
             None
@@ -215,7 +216,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn requires_revision(&self) -> bool {
-        self.documents_mutable
+        self.documents_mutable || self.documents_transferable != Transferable::Never
     }
 
     fn top_level_indices(&self) -> Vec<&IndexProperty> {

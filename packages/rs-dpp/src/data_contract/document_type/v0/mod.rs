@@ -9,6 +9,7 @@ use crate::data_contract::storage_requirements::keys_for_document_type::StorageK
 #[cfg(feature = "validation")]
 pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
 
+use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use platform_value::{Identifier, Value};
 
@@ -53,6 +54,8 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_keep_history: bool,
     /// Are documents mutable?
     pub(in crate::data_contract) documents_mutable: bool,
+    /// Are documents transferable?
+    pub(in crate::data_contract) documents_transferable: Transferable,
     pub(in crate::data_contract) data_contract_id: Identifier,
     /// Encryption key storage requirements
     pub(in crate::data_contract) requires_identity_encryption_bounded_key:

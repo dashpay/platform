@@ -3,7 +3,7 @@ use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
@@ -23,6 +23,7 @@ use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatch
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use drive_abci::execution::validation::state_transition::ValidationMode;
@@ -382,6 +383,26 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             }
                             DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
                                 panic!("we should not have a bump identity data contract nonce");
+                            }
+                            DocumentTransitionAction::TransferAction(transfer_action) => {
+                                if *was_executed {
+                                    // it's also possible we deleted something we replaced
+                                    if let Some(document) = document {
+                                        assert_eq!(
+                                            document.owner_id(),
+                                            transfer_action.document().owner_id()
+                                        );
+                                    }
+                                } else {
+                                    //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                    // state, aka there would have been no change anyways, we can discount that for now
+                                    if let Some(document) = document {
+                                        assert_ne!(
+                                            document.owner_id(),
+                                            transfer_action.document().owner_id()
+                                        );
+                                    }
+                                }
                             }
                         }
                     }

@@ -41,6 +41,34 @@
     "$updatedAt": {
       "type": "integer",
       "minimum": 0
+    },
+    "$transferredAt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "$createdAtBlockHeight": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "$updatedAtBlockHeight": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "$transferredAtBlockHeight": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "$createdAtCoreBlockHeight": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "$updatedAtCoreBlockHeight": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "$transferredAtCoreBlockHeight": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "required": [
