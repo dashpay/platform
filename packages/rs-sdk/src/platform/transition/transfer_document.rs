@@ -24,7 +24,7 @@ use rs_dapi_client::{DapiRequest, RequestSettings};
 /// A trait for transferring a document on Platform
 pub trait TransferDocument<S: Signer> {
     /// Transfers a document on platform
-    /// setting settings to `None` sets default connection behavior
+    /// Setting settings to `None` sets default connection behavior
     async fn transfer_document_to_identity(
         &self,
         recipient_id: Identifier,
