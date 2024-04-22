@@ -206,7 +206,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:feat-grpc-client-conn-limit',
+              image: 'dashpay/tenderdash:0.14.0-dev.6',
             },
             p2p: {
               host: '0.0.0.0',
