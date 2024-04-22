@@ -184,6 +184,15 @@ type PlatformgetEpochsInfo = {
   readonly responseType: typeof platform_pb.GetEpochsInfoResponse;
 };
 
+type PlatformgetPathElements = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetPathElementsRequest;
+  readonly responseType: typeof platform_pb.GetPathElementsResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -206,6 +215,7 @@ export class Platform {
   static readonly getProtocolVersionUpgradeState: PlatformgetProtocolVersionUpgradeState;
   static readonly getProtocolVersionUpgradeVoteStatus: PlatformgetProtocolVersionUpgradeVoteStatus;
   static readonly getEpochsInfo: PlatformgetEpochsInfo;
+  static readonly getPathElements: PlatformgetPathElements;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -419,6 +429,15 @@ export class PlatformClient {
   getEpochsInfo(
     requestMessage: platform_pb.GetEpochsInfoRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetEpochsInfoResponse|null) => void
+  ): UnaryResponse;
+  getPathElements(
+    requestMessage: platform_pb.GetPathElementsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPathElementsResponse|null) => void
+  ): UnaryResponse;
+  getPathElements(
+    requestMessage: platform_pb.GetPathElementsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPathElementsResponse|null) => void
   ): UnaryResponse;
 }
 
