@@ -21,7 +21,7 @@ use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
-/// A trait for putting a document to platform
+/// A trait for transferring a document on Platform
 pub trait TransferDocument<S: Signer> {
     /// Transfers a document on platform
     /// setting settings to `None` sets default connection behavior
