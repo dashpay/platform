@@ -96,7 +96,7 @@ transport = "routed"
 #	{ "info" = 2 },
 #]
 grpc-concurrency = [
-  { "check_tx" = 100 },
+  { "check_tx" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
 ]
 
 

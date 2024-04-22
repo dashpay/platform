@@ -241,6 +241,7 @@ export default function getBaseConfigFactory(homeDir) {
               txEnqueueTimeout: '0',
               txSendRateLimit: 0,
               txRecvRateLimit: 0,
+              maxConcurrentCheckTx: 500,
             },
             consensus: {
               createEmptyBlocks: true,
