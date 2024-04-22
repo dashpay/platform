@@ -46,6 +46,7 @@ use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]
 use serde_json::Value as JsonValue;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]
@@ -161,9 +162,9 @@ impl ExtendedDocumentV0 {
             .map(|document_type| document_type.documents_mutable())
     }
 
-    pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
+    pub fn requires_revision(&self) -> Result<bool, ProtocolError> {
         self.document_type()
-            .map(|document_type| document_type.documents_mutable())
+            .map(|document_type| document_type.requires_revision())
     }
 
     pub fn revision(&self) -> Option<Revision> {

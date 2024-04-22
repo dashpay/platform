@@ -11,6 +11,7 @@ use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
+use crate::nft::TradeMode;
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
     fn name(&self) -> &String {
@@ -63,6 +64,10 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
 
     fn documents_transferable(&self) -> Transferable {
         self.documents_transferable
+    }
+
+    fn trade_mode(&self) -> TradeMode {
+        self.trade_mode
     }
 
     fn data_contract_id(&self) -> Identifier {

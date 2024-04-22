@@ -13,6 +13,7 @@ use crate::identity::SecurityLevel;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
 pub use v0::*;
+use crate::nft::TradeMode;
 
 impl DocumentTypeV0Getters for DocumentType {
     fn name(&self) -> &String {
@@ -84,6 +85,12 @@ impl DocumentTypeV0Getters for DocumentType {
     fn documents_mutable(&self) -> bool {
         match self {
             DocumentType::V0(v0) => v0.documents_mutable(),
+        }
+    }
+
+    fn trade_mode(&self) -> TradeMode {
+        match self {
+            DocumentType::V0(v0) => v0.trade_mode(),
         }
     }
 
@@ -197,6 +204,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
+    fn trade_mode(&self) -> TradeMode {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.trade_mode(),
+        }
+    }
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentTypeRef::V0(v0) => v0.data_contract_id(),
@@ -298,6 +311,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     fn documents_transferable(&self) -> Transferable {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.documents_transferable(),
+        }
+    }
+
+    fn trade_mode(&self) -> TradeMode {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.trade_mode(),
         }
     }
 

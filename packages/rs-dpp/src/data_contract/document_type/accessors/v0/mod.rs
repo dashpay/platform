@@ -9,6 +9,8 @@ use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
+use crate::data_contract::document_type::DocumentTypeRef;
+use crate::nft::TradeMode;
 
 pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
@@ -47,6 +49,7 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the documents transferable flag of the document type.
     fn documents_transferable(&self) -> Transferable;
+    fn trade_mode(&self) -> TradeMode;
 
     /// Returns the data contract id of the document type.
     fn data_contract_id(&self) -> Identifier;

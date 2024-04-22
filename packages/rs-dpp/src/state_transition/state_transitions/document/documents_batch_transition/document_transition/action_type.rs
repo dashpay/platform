@@ -8,6 +8,8 @@ pub enum DocumentTransitionActionType {
     Replace,
     Delete,
     Transfer,
+    Purchase,
+    UpdatePrice,
     IgnoreWhileBumpingRevision,
 }
 
@@ -22,6 +24,8 @@ impl TransitionActionTypeGetter for DocumentTransition {
             DocumentTransition::Delete(_) => DocumentTransitionActionType::Delete,
             DocumentTransition::Replace(_) => DocumentTransitionActionType::Replace,
             DocumentTransition::Transfer(_) => DocumentTransitionActionType::Transfer,
+            DocumentTransition::UpdatePrice(_) => DocumentTransitionActionType::UpdatePrice,
+            DocumentTransition::Purchase(_) => DocumentTransitionActionType::Purchase,
         }
     }
 }

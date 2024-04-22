@@ -48,6 +48,7 @@ pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
 pub mod withdrawal;
+pub mod nft;
 
 pub use async_trait;
 

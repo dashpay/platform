@@ -201,6 +201,8 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     validate_document_create_transition_action_uniqueness: 0,
                     validate_document_replace_transition_action_uniqueness: 0,
                     validate_document_transfer_transition_action_uniqueness: 0,
+                    validate_document_purchase_transition_action_uniqueness: 0,
+                    validate_document_update_price_transition_action_uniqueness: 0,
                     validate_uniqueness_of_data: 0,
                 },
             },
@@ -694,10 +696,14 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         document_delete_transition_structure_validation: 0,
                         document_replace_transition_structure_validation: 0,
                         document_transfer_transition_structure_validation: 0,
+                        document_purchase_transition_structure_validation: 0,
+                        document_update_price_transition_structure_validation: 0,
                         document_create_transition_state_validation: 0,
                         document_delete_transition_state_validation: 0,
                         document_replace_transition_state_validation: 0,
                         document_transfer_transition_state_validation: 0,
+                        document_purchase_transition_state_validation: 0,
+                        document_update_price_transition_state_validation: 0,
                     },
             },
             process_state_transition: 0,
@@ -904,6 +910,20 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
             },
             document_transfer_state_transition: DocumentFeatureVersionBounds {
+                bounds: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            document_update_price_state_transition: DocumentFeatureVersionBounds {
+                bounds: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            document_purchase_state_transition: DocumentFeatureVersionBounds {
                 bounds: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,

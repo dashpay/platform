@@ -91,6 +91,7 @@ impl ErrorWithCode for BasicError {
             Self::ContractError(DataContractError::KeyWrongBounds(_)) => 10241,
             Self::ContractError(DataContractError::KeyValueMustExist(_)) => 10242,
             Self::UnknownTransferableTypeError { .. } => 10243,
+            Self::UnknownTradeModeError { .. } => 10244,
 
             // Document Errors: 10400-10499
             Self::DataContractNotPresentError { .. } => 10400,

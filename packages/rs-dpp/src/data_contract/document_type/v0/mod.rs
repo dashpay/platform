@@ -12,6 +12,7 @@ pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use platform_value::{Identifier, Value};
+use crate::nft::TradeMode;
 
 mod accessors;
 #[cfg(feature = "random-documents")]
@@ -54,8 +55,12 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_keep_history: bool,
     /// Are documents mutable?
     pub(in crate::data_contract) documents_mutable: bool,
-    /// Are documents mutable?
+    /// Can documents of this type be deleted?
+    pub(in crate::data_contract) documents_can_be_deleted: bool,
+    /// Can documents be transferred without a trade?
     pub(in crate::data_contract) documents_transferable: Transferable,
+    /// How are these documents traded?
+    pub(in crate::data_contract) trade_mode: TradeMode,
     pub(in crate::data_contract) data_contract_id: Identifier,
     /// Encryption key storage requirements
     pub(in crate::data_contract) requires_identity_encryption_bounded_key:

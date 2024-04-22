@@ -44,6 +44,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
+use crate::data_contract::document_type::property_names::{CAN_BE_DELETED, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, TRADE_MODE, TRANSFERABLE};
 
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
@@ -106,6 +107,7 @@ impl DocumentTypeV0 {
         schema_defs: Option<&BTreeMap<String, Value>>,
         default_keeps_history: bool,
         default_mutability: bool,
+        default_can_be_deleted: bool,
         validate: bool, // we don't need to validate if loaded from state
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
@@ -207,27 +209,41 @@ impl DocumentTypeV0 {
                 format!("document schema must be an object: {err}"),
             ))
         })?;
-
-        // TODO: These properties aren't defined in JSON meta schema
+        
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_optional_bool_value(schema_map, "documentsKeepHistory")
+            Value::inner_optional_bool_value(schema_map, DOCUMENTS_KEEP_HISTORY)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            Value::inner_optional_bool_value(schema_map, "documentsMutable")
+            Value::inner_optional_bool_value(schema_map, DOCUMENTS_MUTABLE)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_mutability);
 
-        // Are documents of this type mutable? (Overrides contract value)
+        // Can documents of this type be deleted? (Overrides contract value)
+        let documents_can_be_deleted: bool =
+            Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or(default_can_be_deleted);
+
+
+        // Are documents of this type transferable?
         let documents_transferable_u8: u8 =
-            Value::inner_optional_integer_value(schema_map, "transferable")
+            Value::inner_optional_integer_value(schema_map, TRANSFERABLE)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or_default();
 
         let documents_transferable = documents_transferable_u8.try_into()?;
+
+        // What is the trade mode of these documents
+        let documents_trade_mode_u8: u8 =
+            Value::inner_optional_integer_value(schema_map, TRADE_MODE)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+
+        let trade_mode = documents_trade_mode_u8.try_into()?;
 
         // Extract the properties
         let property_values = Value::inner_optional_index_map::<u64>(
@@ -511,7 +527,9 @@ impl DocumentTypeV0 {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            documents_can_be_deleted,
             documents_transferable,
+            trade_mode,
             data_contract_id,
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,

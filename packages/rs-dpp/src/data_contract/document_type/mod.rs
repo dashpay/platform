@@ -26,6 +26,10 @@ use std::collections::BTreeMap;
 mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
+
+    pub const CAN_BE_DELETED: &str = "canBeDeleted";
+    pub const TRANSFERABLE: &str = "transferable";
+    pub const TRADE_MODE: &str = "tradeMode";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
     pub const REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityEncryptionBoundedKey";

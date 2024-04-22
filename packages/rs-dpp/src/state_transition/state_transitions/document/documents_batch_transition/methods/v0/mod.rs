@@ -22,6 +22,7 @@ use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::convert::TryFrom;
+use crate::fee::Credits;
 
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
     #[cfg(feature = "state-transition-signing")]
@@ -49,7 +50,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
-        update_feature_version: Option<FeatureVersion>,
+        replace_feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
 
@@ -78,9 +79,40 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
+        transfer_feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_document_update_price_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        price: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        update_price_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_document_purchase_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        price: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        purchase_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
 
     fn contract_based_security_level_requirement(
         &self,

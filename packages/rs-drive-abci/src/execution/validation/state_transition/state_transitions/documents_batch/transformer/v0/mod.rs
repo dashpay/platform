@@ -15,7 +15,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::prelude::Revision;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
@@ -24,6 +24,7 @@ use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
+use dpp::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
@@ -38,8 +39,11 @@ use drive::grovedb::TransactionArg;
 
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
+use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
@@ -273,7 +277,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             .filter(|transition| {
                 matches!(
                     transition,
-                    DocumentTransition::Replace(_) | DocumentTransition::Transfer(_)
+                    DocumentTransition::Replace(_) | DocumentTransition::Transfer(_) | DocumentTransition::Purchase(_) | DocumentTransition::UpdatePrice(_)
                 )
             })
             .copied()
@@ -498,6 +502,95 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
                 if result.is_valid() {
                     Ok(DocumentTransitionAction::TransferAction(document_transfer_action).into())
+                } else {
+                    Ok(result)
+                }
+            }
+            DocumentTransition::UpdatePrice(document_update_price_transition) => {
+                let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new();
+
+                let validation_result =
+                    Self::find_replaced_document_v0(transition, replaced_documents);
+
+                if !validation_result.is_valid_with_data() {
+                    result.merge(validation_result);
+                    return Ok(result);
+                }
+
+                let original_document = validation_result.into_data()?;
+
+                if validate_against_state {
+                    //there are situations where we don't want to validate this against the state
+                    // for example when we already applied the state transition action
+                    // and we are just validating it happened
+                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
+                        document_update_price_transition.revision(),
+                        document_update_price_transition.base().id(),
+                        original_document,
+                    );
+
+                    if !validation_result.is_valid() {
+                        result.merge(validation_result);
+                        return Ok(result);
+                    }
+                }
+
+                let document_update_price_action =
+                    DocumentUpdatePriceTransitionAction::try_from_borrowed_document_update_price_transition(
+                        document_update_price_transition,
+                        original_document.clone(), //todo: find a way to not have to use cloning
+                        block_info,
+                        |_identifier| Ok(data_contract_fetch_info.clone()),
+                    )?;
+
+                if result.is_valid() {
+                    Ok(DocumentTransitionAction::UpdatePriceAction(document_update_price_action).into())
+                } else {
+                    Ok(result)
+                }
+            }
+            DocumentTransition::Purchase(document_purchase_transition) => {
+                let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new();
+
+                let validation_result =
+                    Self::find_replaced_document_v0(transition, replaced_documents);
+
+                if !validation_result.is_valid_with_data() {
+                    result.merge(validation_result);
+                    return Ok(result);
+                }
+
+                let original_document = validation_result.into_data()?;
+                
+                let original_owner_id = original_document.owner_id();
+
+                if validate_against_state {
+                    //there are situations where we don't want to validate this against the state
+                    // for example when we already applied the state transition action
+                    // and we are just validating it happened
+                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
+                        document_purchase_transition.revision(),
+                        document_purchase_transition.base().id(),
+                        original_document,
+                    );
+
+                    if !validation_result.is_valid() {
+                        result.merge(validation_result);
+                        return Ok(result);
+                    }
+                }
+
+                let document_purchase_action =
+                    DocumentPurchaseTransitionAction::try_from_borrowed_document_purchase_transition(
+                        document_purchase_transition,
+                        original_document.clone(), //todo: find a way to not have to use cloning
+                        original_owner_id,
+                        block_info,
+                        |_identifier| Ok(data_contract_fetch_info.clone()),
+                    )?;
+
+                if result.is_valid() {
+                    Ok(DocumentTransitionAction::PurchaseAction(document_purchase_action).into())
                 } else {
                     Ok(result)
                 }

@@ -6,17 +6,7 @@ use thiserror::Error;
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 #[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
-use crate::consensus::basic::data_contract::{
-    DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError,
-    DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
-    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
-    IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
-    InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, UnknownSecurityLevelError,
-    UnknownStorageKeyRequirementsError, UnknownTransferableTypeError,
-};
+use crate::consensus::basic::data_contract::{DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTransferableTypeError, UnknownTradeModeError};
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
@@ -92,6 +82,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     UnknownTransferableTypeError(UnknownTransferableTypeError),
+
+    #[error(transparent)]
+    UnknownTradeModeError(UnknownTradeModeError),
 
     #[error(transparent)]
     SerializedObjectParsingError(SerializedObjectParsingError),

@@ -48,6 +48,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             self.schema_defs.as_ref(),
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
+            self.config.documents_mutable_contract_default(),
             validate,
             validation_operations,
             platform_version,

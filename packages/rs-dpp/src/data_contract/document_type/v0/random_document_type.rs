@@ -72,6 +72,7 @@ pub struct RandomDocumentTypeParameters {
     pub field_bounds: FieldMinMaxBounds,
     pub keep_history_chance: f64,
     pub documents_mutable_chance: f64,
+    pub documents_can_be_deleted_chance: f64,
 }
 
 impl RandomDocumentTypeParameters {
@@ -118,6 +119,7 @@ use rand::Rng;
 use serde_json::json;
 use std::collections::BTreeSet;
 use std::ops::Range;
+use crate::nft::TradeMode;
 
 impl DocumentTypeV0 {
     pub fn random_document_type(
@@ -242,6 +244,7 @@ impl DocumentTypeV0 {
 
         let documents_keep_history = rng.gen_bool(parameters.keep_history_chance);
         let documents_mutable = rng.gen_bool(parameters.documents_mutable_chance);
+        let documents_can_be_deleted = rng.gen_bool(parameters.documents_can_be_deleted_chance);
 
         let name = format!("doc_type_{}", rng.gen::<u16>());
 
@@ -423,7 +426,9 @@ impl DocumentTypeV0 {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            documents_can_be_deleted,
             documents_transferable: Transferable::Never,
+            trade_mode: TradeMode::None,
             data_contract_id,
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
@@ -588,6 +593,7 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             documents_transferable: Transferable::Never,
+            trade_mode: TradeMode::None,
             data_contract_id,
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
