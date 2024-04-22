@@ -530,7 +530,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.dapi.envoy.maxConnections = base.get('platform.dapi.envoy.maxConnections');
             options.platform.dapi.envoy.maxHeapSizeInBytes = base.get('platform.dapi.envoy.maxHeapSizeInBytes');
 
-            if (typeof options.platform.dapi.envoy.http.connectTimeout) {
+            if (options.platform.dapi.envoy.http.connectTimeout) {
               delete options.platform.dapi.envoy.http.connectTimeout;
             }
 
@@ -539,6 +539,26 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             options.platform.dapi.envoy.upstreams = base.get('platform.dapi.envoy.upstreams');
+
+            options.platform.dapi.envoy.rateLimiter.docker = base.get('platform.dapi.envoy.rateLimiter.docker');
+            options.platform.dapi.envoy.rateLimiter.unit = base.get('platform.dapi.envoy.rateLimiter.unit');
+            options.platform.dapi.envoy.rateLimiter.requestsPerUnit = base.get('platform.dapi.envoy.rateLimiter.requestsPerUnit');
+            options.platform.dapi.envoy.rateLimiter.blacklist = base.get('platform.dapi.envoy.rateLimiter.blacklist');
+            options.platform.dapi.envoy.rateLimiter.whitelist = base.get('platform.dapi.envoy.rateLimiter.whitelist');
+
+            if (options.platform.dapi.envoy.rateLimiter.fillInterval) {
+              delete options.platform.dapi.envoy.rateLimiter.fillInterval;
+            }
+
+            if (options.platform.dapi.envoy.rateLimiter.maxTokens) {
+              delete options.platform.dapi.envoy.rateLimiter.maxTokens;
+            }
+
+            if (options.platform.dapi.envoy.rateLimiter.tokensPerFill) {
+              delete options.platform.dapi.envoy.rateLimiter.tokensPerFill;
+            }
+
+            options.platform.dapi.envoy.docker.image = base.get('platform.dapi.envoy.docker.image');
           });
 
         return configFile;

@@ -5,6 +5,7 @@
       stat_prefix: ingress_http
       normalize_path: true
       merge_slashes: true
+      use_remote_address: true
       path_with_escaped_slashes_action: UNESCAPE_AND_REDIRECT
       # Settings applied both to HTTP1 and HTTP2
       common_http_protocol_options:
@@ -56,48 +57,22 @@
         {{? it.platform.dapi.envoy.rateLimiter.enabled}}
         # Rate limiter
         # Local HTTP Rate limiter can limit only connections or requests per connection.
-        - name: envoy.filters.http.local_ratelimit
+        - name: envoy.filters.http.ratelimit
           typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
-            stat_prefix: http_local_rate_limiter
-            # The token_bucket configuration specifies the rate limit's behavior.
-            token_bucket:
-              # The maximum number of tokens the bucket can hold.
-              # This is the maximum number of tokens that the bucket can hold at any given time.
-              # You can think of it as the size of the bucket. If the bucket is full, any additional
-              # tokens are discarded. When a request comes in, it takes a token from the bucket.
-              # If there are no tokens left in the bucket, the request is rate limited (i.e., it is not processed).
-              max_tokens: {{=it.platform.dapi.envoy.rateLimiter.maxTokens}}
-              # The number of tokens added to the bucket at each fill interval.
-              # This is the frequency at which the token bucket is refilled. It determines
-              # how often new tokens are added to the bucket. If the fill interval is short,
-              # tokens are added frequently, allowing for a higher rate of requests.
-              # If the fill interval is long, tokens are added less frequently, which reduces
-              # the rate of requests.
-              tokens_per_fill: {{=it.platform.dapi.envoy.rateLimiter.tokensPerFill}}
-              # Frequency at which the token bucket is refilled.
-              # This is the frequency at which the token bucket is refilled. It determines how often
-              # new tokens are added to the bucket. If the fill interval is short, tokens are added
-              # frequently, allowing for a higher rate of requests. If the fill interval is long,
-              # tokens are added less frequently, which reduces the rate of requests.
-              fill_interval: {{=it.platform.dapi.envoy.rateLimiter.fillInterval}}
-            # Limit requests per connection
-            local_rate_limit_per_downstream_connection: true
-            filter_enabled:
-              runtime_key: local_rate_limit_enabled
-              default_value:
-                numerator: {{? it.platform.dapi.envoy.rateLimiter.enabled}}100{{??}}0{{?}}
-                denominator: HUNDRED
-              filter_enforced:
-                runtime_key: local_rate_limit_enforced
-                default_value:
-                  numerator: 100
-                  denominator: HUNDRED
-            response_headers_to_add:
-              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
-                header:
-                  key: x-rate-limit
-                  value: 'true'
+            "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            domain: edge_proxy_per_ip
+            # The rate limit service timeout before the request is considered failed
+            timeout: 5s
+            # Reject a request if rate limit service is unavailable
+            failure_mode_deny: true
+            # Respond with RESOURCE_EXHAUSTED status code if request is rejected
+            rate_limited_as_resource_exhausted: true
+            rate_limit_service:
+              grpc_service:
+                envoy_grpc:
+                  cluster_name: ratelimit_service
+                timeout: 0.5s
+              transport_api_version: V3
         {{?}}
         - name: envoy.filters.http.grpc_web
           typed_config:
@@ -190,6 +165,11 @@
                   cluster: dapi_json_rpc
                   # Upstream response timeout
                   timeout: 10s
+            {{? it.platform.dapi.envoy.rateLimiter.enabled }}
+            rate_limits:
+              - actions:
+                  remote_address: {}
+            {{?}}
             typed_per_filter_config:
               envoy.filters.http.cors:
                 "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
@@ -247,121 +227,129 @@ static_resources:
                     filename: "/etc/ssl/private.key"
         {{?}}
   clusters:
-   - name: dapi_api
-     type: STRICT_DNS
-     per_connection_buffer_limit_bytes: 32768  # 32 KiB
-     typed_extension_protocol_options:
-       envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-         "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-         explicit_http_config:
-           http2_protocol_options:
-             initial_stream_window_size: 65536  # 64 KiB
-             initial_connection_window_size: 1048576  # 1 MiB
-             connection_keepalive:
-               interval: 20s
-               timeout: 5s
-     circuit_breakers:
-       thresholds:
-         - priority: DEFAULT
-           # The maximum number of connections that Envoy will establish to all hosts in a cluster.
-           max_connections: {{= it.platform.dapi.envoy.upstreams.dapiApi.maxConnections }}
-           # The maximum number of requests that will be queued if `max_requests` is reached.
-           max_pending_requests: {{= it.platform.dapi.envoy.upstreams.dapiApi.maxPendingRequests }}
-           # The maximum number of parallel requests.
-           max_requests: {{= it.platform.dapi.envoy.upstreams.dapiApi.maxRequests }}
-     load_assignment:
-       cluster_name: dapi_api
-       endpoints:
-         - lb_endpoints:
-             - endpoint:
-                 address:
-                   socket_address:
-                     address: dapi_api
-                     port_value: 3005
-   - name: dapi_core_streams
-     type: STRICT_DNS
-     per_connection_buffer_limit_bytes: 32768  # 32 KiB
-     typed_extension_protocol_options:
-       envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-         "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-         explicit_http_config:
-           http2_protocol_options:
-             initial_stream_window_size: 65536  # 64 KiB
-             initial_connection_window_size: 1048576  # 1 MiB
-             connection_keepalive:
-               interval: 20s
-               timeout: 5s
-     circuit_breakers:
-       thresholds:
-         - priority: DEFAULT
-           # The maximum number of connections that Envoy will establish to all hosts in a cluster.
-           max_connections: {{= it.platform.dapi.envoy.upstreams.dapiCoreStreams.maxConnections }}
-           # The maximum number of requests that will be queued if `max_requests` is reached.
-           max_pending_requests: {{= it.platform.dapi.envoy.upstreams.dapiCoreStreams.maxPendingRequests }}
-           # The maximum number of parallel requests.
-           max_requests: {{= it.platform.dapi.envoy.upstreams.dapiCoreStreams.maxRequests }}
-     load_assignment:
-       cluster_name: dapi_core_streams
-       endpoints:
-         - lb_endpoints:
-             - endpoint:
-                 address:
-                   socket_address:
-                     address: dapi_core_streams
-                     port_value: 3006
-   - name: dapi_json_rpc
-     type: STRICT_DNS
-     per_connection_buffer_limit_bytes: 32768  # 32 KiB
-     typed_extension_protocol_options:
-       envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-         "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-         explicit_http_config:
-           http2_protocol_options:
-             initial_stream_window_size: 65536  # 64 KiB
-             initial_connection_window_size: 1048576  # 1 MiB
-             connection_keepalive:
-               interval: 20s
-               timeout: 5s
-     load_assignment:
-       cluster_name: dapi_json_rpc
-       endpoints:
-         - lb_endpoints:
-             - endpoint:
-                 address:
-                   socket_address:
-                     address: dapi_api
-                     port_value: 3004
-   - name: drive_grpc
-     type: STRICT_DNS
-     per_connection_buffer_limit_bytes: 32768  # 32 KiB
-     typed_extension_protocol_options:
-       envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-         "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-         explicit_http_config:
-           http2_protocol_options:
-             initial_stream_window_size: 65536  # 64 KiB
-             initial_connection_window_size: 1048576  # 1 MiB
-             connection_keepalive:
-               interval: 20s
-               timeout: 5s
-     circuit_breakers:
-       thresholds:
-         - priority: DEFAULT
-           # The maximum number of connections that Envoy will establish to all hosts in a cluster.
-           max_connections: {{= it.platform.dapi.envoy.upstreams.driveGrpc.maxConnections }}
-           # The maximum number of requests that will be queued if `max_requests` is reached.
-           max_pending_requests: {{= it.platform.dapi.envoy.upstreams.driveGrpc.maxPendingRequests }}
-           # The maximum number of parallel requests.
-           max_requests: {{= it.platform.dapi.envoy.upstreams.driveGrpc.maxRequests }}
-     load_assignment:
-       cluster_name: drive_grpc
-       endpoints:
-         - lb_endpoints:
-             - endpoint:
-                 address:
-                   socket_address:
-                     address: drive_abci
-                     port_value: 26670
+    - name: dapi_api
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              initial_stream_window_size: 65536  # 64 KiB
+              initial_connection_window_size: 1048576  # 1 MiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            # The maximum number of connections that Envoy will establish to all hosts in a cluster.
+            max_connections: {{= it.platform.dapi.envoy.upstreams.dapiApi.maxConnections }}
+            # The maximum number of requests that will be queued if `max_requests` is reached.
+            max_pending_requests: {{= it.platform.dapi.envoy.upstreams.dapiApi.maxPendingRequests }}
+            # The maximum number of parallel requests.
+            max_requests: {{= it.platform.dapi.envoy.upstreams.dapiApi.maxRequests }}
+      load_assignment:
+        cluster_name: dapi_api
+        endpoints:
+        - lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: dapi_api
+                  port_value: 3005
+    - name: dapi_core_streams
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              initial_stream_window_size: 65536  # 64 KiB
+              initial_connection_window_size: 1048576  # 1 MiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            # The maximum number of connections that Envoy will establish to all hosts in a cluster.
+            max_connections: {{= it.platform.dapi.envoy.upstreams.dapiCoreStreams.maxConnections }}
+            # The maximum number of requests that will be queued if `max_requests` is reached.
+            max_pending_requests: {{= it.platform.dapi.envoy.upstreams.dapiCoreStreams.maxPendingRequests }}
+            # The maximum number of parallel requests.
+            max_requests: {{= it.platform.dapi.envoy.upstreams.dapiCoreStreams.maxRequests }}
+      load_assignment:
+        cluster_name: dapi_core_streams
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dapi_core_streams
+                      port_value: 3006
+    - name: dapi_json_rpc
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              initial_stream_window_size: 65536  # 64 KiB
+              initial_connection_window_size: 1048576  # 1 MiB
+      load_assignment:
+        cluster_name: dapi_json_rpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dapi_api
+                      port_value: 3004
+    - name: drive_grpc
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              initial_stream_window_size: 65536  # 64 KiB
+              initial_connection_window_size: 1048576  # 1 MiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            # The maximum number of connections that Envoy will establish to all hosts in a cluster.
+            max_connections: {{= it.platform.dapi.envoy.upstreams.driveGrpc.maxConnections }}
+            # The maximum number of requests that will be queued if `max_requests` is reached.
+            max_pending_requests: {{= it.platform.dapi.envoy.upstreams.driveGrpc.maxPendingRequests }}
+            # The maximum number of parallel requests.
+            max_requests: {{= it.platform.dapi.envoy.upstreams.driveGrpc.maxRequests }}
+      load_assignment:
+        cluster_name: drive_grpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: drive_abci
+                      port_value: 26670
+    {{? it.platform.dapi.envoy.rateLimiter.enabled }}
+    - name: ratelimit_service
+      type: STRICT_DNS
+      connect_timeout: 1s
+      protocol_selection: USE_CONFIGURED_PROTOCOL
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: ratelimit_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dapi_envoy_rate_limiter
+                      port_value: 8080
+    {{?}}
 
 admin:
  address:

@@ -154,9 +154,13 @@ export default function getBaseConfigFactory(homeDir) {
               port: 443,
             },
             rateLimiter: {
-              maxTokens: 300,
-              tokensPerFill: 150,
-              fillInterval: '60s',
+              docker: {
+                image: 'envoyproxy/ratelimit:3fcc3609',
+              },
+              unit: 'minute',
+              requestsPerUnit: 150,
+              blacklist: [],
+              whitelist: [],
               enabled: true,
             },
             ssl: {

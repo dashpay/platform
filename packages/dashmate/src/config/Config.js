@@ -182,4 +182,4 @@ export default class Config {
 }
 
 Config.ajv = new Ajv({ coerceTypes: true });
-addFormats(Config.ajv, { mode: 'fast', formats: ['ipv4'] });
+addFormats(Config.ajv, { mode: 'fast', formats: ['ipv4', 'ipv6'] });

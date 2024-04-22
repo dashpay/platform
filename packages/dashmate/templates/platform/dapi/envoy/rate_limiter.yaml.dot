@@ -1,0 +1,24 @@
+domain: edge_proxy_per_ip
+descriptors:
+  - key: remote_address
+    rate_limit:
+      unit: {{= it.platform.dapi.envoy.rateLimiter.unit }}
+      requests_per_unit: {{= it.platform.dapi.envoy.rateLimiter.requestsPerUnit }}
+
+  # Blacklisted IPs
+  {{~ it.platform.dapi.envoy.rateLimiter.blacklist :ip }}
+  - key: remote_address
+    value: {{= ip }}
+    rate_limit:
+      unit: second
+      requests_per_unit: 0
+  {{~}}
+
+  # Whitelisted IPs
+  {{~ it.platform.dapi.envoy.rateLimiter.whitelist :ip }}
+  - key: remote_address
+    value: {{= ip }}
+    rate_limit:
+      unit: second
+      requests_per_unit: 10000
+  {{~}}

@@ -106,6 +106,18 @@ export default {
       required: ['maxConnections', 'maxPendingRequests', 'maxRequests'],
       additionalProperties: false,
     },
+    ipList: {
+      type: 'string',
+      oneOf: [
+        {
+          format: 'ipv4',
+        },
+        {
+          format: 'ipv6',
+        },
+      ],
+      minLength: 1,
+    },
   },
   properties: {
     description: {
@@ -422,22 +434,36 @@ export default {
                 rateLimiter: {
                   type: 'object',
                   properties: {
-                    maxTokens: {
-                      type: 'integer',
-                      minimum: 0,
+                    docker: {
+                      $ref: '#/definitions/docker',
                     },
-                    tokensPerFill: {
-                      type: 'integer',
-                      minimum: 0,
+                    unit: {
+                      type: 'string',
+                      enum: ['second', 'minute', 'hour', 'day'],
                     },
-                    fillInterval: {
-                      $ref: '#/definitions/duration',
+                    requestsPerUnit: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
+                    blacklist: {
+                      type: 'array',
+                      items: {
+                        $ref: '#/definitions/ipList',
+                      },
+                      description: 'List of IP addresses that are blacklisted from making requests',
+                    },
+                    whitelist: {
+                      type: 'array',
+                      items: {
+                        $ref: '#/definitions/ipList',
+                      },
+                      description: 'List of IP addresses that are whitelisted to make requests without limits',
                     },
                     enabled: {
                       type: 'boolean',
                     },
                   },
-                  required: ['enabled', 'fillInterval', 'tokensPerFill', 'maxTokens'],
+                  required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist'],
                   additionalProperties: false,
                 },
                 ssl: {

@@ -56,6 +56,10 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       dockerComposeFiles.push(insightComposeFile);
     }
 
+    if (config.get('platform.dapi.envoy.rateLimiter.enabled')) {
+      dockerComposeFiles.push('docker-compose.rate_limiter.yml');
+    }
+
     // we need this for compatibility with old configs
     const projectIdWithPrefix = configFile.getProjectId() ? `_${configFile.getProjectId()}` : '';
 

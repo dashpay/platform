@@ -1,0 +1,49 @@
+version: '3.7'
+
+services:
+  dapi_envoy:
+    depends_on:
+      - dapi_api
+      - dapi_tx_filter_stream
+      - drive_abci
+      - dapi_envoy_rate_limiter
+
+  dapi_envoy_rate_limiter:
+    labels:
+      org.dashmate.service.title: "DAPI Envoy rate limiter"
+    image: ${PLATFORM_DAPI_ENVOY_RATE_LIMITER_DOCKER_IMAGE:?err}
+    command: /bin/ratelimit
+    depends_on:
+      - dapi_envoy_rate_limiter_redis
+    networks:
+      - envoy_rate_limiter
+    volumes:
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/rate_limiter.yaml:/data/ratelimit/config/config.yaml:ro
+    environment:
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+      - BACKEND_TYPE=redis
+      - REDIS_SOCKET_TYPE=tcp
+      - REDIS_URL=redis:6379
+      - RUNTIME_ROOT=/data
+      - RUNTIME_SUBDIRECTORY=ratelimit
+      - RUNTIME_WATCH_ROOT=false
+      - CONFIG_TYPE=FILE
+      - GRPC_MAX_CONNECTION_AGE=300
+      - GRPC_MAX_CONNECTION_AGE_GRACE=10
+      - GRPC_PORT=8080
+    expose:
+      - 8080
+    profiles:
+      - platform
+
+  dapi_envoy_rate_limiter_redis:
+    labels:
+      org.dashmate.service.title: "DAPI Envoy rate limiter storage"
+    image: redis:alpine
+    expose:
+      - 6379
+    networks:
+      - envoy_rate_limiter
+    profiles:
+      - platform
