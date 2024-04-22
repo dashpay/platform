@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::{Error, Sdk};
 
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::put_settings::PutSettings;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -111,10 +112,13 @@ impl<S: Signer> PutDocument<S> for Document {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
+        let block_info = block_info_from_metadata(response.metadata()?)?;
+
         let proof = response.proof_owned()?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
+            &block_info,
             proof.grovedb_proof.as_slice(),
             &|_| Ok(Some(data_contract.clone())),
             sdk.version(),

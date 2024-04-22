@@ -24,6 +24,9 @@ use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
+#[cfg(any(test, feature = "validation"))]
+use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
@@ -36,6 +39,7 @@ use crate::identity::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -82,6 +86,7 @@ fn consensus_or_protocol_value_error(platform_value_error: platform_value::Error
 
 impl DocumentTypeV0 {
     // TODO: Split into multiple functions
+    #[allow(unused_variables)]
     pub(crate) fn try_from_schema_v0(
         data_contract_id: Identifier,
         name: &str,
@@ -90,6 +95,7 @@ impl DocumentTypeV0 {
         default_keeps_history: bool,
         default_mutability: bool,
         validate: bool, // we don't need to validate if loaded from state
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
@@ -113,6 +119,39 @@ impl DocumentTypeV0 {
 
         #[cfg(feature = "validation")]
         if validate {
+            // Make sure a document type name is compliant
+            if !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                || name.is_empty()
+                || name.len() > 64
+            {
+                return Err(ProtocolError::ConsensusError(Box::new(
+                    InvalidDocumentTypeNameError::new(name.to_string()).into(),
+                )));
+            }
+
+            // Validate document schema depth
+            let mut result = validate_max_depth(&root_schema, platform_version)?;
+
+            if !result.is_valid() {
+                let error = result.errors.remove(0);
+
+                let schema_size = result.into_data()?.size;
+
+                validation_operations.push(
+                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
+                );
+
+                return Err(ProtocolError::ConsensusError(Box::new(error)));
+            }
+
+            let schema_size = result.into_data()?.size;
+
+            validation_operations.push(
+                ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
+            );
+
             // Make sure JSON Schema is compilable
             let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
                 ProtocolError::ConsensusError(
@@ -131,29 +170,20 @@ impl DocumentTypeV0 {
                 })?)
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
-            // Validate document schema depth
-            let mut result = validate_max_depth(&root_schema, platform_version)?;
-
-            if !result.is_valid() {
-                let error = result.errors.remove(0);
-
-                return Err(ProtocolError::ConsensusError(Box::new(error)));
-            }
-
             // TODO: Are we still aiming to use RE2 with linear time complexity to protect from ReDoS attacks?
             //  If not we can remove this validation
             // Validate reg exp compatibility with RE2 and byteArray usage
-            result.merge(traversal_validator(
+            let mut traversal_validator_result = traversal_validator(
                 &root_schema,
                 &[
                     pattern_is_valid_regex_validator,
                     byte_array_has_no_items_as_parent_validator,
                 ],
                 platform_version,
-            )?);
+            )?;
 
-            if !result.is_valid() {
-                let error = result.errors.remove(0);
+            if !traversal_validator_result.is_valid() {
+                let error = traversal_validator_result.errors.remove(0);
 
                 return Err(ProtocolError::ConsensusError(Box::new(error)));
             }
@@ -190,6 +220,12 @@ impl DocumentTypeV0 {
 
         #[cfg(feature = "validation")]
         if validate {
+            validation_operations.push(
+                ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
+                    property_values.values().len() as u64,
+                ),
+            );
+
             // We should validate that the positions are continuous
             for (pos, value) in property_values.values().enumerate() {
                 if value.get_integer::<u32>(property_names::POSITION)? != pos as u32 {
@@ -266,6 +302,13 @@ impl DocumentTypeV0 {
 
                         #[cfg(feature = "validation")]
                         if validate {
+                            validation_operations.push(
+                                ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
+                                    index.properties.len() as u64,
+                                    index.unique,
+                                ),
+                            );
+
                             // Unique indices produces significant load on the system during state validation
                             // so we need to limit their number to prevent of spikes and DoS attacks
                             if index.unique {
@@ -713,4 +756,179 @@ fn insert_values_nested(
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_value::platform_value;
+
+    mod document_type_name {
+        use super::*;
+
+        #[test]
+        fn should_be_valid() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let _result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "valid_name-a-b-123",
+                schema,
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should be valid");
+        }
+
+        #[test]
+        fn should_no_be_empty() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "",
+                schema,
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+        }
+
+        #[test]
+        fn should_no_be_longer_than_64_chars() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                &"a".repeat(65),
+                schema,
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+        }
+
+        #[test]
+        fn should_no_be_alphanumeric() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "invalid name",
+                schema.clone(),
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "invalid&name",
+                schema,
+                None,
+                false,
+                false,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+        }
+    }
 }

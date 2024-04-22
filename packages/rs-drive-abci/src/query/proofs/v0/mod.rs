@@ -90,7 +90,7 @@ impl<C> Platform<C> {
             })
             .collect::<Result<Vec<_>, QueryError>>());
 
-        let proof = self.drive.prove_multiple(
+        let proof = self.drive.prove_multiple_state_transition_results(
             &identity_requests,
             &contract_ids,
             &document_queries,
@@ -240,6 +240,36 @@ mod tests {
                 document_type: "niceDocument".to_string(),
                 document_type_keeps_history: false,
                 document_id: vec![0; 32],
+            }],
+        };
+
+        let validation_result = platform
+            .query_proofs_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(validation_result.data, Some(GetProofsResponseV0 {
+            result: Some(get_proofs_response_v0::Result::Proof(proof)),
+            metadata: Some(_),
+        }) if !proof.grovedb_proof.is_empty()));
+    }
+
+    #[test]
+    fn test_prove_all() {
+        let (platform, state, version) = setup_platform();
+
+        let request = GetProofsRequestV0 {
+            identities: vec![IdentityRequest {
+                identity_id: vec![0; 32],
+                request_type: 0,
+            }],
+            contracts: vec![ContractRequest {
+                contract_id: vec![0; 32],
+            }],
+            documents: vec![DocumentRequest {
+                contract_id: vec![0; 32],
+                document_type: "niceDocument".to_string(),
+                document_type_keeps_history: false,
+                document_id: vec![1; 32],
             }],
         };
 

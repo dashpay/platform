@@ -8,7 +8,8 @@ use dapi_grpc::platform::v0::{
     get_epochs_info_request, get_identity_balance_and_revision_request,
     get_identity_balance_request, get_identity_by_public_key_hash_request,
     get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request,
-    get_identity_request, GetProtocolVersionUpgradeStateRequest,
+    get_identity_request, get_path_elements_request, GetPathElementsRequest,
+    GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, ResponseMetadata,
 };
@@ -16,7 +17,7 @@ use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
 };
-use dpp::block::epoch::EpochIndex;
+use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
@@ -30,6 +31,8 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
 
+use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
+use dpp::block::block_info::BlockInfo;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::DriveQuery;
@@ -801,7 +804,18 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             error: e.to_string(),
         })?;
 
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        if metadata.epoch > MAX_EPOCH as u32 {
+            return Err(drive::error::Error::Proof(ProofError::InvalidMetadata(format!("platform returned an epoch {} that was higher that maximum of a 16 bit integer", metadata.epoch))).into());
+        }
+
+        let block_info = BlockInfo {
+            time_ms: metadata.time_ms,
+            height: metadata.height,
+            core_height: metadata.core_chain_locked_height,
+            epoch: (metadata.epoch as u16).try_into()?,
+        };
 
         let known_contracts_provider_fn =
             |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
@@ -812,6 +826,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
+            &block_info,
             &proof.grovedb_proof,
             &known_contracts_provider_fn,
             platform_version,
@@ -820,9 +835,9 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, metadata, &root_hash, provider)?;
 
-        Ok((Some(result), mtd.clone()))
+        Ok((Some(result), metadata.clone()))
     }
 }
 
@@ -1038,6 +1053,43 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
         Ok((Some(votes), mtd.clone()))
     }
 }
+
+impl FromProof<GetPathElementsRequest> for Elements {
+    type Request = GetPathElementsRequest;
+    type Response = GetPathElementsResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let request_v0: GetPathElementsRequestV0 = match request.version {
+            Some(get_path_elements_request::Version::V0(v0)) => v0,
+            None => return Err(Error::EmptyVersion),
+        };
+
+        let path = request_v0.path;
+        let keys = request_v0.keys;
+
+        let (root_hash, objects) =
+            Drive::verify_elements(&proof.grovedb_proof, path, keys, platform_version)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(objects), mtd.clone()))
+    }
+}
+
 // #[cfg_attr(feature = "mocks", mockall::automock)]
 impl<'dq, Q> FromProof<Q> for Documents
 where

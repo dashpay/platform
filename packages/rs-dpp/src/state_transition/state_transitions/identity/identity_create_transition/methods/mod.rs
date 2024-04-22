@@ -9,6 +9,8 @@ use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
+use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 #[cfg(feature = "state-transition-signing")]
@@ -27,6 +29,7 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransition {
         asset_lock_proof_private_key: &[u8],
         signer: &S,
         bls: &impl BlsModule,
+        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         match platform_version
@@ -40,6 +43,7 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransition {
                 asset_lock_proof_private_key,
                 signer,
                 bls,
+                user_fee_increase,
                 platform_version,
             )?),
             v => Err(ProtocolError::UnknownVersionError(format!(

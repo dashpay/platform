@@ -25767,6 +25767,7 @@ $root.org = (function() {
                                  * @property {number|null} [firstCoreBlockHeight] EpochInfo firstCoreBlockHeight
                                  * @property {number|Long|null} [startTime] EpochInfo startTime
                                  * @property {number|null} [feeMultiplier] EpochInfo feeMultiplier
+                                 * @property {number|null} [protocolVersion] EpochInfo protocolVersion
                                  */
 
                                 /**
@@ -25825,6 +25826,14 @@ $root.org = (function() {
                                 EpochInfo.prototype.feeMultiplier = 0;
 
                                 /**
+                                 * EpochInfo protocolVersion.
+                                 * @member {number} protocolVersion
+                                 * @memberof org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo
+                                 * @instance
+                                 */
+                                EpochInfo.prototype.protocolVersion = 0;
+
+                                /**
                                  * Creates a new EpochInfo instance using the specified properties.
                                  * @function create
                                  * @memberof org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo
@@ -25858,6 +25867,8 @@ $root.org = (function() {
                                         writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.startTime);
                                     if (message.feeMultiplier != null && Object.hasOwnProperty.call(message, "feeMultiplier"))
                                         writer.uint32(/* id 5, wireType 1 =*/41).double(message.feeMultiplier);
+                                    if (message.protocolVersion != null && Object.hasOwnProperty.call(message, "protocolVersion"))
+                                        writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.protocolVersion);
                                     return writer;
                                 };
 
@@ -25906,6 +25917,9 @@ $root.org = (function() {
                                             break;
                                         case 5:
                                             message.feeMultiplier = reader.double();
+                                            break;
+                                        case 6:
+                                            message.protocolVersion = reader.uint32();
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -25957,6 +25971,9 @@ $root.org = (function() {
                                     if (message.feeMultiplier != null && message.hasOwnProperty("feeMultiplier"))
                                         if (typeof message.feeMultiplier !== "number")
                                             return "feeMultiplier: number expected";
+                                    if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
+                                        if (!$util.isInteger(message.protocolVersion))
+                                            return "protocolVersion: integer expected";
                                     return null;
                                 };
 
@@ -25996,6 +26013,8 @@ $root.org = (function() {
                                             message.startTime = new $util.LongBits(object.startTime.low >>> 0, object.startTime.high >>> 0).toNumber(true);
                                     if (object.feeMultiplier != null)
                                         message.feeMultiplier = Number(object.feeMultiplier);
+                                    if (object.protocolVersion != null)
+                                        message.protocolVersion = object.protocolVersion >>> 0;
                                     return message;
                                 };
 
@@ -26026,6 +26045,7 @@ $root.org = (function() {
                                         } else
                                             object.startTime = options.longs === String ? "0" : 0;
                                         object.feeMultiplier = 0;
+                                        object.protocolVersion = 0;
                                     }
                                     if (message.number != null && message.hasOwnProperty("number"))
                                         object.number = message.number;
@@ -26043,6 +26063,8 @@ $root.org = (function() {
                                             object.startTime = options.longs === String ? $util.Long.prototype.toString.call(message.startTime) : options.longs === Number ? new $util.LongBits(message.startTime.low >>> 0, message.startTime.high >>> 0).toNumber(true) : message.startTime;
                                     if (message.feeMultiplier != null && message.hasOwnProperty("feeMultiplier"))
                                         object.feeMultiplier = options.json && !isFinite(message.feeMultiplier) ? String(message.feeMultiplier) : message.feeMultiplier;
+                                    if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
+                                        object.protocolVersion = message.protocolVersion;
                                     return object;
                                 };
 

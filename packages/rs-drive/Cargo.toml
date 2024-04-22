@@ -1,7 +1,7 @@
 [package]
 name = "drive"
 description = "Dash drive built on top of GroveDB"
-version = "1.0.0-dev.7"
+version = "1.0.0-dev.11"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -11,48 +11,53 @@ authors = [
 edition = "2021"
 rust-version = "1.76"
 license = "MIT"
+resolver = "2"
 
 [dependencies]
-parking_lot = "0.12.1"
-arc-swap = "1.7.0"
-serde = { version = "1.0.152", features = ["derive"] }
 platform-version = { path = "../rs-platform-version" }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+# used to convert integers to bytes, needed in verifier
 integer-encoding = { version = "4.0.0" }
-rand = { version = "0.8.4", features = ["small_rng"] }
+# used for encoding, needed in verifier
 byteorder = { version = "1.4.3" }
+# used for query order by, needed in verifier
 indexmap = { version = "2.0.2" }
+# used for creating queries from sql, can be used in verifier
 sqlparser = { version = "0.38.0" }
-thiserror = { version = "1.0.30" }
-moka = { version = "0.11.1", features = ["future", "futures-util"] }
+# used for int maps and needed in the verifier
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = ["drive", "cbor", "random-public-keys"] }
-derive_more = "0.99.17"
+dpp = { path = "../rs-dpp", features = ["state-transitions"], default-features = false, optional = true }
+thiserror = { version = "1.0.58" }
 tracing = { version = "0.1.37", default-features = false, features = [] }
+derive_more = { version = "0.99.17", optional = true}
 
 # optional dependencies
+parking_lot = { version = "0.12.1", optional = true }
+ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined", optional = true }
+arc-swap = { version = "1.7.0", optional = true }
+serde = { version = "1.0.197", features = ["derive"], optional = true }
+rand = { version = "0.8.4", features = ["small_rng"], optional = true }
+moka = { version = "0.11.1", features = ["future", "futures-util"], optional = true }
 bs58 = { version = "0.5.0", optional = true }
 base64 = { version = "0.21.0", optional = true }
 hex = { version = "0.4.3", optional = true }
 tempfile = { version = "3", optional = true }
-serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "2.0.0", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.11.0", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "d007bed7544bf837bdf155e696a530b90d5f82e5", optional = true }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "d007bed7544bf837bdf155e696a530b90d5f82e5", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "d007bed7544bf837bdf155e696a530b90d5f82e5" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "d007bed7544bf837bdf155e696a530b90d5f82e5", optional = true }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "f5a3382c5537de7417e983cdf2132792aa9fdc9d", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "f5a3382c5537de7417e983cdf2132792aa9fdc9d", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "f5a3382c5537de7417e983cdf2132792aa9fdc9d" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "f5a3382c5537de7417e983cdf2132792aa9fdc9d", optional = true }
 
 [dev-dependencies]
-anyhow = { version = "1.0.75" }
 criterion = "0.3.5"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
 dpp = { path = "../rs-dpp", features = [
-  "drive",
+  "state-transitions",
+  "fee-distribution",
   "document-cbor-conversion",
   "random-documents",
   "random-identities",
@@ -61,28 +66,46 @@ dpp = { path = "../rs-dpp", features = [
   "system_contracts",
   "factories",
   "data-contract-json-conversion",
-] }
+], default-features = false }
+serde_json = { version = "1.0", features = ["preserve_order"] }
 
 [[bench]]
 name = "benchmarks"
 harness = false
 
 [features]
-default = ["full", "verify", "fixtures-and-mocks"]
-fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify"]
-full = [
+default = ["full", "verify", "fixtures-and-mocks", "cbor_query"]
+fee-distribution = ["dpp/fee-distribution"]
+fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify", "dpp/data-contract-json-conversion", "dpp/random-public-keys"]
+server = [
+  "serde",
+  "parking_lot",
+  "arc-swap",
+  "moka",
+  "dpp/platform-value-json",
+  "dpp/system_contracts",
+  "dpp/state-transitions",
+  "fee-distribution",
+  "grovedb/full",
   "grovedb/estimated_costs",
   "grovedb-storage",
   "grovedb-costs",
-  "bs58",
-  "base64",
+  "itertools",
+  "rand", #todo: this should be removed eventually
   "hex",
-  "tempfile",
-  "serde_json",
+  "derive_more",
   "enum-map",
   "intmap",
-  "chrono",
-  "itertools",
 ]
+full = [
+  "server",
+  "ciborium",
+  "serde",
+  "bs58",
+  "tempfile",
+  "base64",
+  "chrono",
+]
+cbor_query = ["ciborium", "dpp/platform-value-cbor", "dpp/cbor"]
 grovedb_operations_logging = []
-verify = ["grovedb/verify", "grovedb-costs"]
+verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions"]

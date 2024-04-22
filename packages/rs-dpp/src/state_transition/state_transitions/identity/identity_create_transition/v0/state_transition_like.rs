@@ -1,3 +1,5 @@
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use platform_value::BinaryData;
 
 use crate::prelude::UserFeeIncrease;
@@ -53,7 +55,7 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
 
     /// this is based on the asset lock
     fn unique_identifiers(&self) -> Vec<String> {
-        vec![base64::encode(self.identity_id)]
+        vec![BASE64_STANDARD.encode(self.identity_id)]
     }
 
     fn user_fee_increase(&self) -> UserFeeIncrease {

@@ -27,6 +27,10 @@ impl ValueError {
         }
     }
 
+    pub fn new_from_string(value_error: String) -> Self {
+        Self { value_error }
+    }
+
     pub fn value_error(&self) -> &str {
         &self.value_error
     }

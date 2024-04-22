@@ -3,7 +3,7 @@ name: Tests
 on:
   workflow_dispatch:
   pull_request:
-    types: [ opened, synchronize, reopened, ready_for_review ]
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - master
       - 'v[0-9]+\.[0-9]+-dev'
@@ -88,7 +88,7 @@ jobs:
       lint-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
       # Run drive tests on self-hosted 4x
       test-runner: ${{ contains(fromJSON('["drive-abci"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]' || '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' }}
-      check-each-feature: ${{ contains(fromJSON('["rs-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
+      check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
 
   rs-crates-security:
     name: Rust crates security audit

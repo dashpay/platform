@@ -64,21 +64,13 @@ where
         request_finalize_block: FinalizeBlockCleanedRequest,
         mut block_execution_context: BlockExecutionContext,
         transaction: &Transaction,
-        _last_committed_platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
         let block_state_info = block_execution_context.block_state_info();
         let epoch_info = block_execution_context.epoch_info();
         let block_platform_state = block_execution_context.block_platform_state();
-
-        // TODO: The block was processed with last committed platform version, it's wrong to call all functions
-        //  here with new version. Except probably state storage version.
-        //  Another problem that block was processed wit last committed version but we storing state with new version.
-        //  It means when we load the state we would expect this block to be processed with the new version.
-        let current_protocol_version = block_platform_state.current_protocol_version_in_consensus();
-
-        let platform_version = PlatformVersion::get(current_protocol_version)?;
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
@@ -131,9 +123,11 @@ where
             return Ok(validation_result.into());
         }
 
-        let current_quorum_hash = block_platform_state
+        let last_committed_state = self.state.load();
+        let current_quorum_hash = last_committed_state
             .current_validator_set_quorum_hash()
             .into();
+
         if current_quorum_hash != commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
@@ -168,7 +162,7 @@ where
         {
             // Verify commit
 
-            let quorum_public_key = block_platform_state
+            let quorum_public_key = last_committed_state
                 .current_validator_set()?
                 .threshold_public_key();
             let quorum_type = self.config.validator_set_quorum_type();
@@ -210,28 +204,30 @@ where
             .unsigned_withdrawal_transactions_mut()
             .drain();
 
-        // Drain signatures instead of cloning
-        let signatures = commit_info
-            .threshold_vote_extensions
-            .drain(..)
-            .map(|vote_extension| {
-                let signature_bytes: [u8; 96] =
-                    vote_extension.signature.try_into().map_err(|e| {
-                        AbciError::BadRequestDataSize(format!(
-                            "invalid vote extension signature size: {}",
-                            hex::encode(e)
-                        ))
-                    })?;
+        if !unsigned_withdrawal_transactions.is_empty() {
+            // Drain signatures instead of cloning
+            let signatures = commit_info
+                .threshold_vote_extensions
+                .drain(..)
+                .map(|vote_extension| {
+                    let signature_bytes: [u8; 96] =
+                        vote_extension.signature.try_into().map_err(|e| {
+                            AbciError::BadRequestDataSize(format!(
+                                "invalid vote extension signature size: {}",
+                                hex::encode(e)
+                            ))
+                        })?;
 
-                Ok(BLSSignature::from(signature_bytes))
-            })
-            .collect::<Result<_, AbciError>>()?;
+                    Ok(BLSSignature::from(signature_bytes))
+                })
+                .collect::<Result<_, AbciError>>()?;
 
-        self.append_signatures_and_broadcast_withdrawal_transactions(
-            unsigned_withdrawal_transactions,
-            signatures,
-            platform_version,
-        )?;
+            self.append_signatures_and_broadcast_withdrawal_transactions(
+                unsigned_withdrawal_transactions,
+                signatures,
+                platform_version,
+            )?;
+        }
 
         // Update platform (drive abci) state
 
@@ -245,6 +241,8 @@ where
         }
         .into();
 
+        self.update_drive_cache(&block_execution_context, platform_version)?;
+
         let block_platform_state = block_execution_context.block_platform_state_owned();
 
         self.update_state_cache(
@@ -253,8 +251,6 @@ where
             transaction,
             platform_version,
         )?;
-
-        self.update_drive_cache(platform_version)?;
 
         // Gather some metrics
         crate::metrics::abci_last_block_time(block_header.time.seconds as u64);

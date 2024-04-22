@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::epoch::Epoch;
+use serde_json::json;
 
 use dpp::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, IncompatibleDataContractSchemaError,
@@ -14,19 +16,20 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::schema::{
-    get_operation_and_property_name_json, validate_schema_compatibility,
+    validate_schema_compatibility, IncompatibleJsonSchemaOperation,
 };
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::JsonValue;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::{Value, ValueMap};
+use dpp::platform_value::ValueMap;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 
 use crate::error::execution::ExecutionError;
@@ -35,6 +38,10 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {
@@ -42,6 +49,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
         &self,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -49,6 +58,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
     fn transform_into_action_v0(
         &self,
         validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -58,10 +68,13 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         &self,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let action = self.transform_into_action_v0(validation_mode, platform_version)?;
+        let action =
+            self.transform_into_action_v0(validation_mode, execution_context, platform_version)?;
 
         if !action.is_valid() {
             return Ok(action);
@@ -92,21 +105,30 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         // Data contract should exist
         let add_to_cache_if_pulled = validation_mode.can_alter_cache();
+
+        let data_contract_fetch_info = drive.get_contract_with_fetch_info_and_fee(
+            new_data_contract.id().to_buffer(),
+            Some(epoch),
+            add_to_cache_if_pulled,
+            tx,
+            platform_version,
+        )?;
+
+        let fee = data_contract_fetch_info.0.ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution(
+                "fee must exist in validate state for data contract update transition",
+            ),
+        ))?;
+
+        // We add the cost for fetching the contract even if the contract doesn't exist or was in cache
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
         // Data contract should exist
-        let Some(contract_fetch_info) = drive
-            .get_contract_with_fetch_info_and_fee(
-                new_data_contract.id().to_buffer(),
-                None,
-                add_to_cache_if_pulled,
-                tx,
-                platform_version,
-            )?
-            .1
-        else {
+        let Some(contract_fetch_info) = data_contract_fetch_info.1 else {
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                     self,
-                )?,
+                ),
             );
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -132,7 +154,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                     self,
-                )?,
+                ),
             );
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -167,7 +189,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                     self,
-                )?,
+                ),
             );
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -195,9 +217,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
             if !validate_update_result.is_valid() {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                        self,
-                    )?,
+                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                    self,
+                ),
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -222,7 +244,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                         BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                             self,
-                        )?,
+                        ),
                     );
 
                     return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -247,7 +269,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                         BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                             self,
-                        )?,
+                        ),
                     );
 
                     return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -275,7 +297,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                     BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                         self,
-                    )?,
+                    ),
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -284,9 +306,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         IncompatibleDataContractSchemaError::new(
                             self.data_contract().id(),
                             "remove".to_string(),
-                            "$defs".to_string(),
-                            old_defs.into(),
-                            Value::Null,
+                            "/$defs".to_string(),
                         ),
                     )
                     .into()],
@@ -304,7 +324,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                         BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                             self,
-                        )?,
+                        ),
                     );
 
                     let data_contract_error: DataContractError =
@@ -319,32 +339,27 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 }
             };
 
-            let diffs =
-                validate_schema_compatibility(&old_defs_json, &new_defs_json, platform_version)?;
+            let old_defs_schema = json!({
+                "$defs": old_defs_json
+            });
 
-            if !diffs.is_empty() {
-                let (operation_name, property_name) =
-                    get_operation_and_property_name_json(&diffs[0]);
+            let new_defs_schema = json!({
+                "$defs": new_defs_json
+            });
 
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                        self,
-                    )?,
+            let compatibility_validation_result = validate_schema_compatibility(
+                &old_defs_schema,
+                &new_defs_schema,
+                platform_version,
+            )?;
+
+            if !compatibility_validation_result.is_valid() {
+                let validation_result = convert_compatibility_to_consensus_validation_result(
+                    self,
+                    compatibility_validation_result,
                 );
 
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![BasicError::IncompatibleDataContractSchemaError(
-                        IncompatibleDataContractSchemaError::new(
-                            self.data_contract().id(),
-                            operation_name.to_owned(),
-                            property_name.to_owned(),
-                            old_defs_json.into(),
-                            new_defs_json.into(),
-                        ),
-                    )
-                    .into()],
-                ));
+                return Ok(validation_result);
             }
         }
 
@@ -368,7 +383,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                         BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                             self,
-                        )?,
+                        ),
                     );
 
                     let data_contract_error: DataContractError =
@@ -383,35 +398,19 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 }
             };
 
-            let diffs = validate_schema_compatibility(
+            let compatibility_validation_result = validate_schema_compatibility(
                 &old_document_schema_json,
                 &new_document_schema_json,
                 platform_version,
             )?;
 
-            if !diffs.is_empty() {
-                let (operation_name, property_name) =
-                    get_operation_and_property_name_json(&diffs[0]);
-
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                        self,
-                    )?,
+            if !compatibility_validation_result.is_valid() {
+                let validation_result = convert_compatibility_to_consensus_validation_result(
+                    self,
+                    compatibility_validation_result,
                 );
 
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![BasicError::IncompatibleDataContractSchemaError(
-                        IncompatibleDataContractSchemaError::new(
-                            self.data_contract().id(),
-                            operation_name.to_owned(),
-                            property_name.to_owned(),
-                            old_document_schema.clone(),
-                            new_document_schema,
-                        ),
-                    )
-                    .into()],
-                ));
+                return Ok(validation_result);
             }
         }
 
@@ -421,20 +420,26 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     fn transform_into_action_v0(
         &self,
         validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut validation_operations = vec![];
+
         let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
             self,
             validation_mode.should_validate_contract_on_transform_into_action(),
+            &mut validation_operations,
             platform_version,
         );
+
+        execution_context.add_dpp_operations(validation_operations);
 
         // Return validation result if any consensus errors happened
         // during data contract validation
         match result {
             Err(ProtocolError::ConsensusError(consensus_error)) => {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(self)?,
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(self),
                 );
 
                 Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -449,4 +454,30 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             }
         }
     }
+}
+
+fn convert_compatibility_to_consensus_validation_result(
+    state_transition: &DataContractUpdateTransition,
+    validation_result: SimpleValidationResult<IncompatibleJsonSchemaOperation>,
+) -> ConsensusValidationResult<StateTransitionAction> {
+    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+            state_transition,
+        ),
+    );
+
+    let errors = validation_result
+        .errors
+        .into_iter()
+        .map(|operation| {
+            IncompatibleDataContractSchemaError::new(
+                state_transition.data_contract().id(),
+                operation.name,
+                operation.path,
+            )
+            .into()
+        })
+        .collect();
+
+    return ConsensusValidationResult::new_with_data_and_errors(bump_action, errors);
 }

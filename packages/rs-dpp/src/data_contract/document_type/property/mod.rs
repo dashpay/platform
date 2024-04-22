@@ -15,21 +15,21 @@ use platform_value::Value;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub mod array;
 
 // This struct will be changed in future to support more validation logic and serialization
 // It will become versioned and it will be introduced by a new document type version
 // @append_only
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct DocumentProperty {
     pub property_type: DocumentPropertyType,
     pub required: bool,
 }
 
 // @append_only
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum DocumentPropertyType {
     ///Todo decompose integer
     Integer,

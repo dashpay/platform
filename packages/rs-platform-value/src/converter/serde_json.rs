@@ -1,5 +1,7 @@
 use crate::value_map::ValueMap;
 use crate::{Error, Value};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use serde_json::{Map, Number, Value as JsonValue};
 use std::collections::BTreeMap;
 
@@ -90,8 +92,16 @@ impl Value {
                     .map(|byte| JsonValue::Number(byte.into()))
                     .collect(),
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 
@@ -178,8 +188,16 @@ impl Value {
                     .map(|byte| JsonValue::Number((*byte).into()))
                     .collect(),
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 }
@@ -294,10 +312,10 @@ impl TryInto<JsonValue> for Value {
             Value::I16(i) => JsonValue::Number(i.into()),
             Value::U8(i) => JsonValue::Number(i.into()),
             Value::I8(i) => JsonValue::Number(i.into()),
-            Value::Bytes(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
-            Value::Bytes20(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
-            Value::Bytes32(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
-            Value::Bytes36(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
+            Value::Bytes(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
+            Value::Bytes20(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
+            Value::Bytes32(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
+            Value::Bytes36(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
             Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),
             Value::Text(string) => JsonValue::String(string),
             Value::Bool(value) => JsonValue::Bool(value),

@@ -31,6 +31,7 @@ use std::path::PathBuf;
 
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
+use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::logging::LogConfigs;
@@ -201,6 +202,13 @@ pub struct PlatformConfig {
     /// Path to data storage
     pub db_path: PathBuf,
 
+    /// Path to store rejected / invalid items (like transactions).
+    /// Used mainly for debuggig.
+    ///
+    /// If not set, rejected and invalid items will not be stored.
+    #[serde(default)]
+    pub rejections_path: Option<PathBuf>,
+
     // todo: put this in tests like #[cfg(test)]
     /// This should be None, except in the case of Testing platform
     #[serde(skip)]
@@ -238,8 +246,7 @@ impl ExecutionConfig {
 
 impl PlatformConfig {
     fn default_initial_protocol_version() -> ProtocolVersion {
-        //todo: versioning
-        1
+        INITIAL_PROTOCOL_VERSION
     }
 
     fn default_tokio_console_address() -> String {
@@ -342,11 +349,12 @@ impl PlatformConfig {
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
         }
@@ -365,8 +373,9 @@ impl PlatformConfig {
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             tokio_console_enabled: false,
@@ -388,8 +397,9 @@ impl PlatformConfig {
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             tokio_console_enabled: false,
@@ -454,6 +464,7 @@ mod tests {
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
         assert_eq!("/tmp/db", env::var("DB_PATH").unwrap());
+        assert_eq!("/tmp/rejected", env::var("REJECTIONS_PATH").unwrap());
 
         let config = super::PlatformConfig::from_env().expect("expected config from env");
         assert!(config.execution.verify_sum_trees);

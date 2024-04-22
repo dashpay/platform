@@ -24,6 +24,7 @@ impl Drive {
     ///   proof is successfully generated.
     /// * `Err(Error)` - An error if the proof cannot be generated.
     ///
+    #[inline(always)]
     pub(super) fn prove_identity_keys_v0(
         &self,
         key_request: IdentityKeysRequest,
