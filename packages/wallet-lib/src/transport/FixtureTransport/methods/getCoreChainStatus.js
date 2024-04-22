@@ -1,4 +1,4 @@
-module.exports = async function getStatus() {
+module.exports = async function getCoreChainStatus() {
   const { height, relayFee, network } = this;
 
   return {
