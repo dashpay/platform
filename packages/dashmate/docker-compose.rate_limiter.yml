@@ -11,6 +11,7 @@ services:
   dapi_envoy_rate_limiter:
     labels:
       org.dashmate.service.title: "DAPI Envoy rate limiter"
+    restart: unless-stopped
     image: ${PLATFORM_DAPI_ENVOY_RATE_LIMITER_DOCKER_IMAGE:?err}
     command: /bin/ratelimit
     depends_on:
@@ -20,26 +21,28 @@ services:
     volumes:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/rate_limiter.yaml:/data/ratelimit/config/config.yaml:ro
     environment:
-      - LOG_LEVEL=debug
+      - LOG_LEVEL=info
       - LOG_FORMAT=text
       - BACKEND_TYPE=redis
       - REDIS_SOCKET_TYPE=tcp
-      - REDIS_URL=redis:6379
+      - REDIS_URL=dapi_envoy_rate_limiter_redis:6379
       - RUNTIME_ROOT=/data
       - RUNTIME_SUBDIRECTORY=ratelimit
       - RUNTIME_WATCH_ROOT=false
+      - DISABLE_STATS=true # TODO: We probably want to collect metrics?
       - CONFIG_TYPE=FILE
-      - GRPC_MAX_CONNECTION_AGE=300
-      - GRPC_MAX_CONNECTION_AGE_GRACE=10
-      - GRPC_PORT=8080
+      - GRPC_MAX_CONNECTION_AGE=1h
+      - GRPC_MAX_CONNECTION_AGE_GRACE=10m
+      - GRPC_PORT=8081
     expose:
-      - 8080
+      - 8081
     profiles:
       - platform
 
   dapi_envoy_rate_limiter_redis:
     labels:
       org.dashmate.service.title: "DAPI Envoy rate limiter storage"
+    restart: unless-stopped
     image: redis:alpine
     expose:
       - 6379

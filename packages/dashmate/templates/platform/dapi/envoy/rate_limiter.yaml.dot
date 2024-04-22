@@ -19,6 +19,5 @@ descriptors:
   - key: remote_address
     value: {{= ip }}
     rate_limit:
-      unit: second
-      requests_per_unit: 10000
+      unlimited: true
   {{~}}

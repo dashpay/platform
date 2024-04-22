@@ -221,6 +221,7 @@ volumes:
 
 networks:
   main:
+    driver: bridge
     ipam:
       config:
         - subnet: ${DOCKER_NETWORK_SUBNET:?err}
