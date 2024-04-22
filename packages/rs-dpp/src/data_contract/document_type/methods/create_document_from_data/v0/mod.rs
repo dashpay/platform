@@ -1,4 +1,5 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
@@ -13,7 +14,6 @@ use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::{Identifier, ReplacementType, Value};
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 impl DocumentTypeV0 {
     pub(in crate::data_contract::document_type) fn create_document_from_data_v0(
