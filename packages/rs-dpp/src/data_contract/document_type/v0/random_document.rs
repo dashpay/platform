@@ -15,7 +15,7 @@ use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
-use crate::document::{Document, DocumentV0};
+use crate::document::{Document, DocumentV0, INITIAL_REVISION};
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
@@ -158,7 +158,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
             .collect();
 
         let revision = if self.requires_revision() {
-            Some(1)
+            Some(INITIAL_REVISION)
         } else {
             None
         };

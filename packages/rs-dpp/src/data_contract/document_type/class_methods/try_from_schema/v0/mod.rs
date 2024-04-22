@@ -221,7 +221,7 @@ impl DocumentTypeV0 {
             Value::inner_optional_bool_value(schema_map, DOCUMENTS_MUTABLE)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_mutability);
-
+        
         // Can documents of this type be deleted? (Overrides contract value)
         let documents_can_be_deleted: bool =
             Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)

@@ -34,7 +34,7 @@ impl DocumentTransferTransitionActionStructureValidationV0 for DocumentTransferT
         if !document_type.documents_transferable().is_transferable() {
             Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
-                    "{} is not mutable and not be updated",
+                    "{} is not a transferable document type",
                     document_type_name
                 ))
                 .into(),

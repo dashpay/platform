@@ -944,7 +944,7 @@ impl Strategy {
                         }
                     }
 
-                    // Generate state transition for document replace operation
+                    // Generate state transition for document transfer operation
                     OperationType::Document(DocumentOp {
                         action: DocumentAction::DocumentActionTransferRandom,
                         document_type,

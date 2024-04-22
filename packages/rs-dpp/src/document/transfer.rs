@@ -32,7 +32,7 @@ impl TryFrom<u8> for Transferable {
             1 => Ok(Self::Always),
             value => Err(ProtocolError::ConsensusError(
                 ConsensusError::BasicError(BasicError::UnknownTransferableTypeError(
-                    UnknownTransferableTypeError::new(vec![0, 1], value.into()),
+                    UnknownTransferableTypeError::new(vec![0, 1], value),
                 ))
                 .into(),
             )),
