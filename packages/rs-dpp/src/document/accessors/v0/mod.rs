@@ -1,4 +1,3 @@
-use crate::document::Document;
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
 };

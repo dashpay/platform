@@ -18,7 +18,6 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
-use crate::document::transfer::Transferable;
 use platform_value::{Identifier, Value};
 
 // TODO: Some of those methods are only for tests. Hide under feature

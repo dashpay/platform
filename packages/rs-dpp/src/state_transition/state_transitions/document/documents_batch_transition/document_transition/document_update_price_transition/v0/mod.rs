@@ -1,25 +1,16 @@
 mod from_document;
 pub mod v0_methods;
 
-use crate::prelude::{BlockHeight, CoreBlockHeight, Revision, TimestampMillis};
+use crate::prelude::Revision;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 
-use platform_value::{Identifier, Value};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use crate::block::block_info::BlockInfo;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::DocumentTypeRef;
-use crate::document::{Document, DocumentV0};
 use crate::fee::Credits;
-use crate::{document, ProtocolError};
-use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
 
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 
 mod property_names {

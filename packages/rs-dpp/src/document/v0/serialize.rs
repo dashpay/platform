@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{

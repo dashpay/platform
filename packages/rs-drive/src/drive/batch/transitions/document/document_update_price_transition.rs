@@ -7,11 +7,10 @@ use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
-use dpp::document::Document;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use crate::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::{DocumentFromUpdatePriceTransitionAction, DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::{DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentUpdatePriceTransitionAction {
