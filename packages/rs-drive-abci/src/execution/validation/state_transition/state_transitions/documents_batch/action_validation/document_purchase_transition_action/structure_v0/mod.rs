@@ -39,7 +39,7 @@ impl DocumentPurchaseTransitionActionStructureValidationV0 for DocumentPurchaseT
         if self.original_owner_id() == self.document().owner_id() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
-                    "{} trying to purchase a document that is already owned by the purchaser",
+                    "on document type: {} identity trying to purchase a document that is already owned by the purchaser",
                     document_type_name
                 ))
                     .into(),

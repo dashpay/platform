@@ -1,9 +1,5 @@
 use crate::data_contract::config;
-use crate::data_contract::config::{
-    DataContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
-    DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
-    DEFAULT_CONTRACT_MUTABILITY,
-};
+use crate::data_contract::config::{DataContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY, DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY, DEFAULT_CONTRACT_MUTABILITY, DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -104,6 +100,7 @@ impl std::default::Default for DataContractConfigV0 {
             keeps_history: DEFAULT_CONTRACT_KEEPS_HISTORY,
             documents_keep_history_contract_default: DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
             documents_mutable_contract_default: DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
+            documents_can_be_deleted_contract_default: DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED,
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
         }
@@ -162,6 +159,10 @@ impl DataContractConfigV0 {
             .get_optional_bool(config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT)?
             .unwrap_or(DEFAULT_CONTRACT_DOCUMENT_MUTABILITY);
 
+        let documents_can_be_deleted_contract_default = contract
+            .get_optional_bool(config::property::DOCUMENTS_CAN_BE_DELETED_CONTRACT_DEFAULT)?
+            .unwrap_or(DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED);
+
         let requires_identity_encryption_bounded_key = contract
             .get_optional_integer::<u8>(config::property::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)?
             .map(|int| int.try_into())
@@ -178,6 +179,7 @@ impl DataContractConfigV0 {
             keeps_history,
             documents_keep_history_contract_default,
             documents_mutable_contract_default,
+            documents_can_be_deleted_contract_default,
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,
         })

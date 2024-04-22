@@ -252,6 +252,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
     fn new_document_purchase_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
+        new_owner_id: Identifier,
         price: Credits,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
@@ -262,7 +263,6 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         purchase_feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        let owner_id = document.owner_id();
         let purchase_transition = DocumentPurchaseTransition::from_document(
             document,
             document_type,
@@ -273,7 +273,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
             base_feature_version,
         )?;
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
-            owner_id,
+            owner_id: new_owner_id,
             transitions: vec![purchase_transition.into()],
             user_fee_increase,
             signature_public_key_id: 0,

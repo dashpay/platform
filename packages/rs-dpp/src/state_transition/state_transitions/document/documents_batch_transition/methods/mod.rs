@@ -268,6 +268,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
     fn new_document_purchase_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
+        new_owner_id: Identifier,
         price: Credits,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
@@ -289,6 +290,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
                 DocumentsBatchTransitionV0::new_document_purchase_transition_from_document(
                     document,
                     document_type,
+                    new_owner_id,
                     price,
                     identity_public_key,
                     identity_contract_nonce,

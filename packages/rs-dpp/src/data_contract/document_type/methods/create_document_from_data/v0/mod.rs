@@ -13,6 +13,7 @@ use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::{Identifier, ReplacementType, Value};
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 impl DocumentTypeV0 {
     pub(in crate::data_contract::document_type) fn create_document_from_data_v0(
@@ -31,7 +32,7 @@ impl DocumentTypeV0 {
             &document_entropy,
         );
 
-        let revision = if self.documents_mutable() {
+        let revision = if self.requires_revision() {
             Some(INITIAL_REVISION)
         } else {
             None

@@ -188,6 +188,15 @@ impl DocumentV0Setters for DocumentV0 {
         self.revision = revision;
     }
 
+    /// Bumps the document's revision if it has one. This is applicable if the document's schema indicates
+    /// the document type as mutable.
+    ///
+    fn bump_revision(&mut self) {
+        if let Some(revision) = self.revision {
+            self.revision = Some(revision.saturating_add(1))
+        }
+    }
+
     /// Sets the timestamp of when the document was created. This is applicable if the document's
     /// schema requires a creation timestamp.
     ///

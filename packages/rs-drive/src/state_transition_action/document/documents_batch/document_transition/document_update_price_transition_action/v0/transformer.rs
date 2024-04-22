@@ -32,6 +32,8 @@ impl DocumentUpdatePriceTransitionActionV0 {
 
         modified_document.set_u64("$price", *price);
 
+        modified_document.bump_revision();
+
         if base.document_type_field_is_required(property_names::TRANSFERRED_AT)? {
             modified_document.set_updated_at(Some(block_info.time_ms));
         }

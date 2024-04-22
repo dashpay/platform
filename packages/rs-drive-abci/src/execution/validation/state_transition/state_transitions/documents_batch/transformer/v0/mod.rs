@@ -519,6 +519,17 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
                 let original_document = validation_result.into_data()?;
 
+                let validation_result = Self::check_ownership_of_old_replaced_document_v0(
+                    document_update_price_transition.base().id(),
+                    original_document,
+                    &owner_id,
+                );
+
+                if !validation_result.is_valid() {
+                    result.merge(validation_result);
+                    return Ok(result);
+                }
+
                 if validate_against_state {
                     //there are situations where we don't want to validate this against the state
                     // for example when we already applied the state transition action
@@ -562,8 +573,6 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
                 let original_document = validation_result.into_data()?;
                 
-                let original_owner_id = original_document.owner_id();
-
                 if validate_against_state {
                     //there are situations where we don't want to validate this against the state
                     // for example when we already applied the state transition action
@@ -584,7 +593,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     DocumentPurchaseTransitionAction::try_from_borrowed_document_purchase_transition(
                         document_purchase_transition,
                         original_document.clone(), //todo: find a way to not have to use cloning
-                        original_owner_id,
+                        owner_id,
                         block_info,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;

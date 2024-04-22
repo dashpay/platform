@@ -482,15 +482,15 @@
       "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
     },
     "documentsKeepHistory": {
-      "type": "bool",
+      "type": "boolean",
       "description": "True if the documents keep all their history, default is false"
     },
     "documentsMutable": {
-      "type": "bool",
+      "type": "boolean",
       "description": "True if the documents are mutable, default is true"
     },
     "canBeDeleted": {
-      "type": "bool",
+      "type": "boolean",
       "description": "True if the documents can be deleted, default is true"
     },
     "transferable": {

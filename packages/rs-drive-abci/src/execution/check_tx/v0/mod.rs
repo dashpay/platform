@@ -549,6 +549,7 @@ mod tests {
             },
             keep_history_chance: 0.0,
             documents_mutable_chance: 0.0,
+            documents_can_be_deleted_chance: 0.0,
         };
 
         let mut rng = StdRng::seed_from_u64(6);
@@ -1250,6 +1251,7 @@ mod tests {
             },
             keep_history_chance: 0.0,
             documents_mutable_chance: 0.0,
+            documents_can_be_deleted_chance: 0.0,
         };
 
         let mut rng = StdRng::seed_from_u64(6);

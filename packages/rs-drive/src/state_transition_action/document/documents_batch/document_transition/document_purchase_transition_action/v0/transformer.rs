@@ -32,6 +32,8 @@ impl DocumentPurchaseTransitionActionV0 {
         let original_owner_id = original_document.owner_id();
         
         let mut modified_document = original_document;
+        
+        modified_document.bump_revision();
 
         modified_document.set_owner_id(purchaser_id);
 

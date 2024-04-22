@@ -102,6 +102,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     fn new_document_purchase_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
+        new_owner_id: Identifier,
         price: Credits,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,

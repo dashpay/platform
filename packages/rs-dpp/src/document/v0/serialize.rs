@@ -1,11 +1,7 @@
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 
-use crate::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
-    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
-    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
-};
+use crate::document::property_names::{CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, PRICE, TRANSFERRED_AT, TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT};
 
 #[cfg(feature = "validation")]
 use crate::prelude::ConsensusValidationResult;
@@ -192,6 +188,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
 
         buffer.extend(bitwise_exists_flag.to_be_bytes().as_slice());
         buffer.append(&mut time_fields_data_buffer);
+
+        // Now we serialize the price which might not be necessary unless called for by the document type
+
+        if document_type.trade_mode().seller_sets_price() {
+            if let Some(price) = self.properties.get(PRICE) {
+                buffer.push(1);
+                let price_as_u64: u64 = price.to_integer().map_err(ProtocolError::ValueError)?;
+                buffer.append(&mut price_as_u64.to_be_bytes().to_vec());
+            } else {
+                buffer.push(0);
+            }
+        }
 
         // User defined properties
         document_type
@@ -397,6 +405,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         buffer.extend(bitwise_exists_flag.to_be_bytes().as_slice());
         buffer.append(&mut time_fields_data_buffer);
 
+        // Now we serialize the price which might not be necessary unless called for by the document type
+
+        if document_type.trade_mode().seller_sets_price() {
+            if let Some(price) = self.properties.get(PRICE) {
+                buffer.push(1);
+                let price_as_u64: u64 = price.to_integer().map_err(ProtocolError::ValueError)?;
+                buffer.append(&mut price_as_u64.to_be_bytes().to_vec());
+            } else {
+                buffer.push(0);
+            }
+        }
+
         // User defined properties
         document_type
             .properties()
@@ -591,9 +611,33 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             None
         };
 
+        // Now we serialize the price which might not be necessary unless called for by the document type
+
+        let price = if document_type.trade_mode().seller_sets_price() {
+            let has_price = buf.read_u8().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading has price bool from serialized document"
+                        .to_string(),
+                )
+            })?;
+            if has_price > 0 {
+                let price = buf.read_u64::<BigEndian>().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading price u64 from serialized document"
+                            .to_string(),
+                    )
+                })?;
+                Some(price)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut finished_buffer = false;
 
-        let properties = document_type
+        let mut properties = document_type
             .properties()
             .iter()
             .filter_map(|(key, property)| {
@@ -619,6 +663,10 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                 }
             })
             .collect::<Result<BTreeMap<String, Value>, DataContractError>>()?;
+        
+        if let Some(price) = price {
+            properties.insert(PRICE.to_string(), price.into());
+        }
 
         Ok(DocumentV0 {
             id: Identifier::new(id),

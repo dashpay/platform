@@ -2,6 +2,7 @@ use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::DocumentV0Getters;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::{DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionAccessorsV0};

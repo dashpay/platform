@@ -561,6 +561,7 @@ impl DocumentTypeV0 {
 
         let documents_keep_history = rng.gen_bool(parameters.keep_history_chance);
         let documents_mutable = rng.gen_bool(parameters.documents_mutable_chance);
+        let documents_can_be_deleted = rng.gen_bool(parameters.documents_can_be_deleted_chance);
 
         let name = format!("doc_type_{}", rng.gen::<u16>());
 
@@ -592,6 +593,7 @@ impl DocumentTypeV0 {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            documents_can_be_deleted,
             documents_transferable: Transferable::Never,
             trade_mode: TradeMode::None,
             data_contract_id,
