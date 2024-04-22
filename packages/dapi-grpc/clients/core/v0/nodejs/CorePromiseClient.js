@@ -86,6 +86,10 @@ class CorePromiseClient {
       this.client.getCoreChainStatus.bind(this.client),
     );
 
+    this.client.getMasternodeStatus = promisify(
+      this.client.getMasternodeStatus.bind(this.client),
+    );
+
     this.client.getBlock = promisify(
       this.client.getBlock.bind(this.client),
     );

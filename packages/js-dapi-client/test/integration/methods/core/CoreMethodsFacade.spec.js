@@ -6,6 +6,7 @@ const {
     GetBlockResponse,
     GetTransactionResponse,
     GetCoreChainStatusResponse,
+    GetMasternodeStatusResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -130,6 +131,21 @@ describe('CoreMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await coreMethods.getCoreChainStatus();
+
+      expect(jsonRpcTransportMock.request).to.be.not.called();
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getMasternodeStatus', () => {
+    it('should get masternode status', async () => {
+      const response = new GetMasternodeStatusResponse();
+
+      response.setStatus(GetMasternodeStatusResponse.Status.READY);
+
+      grpcTransportMock.request.resolves(response);
+
+      await coreMethods.getMasternodeStatus();
 
       expect(jsonRpcTransportMock.request).to.be.not.called();
       expect(grpcTransportMock.request).to.be.calledOnce();

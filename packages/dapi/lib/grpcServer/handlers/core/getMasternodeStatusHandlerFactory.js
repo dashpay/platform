@@ -22,6 +22,11 @@ function getMasternodeStatusHandlerFactory(coreRPCClient) {
       coreRPCClient.getMasternode('status'),
     ]);
 
+    console.log({
+      mnSyncStatusResponse,
+      masternodeStatusResponse,
+    });
+
     const response = new GetMasternodeStatusResponse();
 
     const masternodeStatus = GetMasternodeStatusResponse.Status[masternodeStatusResponse.state];

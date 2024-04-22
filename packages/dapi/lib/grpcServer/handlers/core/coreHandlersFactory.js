@@ -129,7 +129,7 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
   return {
     getBlock: wrappedGetBlock,
     getCoreChainStatus: wrappedGetCoreChainStatus,
-    getMasternodeStatusHandler: wrappedGetMasternodeStatus,
+    getMasternodeStatus: wrappedGetMasternodeStatus,
     getTransaction: wrappedGetTransaction,
     broadcastTransaction: wrappedBroadcastTransaction,
   };
