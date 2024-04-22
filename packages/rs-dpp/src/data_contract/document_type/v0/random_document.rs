@@ -158,7 +158,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
             .collect();
 
         let revision = if self.requires_revision() {
-            Some(1)
+            Some(INITIAL_REVISION)
         } else {
             None
         };
