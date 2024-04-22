@@ -29,7 +29,7 @@ impl DocumentDeleteTransitionActionStructureValidationV0 for DocumentDeleteTrans
         if !document_type.documents_mutable() {
             Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
-                    "{} is not mutable and not be deleted",
+                    "{} is not mutable and can not be deleted",
                     document_type_name
                 ))
                 .into(),
