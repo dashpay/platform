@@ -43,7 +43,7 @@ pub trait TransferDocument<S: Signer> {
         data_contract: Arc<DataContract>,
     ) -> Result<Document, Error>;
 
-    /// Puts an identity on platform and waits for the confirmation proof
+    /// Transfers a document on platform and waits for the response
     async fn transfer_document_to_identity_and_wait_for_response(
         &self,
         recipient_id: Identifier,
