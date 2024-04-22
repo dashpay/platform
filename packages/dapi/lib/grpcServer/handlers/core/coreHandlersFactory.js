@@ -17,15 +17,18 @@ const {
   v0: {
     BroadcastTransactionRequest,
     GetTransactionRequest,
-    GetStatusRequest,
+    GetCoreChainStatusRequest,
+    GetMasternodeStatusRequest,
     GetBlockRequest,
     pbjs: {
       BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
       BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
       GetTransactionRequest: PBJSGetTransactionRequest,
       GetTransactionResponse: PBJSGetTransactionResponse,
-      GetStatusRequest: PBJSGetStatusRequest,
-      GetStatusResponse: PBJSGetStatusResponse,
+      GetCoreChainStatusRequest: PBJSGetCoreChainStatusRequest,
+      GetCoreChainStatusResponse: PBJSGetCoreChainStatusResponse,
+      GetMasternodeStatusRequest: PBJSGetMasternodeStatusRequest,
+      GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
       GetBlockRequest: PBJSGetBlockRequest,
       GetBlockResponse: PBJSGetBlockResponse,
     },
@@ -37,8 +40,11 @@ const logger = require('../../../logger');
 const getBlockHandlerFactory = require(
   './getBlockHandlerFactory',
 );
-const getStatusHandlerFactory = require(
-  './getStatusHandlerFactory',
+const getCoreChainStatusHandlerFactory = require(
+  './getCoreChainStatusHandlerFactory',
+);
+const getMasternodeStatusHandlerFactory = require(
+  './getMasternodeStatusHandlerFactory',
 );
 const getTransactionHandlerFactory = require(
   './getTransactionHandlerFactory',
@@ -68,17 +74,30 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
     wrapInErrorHandler(getBlockHandler),
   );
 
-  // getStatus
-  const getStatusHandler = getStatusHandlerFactory(coreRPCClient);
-  const wrappedGetStatus = jsonToProtobufHandlerWrapper(
+  // getCoreChainStatus
+  const getCoreChainStatusHandler = getCoreChainStatusHandlerFactory(coreRPCClient);
+  const wrappedGetCoreChainStatus = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetStatusRequest,
-      PBJSGetStatusRequest,
+      GetCoreChainStatusRequest,
+      PBJSGetCoreChainStatusRequest,
     ),
     protobufToJsonFactory(
-      PBJSGetStatusResponse,
+      PBJSGetCoreChainStatusResponse,
     ),
-    wrapInErrorHandler(getStatusHandler),
+    wrapInErrorHandler(getCoreChainStatusHandler),
+  );
+
+  // getMasternodeStatus
+  const getMasternodeStatusHandler = getMasternodeStatusHandlerFactory(coreRPCClient);
+  const wrappedGetMasternodeStatus = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetMasternodeStatusRequest,
+      PBJSGetMasternodeStatusRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetMasternodeStatusResponse,
+    ),
+    wrapInErrorHandler(getMasternodeStatusHandler),
   );
 
   // getTransaction
@@ -109,7 +128,8 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
 
   return {
     getBlock: wrappedGetBlock,
-    getStatus: wrappedGetStatus,
+    getCoreChainStatus: wrappedGetCoreChainStatus,
+    getMasternodeStatusHandler: wrappedGetMasternodeStatus,
     getTransaction: wrappedGetTransaction,
     broadcastTransaction: wrappedBroadcastTransaction,
   };

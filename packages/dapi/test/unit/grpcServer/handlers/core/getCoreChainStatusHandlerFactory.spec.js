@@ -1,16 +1,16 @@
 const {
   v0: {
-    GetStatusResponse,
+    GetCoreChainStatusResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
-const getStatusHandlerFactory = require('../../../../../lib/grpcServer/handlers/core/getStatusHandlerFactory');
+const getCoreChainStatusHandlerFactory = require('../../../../../lib/grpcServer/handlers/core/getCoreChainStatusHandlerFactory');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
-describe('getStatusHandlerFactory', () => {
+describe('getCoreChainStatusHandlerFactory', () => {
   let call;
-  let getStatusHandler;
+  let getCoreChainStatusHandler;
   let coreRPCClientMock;
   let now;
 
@@ -56,13 +56,13 @@ describe('getStatusHandlerFactory', () => {
     now = new Date();
     this.sinon.useFakeTimers(now.getTime());
 
-    getStatusHandler = getStatusHandlerFactory(coreRPCClientMock);
+    getCoreChainStatusHandler = getCoreChainStatusHandlerFactory(coreRPCClientMock);
   });
 
   it('should return valid result', async () => {
-    const result = await getStatusHandler(call);
+    const result = await getCoreChainStatusHandler(call);
 
-    expect(result).to.be.an.instanceOf(GetStatusResponse);
+    expect(result).to.be.an.instanceOf(GetCoreChainStatusResponse);
 
     // Validate protobuf object values
     result.serializeBinary();
@@ -97,7 +97,7 @@ describe('getStatusHandlerFactory', () => {
     expect(fee.getRelay()).to.be.equal(networkInfo.relayfee);
     expect(fee.getIncremental()).to.be.equal(networkInfo.incrementalfee);
 
-    expect(result.getStatus()).to.be.equal(GetStatusResponse.Status.SYNCING);
+    expect(result.getStatus()).to.be.equal(GetCoreChainStatusResponse.Status.SYNCING);
     expect(coreRPCClientMock.getBlockchainInfo).to.be.calledOnce();
     expect(coreRPCClientMock.getNetworkInfo).to.be.calledOnce();
   });

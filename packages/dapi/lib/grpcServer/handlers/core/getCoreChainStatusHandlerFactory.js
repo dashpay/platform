@@ -1,19 +1,19 @@
 const {
   v0: {
-    GetStatusResponse,
+    GetCoreChainStatusResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
 /**
  * @param {CoreRpcClient} coreRPCClient
- * @returns {getStatusHandler}
+ * @returns {getCoreChainStatusHandler}
  */
-function getStatusHandlerFactory(coreRPCClient) {
+function getCoreChainStatusHandlerFactory(coreRPCClient) {
   /**
-   * @typedef getStatusHandler
-   * @return {Promise<GetStatusResponse>}
+   * @typedef getCoreChainStatusHandler
+   * @return {Promise<GetCoreChainStatusResponse>}
    */
-  async function getStatusHandler() {
+  async function getCoreChainStatusHandler() {
     const [
       blockchainInfoResponse,
       networkInfoResponse,
@@ -22,19 +22,19 @@ function getStatusHandlerFactory(coreRPCClient) {
       coreRPCClient.getNetworkInfo(),
     ]);
 
-    const response = new GetStatusResponse();
+    const response = new GetCoreChainStatusResponse();
 
-    const version = new GetStatusResponse.Version();
+    const version = new GetCoreChainStatusResponse.Version();
     version.setProtocol(networkInfoResponse.protocolversion);
     version.setSoftware(networkInfoResponse.version);
     version.setAgent(networkInfoResponse.subversion);
 
-    const time = new GetStatusResponse.Time();
+    const time = new GetCoreChainStatusResponse.Time();
     time.setNow(Math.floor(Date.now() / 1000));
     time.setOffset(networkInfoResponse.timeoffset);
     time.setMedian(blockchainInfoResponse.mediantime);
 
-    const chain = new GetStatusResponse.Chain();
+    const chain = new GetCoreChainStatusResponse.Chain();
     chain.setName(blockchainInfoResponse.chain);
     chain.setBlocksCount(blockchainInfoResponse.blocks);
     chain.setHeadersCount(blockchainInfoResponse.headers);
@@ -44,10 +44,10 @@ function getStatusHandlerFactory(coreRPCClient) {
     chain.setIsSynced(blockchainInfoResponse.verificationprogress === 1);
     chain.setSyncProgress(blockchainInfoResponse.verificationprogress);
 
-    const network = new GetStatusResponse.Network();
+    const network = new GetCoreChainStatusResponse.Network();
     network.setPeersCount(networkInfoResponse.connections);
 
-    const networkFee = new GetStatusResponse.NetworkFee();
+    const networkFee = new GetCoreChainStatusResponse.NetworkFee();
     networkFee.setRelay(networkInfoResponse.relayfee);
     networkFee.setIncremental(networkInfoResponse.incrementalfee);
 
@@ -59,11 +59,9 @@ function getStatusHandlerFactory(coreRPCClient) {
     response.setChain(chain);
     response.setNetwork(network);
 
-    let status = GetStatusResponse.Status.NOT_STARTED;
+    let status = GetCoreChainStatusResponse.Status.SYNCING;
     if (blockchainInfoResponse.verificationprogress === 1) {
-      status = GetStatusResponse.Status.READY;
-    } else {
-      status = GetStatusResponse.Status.SYNCING;
+      status = GetCoreChainStatusResponse.Status.READY;
     }
 
     response.setStatus(status);
@@ -71,7 +69,7 @@ function getStatusHandlerFactory(coreRPCClient) {
     return response;
   }
 
-  return getStatusHandler;
+  return getCoreChainStatusHandler;
 }
 
-module.exports = getStatusHandlerFactory;
+module.exports = getCoreChainStatusHandlerFactory;
