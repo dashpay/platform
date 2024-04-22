@@ -4,13 +4,22 @@
 import * as core_pb from "./core_pb";
 import {grpc} from "@improbable-eng/grpc-web";
 
-type CoregetStatus = {
+type CoregetCoreChainStatus = {
   readonly methodName: string;
   readonly service: typeof Core;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof core_pb.GetStatusRequest;
-  readonly responseType: typeof core_pb.GetStatusResponse;
+  readonly requestType: typeof core_pb.GetCoreChainStatusRequest;
+  readonly responseType: typeof core_pb.GetCoreChainStatusResponse;
+};
+
+type CoregetMasternodeStatus = {
+  readonly methodName: string;
+  readonly service: typeof Core;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof core_pb.GetMasternodeStatusRequest;
+  readonly responseType: typeof core_pb.GetMasternodeStatusResponse;
 };
 
 type CoregetBlock = {
@@ -69,7 +78,8 @@ type CoresubscribeToTransactionsWithProofs = {
 
 export class Core {
   static readonly serviceName: string;
-  static readonly getStatus: CoregetStatus;
+  static readonly getCoreChainStatus: CoregetCoreChainStatus;
+  static readonly getMasternodeStatus: CoregetMasternodeStatus;
   static readonly getBlock: CoregetBlock;
   static readonly broadcastTransaction: CorebroadcastTransaction;
   static readonly getTransaction: CoregetTransaction;
@@ -110,14 +120,23 @@ export class CoreClient {
   readonly serviceHost: string;
 
   constructor(serviceHost: string, options?: grpc.RpcOptions);
-  getStatus(
-    requestMessage: core_pb.GetStatusRequest,
+  getCoreChainStatus(
+    requestMessage: core_pb.GetCoreChainStatusRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: core_pb.GetStatusResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetCoreChainStatusResponse|null) => void
   ): UnaryResponse;
-  getStatus(
-    requestMessage: core_pb.GetStatusRequest,
-    callback: (error: ServiceError|null, responseMessage: core_pb.GetStatusResponse|null) => void
+  getCoreChainStatus(
+    requestMessage: core_pb.GetCoreChainStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetCoreChainStatusResponse|null) => void
+  ): UnaryResponse;
+  getMasternodeStatus(
+    requestMessage: core_pb.GetMasternodeStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetMasternodeStatusResponse|null) => void
+  ): UnaryResponse;
+  getMasternodeStatus(
+    requestMessage: core_pb.GetMasternodeStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetMasternodeStatusResponse|null) => void
   ): UnaryResponse;
   getBlock(
     requestMessage: core_pb.GetBlockRequest,

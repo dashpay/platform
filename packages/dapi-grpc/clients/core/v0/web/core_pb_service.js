@@ -10,13 +10,22 @@ var Core = (function () {
   return Core;
 }());
 
-Core.getStatus = {
-  methodName: "getStatus",
+Core.getCoreChainStatus = {
+  methodName: "getCoreChainStatus",
   service: Core,
   requestStream: false,
   responseStream: false,
-  requestType: core_pb.GetStatusRequest,
-  responseType: core_pb.GetStatusResponse
+  requestType: core_pb.GetCoreChainStatusRequest,
+  responseType: core_pb.GetCoreChainStatusResponse
+};
+
+Core.getMasternodeStatus = {
+  methodName: "getMasternodeStatus",
+  service: Core,
+  requestStream: false,
+  responseStream: false,
+  requestType: core_pb.GetMasternodeStatusRequest,
+  responseType: core_pb.GetMasternodeStatusResponse
 };
 
 Core.getBlock = {
@@ -80,11 +89,42 @@ function CoreClient(serviceHost, options) {
   this.options = options || {};
 }
 
-CoreClient.prototype.getStatus = function getStatus(requestMessage, metadata, callback) {
+CoreClient.prototype.getCoreChainStatus = function getCoreChainStatus(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Core.getStatus, {
+  var client = grpc.unary(Core.getCoreChainStatus, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+CoreClient.prototype.getMasternodeStatus = function getMasternodeStatus(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Core.getMasternodeStatus, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

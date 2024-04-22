@@ -15,35 +15,66 @@ public final class CoreGrpc {
   public static final String SERVICE_NAME = "org.dash.platform.dapi.v0.Core";
 
   // Static method descriptors that strictly reflect the proto.
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest,
-      org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> getGetStatusMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> getGetCoreChainStatusMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "getStatus",
-      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest.class,
-      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "getCoreChainStatus",
+      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest,
-      org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> getGetStatusMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> getGetStatusMethod;
-    if ((getGetStatusMethod = CoreGrpc.getGetStatusMethod) == null) {
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> getGetCoreChainStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> getGetCoreChainStatusMethod;
+    if ((getGetCoreChainStatusMethod = CoreGrpc.getGetCoreChainStatusMethod) == null) {
       synchronized (CoreGrpc.class) {
-        if ((getGetStatusMethod = CoreGrpc.getGetStatusMethod) == null) {
-          CoreGrpc.getGetStatusMethod = getGetStatusMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse>newBuilder()
+        if ((getGetCoreChainStatusMethod = CoreGrpc.getGetCoreChainStatusMethod) == null) {
+          CoreGrpc.getGetCoreChainStatusMethod = getGetCoreChainStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getStatus"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getCoreChainStatus"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getStatus"))
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getCoreChainStatus"))
               .build();
         }
       }
     }
-    return getGetStatusMethod;
+    return getGetCoreChainStatusMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> getGetMasternodeStatusMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getMasternodeStatus",
+      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> getGetMasternodeStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> getGetMasternodeStatusMethod;
+    if ((getGetMasternodeStatusMethod = CoreGrpc.getGetMasternodeStatusMethod) == null) {
+      synchronized (CoreGrpc.class) {
+        if ((getGetMasternodeStatusMethod = CoreGrpc.getGetMasternodeStatusMethod) == null) {
+          CoreGrpc.getGetMasternodeStatusMethod = getGetMasternodeStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getMasternodeStatus"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getMasternodeStatus"))
+              .build();
+        }
+      }
+    }
+    return getGetMasternodeStatusMethod;
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest,
@@ -282,9 +313,16 @@ public final class CoreGrpc {
 
     /**
      */
-    public void getStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetStatusMethod(), responseObserver);
+    public void getCoreChainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetCoreChainStatusMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getMasternodeStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetMasternodeStatusMethod(), responseObserver);
     }
 
     /**
@@ -332,12 +370,19 @@ public final class CoreGrpc {
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
-            getGetStatusMethod(),
+            getGetCoreChainStatusMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest,
-                org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse>(
-                  this, METHODID_GET_STATUS)))
+                org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest,
+                org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse>(
+                  this, METHODID_GET_CORE_CHAIN_STATUS)))
+          .addMethod(
+            getGetMasternodeStatusMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest,
+                org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse>(
+                  this, METHODID_GET_MASTERNODE_STATUS)))
           .addMethod(
             getGetBlockMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -400,10 +445,18 @@ public final class CoreGrpc {
 
     /**
      */
-    public void getStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> responseObserver) {
+    public void getCoreChainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getGetStatusMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getGetCoreChainStatusMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getMasternodeStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetMasternodeStatusMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -471,9 +524,16 @@ public final class CoreGrpc {
 
     /**
      */
-    public org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse getStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest request) {
+    public org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse getCoreChainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getGetStatusMethod(), getCallOptions(), request);
+          getChannel(), getGetCoreChainStatusMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse getMasternodeStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetMasternodeStatusMethod(), getCallOptions(), request);
     }
 
     /**
@@ -537,10 +597,18 @@ public final class CoreGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> getStatus(
-        org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> getCoreChainStatus(
+        org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getGetStatusMethod(), getCallOptions()), request);
+          getChannel().newCall(getGetCoreChainStatusMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> getMasternodeStatus(
+        org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetMasternodeStatusMethod(), getCallOptions()), request);
     }
 
     /**
@@ -576,13 +644,14 @@ public final class CoreGrpc {
     }
   }
 
-  private static final int METHODID_GET_STATUS = 0;
-  private static final int METHODID_GET_BLOCK = 1;
-  private static final int METHODID_BROADCAST_TRANSACTION = 2;
-  private static final int METHODID_GET_TRANSACTION = 3;
-  private static final int METHODID_GET_ESTIMATED_TRANSACTION_FEE = 4;
-  private static final int METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS = 5;
-  private static final int METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS = 6;
+  private static final int METHODID_GET_CORE_CHAIN_STATUS = 0;
+  private static final int METHODID_GET_MASTERNODE_STATUS = 1;
+  private static final int METHODID_GET_BLOCK = 2;
+  private static final int METHODID_BROADCAST_TRANSACTION = 3;
+  private static final int METHODID_GET_TRANSACTION = 4;
+  private static final int METHODID_GET_ESTIMATED_TRANSACTION_FEE = 5;
+  private static final int METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS = 6;
+  private static final int METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS = 7;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -601,9 +670,13 @@ public final class CoreGrpc {
     @java.lang.SuppressWarnings("unchecked")
     public void invoke(Req request, io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
-        case METHODID_GET_STATUS:
-          serviceImpl.getStatus((org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse>) responseObserver);
+        case METHODID_GET_CORE_CHAIN_STATUS:
+          serviceImpl.getCoreChainStatus((org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse>) responseObserver);
+          break;
+        case METHODID_GET_MASTERNODE_STATUS:
+          serviceImpl.getMasternodeStatus((org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse>) responseObserver);
           break;
         case METHODID_GET_BLOCK:
           serviceImpl.getBlock((org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest) request,
@@ -690,7 +763,8 @@ public final class CoreGrpc {
         if (result == null) {
           serviceDescriptor = result = io.grpc.ServiceDescriptor.newBuilder(SERVICE_NAME)
               .setSchemaDescriptor(new CoreFileDescriptorSupplier())
-              .addMethod(getGetStatusMethod())
+              .addMethod(getGetCoreChainStatusMethod())
+              .addMethod(getGetMasternodeStatusMethod())
               .addMethod(getGetBlockMethod())
               .addMethod(getBroadcastTransactionMethod())
               .addMethod(getGetTransactionMethod())

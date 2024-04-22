@@ -55,24 +55,44 @@
 
 #pragma mark - Method Implementations
 
-#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
+#pragma mark getCoreChainStatus(GetCoreChainStatusRequest) returns (GetCoreChainStatusResponse)
 
-- (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetStatusWithRequest:request handler:handler] start];
+- (void)getCoreChainStatusWithRequest:(GetCoreChainStatusRequest *)request handler:(void(^)(GetCoreChainStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetCoreChainStatusWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getStatus"
+- (GRPCProtoCall *)RPCTogetCoreChainStatusWithRequest:(GetCoreChainStatusRequest *)request handler:(void(^)(GetCoreChainStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getCoreChainStatus"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetStatusResponse class]
+             responseClass:[GetCoreChainStatusResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getStatusWithMessage:(GetStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getStatus"
+- (GRPCUnaryProtoCall *)getCoreChainStatusWithMessage:(GetCoreChainStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getCoreChainStatus"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[GetStatusResponse class]];
+             responseClass:[GetCoreChainStatusResponse class]];
+}
+
+#pragma mark getMasternodeStatus(GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse)
+
+- (void)getMasternodeStatusWithRequest:(GetMasternodeStatusRequest *)request handler:(void(^)(GetMasternodeStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetMasternodeStatusWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetMasternodeStatusWithRequest:(GetMasternodeStatusRequest *)request handler:(void(^)(GetMasternodeStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getMasternodeStatus"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetMasternodeStatusResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getMasternodeStatusWithMessage:(GetMasternodeStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getMasternodeStatus"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetMasternodeStatusResponse class]];
 }
 
 #pragma mark getBlock(GetBlockRequest) returns (GetBlockResponse)

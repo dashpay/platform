@@ -14,10 +14,15 @@ class CoreStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.getStatus = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Core/getStatus',
-                request_serializer=core__pb2.GetStatusRequest.SerializeToString,
-                response_deserializer=core__pb2.GetStatusResponse.FromString,
+        self.getCoreChainStatus = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Core/getCoreChainStatus',
+                request_serializer=core__pb2.GetCoreChainStatusRequest.SerializeToString,
+                response_deserializer=core__pb2.GetCoreChainStatusResponse.FromString,
+                )
+        self.getMasternodeStatus = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Core/getMasternodeStatus',
+                request_serializer=core__pb2.GetMasternodeStatusRequest.SerializeToString,
+                response_deserializer=core__pb2.GetMasternodeStatusResponse.FromString,
                 )
         self.getBlock = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Core/getBlock',
@@ -54,7 +59,13 @@ class CoreStub(object):
 class CoreServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def getStatus(self, request, context):
+    def getCoreChainStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getMasternodeStatus(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -99,10 +110,15 @@ class CoreServicer(object):
 
 def add_CoreServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'getStatus': grpc.unary_unary_rpc_method_handler(
-                    servicer.getStatus,
-                    request_deserializer=core__pb2.GetStatusRequest.FromString,
-                    response_serializer=core__pb2.GetStatusResponse.SerializeToString,
+            'getCoreChainStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.getCoreChainStatus,
+                    request_deserializer=core__pb2.GetCoreChainStatusRequest.FromString,
+                    response_serializer=core__pb2.GetCoreChainStatusResponse.SerializeToString,
+            ),
+            'getMasternodeStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.getMasternodeStatus,
+                    request_deserializer=core__pb2.GetMasternodeStatusRequest.FromString,
+                    response_serializer=core__pb2.GetMasternodeStatusResponse.SerializeToString,
             ),
             'getBlock': grpc.unary_unary_rpc_method_handler(
                     servicer.getBlock,
@@ -145,7 +161,7 @@ class Core(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def getStatus(request,
+    def getCoreChainStatus(request,
             target,
             options=(),
             channel_credentials=None,
@@ -155,9 +171,26 @@ class Core(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Core/getStatus',
-            core__pb2.GetStatusRequest.SerializeToString,
-            core__pb2.GetStatusResponse.FromString,
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Core/getCoreChainStatus',
+            core__pb2.GetCoreChainStatusRequest.SerializeToString,
+            core__pb2.GetCoreChainStatusResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getMasternodeStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Core/getMasternodeStatus',
+            core__pb2.GetMasternodeStatusRequest.SerializeToString,
+            core__pb2.GetMasternodeStatusResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
