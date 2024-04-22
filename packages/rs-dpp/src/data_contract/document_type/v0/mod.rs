@@ -54,7 +54,7 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_keep_history: bool,
     /// Are documents mutable?
     pub(in crate::data_contract) documents_mutable: bool,
-    /// Are documents mutable?
+    /// Are documents transferable?
     pub(in crate::data_contract) documents_transferable: Transferable,
     pub(in crate::data_contract) data_contract_id: Identifier,
     /// Encryption key storage requirements
