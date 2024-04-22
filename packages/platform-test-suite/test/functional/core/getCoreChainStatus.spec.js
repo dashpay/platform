@@ -3,7 +3,7 @@ const { Essentials: { Buffer } } = require('dash');
 const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
 
 describe('Core', () => {
-  describe('getStatus', function main() {
+  describe('getCoreChainStatus', function main() {
     let client;
 
     this.timeout(160000);
@@ -19,7 +19,7 @@ describe('Core', () => {
     });
 
     it('should return status', async () => {
-      const result = await client.getDAPIClient().core.getStatus();
+      const result = await client.getDAPIClient().core.getCoreChainStatus();
 
       const {
         version, time, status, syncProgress, chain, network,
