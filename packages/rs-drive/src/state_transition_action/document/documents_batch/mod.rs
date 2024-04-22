@@ -3,10 +3,12 @@ use crate::state_transition_action::document::documents_batch::v0::DocumentsBatc
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::fee::Credits;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
+use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 
 /// document transition
@@ -73,6 +75,13 @@ impl DocumentsBatchTransitionAction {
 }
 
 impl DocumentsBatchTransitionAction {
+    /// The sum of all purchases amounts for all purchase transitions in the batch
+    pub fn all_purchases_amount(&self) -> Option<Credits> {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => v0.all_purchases_amount(),
+        }
+    }
+
     /// Determines the security level requirements for the batch transition action.
     ///
     /// This method performs the following steps:

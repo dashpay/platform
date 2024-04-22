@@ -1,3 +1,4 @@
+use crate::fee::Credits;
 use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
@@ -19,6 +20,7 @@ pub trait DocumentPurchaseTransitionV0Methods {
 
     /// Sets the value of the `revision` field in the `DocumentReplaceTransitionV0`.
     fn set_revision(&mut self, revision: Revision);
+    fn price(&self) -> Credits;
 }
 
 impl DocumentPurchaseTransitionV0Methods for DocumentPurchaseTransitionV0 {
@@ -40,5 +42,9 @@ impl DocumentPurchaseTransitionV0Methods for DocumentPurchaseTransitionV0 {
 
     fn set_revision(&mut self, revision: Revision) {
         self.revision = revision;
+    }
+
+    fn price(&self) -> Credits {
+        self.price
     }
 }

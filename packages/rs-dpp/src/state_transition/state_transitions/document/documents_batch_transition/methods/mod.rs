@@ -27,6 +27,12 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 pub mod v0;
 
 impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
+    fn all_purchases_amount(&self) -> Option<Credits> {
+        match self {
+            DocumentsBatchTransition::V0(v0) => v0.all_purchases_amount(),
+        }
+    }
+
     fn set_transitions(&mut self, transitions: Vec<DocumentTransition>) {
         match self {
             DocumentsBatchTransition::V0(v0) => v0.set_transitions(transitions),

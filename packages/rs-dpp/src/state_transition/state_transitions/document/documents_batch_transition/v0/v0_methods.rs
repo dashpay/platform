@@ -37,6 +37,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
+use crate::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 
 impl DocumentsBatchTransitionAccessorsV0 for DocumentsBatchTransitionV0 {
     fn transitions(&self) -> &Vec<DocumentTransition> {
@@ -299,5 +300,23 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         self.transitions
             .iter_mut()
             .for_each(|transition| transition.set_identity_contract_nonce(identity_contract_nonce));
+    }
+
+    fn all_purchases_amount(&self) -> Option<Credits> {
+        let (total, any_purchases) = self
+            .transitions
+            .iter()
+            .filter_map(|transition| {
+                transition
+                    .as_transition_purchase()
+                    .map(|purchase| purchase.price())
+            })
+            .fold((0, false), |(acc, _), price| (acc + price, true));
+
+        if any_purchases {
+            Some(total) // Return the sum as Some(Credits) if there were any purchases
+        } else {
+            None // Return None if no purchases were found
+        }
     }
 }
