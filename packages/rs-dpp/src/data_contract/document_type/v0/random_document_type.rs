@@ -110,7 +110,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use platform_value::Identifier;
+use platform_value::{platform_value, Identifier};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -345,7 +345,7 @@ impl DocumentTypeV0 {
                         },
                         ArrayItemType::Identifier => json!({"type": "array"}),
                         ArrayItemType::Boolean => json!({"type": "bool"}),
-                        ArrayItemType::Date => json!({"type": "date"}), 
+                        ArrayItemType::Date => json!({"type": "date"}),
                     };
 
                     json!({
@@ -402,7 +402,6 @@ impl DocumentTypeV0 {
 
         // Combine everything into the final schema
         let schema = json!({
-            "title": name,
             "type": "object",
             "properties": properties_json_schema,
             "required": required_fields.iter().cloned().collect::<Vec<_>>(),
@@ -569,14 +568,14 @@ impl DocumentTypeV0 {
         )?;
 
         // Combine everything into the final schema
-        let schema = json!({
+        let schema = platform_value!({
             "invalid": "yo",
         });
 
         // TODO: It might not work properly
         Ok(DocumentTypeV0 {
             name,
-            schema: schema.into(),
+            schema,
             indices,
             index_structure,
             flattened_properties: properties.clone(),

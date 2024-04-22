@@ -45,6 +45,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract update or fee calculation fails.
+    #[inline(always)]
     pub(super) fn update_contract_v0(
         &self,
         contract: &DataContract,
@@ -135,6 +136,7 @@ impl Drive {
     }
 
     /// Updates a contract.
+    #[inline(always)]
     pub(super) fn update_contract_element_v0(
         &self,
         contract_element: Element,
@@ -166,6 +168,7 @@ impl Drive {
     }
 
     /// Updates a contract.
+    #[inline(always)]
     pub(super) fn update_contract_add_operations_v0(
         &self,
         contract_element: Element,

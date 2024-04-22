@@ -160,8 +160,14 @@ impl AddressList {
 
     /// Randomly select a not banned address.
     pub fn get_live_address(&self) -> Option<&Address> {
-        let now = time::Instant::now();
         let mut rng = SmallRng::from_entropy();
+
+        self.unbanned().into_iter().choose(&mut rng)
+    }
+
+    /// Get all addresses that are not banned.
+    fn unbanned(&self) -> Vec<&Address> {
+        let now = time::Instant::now();
 
         self.addresses
             .iter()
@@ -170,7 +176,25 @@ impl AddressList {
                     .map(|banned_until| banned_until < now)
                     .unwrap_or(true)
             })
-            .choose(&mut rng)
+            .collect()
+    }
+
+    /// Get number of available, not banned addresses.
+    pub fn available(&self) -> usize {
+        self.unbanned().len()
+    }
+
+    /// Get number of all addresses, both banned and not banned.
+    pub fn len(&self) -> usize {
+        self.addresses.len()
+    }
+
+    /// Check if the list is empty.
+    /// Returns true if there are no addresses in the list.
+    /// Returns false if there is at least one address in the list.
+    /// Banned addresses are also counted.
+    pub fn is_empty(&self) -> bool {
+        self.addresses.is_empty()
     }
 }
 

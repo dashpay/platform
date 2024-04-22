@@ -40,6 +40,7 @@ impl Drive {
     /// - The identity ID does not correspond to a valid partial identity.
     /// - The keys information is missing or incorrect.
     ///
+    #[inline(always)]
     pub(super) fn verify_identity_keys_by_identity_id_v0(
         proof: &[u8],
         key_request: IdentityKeysRequest,

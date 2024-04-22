@@ -202,7 +202,7 @@ describe('Withdrawals', function withdrawalsTest() {
         expect.fail('should throw broadcast error');
       } catch (e) {
         expect(e.message).to.be.equal('Action is not allowed');
-        expect(e.code).to.equal(4001);
+        expect(e.code).to.equal(40500);
       }
     });
 
@@ -244,7 +244,7 @@ describe('Withdrawals', function withdrawalsTest() {
         expect.fail('should throw broadcast error');
       } catch (e) {
         expect(e.message).to.be.equal('withdrawal deletion is allowed only for COMPLETE statuses');
-        expect(e.code).to.equal(4001);
+        expect(e.code).to.equal(40500);
       }
     });
 
@@ -267,7 +267,7 @@ describe('Withdrawals', function withdrawalsTest() {
         expect.fail('should throw broadcast error');
       } catch (e) {
         expect(e.message).to.be.equal('Action is not allowed');
-        expect(e.code).to.equal(4001);
+        expect(e.code).to.equal(40500);
       }
     });
   });

@@ -2575,6 +2575,7 @@ typedef GPB_ENUM(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNu
   GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_FirstCoreBlockHeight = 3,
   GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_StartTime = 4,
   GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_FeeMultiplier = 5,
+  GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_ProtocolVersion = 6,
 };
 
 GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo : GPBMessage
@@ -2588,6 +2589,8 @@ GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo : G
 @property(nonatomic, readwrite) uint64_t startTime;
 
 @property(nonatomic, readwrite) double feeMultiplier;
+
+@property(nonatomic, readwrite) uint32_t protocolVersion;
 
 @end
 

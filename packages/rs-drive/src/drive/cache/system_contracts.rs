@@ -5,7 +5,6 @@ use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 
-// TODO: Use ArcSwap
 /// System contracts
 pub struct SystemDataContracts {
     /// Withdrawal contract

@@ -1,6 +1,7 @@
 mod identity_contract_nonce;
 mod state;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::ConsensusValidationResult;
 
@@ -23,8 +24,9 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _block_info: &BlockInfo,
         validation_mode: ValidationMode,
-        _execution_context: &mut StateTransitionExecutionContext,
+        execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -36,7 +38,9 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(validation_mode, platform_version),
+            0 => {
+                self.transform_into_action_v0(validation_mode, execution_context, platform_version)
+            }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -122,6 +126,7 @@ mod tests {
 
         use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
+        use dpp::block::epoch::Epoch;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
@@ -169,7 +174,13 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument", updated_document, true, platform_version)
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
                 .expect("to be able to set document schema");
 
             let state_transition = DataContractUpdateTransitionV0 {
@@ -202,6 +213,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
+                    &Epoch::new(0).unwrap(),
                     &mut execution_context,
                     None,
                 )
@@ -255,7 +267,13 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument", updated_document, true, platform_version)
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
                 .expect("to be able to set document schema");
 
             // TODO: add a data contract stop transition
@@ -289,6 +307,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
+                    &Epoch::new(0).unwrap(),
                     &mut execution_context,
                     None,
                 )
@@ -414,6 +433,7 @@ mod tests {
                     "niceDocument",
                     updated_document_type.into(),
                     true,
+                    &mut vec![],
                     LATEST_PLATFORM_VERSION,
                 )
                 .expect("to be able to set document schema");
@@ -445,6 +465,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
+                    &Epoch::new(0).unwrap(),
                     &mut execution_context,
                     None,
                 )

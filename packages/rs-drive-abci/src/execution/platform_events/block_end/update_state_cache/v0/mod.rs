@@ -4,7 +4,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
-use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::sync::Arc;
 
@@ -34,6 +34,7 @@ where
     /// This function may return an `Error` variant if there is a problem with updating the state cache
     /// and quorums or storing the ephemeral data.
     ///
+    #[inline(always)]
     pub(super) fn update_state_cache_v0(
         &self,
         extended_block_info: ExtendedBlockInfo,
@@ -53,11 +54,6 @@ where
         block_platform_state.set_last_committed_block_info(Some(extended_block_info));
 
         block_platform_state.set_genesis_block_info(None);
-
-        //todo: verify this with an update
-        let version = PlatformVersion::get(platform_version.protocol_version)?;
-
-        PlatformVersion::set_current(version);
 
         // Persist block state
 

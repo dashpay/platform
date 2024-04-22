@@ -4,7 +4,7 @@ pub use v0::*;
 
 use crate::document::Document;
 use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
@@ -68,6 +68,30 @@ impl DocumentV0Getters for Document {
             Document::V0(v0) => v0.updated_at,
         }
     }
+
+    fn created_at_block_height(&self) -> Option<BlockHeight> {
+        match self {
+            Document::V0(v0) => v0.created_at_block_height,
+        }
+    }
+
+    fn updated_at_block_height(&self) -> Option<BlockHeight> {
+        match self {
+            Document::V0(v0) => v0.updated_at_block_height,
+        }
+    }
+
+    fn created_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        match self {
+            Document::V0(v0) => v0.created_at_core_block_height,
+        }
+    }
+
+    fn updated_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        match self {
+            Document::V0(v0) => v0.updated_at_core_block_height,
+        }
+    }
 }
 
 impl DocumentV0Setters for Document {
@@ -104,6 +128,30 @@ impl DocumentV0Setters for Document {
     fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
         match self {
             Document::V0(v0) => v0.updated_at = updated_at,
+        }
+    }
+
+    fn set_created_at_block_height(&mut self, created_at_block_height: Option<u64>) {
+        match self {
+            Document::V0(v0) => v0.created_at_block_height = created_at_block_height,
+        }
+    }
+
+    fn set_updated_at_block_height(&mut self, updated_at_block_height: Option<u64>) {
+        match self {
+            Document::V0(v0) => v0.updated_at_block_height = updated_at_block_height,
+        }
+    }
+
+    fn set_created_at_core_block_height(&mut self, created_at_core_block_height: Option<u32>) {
+        match self {
+            Document::V0(v0) => v0.created_at_core_block_height = created_at_core_block_height,
+        }
+    }
+
+    fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>) {
+        match self {
+            Document::V0(v0) => v0.updated_at_core_block_height = updated_at_core_block_height,
         }
     }
 }

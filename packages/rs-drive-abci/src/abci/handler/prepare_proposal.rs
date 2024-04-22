@@ -121,7 +121,6 @@ where
         mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
-    // TODO: This is current protocol version and can be read from the state
     let platform_version = PlatformVersion::get(protocol_version)
         .expect("must be set in run block proposal from existing protocol version");
 
@@ -152,7 +151,7 @@ where
             StateTransitionExecutionResult::UnpaidConsensusError(..) => TxAction::Removed,
             // We shouldn't include in the block any state transitions that produced an internal error
             // during execution
-            StateTransitionExecutionResult::DriveAbciError(..) => TxAction::Removed,
+            StateTransitionExecutionResult::InternalError(..) => TxAction::Removed,
         };
 
         let tx_result: ExecTxResult =
@@ -190,6 +189,7 @@ where
         validator_set_update,
         // TODO: implement consensus param updates
         consensus_param_updates: None,
+        app_version: protocol_version as u64,
     };
 
     block_execution_context.set_proposer_results(Some(response.clone()));
@@ -207,8 +207,13 @@ where
         valid_tx_count,
         delayed_tx_count,
         failed_tx_count,
-        "Prepared proposal with {} transitions for height: {}, round: {} in {} ms",
+        "Prepared proposal with {} transition{} for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_paid_tx_count,
+        if valid_tx_count + invalid_paid_tx_count > 0 {
+            "s"
+        } else {
+            ""
+        },
         request.height,
         request.round,
         elapsed_time_ms,

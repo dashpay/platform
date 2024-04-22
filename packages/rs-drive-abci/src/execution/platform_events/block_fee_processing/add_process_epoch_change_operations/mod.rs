@@ -8,12 +8,11 @@ use crate::error::Error;
 
 use crate::execution::types::block_fees::BlockFees;
 
-use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::storage_fee_distribution_outcome;
 
 use crate::error::execution::ExecutionError;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 
-use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
@@ -41,8 +40,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     ///
     pub fn add_process_epoch_change_operations(
         &self,
-        block_info: &BlockStateInfo,
-        epoch_info: &EpochInfo,
+        block_execution_context: &BlockExecutionContext,
         block_fees: &BlockFees,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
@@ -56,8 +54,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .add_process_epoch_change_operations
         {
             0 => self.add_process_epoch_change_operations_v0(
-                block_info,
-                epoch_info,
+                block_execution_context,
                 block_fees,
                 transaction,
                 batch,

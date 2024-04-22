@@ -2,6 +2,7 @@ use crate::consensus::basic::data_contract::DataContractEmptySchemaError;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -15,6 +16,7 @@ impl DocumentTypeV0 {
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         validate: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
@@ -40,6 +42,7 @@ impl DocumentTypeV0 {
                     documents_keep_history_contract_default,
                     documents_mutable_contract_default,
                     validate,
+                    validation_operations,
                     platform_version,
                 )?,
                 version => {

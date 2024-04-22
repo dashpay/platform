@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 
 use crate::{Error, Sdk};
 
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::put_settings::PutSettings;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -99,10 +100,13 @@ impl<S: Signer> PutContract<S> for DataContract {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
+        let block_info = block_info_from_metadata(response.metadata()?)?;
+
         let proof = response.proof_owned()?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
+            &block_info,
             proof.grovedb_proof.as_slice(),
             &|_| Ok(None),
             sdk.version(),

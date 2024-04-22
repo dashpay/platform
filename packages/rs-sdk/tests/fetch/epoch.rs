@@ -5,16 +5,16 @@ use dapi_grpc::platform::{
     v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest},
     VersionedGrpcResponse,
 };
-use dpp::block::epoch::EpochIndex;
-use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
-use rs_sdk::{
+use dash_sdk::{
     platform::{
         types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery, DEFAULT_EPOCH_QUERY_LIMIT,
     },
     Sdk,
 };
+use dpp::block::epoch::EpochIndex;
+use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 
 /// Get current epoch index from DAPI response metadata
 async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
@@ -80,7 +80,7 @@ async fn test_epoch_list() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_epoch_list").await;
 
     // Given some starting epoch and current epoch
     // Note the devnet does not necessarily start with epoch 0
@@ -107,7 +107,7 @@ async fn test_epoch_list_limit() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_epoch_list_limit").await;
 
     // Given some starting epoch and current epoch
     // Note the devnet does not necessarily start with epoch 0
@@ -133,7 +133,7 @@ async fn test_epoch_fetch() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_epoch_fetch").await;
 
     // Given some current epoch
     let current_epoch = get_current_epoch(&sdk, &cfg).await;
@@ -152,7 +152,7 @@ async fn test_epoch_fetch_future() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_epoch_fetch_future").await;
 
     // Given some current epoch
     let current_epoch = get_current_epoch(&sdk, &cfg).await;
@@ -170,7 +170,7 @@ async fn test_epoch_fetch_current() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_epoch_fetch_current").await;
 
     // Given some current epoch
     let expected_epoch = get_current_epoch(&sdk, &cfg).await;

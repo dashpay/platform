@@ -1,8 +1,10 @@
-pub(crate) mod identity_and_signatures;
+pub(crate) mod advanced_structure;
+mod basic_structure;
 mod nonce;
 mod state;
-mod structure;
 
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -17,8 +19,8 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
+use crate::execution::validation::state_transition::identity_update::basic_structure::v0::IdentityUpdateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::identity_update::state::v0::IdentityUpdateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::identity_update::structure::v0::IdentityUpdateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
 };
@@ -30,6 +32,7 @@ impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _block_info: &BlockInfo,
         _validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
@@ -65,7 +68,7 @@ impl StateTransitionBasicStructureValidationV0 for IdentityUpdateTransition {
             .identity_update_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_base_structure_v0(platform_version),
+            Some(0) => self.validate_basic_structure_v0(platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity update transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
@@ -85,6 +88,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
+        _epoch: &Epoch,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

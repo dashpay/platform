@@ -34,7 +34,7 @@ impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
                     ..Default::default()
                 }
             }
-            StateTransitionExecutionResult::DriveAbciError(message) => ExecTxResult {
+            StateTransitionExecutionResult::InternalError(message) => ExecTxResult {
                 code: HandlerError::Internal(message).code(),
                 // TODO: That would be nice to provide more information about the error for debugging
                 info: String::default(),

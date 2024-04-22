@@ -22,6 +22,9 @@ use crate::state_transition_action::system::bump_identity_data_contract_nonce_ac
 use crate::state_transition_action::system::bump_identity_nonce_action::{
     BumpIdentityNonceAction, BumpIdentityNonceActionAccessorsV0,
 };
+use crate::state_transition_action::system::partially_use_asset_lock_action::{
+    PartiallyUseAssetLockAction, PartiallyUseAssetLockActionAccessorsV0,
+};
 use derive_more::From;
 use dpp::prelude::UserFeeIncrease;
 
@@ -52,6 +55,9 @@ pub enum StateTransitionAction {
     /// this can only come in this form from the document contract update state transition
     /// it will also only happen if the state validation fails
     BumpIdentityDataContractNonceAction(BumpIdentityDataContractNonceAction),
+    /// partially use the asset lock for funding invalid asset lock transactions like
+    /// identity top up and identity create
+    PartiallyUseAssetLockAction(PartiallyUseAssetLockAction),
 }
 
 impl StateTransitionAction {
@@ -72,6 +78,9 @@ impl StateTransitionAction {
             }
             StateTransitionAction::BumpIdentityNonceAction(action) => action.user_fee_increase(),
             StateTransitionAction::BumpIdentityDataContractNonceAction(action) => {
+                action.user_fee_increase()
+            }
+            StateTransitionAction::PartiallyUseAssetLockAction(action) => {
                 action.user_fee_increase()
             }
         }

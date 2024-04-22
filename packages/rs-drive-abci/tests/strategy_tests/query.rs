@@ -337,7 +337,7 @@ mod tests {
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
-    use strategy_tests::Strategy;
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
 
@@ -369,13 +369,11 @@ mod tests {
     fn run_chain_query_epoch_info() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -469,13 +467,11 @@ mod tests {
     fn run_chain_query_epoch_info_latest() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -570,13 +566,11 @@ mod tests {
     fn run_chain_prove_epoch_info() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },

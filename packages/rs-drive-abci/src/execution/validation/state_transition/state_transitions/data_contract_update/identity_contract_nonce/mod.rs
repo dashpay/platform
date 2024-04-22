@@ -5,6 +5,7 @@ use drive::grovedb::TransactionArg;
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::data_contract_update::identity_contract_nonce::v0::DataContractUpdateStateTransitionIdentityContractNonceV0;
 use crate::execution::validation::state_transition::processor::v0::{StateTransitionNonceValidationV0};
 use crate::platform_types::platform::{PlatformStateRef};
@@ -17,6 +18,7 @@ impl StateTransitionNonceValidationV0 for DataContractUpdateTransition {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -26,9 +28,13 @@ impl StateTransitionNonceValidationV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .nonce
         {
-            Some(0) => {
-                self.validate_identity_contract_nonce_v0(platform, block_info, tx, platform_version)
-            }
+            Some(0) => self.validate_identity_contract_nonce_v0(
+                platform,
+                block_info,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_identity_contract_nonce"
                     .to_string(),

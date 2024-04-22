@@ -1,3 +1,4 @@
+use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
@@ -10,6 +11,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
 
@@ -18,6 +20,8 @@ pub(super) trait DocumentCreateTransitionActionStateValidationV0 {
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
@@ -27,6 +31,8 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
+        _epoch: &Epoch,
+        _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {

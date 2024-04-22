@@ -213,6 +213,7 @@ mod test {
             false,
             false,
             false,
+            &mut vec![],
             LATEST_PLATFORM_VERSION,
         )
         .unwrap();

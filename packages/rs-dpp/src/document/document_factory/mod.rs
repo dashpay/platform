@@ -84,9 +84,12 @@ impl DocumentFactory {
         data: Value,
     ) -> Result<Document, ProtocolError> {
         match self {
-            DocumentFactory::V0(v0) => {
-                v0.create_document(data_contract, owner_id, document_type_name, data)
-            }
+            DocumentFactory::V0(v0) => v0.create_document_without_time_based_properties(
+                data_contract,
+                owner_id,
+                document_type_name,
+                data,
+            ),
         }
     }
 

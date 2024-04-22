@@ -29,6 +29,7 @@ pub struct DriveMethodVersions {
     pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,
+    pub fetch: DriveFetchMethodVersions,
     pub prove: DriveProveMethodVersions,
     pub state_transitions: DriveStateTransitionMethodVersions,
     pub platform_state: DrivePlatformStateMethodVersions,
@@ -57,8 +58,14 @@ pub struct DriveDataContractOperationMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct DriveFetchMethodVersions {
+    pub fetch_elements: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveProveMethodVersions {
-    pub prove_multiple: FeatureVersion,
+    pub prove_elements: FeatureVersion,
+    pub prove_multiple_state_transition_results: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -101,6 +108,7 @@ pub struct DriveVerifyIdentityMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifySystemMethodVersions {
     pub verify_epoch_infos: FeatureVersion,
+    pub verify_elements: FeatureVersion,
     pub verify_upgrade_state: FeatureVersion,
     pub verify_upgrade_vote_status: FeatureVersion,
 }
@@ -137,7 +145,7 @@ pub struct DriveBalancesMethodVersions {
 pub struct DriveAssetLockMethodVersions {
     pub add_asset_lock_outpoint: FeatureVersion,
     pub add_estimation_costs_for_adding_asset_lock: FeatureVersion,
-    pub has_asset_lock_outpoint: FeatureVersion,
+    pub fetch_asset_lock_outpoint_info: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -203,7 +211,6 @@ pub struct DriveContractCostsMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DrivePlatformSystemMethodVersions {
-    pub protocol_version: DriveSystemProtocolVersionMethodVersions,
     pub estimation_costs: DriveSystemEstimationCostsMethodVersions,
 }
 
@@ -222,12 +229,6 @@ pub struct DriveOperationsMethodVersion {
 pub struct DriveBatchOperationsMethodVersion {
     pub convert_drive_operations_to_grove_operations: FeatureVersion,
     pub apply_drive_operations: FeatureVersion,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DriveSystemProtocolVersionMethodVersions {
-    pub fetch_next_protocol_version: FeatureVersion,
-    pub set_next_protocol_version_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -361,6 +362,7 @@ pub struct DriveCreditPoolMethodVersions {
     pub epochs: DriveCreditPoolEpochsMethodVersions,
     pub pending_epoch_refunds: DriveCreditPoolPendingEpochRefundsMethodVersions,
     pub storage_fee_distribution_pool: DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
+    pub unpaid_epoch: DriveCreditPoolUnpaidEpochMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -383,6 +385,11 @@ pub struct DriveCreditPoolEpochsMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct DriveCreditPoolUnpaidEpochMethodVersions {
+    pub get_unpaid_epoch_index: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveCreditPoolPendingEpochRefundsMethodVersions {
     pub add_delete_pending_epoch_refunds_except_specified: FeatureVersion,
     pub fetch_and_add_pending_epoch_refunds_to_collection: FeatureVersion,
@@ -398,7 +405,6 @@ pub struct DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveProtocolUpgradeVersions {
     pub clear_version_information: FeatureVersion,
-    pub change_to_new_version_and_clear_version_information: FeatureVersion,
     pub fetch_versions_with_counter: FeatureVersion,
     pub fetch_proved_versions_with_counter: FeatureVersion,
     pub fetch_validator_version_votes: FeatureVersion,
