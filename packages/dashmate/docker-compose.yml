@@ -28,8 +28,8 @@ services:
     networks:
       - main
     ports:
-      - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
-      - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
+      - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err}
+      - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err}
     volumes:
       - core_data:/home/dash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/home/dash/.dashcore/dash.conf:ro
@@ -79,7 +79,7 @@ services:
       - PROMETHEUS_BIND_ADDRESS=http://0.0.0.0:29090
       - TOKIO_CONSOLE_ENABLED=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_ENABLED:?err}
       - TOKIO_CONSOLE_ADDRESS=0.0.0.0:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
-      - TOKIO_CONSOLE_RETENTION_SECS=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_RETENTION_SECS:?err}
+      - TOKIO_CONSOLE_RETENTION_SECS=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_RETENTION:?err}
     stop_grace_period: 30s
     networks:
       - main
@@ -195,7 +195,12 @@ services:
       org.dashmate.service.title: "DAPI Envoy"
     restart: unless-stopped
     ports:
-      - ${PLATFORM_DAPI_ENVOY_HTTP_HOST:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native
+      # Actual entry point to the platform.
+      # Supports HTTP1 and HTTP2
+      # Serves JSON RPC, gRPC, and gRPC-Web
+      - ${PLATFORM_DAPI_ENVOY_HTTP_HOST:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000
+      - ${PLATFORM_DAPI_ENVOY_METRICS_HOST:?err}:${PLATFORM_DAPI_ENVOY_METRICS_PORT:?err}:9090
+      - ${PLATFORM_DAPI_ENVOY_ADMIN_HOST:?err}:${PLATFORM_DAPI_ENVOY_ADMIN_PORT:?err}:9901
     depends_on:
       - dapi_api
       - dapi_tx_filter_stream

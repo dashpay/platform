@@ -538,6 +538,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               delete options.platform.dapi.envoy.http.responseTimeout;
             }
 
+            options.platform.dapi.envoy.metrics = base.get('platform.dapi.envoy.metrics');
+            options.platform.dapi.envoy.admin = base.get('platform.dapi.envoy.admin');
             options.platform.dapi.envoy.upstreams = base.get('platform.dapi.envoy.upstreams');
 
             options.platform.dapi.envoy.rateLimiter.docker = base.get('platform.dapi.envoy.rateLimiter.docker');
@@ -545,6 +547,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.dapi.envoy.rateLimiter.requestsPerUnit = base.get('platform.dapi.envoy.rateLimiter.requestsPerUnit');
             options.platform.dapi.envoy.rateLimiter.blacklist = base.get('platform.dapi.envoy.rateLimiter.blacklist');
             options.platform.dapi.envoy.rateLimiter.whitelist = base.get('platform.dapi.envoy.rateLimiter.whitelist');
+            options.platform.dapi.envoy.rateLimiter.metrics = base.get('platform.dapi.envoy.rateLimiter.metrics');
 
             if (options.platform.dapi.envoy.rateLimiter.fillInterval) {
               delete options.platform.dapi.envoy.rateLimiter.fillInterval;
@@ -559,6 +562,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             options.platform.dapi.envoy.docker.image = base.get('platform.dapi.envoy.docker.image');
+
+            if (options.platform.drive.abci.tokioConsole.retention_secs) {
+              options.platform.drive.abci.tokioConsole.retention = options.platform.drive.abci
+                .tokioConsole.retention_secs;
+              delete options.platform.drive.abci.tokioConsole.retention_secs;
+            }
           });
 
         return configFile;

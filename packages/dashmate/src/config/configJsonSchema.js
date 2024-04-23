@@ -50,6 +50,11 @@ export default {
       required: ['image', 'build'],
       additionalProperties: false,
     },
+    host: {
+      type: 'string',
+      minLength: 1,
+      format: 'ipv4',
+    },
     port: {
       type: 'integer',
       minimum: 0,
@@ -84,39 +89,21 @@ export default {
       type: 'string',
       pattern: '^[0-9]+(\\.[0-9]+)?s$',
     },
-    envoyUpstream: {
+    enabledHostPort: {
       type: 'object',
       properties: {
-        maxConnections: {
-          type: 'integer',
-          minimum: 1,
-          description: 'The maximum number of connections that Envoy will establish to all hosts in a cluster',
+        enabled: {
+          type: 'boolean',
         },
-        maxPendingRequests: {
-          type: 'integer',
-          minimum: 1,
-          description: 'The maximum number of requests that will be queued if `maxRequests` is reached.',
+        host: {
+          $ref: '#/definitions/host',
         },
-        maxRequests: {
-          type: 'integer',
-          minimum: 1,
-          description: 'The maximum number of parallel requests',
+        port: {
+          $ref: '#/definitions/port',
         },
       },
-      required: ['maxConnections', 'maxPendingRequests', 'maxRequests'],
       additionalProperties: false,
-    },
-    ipList: {
-      type: 'string',
-      oneOf: [
-        {
-          format: 'ipv4',
-        },
-        {
-          format: 'ipv6',
-        },
-      ],
-      minLength: 1,
+      required: ['enabled', 'host', 'port'],
     },
   },
   properties: {
@@ -207,9 +194,7 @@ export default {
           type: 'object',
           properties: {
             host: {
-              type: 'string',
-              minLength: 1,
-              format: 'ipv4',
+              $ref: '#/definitions/host',
             },
             port: {
               $ref: '#/definitions/port',
@@ -404,17 +389,43 @@ export default {
                   type: 'object',
                   properties: {
                     driveGrpc: {
-                      $ref: '#/definitions/envoyUpstream',
+                      $id: 'envoyUpstream',
+                      type: 'object',
+                      properties: {
+                        maxConnections: {
+                          type: 'integer',
+                          minimum: 1,
+                          description: 'The maximum number of connections that Envoy will establish to all hosts in a cluster',
+                        },
+                        maxPendingRequests: {
+                          type: 'integer',
+                          minimum: 1,
+                          description: 'The maximum number of requests that will be queued if `maxRequests` is reached.',
+                        },
+                        maxRequests: {
+                          type: 'integer',
+                          minimum: 1,
+                          description: 'The maximum number of parallel requests',
+                        },
+                      },
+                      required: ['maxConnections', 'maxPendingRequests', 'maxRequests'],
+                      additionalProperties: false,
                     },
                     dapiApi: {
-                      $ref: '#/definitions/envoyUpstream',
+                      $ref: 'envoyUpstream',
                     },
                     dapiCoreStreams: {
-                      $ref: '#/definitions/envoyUpstream',
+                      $ref: 'envoyUpstream',
                     },
                   },
                   additionalProperties: false,
                   required: ['driveGrpc', 'dapiApi', 'dapiCoreStreams'],
+                },
+                metrics: {
+                  $ref: '#/definitions/enabledHostPort',
+                },
+                admin: {
+                  $ref: '#/definitions/enabledHostPort',
                 },
                 http: {
                   type: 'object',
@@ -448,22 +459,41 @@ export default {
                     blacklist: {
                       type: 'array',
                       items: {
-                        $ref: '#/definitions/ipList',
+                        $ref: '#/definitions/host',
                       },
                       description: 'List of IP addresses that are blacklisted from making requests',
                     },
                     whitelist: {
                       type: 'array',
                       items: {
-                        $ref: '#/definitions/ipList',
+                        $ref: '#/definitions/host',
                       },
                       description: 'List of IP addresses that are whitelisted to make requests without limits',
+                    },
+                    metrics: {
+                      type: 'object',
+                      properties: {
+                        docker: {
+                          $ref: '#/definitions/docker',
+                        },
+                        enabled: {
+                          type: 'boolean',
+                        },
+                        host: {
+                          $ref: '#/definitions/host',
+                        },
+                        port: {
+                          $ref: '#/definitions/port',
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['docker', 'enabled', 'host', 'port'],
                     },
                     enabled: {
                       type: 'boolean',
                     },
                   },
-                  required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist'],
+                  required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist', 'metrics'],
                   additionalProperties: false,
                 },
                 ssl: {
@@ -501,7 +531,7 @@ export default {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'http', 'rateLimiter', 'ssl', 'maxHeapSizeInBytes', 'maxConnections', 'upstreams'],
+              required: ['docker', 'http', 'rateLimiter', 'ssl', 'maxHeapSizeInBytes', 'maxConnections', 'upstreams', 'metrics', 'admin'],
               additionalProperties: false,
             },
             api: {
@@ -588,19 +618,18 @@ export default {
                       type: 'boolean',
                     },
                     host: {
-                      type: 'string',
-                      minLength: 1,
-                      format: 'ipv4',
+                      $ref: '#/definitions/host',
                     },
                     port: {
                       $ref: '#/definitions/port',
                     },
-                    retention_secs: {
+                    retention: {
                       type: 'integer',
                       minimum: 0,
+                      description: 'How many seconds keep data if console is not connected',
                     },
                   },
-                  required: ['enabled', 'host', 'port', 'retention_secs'],
+                  required: ['enabled', 'host', 'port', 'retention'],
                   additionalProperties: false,
                 },
                 validatorSet: {
@@ -855,23 +884,7 @@ export default {
                   additionalProperties: false,
                 },
                 metrics: {
-                  description: 'Prometheus metrics',
-                  type: 'object',
-                  properties: {
-                    enabled: {
-                      type: 'boolean',
-                    },
-                    host: {
-                      type: 'string',
-                      minLength: 1,
-                      format: 'ipv4',
-                    },
-                    port: {
-                      $ref: '#/definitions/port',
-                    },
-                  },
-                  required: ['enabled', 'host', 'port'],
-                  additionalProperties: false,
+                  $ref: '#/definitions/enabledHostPort',
                 },
                 node: {
                   type: 'object',

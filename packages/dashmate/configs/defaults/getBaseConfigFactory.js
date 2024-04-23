@@ -149,6 +149,16 @@ export default function getBaseConfigFactory(homeDir) {
                 maxPendingRequests: 50,
               },
             },
+            metrics: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 9090,
+            },
+            admin: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 9901,
+            },
             http: {
               host: '0.0.0.0',
               port: 443,
@@ -156,6 +166,14 @@ export default function getBaseConfigFactory(homeDir) {
             rateLimiter: {
               docker: {
                 image: 'envoyproxy/ratelimit:3fcc3609',
+              },
+              metrics: {
+                enabled: false,
+                docker: {
+                  image: 'prom/statsd-exporter:v0.26.1',
+                },
+                host: '127.0.0.1',
+                port: 9102,
               },
               unit: 'minute',
               requestsPerUnit: 150,
@@ -212,7 +230,7 @@ export default function getBaseConfigFactory(homeDir) {
               enabled: false,
               host: '127.0.0.1',
               port: 6669,
-              retention_secs: 60 * 3,
+              retention: 60 * 3,
             },
             validatorSet: {
               llmqType: 4,

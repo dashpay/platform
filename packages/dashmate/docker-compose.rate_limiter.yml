@@ -29,7 +29,9 @@ services:
       - RUNTIME_ROOT=/data
       - RUNTIME_SUBDIRECTORY=ratelimit
       - RUNTIME_WATCH_ROOT=false
-      - DISABLE_STATS=true # TODO: We probably want to collect metrics?
+      - DISABLE_STATS=${PLATFORM_DAPI_ENVOY_RATE_LIMITER_METRICS_DISABLED:?err}
+      - STATSD_HOST=dapi_envoy_rate_limiter_metrics
+      - STATSD_PORT=9125
       - CONFIG_TYPE=FILE
       - GRPC_MAX_CONNECTION_AGE=1h
       - GRPC_MAX_CONNECTION_AGE_GRACE=10m

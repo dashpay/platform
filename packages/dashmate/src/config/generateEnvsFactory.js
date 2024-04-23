@@ -58,6 +58,10 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
 
     if (config.get('platform.dapi.envoy.rateLimiter.enabled')) {
       dockerComposeFiles.push('docker-compose.rate_limiter.yml');
+
+      if (config.get('platform.dapi.envoy.rateLimiter.metrics.enabled')) {
+        dockerComposeFiles.push('docker-compose.rate_limiter.metrics.yml');
+      }
     }
 
     // we need this for compatibility with old configs
@@ -88,6 +92,7 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       ),
       DASHMATE_HELPER_DOCKER_IMAGE,
       PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH: tenderdashLogDirectoryPath,
+      PLATFORM_DAPI_ENVOY_RATE_LIMITER_METRICS_DISABLED: config.get('platform.dapi.envoy.rateLimiter.metrics.enabled'),
       ...convertObjectToEnvs(config.getOptions()),
     };
   }

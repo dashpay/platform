@@ -54,8 +54,6 @@
                 authority: "%REQ(:AUTHORITY)%"
       http_filters:
         {{? it.platform.dapi.envoy.rateLimiter.enabled}}
-        # Rate limiter
-        # Local HTTP Rate limiter can limit only connections or requests per connection.
         - name: envoy.filters.http.ratelimit
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
@@ -181,10 +179,10 @@
 
 static_resources:
   listeners:
-    - name: all_http
+    - name: dapi_and_drive_queries
       address:
         socket_address:
-          address: 0.0.0.0
+          address: 0.0.0.0  # For docker container only. Must be a local/private interface.
           port_value: 10000
       {{? it.platform.dapi.envoy.ssl.provider === 'self-signed'}}
       listener_filters:
@@ -225,6 +223,34 @@ static_resources:
                   private_key:
                     filename: "/etc/ssl/private.key"
         {{?}}
+    {{? it.platform.dapi.envoy.metrics.enabled }}
+    - name: prometheus_metrics
+      address:
+        socket_address:
+          address: "0.0.0.0"
+          port_value: 9090
+      filter_chains:
+       - filters:
+           - name: "envoy.http_connection_manager"
+             typed_config:
+               "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+               stat_prefix: ingress_metrics
+               route_config:
+                 name: local_route
+                 virtual_hosts:
+                   - name: local_service
+                     domains: [ "*" ]
+                     routes:
+                       - match:
+                           prefix: "/metrics"
+                         route:
+                           cluster: envoy_admin
+                           prefix_rewrite: "/stats/prometheus"
+               http_filters:
+                 - name: envoy.filters.http.router
+                   typed_config:
+                     "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+    {{?}}
   clusters:
     - name: dapi_api
       type: STRICT_DNS
@@ -349,12 +375,28 @@ static_resources:
                       address: dapi_envoy_rate_limiter
                       port_value: 8081
     {{?}}
+    {{? it.platform.dapi.envoy.metrics.enabled }}
+    - name: envoy_admin
+      connect_timeout: 0.25s
+      type: STATIC
+      load_assignment:
+        cluster_name: envoy_admin
+        endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: "127.0.0.1"
+                    port_value: 9901
+    {{?}}
 
+{{? it.platform.dapi.envoy.metrics.enabled }}
 admin:
  address:
    socket_address:
      address: 0.0.0.0 # For docker container only. Must be a local/private interface.
-     port_value: 8081
+     port_value: 9901
+{{?}}
 
 # Dynamically adjust limits based on memory usage and number of active connections
 # TODO: We can use data provided by drive, tenderdash, or dapi to configure adaptive limits based on load
