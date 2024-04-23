@@ -509,7 +509,16 @@
         2,
         3
       ],
-      "description": "Built in marketplace system. 0 - None, 1 - Public Offer, a user will make an offer that needs to be accepted, 2 - Private Offer, a user will make an offer that needs to be accepted, 3 - Direct purchase (The user can buy the item without the need for an approval)"
+      "description": "Built in marketplace system. 0 - None, 1 - Direct purchase (The user can buy the item without the need for an approval)"
+    },
+    "creationRestrictionMode": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2
+      ],
+      "description": "Restrictions of document creation. 0 - No restrictions, 1 - Owner only, 2 - No creation (System Only)"
     },
     "requiresIdentityEncryptionBoundedKey": {
       "type": "integer",

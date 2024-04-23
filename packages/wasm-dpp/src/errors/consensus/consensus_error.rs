@@ -61,8 +61,8 @@ use dpp::consensus::state::data_trigger::DataTriggerError::{
     DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
-use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLevelError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
-use dpp::consensus::basic::document::{MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
+use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
+use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
@@ -462,6 +462,12 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::UnknownTradeModeError(e) => {
             generic_consensus_error!(UnknownTradeModeError, e).into()
+        }
+        BasicError::UnknownDocumentCreationRestrictionModeError(e) => {
+            generic_consensus_error!(UnknownDocumentCreationRestrictionModeError, e).into()
+        }
+        BasicError::DocumentCreationNotAllowedError(e) => {
+            generic_consensus_error!(DocumentCreationNotAllowedError, e).into()
         }
     }
 }

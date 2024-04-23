@@ -92,6 +92,7 @@ impl ErrorWithCode for BasicError {
             Self::ContractError(DataContractError::KeyValueMustExist(_)) => 10242,
             Self::UnknownTransferableTypeError { .. } => 10243,
             Self::UnknownTradeModeError { .. } => 10244,
+            Self::UnknownDocumentCreationRestrictionModeError { .. } => 10245,
 
             // Document Errors: 10400-10499
             Self::DataContractNotPresentError { .. } => 10400,
@@ -110,6 +111,7 @@ impl ErrorWithCode for BasicError {
             Self::DocumentTransitionsAreAbsentError { .. } => 10413,
             Self::NonceOutOfBoundsError(_) => 10414,
             Self::InvalidDocumentTypeNameError(_) => 10415,
+            Self::DocumentCreationNotAllowedError(_) => 10416,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,

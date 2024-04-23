@@ -100,6 +100,7 @@ impl RandomDocumentTypeParameters {
 
 use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
@@ -429,6 +430,7 @@ impl DocumentTypeV0 {
             documents_can_be_deleted,
             documents_transferable: Transferable::Never,
             trade_mode: TradeMode::None,
+            creation_restriction_mode: CreationRestrictionMode::NoRestrictions,
             data_contract_id,
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
@@ -596,6 +598,7 @@ impl DocumentTypeV0 {
             documents_can_be_deleted,
             documents_transferable: Transferable::Never,
             trade_mode: TradeMode::None,
+            creation_restriction_mode: CreationRestrictionMode::NoRestrictions,
             data_contract_id,
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,

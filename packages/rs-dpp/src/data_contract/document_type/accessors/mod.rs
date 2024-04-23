@@ -7,6 +7,7 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, Docu
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
@@ -91,6 +92,12 @@ impl DocumentTypeV0Getters for DocumentType {
     fn trade_mode(&self) -> TradeMode {
         match self {
             DocumentType::V0(v0) => v0.trade_mode(),
+        }
+    }
+
+    fn creation_restriction_mode(&self) -> CreationRestrictionMode {
+        match self {
+            DocumentType::V0(v0) => v0.creation_restriction_mode(),
         }
     }
 
@@ -210,6 +217,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
+    fn creation_restriction_mode(&self) -> CreationRestrictionMode {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.creation_restriction_mode(),
+        }
+    }
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentTypeRef::V0(v0) => v0.data_contract_id(),
@@ -317,6 +330,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     fn trade_mode(&self) -> TradeMode {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.trade_mode(),
+        }
+    }
+
+    fn creation_restriction_mode(&self) -> CreationRestrictionMode {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.creation_restriction_mode(),
         }
     }
 

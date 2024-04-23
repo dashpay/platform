@@ -10,6 +10,7 @@ pub use index_level::IndexLevel;
 
 #[cfg(feature = "random-documents")]
 pub mod random_document;
+pub mod restricted_creation;
 pub mod schema;
 pub mod v0;
 
@@ -30,6 +31,8 @@ mod property_names {
     pub const CAN_BE_DELETED: &str = "canBeDeleted";
     pub const TRANSFERABLE: &str = "transferable";
     pub const TRADE_MODE: &str = "tradeMode";
+
+    pub const CREATION_RESTRICTION_MODE: &str = "creationRestrictionMode";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
     pub const REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityEncryptionBoundedKey";

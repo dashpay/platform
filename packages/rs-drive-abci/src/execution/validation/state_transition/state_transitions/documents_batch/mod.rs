@@ -2883,7 +2883,7 @@ mod tests {
                 .aggregated_fees()
                 .fee_refunds
                 .calculate_refunds_amount_for_identity(identity.id()),
-            Some(22488973)
+            Some(22704503)
         );
 
         let query_sender_results = platform
@@ -2910,7 +2910,7 @@ mod tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.2) - 6816550 - 756000 - original_creation_cost + 22488973
+            dash_to_credits!(0.2) - 6816550 - 756000 - original_creation_cost + 22704503
         );
 
         let buyers_balance = platform
@@ -2921,6 +2921,16 @@ mod tests {
 
         // the buyer payed 0.1, but also storage and processing fees
         assert_eq!(buyers_balance, dash_to_credits!(0.9) - 10891300 - 64611000);
+    }
+
+    #[test]
+    fn test_document_set_price_and_purchase_from_ones_self() {
+        // In this test we try to buy a document from ourselves
+    }
+
+    #[test]
+    fn test_document_set_price_and_purchase_then_try_buy_back() {
+        // In this test we try to buy back a document after it has been sold
     }
 
     #[test]

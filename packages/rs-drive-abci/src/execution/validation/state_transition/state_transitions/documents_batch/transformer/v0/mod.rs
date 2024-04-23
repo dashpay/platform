@@ -352,9 +352,10 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             DocumentTransition::Create(document_create_transition) => {
                 let result = ConsensusValidationResult::<DocumentTransitionAction>::new();
 
-                let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, block_info, |_identifier| {
-                Ok(data_contract_fetch_info.clone())
-            })?;
+                let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
+                    document_create_transition, block_info, |_identifier| {
+                        Ok(data_contract_fetch_info.clone())
+                })?;
 
                 if result.is_valid() {
                     Ok(DocumentTransitionAction::CreateAction(document_create_action).into())

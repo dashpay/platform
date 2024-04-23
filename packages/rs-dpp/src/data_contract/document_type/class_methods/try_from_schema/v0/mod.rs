@@ -33,7 +33,8 @@ use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesE
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
+    TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
@@ -245,6 +246,14 @@ impl DocumentTypeV0 {
                 .unwrap_or_default();
 
         let trade_mode = documents_trade_mode_u8.try_into()?;
+
+        // Are documents of this type transferable?
+        let documents_creation_restriction_mode_u8: u8 =
+            Value::inner_optional_integer_value(schema_map, CREATION_RESTRICTION_MODE)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+
+        let creation_restriction_mode = documents_creation_restriction_mode_u8.try_into()?;
 
         // Extract the properties
         let property_values = Value::inner_optional_index_map::<u64>(
@@ -531,6 +540,7 @@ impl DocumentTypeV0 {
             documents_can_be_deleted,
             documents_transferable,
             trade_mode,
+            creation_restriction_mode,
             data_contract_id,
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,

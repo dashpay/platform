@@ -119,7 +119,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         for transition in action.transitions() {
             match transition {
                 DocumentTransitionAction::CreateAction(create_action) => {
-                    let result = create_action.validate_structure(platform_version)?;
+                    let result = create_action.validate_structure(identity.id, platform_version)?;
                     if !result.is_valid() {
                         let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                             BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the create action"), self.owner_id(), self.user_fee_increase()),

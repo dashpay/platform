@@ -14,20 +14,22 @@ use crate::consensus::basic::data_contract::{
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, UnknownSecurityLevelError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError,
     UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
 use crate::consensus::basic::document::{
-    DataContractNotPresentError, DocumentTransitionsAreAbsentError,
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
-    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
-    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
-    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
+    DataContractNotPresentError, DocumentCreationNotAllowedError,
+    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
+    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
+    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
+    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
@@ -95,6 +97,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     UnknownTradeModeError(UnknownTradeModeError),
+
+    #[error(transparent)]
+    UnknownDocumentCreationRestrictionModeError(UnknownDocumentCreationRestrictionModeError),
 
     #[error(transparent)]
     SerializedObjectParsingError(SerializedObjectParsingError),
@@ -185,6 +190,9 @@ pub enum BasicError {
     // Document
     #[error(transparent)]
     DataContractNotPresentError(DataContractNotPresentError),
+
+    #[error(transparent)]
+    DocumentCreationNotAllowedError(DocumentCreationNotAllowedError),
 
     #[error(transparent)]
     DataContractBoundsNotPresentError(DataContractBoundsNotPresentError),

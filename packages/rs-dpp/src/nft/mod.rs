@@ -9,8 +9,8 @@ use std::fmt::{Display, Formatter};
 pub enum TradeMode {
     None = 0,
     DirectPurchase = 1,
-    PublicOffer = 2,
-    PrivateOffer = 3,
+    // PublicOffer = 2,
+    // PrivateOffer = 3,
 }
 
 impl TradeMode {
@@ -18,8 +18,8 @@ impl TradeMode {
         match self {
             TradeMode::None => false,
             TradeMode::DirectPurchase => true,
-            TradeMode::PublicOffer => true,  //min price
-            TradeMode::PrivateOffer => true, //min price
+            // TradeMode::PublicOffer => true,  //min price
+            // TradeMode::PrivateOffer => true, //min price
         }
     }
 }
@@ -29,8 +29,8 @@ impl Display for TradeMode {
         match self {
             TradeMode::None => write!(f, "No Trading"),
             TradeMode::DirectPurchase => write!(f, "Direct Purchase"),
-            TradeMode::PublicOffer => write!(f, "Public Offer"),
-            TradeMode::PrivateOffer => write!(f, "Private Offer"),
+            // TradeMode::PublicOffer => write!(f, "Public Offer"),
+            // TradeMode::PrivateOffer => write!(f, "Private Offer"),
         }
     }
 }
@@ -42,11 +42,11 @@ impl TryFrom<u8> for TradeMode {
         match value {
             0 => Ok(Self::None),
             1 => Ok(Self::DirectPurchase),
-            2 => Ok(Self::PublicOffer),
-            3 => Ok(Self::PrivateOffer),
+            // 2 => Ok(Self::PublicOffer),
+            // 3 => Ok(Self::PrivateOffer),
             value => Err(ProtocolError::ConsensusError(
                 ConsensusError::BasicError(BasicError::UnknownTradeModeError(
-                    UnknownTradeModeError::new(vec![0, 1, 2, 3], value.into()),
+                    UnknownTradeModeError::new(vec![0, 1], value.into()),
                 ))
                 .into(),
             )),

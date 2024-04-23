@@ -4,6 +4,7 @@ use crate::data_contract::document_type::property::DocumentProperty;
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
@@ -51,6 +52,9 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the documents trade mode flag of the document type.
     fn trade_mode(&self) -> TradeMode;
+
+    /// Returns the creation restriction mode.
+    fn creation_restriction_mode(&self) -> CreationRestrictionMode;
 
     /// Returns the data contract id of the document type.
     fn data_contract_id(&self) -> Identifier;

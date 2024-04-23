@@ -6,6 +6,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
@@ -68,6 +69,10 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
 
     fn trade_mode(&self) -> TradeMode {
         self.trade_mode
+    }
+
+    fn creation_restriction_mode(&self) -> CreationRestrictionMode {
+        self.creation_restriction_mode
     }
 
     fn data_contract_id(&self) -> Identifier {
