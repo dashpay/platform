@@ -24979,7 +24979,6 @@ proto.org.dash.platform.dapi.v0.KeyPurpose = {
   ENCRYPTION: 1,
   DECRYPTION: 2,
   TRANSFER: 3,
-  SYSTEM: 4,
   VOTING: 5
 };
 

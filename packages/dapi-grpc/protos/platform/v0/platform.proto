@@ -66,11 +66,10 @@ enum KeyPurpose {
   ENCRYPTION = 1;
   DECRYPTION = 2;
   TRANSFER = 3;
-  SYSTEM = 4;
   VOTING = 5;
 }
 
-message BroadcastStateTransitionRequest {bytes state_transition = 1;}
+message BroadcastStateTransitionRequest { bytes state_transition = 1; }
 
 message BroadcastStateTransitionResponse {}
 
@@ -81,7 +80,7 @@ message GetIdentityRequest {
     bool prove = 2;
   }
 
-  oneof version {GetIdentityRequestV0 v0 = 1;}
+  oneof version { GetIdentityRequestV0 v0 = 1; }
 }
 
 message GetIdentityNonceRequest {
@@ -91,7 +90,7 @@ message GetIdentityNonceRequest {
     bool prove = 2;
   }
 
-  oneof version {GetIdentityNonceRequestV0 v0 = 1;}
+  oneof version { GetIdentityNonceRequestV0 v0 = 1; }
 }
 
 
@@ -103,7 +102,7 @@ message GetIdentityContractNonceRequest {
     bool prove = 3;
   }
 
-  oneof version {GetIdentityContractNonceRequestV0 v0 = 1;}
+  oneof version { GetIdentityContractNonceRequestV0 v0 = 1; }
 }
 
 message GetIdentityBalanceRequest {
@@ -113,7 +112,7 @@ message GetIdentityBalanceRequest {
     bool prove = 2;
   }
 
-  oneof version {GetIdentityBalanceRequestV0 v0 = 1;}
+  oneof version { GetIdentityBalanceRequestV0 v0 = 1; }
 }
 
 message GetIdentityBalanceAndRevisionRequest {
@@ -123,7 +122,7 @@ message GetIdentityBalanceAndRevisionRequest {
     bool prove = 2;
   }
 
-  oneof version {GetIdentityBalanceAndRevisionRequestV0 v0 = 1;}
+  oneof version { GetIdentityBalanceAndRevisionRequestV0 v0 = 1; }
 }
 
 message GetIdentityResponse {
@@ -136,7 +135,7 @@ message GetIdentityResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {GetIdentityResponseV0 v0 = 1;}
+  oneof version { GetIdentityResponseV0 v0 = 1; }
 }
 
 message GetIdentityNonceResponse {
@@ -149,7 +148,7 @@ message GetIdentityNonceResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {GetIdentityNonceResponseV0 v0 = 1;}
+  oneof version { GetIdentityNonceResponseV0 v0 = 1; }
 }
 
 message GetIdentityContractNonceResponse {
@@ -162,7 +161,7 @@ message GetIdentityContractNonceResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {GetIdentityContractNonceResponseV0 v0 = 1;}
+  oneof version { GetIdentityContractNonceResponseV0 v0 = 1; }
 }
 
 message GetIdentityBalanceResponse {
@@ -175,7 +174,7 @@ message GetIdentityBalanceResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {GetIdentityBalanceResponseV0 v0 = 1;}
+  oneof version { GetIdentityBalanceResponseV0 v0 = 1; }
 }
 
 message GetIdentityBalanceAndRevisionResponse {
@@ -193,7 +192,7 @@ message GetIdentityBalanceAndRevisionResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {GetIdentityBalanceAndRevisionResponseV0 v0 = 1;}
+  oneof version { GetIdentityBalanceAndRevisionResponseV0 v0 = 1; }
 }
 
 message KeyRequestType {
@@ -206,9 +205,9 @@ message KeyRequestType {
 
 message AllKeys {}
 
-message SpecificKeys {repeated uint32 key_ids = 1;}
+message SpecificKeys { repeated uint32 key_ids = 1; }
 
-message SearchKey {map<uint32, SecurityLevelMap> purpose_map = 1;}
+message SearchKey { map<uint32, SecurityLevelMap> purpose_map = 1; }
 
 message SecurityLevelMap {
   enum KeyKindRequestType {
@@ -228,13 +227,13 @@ message GetIdentityKeysRequest {
     bool prove = 5;
   }
 
-  oneof version {GetIdentityKeysRequestV0 v0 = 1;}
+  oneof version { GetIdentityKeysRequestV0 v0 = 1; }
 }
 
 message GetIdentityKeysResponse {
 
   message GetIdentityKeysResponseV0 {
-    message Keys {repeated bytes keys_bytes = 1;}
+    message Keys { repeated bytes keys_bytes = 1; }
 
     oneof result {
       Keys keys = 1;
@@ -243,7 +242,7 @@ message GetIdentityKeysResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {GetIdentityKeysResponseV0 v0 = 1;}
+  oneof version { GetIdentityKeysResponseV0 v0 = 1; }
 }
 
 message GetIdentitiesContractKeysRequest {
@@ -263,8 +262,8 @@ message GetIdentitiesContractKeysRequest {
 message GetIdentitiesContractKeysResponse {
   message GetIdentitiesContractKeysResponseV0 {
     message PurposeKeys {
-        KeyPurpose purpose = 1;
-        repeated bytes keys_bytes = 2;
+      KeyPurpose purpose = 1;
+      repeated bytes keys_bytes = 2;
     }
 
     message IdentityKeys {
@@ -283,7 +282,7 @@ message GetIdentitiesContractKeysResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {GetIdentitiesContractKeysResponseV0 v0 = 1;}
+  oneof version { GetIdentitiesContractKeysResponseV0 v0 = 1; }
 }
 
 message GetProofsRequest {
@@ -306,23 +305,23 @@ message GetProofsRequest {
       Type request_type = 2;
     }
 
-    message ContractRequest {bytes contract_id = 1;}
+    message ContractRequest { bytes contract_id = 1; }
 
     repeated IdentityRequest identities = 1;
     repeated ContractRequest contracts = 2;
     repeated DocumentRequest documents = 3;
   }
 
-  oneof version {GetProofsRequestV0 v0 = 1;}
+  oneof version { GetProofsRequestV0 v0 = 1; }
 }
 
 message GetProofsResponse {
   message GetProofsResponseV0 {
-    oneof result {Proof proof = 1;}
+    oneof result { Proof proof = 1; }
 
     ResponseMetadata metadata = 2;
   }
-  oneof version {GetProofsResponseV0 v0 = 1;}
+  oneof version { GetProofsResponseV0 v0 = 1; }
 }
 
 message GetDataContractRequest {
@@ -330,7 +329,7 @@ message GetDataContractRequest {
     bytes id = 1;
     bool prove = 2;
   }
-  oneof version {GetDataContractRequestV0 v0 = 1;}
+  oneof version { GetDataContractRequestV0 v0 = 1; }
 }
 
 message GetDataContractResponse {
@@ -341,7 +340,7 @@ message GetDataContractResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {GetDataContractResponseV0 v0 = 1;}
+  oneof version { GetDataContractResponseV0 v0 = 1; }
 }
 
 message GetDataContractsRequest {
@@ -349,7 +348,7 @@ message GetDataContractsRequest {
     repeated bytes ids = 1;
     bool prove = 2;
   }
-  oneof version {GetDataContractsRequestV0 v0 = 1;}
+  oneof version { GetDataContractsRequestV0 v0 = 1; }
 }
 
 message GetDataContractsResponse {
@@ -368,7 +367,7 @@ message GetDataContractsResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {GetDataContractsResponseV0 v0 = 1;}
+  oneof version { GetDataContractsResponseV0 v0 = 1; }
 }
 
 message GetDataContractHistoryRequest {
@@ -379,7 +378,7 @@ message GetDataContractHistoryRequest {
     uint64 start_at_ms = 4;
     bool prove = 5;
   }
-  oneof version {GetDataContractHistoryRequestV0 v0 = 1;}
+  oneof version { GetDataContractHistoryRequestV0 v0 = 1; }
 }
 
 message GetDataContractHistoryResponse {
@@ -400,7 +399,7 @@ message GetDataContractHistoryResponse {
 
     ResponseMetadata metadata = 3;
   }
-  oneof version {GetDataContractHistoryResponseV0 v0 = 1;}
+  oneof version { GetDataContractHistoryResponseV0 v0 = 1; }
 }
 
 message GetDocumentsRequest {
@@ -416,12 +415,12 @@ message GetDocumentsRequest {
     }
     bool prove = 8;
   }
-  oneof version {GetDocumentsRequestV0 v0 = 1;}
+  oneof version { GetDocumentsRequestV0 v0 = 1; }
 }
 
 message GetDocumentsResponse {
   message GetDocumentsResponseV0 {
-    message Documents {repeated bytes documents = 1;}
+    message Documents { repeated bytes documents = 1; }
 
     oneof result {
       Documents documents = 1;
@@ -429,7 +428,7 @@ message GetDocumentsResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {GetDocumentsResponseV0 v0 = 1;}
+  oneof version { GetDocumentsResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {
@@ -437,7 +436,7 @@ message GetIdentityByPublicKeyHashRequest {
     bytes public_key_hash = 1;
     bool prove = 2;
   }
-  oneof version {GetIdentityByPublicKeyHashRequestV0 v0 = 1;}
+  oneof version { GetIdentityByPublicKeyHashRequestV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashResponse {
@@ -449,7 +448,7 @@ message GetIdentityByPublicKeyHashResponse {
 
     ResponseMetadata metadata = 3;
   }
-  oneof version {GetIdentityByPublicKeyHashResponseV0 v0 = 1;}
+  oneof version { GetIdentityByPublicKeyHashResponseV0 v0 = 1; }
 }
 
 message WaitForStateTransitionResultRequest {
@@ -457,7 +456,7 @@ message WaitForStateTransitionResultRequest {
     bytes state_transition_hash = 1;
     bool prove = 2;
   }
-  oneof version {WaitForStateTransitionResultRequestV0 v0 = 1;}
+  oneof version { WaitForStateTransitionResultRequestV0 v0 = 1; }
 }
 
 message WaitForStateTransitionResultResponse {
@@ -468,7 +467,7 @@ message WaitForStateTransitionResultResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {WaitForStateTransitionResultResponseV0 v0 = 1;}
+  oneof version { WaitForStateTransitionResultResponseV0 v0 = 1; }
 }
 
 message GetConsensusParamsRequest {
@@ -476,7 +475,7 @@ message GetConsensusParamsRequest {
     int32 height = 1;
     bool prove = 2;
   }
-  oneof version {GetConsensusParamsRequestV0 v0 = 1;}
+  oneof version { GetConsensusParamsRequestV0 v0 = 1; }
 }
 
 message GetConsensusParamsResponse {
@@ -496,7 +495,7 @@ message GetConsensusParamsResponse {
     ConsensusParamsBlock block = 1;
     ConsensusParamsEvidence evidence = 2;
   }
-  oneof version {GetConsensusParamsResponseV0 v0 = 1;}
+  oneof version { GetConsensusParamsResponseV0 v0 = 1; }
 }
 
 

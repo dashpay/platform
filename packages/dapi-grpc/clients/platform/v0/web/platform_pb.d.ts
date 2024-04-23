@@ -3319,7 +3319,6 @@ export interface KeyPurposeMap {
   ENCRYPTION: 1;
   DECRYPTION: 2;
   TRANSFER: 3;
-  SYSTEM: 4;
   VOTING: 5;
 }
 

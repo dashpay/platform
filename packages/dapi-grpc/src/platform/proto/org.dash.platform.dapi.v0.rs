@@ -2129,7 +2129,6 @@ pub enum KeyPurpose {
     Encryption = 1,
     Decryption = 2,
     Transfer = 3,
-    System = 4,
     Voting = 5,
 }
 impl KeyPurpose {
@@ -2143,7 +2142,6 @@ impl KeyPurpose {
             KeyPurpose::Encryption => "ENCRYPTION",
             KeyPurpose::Decryption => "DECRYPTION",
             KeyPurpose::Transfer => "TRANSFER",
-            KeyPurpose::System => "SYSTEM",
             KeyPurpose::Voting => "VOTING",
         }
     }
@@ -2154,7 +2152,6 @@ impl KeyPurpose {
             "ENCRYPTION" => Some(Self::Encryption),
             "DECRYPTION" => Some(Self::Decryption),
             "TRANSFER" => Some(Self::Transfer),
-            "SYSTEM" => Some(Self::System),
             "VOTING" => Some(Self::Voting),
             _ => None,
         }

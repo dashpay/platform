@@ -113,7 +113,6 @@ typedef GPB_ENUM(KeyPurpose) {
   KeyPurpose_Encryption = 1,
   KeyPurpose_Decryption = 2,
   KeyPurpose_Transfer = 3,
-  KeyPurpose_System = 4,
   KeyPurpose_Voting = 5,
 };
 

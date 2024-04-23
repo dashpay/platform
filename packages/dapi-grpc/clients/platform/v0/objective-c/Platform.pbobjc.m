@@ -166,13 +166,12 @@ GPBEnumDescriptor *KeyPurpose_EnumDescriptor(void) {
   if (!descriptor) {
     static const char *valueNames =
         "Authentication\000Encryption\000Decryption\000Tra"
-        "nsfer\000System\000Voting\000";
+        "nsfer\000Voting\000";
     static const int32_t values[] = {
         KeyPurpose_Authentication,
         KeyPurpose_Encryption,
         KeyPurpose_Decryption,
         KeyPurpose_Transfer,
-        KeyPurpose_System,
         KeyPurpose_Voting,
     };
     GPBEnumDescriptor *worker =
@@ -195,7 +194,6 @@ BOOL KeyPurpose_IsValidValue(int32_t value__) {
     case KeyPurpose_Encryption:
     case KeyPurpose_Decryption:
     case KeyPurpose_Transfer:
-    case KeyPurpose_System:
     case KeyPurpose_Voting:
       return YES;
     default:

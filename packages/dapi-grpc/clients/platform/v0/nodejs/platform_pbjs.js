@@ -1658,7 +1658,6 @@ $root.org = (function() {
                      * @property {number} ENCRYPTION=1 ENCRYPTION value
                      * @property {number} DECRYPTION=2 DECRYPTION value
                      * @property {number} TRANSFER=3 TRANSFER value
-                     * @property {number} SYSTEM=4 SYSTEM value
                      * @property {number} VOTING=5 VOTING value
                      */
                     v0.KeyPurpose = (function() {
@@ -1667,7 +1666,6 @@ $root.org = (function() {
                         values[valuesById[1] = "ENCRYPTION"] = 1;
                         values[valuesById[2] = "DECRYPTION"] = 2;
                         values[valuesById[3] = "TRANSFER"] = 3;
-                        values[valuesById[4] = "SYSTEM"] = 4;
                         values[valuesById[5] = "VOTING"] = 5;
                         return values;
                     })();
@@ -9647,7 +9645,6 @@ $root.org = (function() {
                                         case 1:
                                         case 2:
                                         case 3:
-                                        case 4:
                                         case 5:
                                             break;
                                         }
@@ -9709,10 +9706,6 @@ $root.org = (function() {
                                         case "TRANSFER":
                                         case 3:
                                             message.purposes[i] = 3;
-                                            break;
-                                        case "SYSTEM":
-                                        case 4:
-                                            message.purposes[i] = 4;
                                             break;
                                         case "VOTING":
                                         case 5:
@@ -10423,7 +10416,6 @@ $root.org = (function() {
                                         case 1:
                                         case 2:
                                         case 3:
-                                        case 4:
                                         case 5:
                                             break;
                                         }
@@ -10465,10 +10457,6 @@ $root.org = (function() {
                                     case "TRANSFER":
                                     case 3:
                                         message.purpose = 3;
-                                        break;
-                                    case "SYSTEM":
-                                    case 4:
-                                        message.purpose = 4;
                                         break;
                                     case "VOTING":
                                     case 5:
