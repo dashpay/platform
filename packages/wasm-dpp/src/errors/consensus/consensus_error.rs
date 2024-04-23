@@ -8,6 +8,7 @@ use dpp::consensus::ConsensusError as DPPConsensusError;
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
     IdentityAssetLockProofLockedTransactionMismatchErrorWasm,
+    IdentityAssetLockStateTransitionReplayErrorWasm,
     IdentityAssetLockTransactionIsNotFoundErrorWasm,
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceErrorWasm,
@@ -36,7 +37,7 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
-    IdentityAssetLockTransactionIsNotFoundError,
+    IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
@@ -60,7 +61,7 @@ use dpp::consensus::state::data_trigger::DataTriggerError::{
     DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
-use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLevelError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError};
+use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLevelError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTransferableTypeError};
 use dpp::consensus::basic::document::{MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
@@ -369,6 +370,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         InvalidIdentityAssetLockTransactionOutputError(e) => {
             InvalidIdentityAssetLockTransactionOutputErrorWasm::from(e).into()
         }
+        IdentityAssetLockStateTransitionReplayError(e) => {
+            IdentityAssetLockStateTransitionReplayErrorWasm::from(e).into()
+        }
         InvalidAssetLockTransactionOutputReturnSizeError(e) => {
             InvalidAssetLockTransactionOutputReturnSizeErrorWasm::from(e).into()
         }
@@ -452,6 +456,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DocumentTransitionsAreAbsentError(e) => {
             DocumentTransitionsAreAbsentErrorWasm::from(e).into()
+        }
+        BasicError::UnknownTransferableTypeError(e) => {
+            generic_consensus_error!(UnknownTransferableTypeError, e).into()
         }
     }
 }

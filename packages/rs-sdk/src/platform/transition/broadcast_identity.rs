@@ -37,7 +37,7 @@ use crate::error::Error;
 ///
 /// ```rust, ignore
 ///
-/// use rs_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
+/// use dash_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
 /// use dpp::identity::signer::Signer;
 /// use dpp::prelude::{AssetLockProof, PrivateKey};
 /// use dpp::version::PlatformVersion;
@@ -110,6 +110,7 @@ impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRe
             asset_lock_proof_private_key.inner.as_ref(),
             signer,
             &NativeBlsModule,
+            0,
             platform_version,
         )?;
         let request = identity_create_transition.broadcast_request_for_state_transition()?;

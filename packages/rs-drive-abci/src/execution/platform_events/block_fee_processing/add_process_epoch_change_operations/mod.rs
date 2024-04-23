@@ -8,13 +8,11 @@ use crate::error::Error;
 
 use crate::execution::types::block_fees::BlockFees;
 
-use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::storage_fee_distribution_outcome;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 
-use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {

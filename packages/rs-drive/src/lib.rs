@@ -30,7 +30,7 @@ pub mod query;
 #[cfg(feature = "server")]
 pub use dpp;
 /// GroveDB module
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub use grovedb;
 
 #[cfg(feature = "server")]

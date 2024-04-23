@@ -7,6 +7,7 @@ use dpp::consensus::basic::identity::{
 };
 use dpp::fee::Credits;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -20,6 +21,7 @@ impl AssetLockProofValidation for ChainAssetLockProof {
     fn validate<C: CoreRPCLike>(
         &self,
         platform_ref: &PlatformRef<C>,
+        signable_bytes_hasher: &mut SignableBytesHasher,
         required_balance: Credits,
         validation_mode: ValidationMode,
         transaction: TransactionArg,
@@ -39,6 +41,7 @@ impl AssetLockProofValidation for ChainAssetLockProof {
 
         self.verify_is_not_spent_and_has_enough_balance(
             platform_ref,
+            signable_bytes_hasher,
             required_balance,
             transaction,
             platform_version,

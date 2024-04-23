@@ -3,6 +3,7 @@ pub use disabling_key_id_also_being_added_in_same_transition_error::*;
 pub use duplicated_identity_public_key_basic_error::*;
 pub use duplicated_identity_public_key_id_basic_error::*;
 pub use identity_asset_lock_proof_locked_transaction_mismatch_error::*;
+pub use identity_asset_lock_state_transition_replay_error::*;
 pub use identity_asset_lock_transaction_is_not_found_error::*;
 pub use identity_asset_lock_transaction_out_point_already_consumed_error::*;
 pub use identity_asset_lock_transaction_out_point_not_enough_balance_error::*;
@@ -37,6 +38,7 @@ mod identity_asset_lock_proof_locked_transaction_mismatch_error;
 mod identity_asset_lock_transaction_is_not_found_error;
 mod identity_asset_lock_transaction_out_point_already_consumed_error;
 
+mod identity_asset_lock_state_transition_replay_error;
 mod identity_asset_lock_transaction_out_point_not_enough_balance_error;
 mod identity_asset_lock_transaction_output_not_found_error;
 mod identity_credit_transfer_to_self_error;

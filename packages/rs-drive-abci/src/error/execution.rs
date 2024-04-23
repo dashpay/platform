@@ -121,4 +121,8 @@ pub enum ExecutionError {
     /// General Bls Error
     #[error("bls error: {0}")]
     BlsErrorGeneral(#[from] BlsError),
+
+    /// General IO Error
+    #[error("io error: {0}")]
+    IOError(#[from] std::io::Error),
 }

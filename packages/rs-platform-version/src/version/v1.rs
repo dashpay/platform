@@ -43,8 +43,8 @@ use crate::version::drive_versions::{
     DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertMethodVersions,
     DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
     DriveDocumentUpdateMethodVersions, DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions,
-    DriveGroveApplyMethodVersions, DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions,
-    DriveGroveCostMethodVersions, DriveGroveMethodVersions,
+    DriveFetchMethodVersions, DriveGroveApplyMethodVersions, DriveGroveBasicMethodVersions,
+    DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions, DriveGroveMethodVersions,
     DriveIdentityContractInfoMethodVersions, DriveIdentityCostEstimationMethodVersions,
     DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchFullIdentityMethodVersions,
     DriveIdentityFetchMethodVersions, DriveIdentityFetchPartialIdentityMethodVersions,
@@ -147,7 +147,10 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 remove_validators_proposed_app_versions: 0,
                 update_validator_proposed_app_version: 0,
             },
-            prove: DriveProveMethodVersions { prove_multiple: 0 },
+            prove: DriveProveMethodVersions {
+                prove_elements: 0,
+                prove_multiple_state_transition_results: 0,
+            },
             balances: DriveBalancesMethodVersions {
                 add_to_system_credits: 0,
                 add_to_system_credits_operations: 0,
@@ -197,6 +200,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     validate_document_uniqueness: 0,
                     validate_document_create_transition_action_uniqueness: 0,
                     validate_document_replace_transition_action_uniqueness: 0,
+                    validate_document_transfer_transition_action_uniqueness: 0,
                     validate_uniqueness_of_data: 0,
                 },
             },
@@ -264,6 +268,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 system: DriveVerifySystemMethodVersions {
                     verify_epoch_infos: 0,
+                    verify_elements: 0,
                     verify_upgrade_state: 0,
                     verify_upgrade_vote_status: 0,
                 },
@@ -427,6 +432,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 fetch_platform_state_bytes: 0,
                 store_platform_state_bytes: 0,
             },
+            fetch: DriveFetchMethodVersions { fetch_elements: 0 },
         },
         grove_methods: DriveGroveMethodVersions {
             basic: DriveGroveBasicMethodVersions {
@@ -599,6 +605,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     validate_master_key_uniqueness: 0,
                     validate_simple_pre_check_balance: 0,
                 },
+                max_asset_lock_usage_attempts: 16,
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: Some(0),
@@ -686,20 +693,24 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         document_create_transition_structure_validation: 0,
                         document_delete_transition_structure_validation: 0,
                         document_replace_transition_structure_validation: 0,
+                        document_transfer_transition_structure_validation: 0,
                         document_create_transition_state_validation: 0,
                         document_delete_transition_state_validation: 0,
                         document_replace_transition_state_validation: 0,
+                        document_transfer_transition_state_validation: 0,
                     },
             },
             process_state_transition: 0,
             state_transition_to_execution_event_for_check_tx: 0,
             penalties: PenaltyAmounts {
-                identity_id_not_correct: 5000000,
-                validation_of_added_keys_structure_failure: 1000000,
-                validation_of_added_keys_proof_of_possession_failure: 5000000,
+                identity_id_not_correct: 50000000,
+                unique_key_already_present: 10000000,
+                validation_of_added_keys_structure_failure: 10000000,
+                validation_of_added_keys_proof_of_possession_failure: 50000000,
             },
         },
         query: DriveAbciQueryVersions {
+            max_returned_elements: 100,
             response_metadata: 0,
             proofs_query: FeatureVersionBounds {
                 min_version: 0,
@@ -787,6 +798,11 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 epoch_infos: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                path_elements: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
@@ -881,6 +897,13 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
             },
             document_delete_state_transition: DocumentFeatureVersionBounds {
+                bounds: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            document_transfer_state_transition: DocumentFeatureVersionBounds {
                 bounds: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,

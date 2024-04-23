@@ -20,7 +20,7 @@ CARGO_DIR="$(realpath "$(dirname "$0")/..")"
 
 pushd "$CARGO_DIR"
 
-cargo test -p rs-sdk \
+cargo test -p dash-sdk \
     --no-default-features \
     --features generate-test-vectors \
     "$1"

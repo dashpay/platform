@@ -8,6 +8,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::fee::Credits;
 use dpp::prelude::AssetLockProof;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -31,6 +32,7 @@ pub trait AssetLockProofValidation {
     fn validate<C: CoreRPCLike>(
         &self,
         platform_ref: &PlatformRef<C>,
+        signable_bytes_hasher: &mut SignableBytesHasher,
         required_balance: Credits,
         validation_mode: ValidationMode,
         transaction: TransactionArg,
@@ -42,6 +44,7 @@ impl AssetLockProofValidation for AssetLockProof {
     fn validate<C: CoreRPCLike>(
         &self,
         platform_ref: &PlatformRef<C>,
+        signable_bytes_hasher: &mut SignableBytesHasher,
         required_balance: Credits,
         validation_mode: ValidationMode,
         transaction: TransactionArg,
@@ -50,6 +53,7 @@ impl AssetLockProofValidation for AssetLockProof {
         match self {
             AssetLockProof::Instant(proof) => proof.validate(
                 platform_ref,
+                signable_bytes_hasher,
                 required_balance,
                 validation_mode,
                 transaction,
@@ -57,6 +61,7 @@ impl AssetLockProofValidation for AssetLockProof {
             ),
             AssetLockProof::Chain(proof) => proof.validate(
                 platform_ref,
+                signable_bytes_hasher,
                 required_balance,
                 validation_mode,
                 transaction,

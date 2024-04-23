@@ -10,10 +10,8 @@ use crate::execution::types::block_execution_context::BlockExecutionContext;
 
 use crate::execution::types::block_fees::BlockFees;
 
-use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::processed_block_fees_outcome;
 
-use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {

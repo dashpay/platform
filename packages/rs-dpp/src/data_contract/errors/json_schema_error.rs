@@ -8,4 +8,7 @@ use thiserror::Error;
 pub enum JsonSchemaError {
     #[error("can't create json schema: {0}")]
     CreateSchemaError(String),
+
+    #[error("schema compatibility validation failed: {0}")]
+    SchemaCompatibilityValidationError(String),
 }

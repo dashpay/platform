@@ -15,7 +15,7 @@ use crate::consensus::basic::data_contract::{
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, UnknownSecurityLevelError,
-    UnknownStorageKeyRequirementsError,
+    UnknownStorageKeyRequirementsError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -33,7 +33,7 @@ use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
-    IdentityAssetLockTransactionIsNotFoundError,
+    IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
@@ -89,6 +89,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     UnknownStorageKeyRequirementsError(UnknownStorageKeyRequirementsError),
+
+    #[error(transparent)]
+    UnknownTransferableTypeError(UnknownTransferableTypeError),
 
     #[error(transparent)]
     SerializedObjectParsingError(SerializedObjectParsingError),
@@ -251,6 +254,9 @@ pub enum BasicError {
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError(
         IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     ),
+
+    #[error(transparent)]
+    IdentityAssetLockStateTransitionReplayError(IdentityAssetLockStateTransitionReplayError),
 
     #[error(transparent)]
     IdentityAssetLockTransactionOutputNotFoundError(

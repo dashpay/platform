@@ -836,8 +836,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1558 bytes
-        assert_eq!(added_bytes, 1558);
+        // We added 1559 bytes
+        assert_eq!(added_bytes, 1559);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -866,14 +866,14 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        assert_eq!(*removed_credits, 41854792);
+        assert_eq!(*removed_credits, 41881536);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(added_bytes > refund_equivalent_bytes);
-        assert_eq!(refund_equivalent_bytes, 1550); // we refunded 1550 instead of 1558
+        assert_eq!(refund_equivalent_bytes, 1551); // we refunded 1551 instead of 1559
     }
 
     #[test]
@@ -933,7 +933,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1558 bytes
-        assert_eq!(added_bytes, 1558);
+        assert_eq!(added_bytes, 1559);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()

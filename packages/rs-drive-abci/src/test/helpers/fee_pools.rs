@@ -84,10 +84,13 @@ fn create_test_mn_share_document(
         revision: Some(INITIAL_REVISION),
         created_at: None,
         updated_at: None,
+        transferred_at: None,
         created_at_block_height: None,
         updated_at_block_height: None,
+        transferred_at_block_height: None,
         created_at_core_block_height: None,
         updated_at_core_block_height: None,
+        transferred_at_core_block_height: None,
     }
     .into();
 
