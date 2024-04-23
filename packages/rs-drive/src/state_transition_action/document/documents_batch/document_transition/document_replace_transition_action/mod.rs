@@ -14,7 +14,7 @@ pub use v0::*;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use dpp::version::PlatformVersion;
 
-/// tranformer
+/// transformer
 pub mod transformer;
 
 /// action
@@ -55,6 +55,12 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
         }
     }
 
+    fn transferred_at(&self) -> Option<TimestampMillis> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => v0.transferred_at,
+        }
+    }
+
     /// Returns the block height at which the document was created.
     fn created_at_block_height(&self) -> Option<BlockHeight> {
         match self {
@@ -69,6 +75,12 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
         }
     }
 
+    fn transferred_at_block_height(&self) -> Option<BlockHeight> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => v0.transferred_at_block_height,
+        }
+    }
+
     /// Returns the core block height at which the document was created.
     fn created_at_core_block_height(&self) -> Option<CoreBlockHeight> {
         match self {
@@ -80,6 +92,12 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
     fn updated_at_core_block_height(&self) -> Option<CoreBlockHeight> {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => v0.updated_at_core_block_height,
+        }
+    }
+
+    fn transferred_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => v0.transferred_at_core_block_height,
         }
     }
 

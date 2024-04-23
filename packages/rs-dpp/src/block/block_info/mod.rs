@@ -14,7 +14,7 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 // Extended block info however is not immutable
 // @immutable
 /// Block information
-#[derive(Clone, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct BlockInfo {
     /// Block time in milliseconds
     pub time_ms: TimestampMillis,

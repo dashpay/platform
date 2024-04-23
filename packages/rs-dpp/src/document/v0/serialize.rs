@@ -2,7 +2,8 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
+    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 
@@ -56,7 +57,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             buffer.extend((1 as Revision).encode_var_vec())
         }
 
-        let mut bitwise_exists_flag: u8 = 0;
+        let mut bitwise_exists_flag: u16 = 0;
 
         let mut time_fields_data_buffer = vec![];
 
@@ -86,9 +87,22 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             ));
         }
 
+        // $transferredAt
+        if let Some(transferred_at) = &self.transferred_at {
+            bitwise_exists_flag |= 4;
+            // dbg!("we pushed transferred at {}", hex::encode(transferred_at.to_be_bytes()));
+            time_fields_data_buffer.extend(transferred_at.to_be_bytes());
+        } else if document_type.required_fields().contains(TRANSFERRED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred at field is not present".to_string(),
+                ),
+            ));
+        }
+
         // $createdAtBlockHeight
         if let Some(created_at_block_height) = &self.created_at_block_height {
-            bitwise_exists_flag |= 4;
+            bitwise_exists_flag |= 8;
             time_fields_data_buffer.extend(created_at_block_height.to_be_bytes());
         } else if document_type
             .required_fields()
@@ -103,7 +117,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
 
         // $updatedAtBlockHeight
         if let Some(updated_at_block_height) = &self.updated_at_block_height {
-            bitwise_exists_flag |= 8;
+            bitwise_exists_flag |= 16;
             time_fields_data_buffer.extend(updated_at_block_height.to_be_bytes());
         } else if document_type
             .required_fields()
@@ -116,9 +130,24 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             ));
         }
 
+        // $transferredAtBlockHeight
+        if let Some(transferred_at_block_height) = &self.transferred_at_block_height {
+            bitwise_exists_flag |= 32;
+            time_fields_data_buffer.extend(transferred_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
         // $createdAtCoreBlockHeight
         if let Some(created_at_core_block_height) = &self.created_at_core_block_height {
-            bitwise_exists_flag |= 16;
+            bitwise_exists_flag |= 64;
             time_fields_data_buffer.extend(created_at_core_block_height.to_be_bytes());
         } else if document_type
             .required_fields()
@@ -133,7 +162,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
 
         // $updatedAtCoreBlockHeight
         if let Some(updated_at_core_block_height) = &self.updated_at_core_block_height {
-            bitwise_exists_flag |= 32;
+            bitwise_exists_flag |= 128;
             time_fields_data_buffer.extend(updated_at_core_block_height.to_be_bytes());
         } else if document_type
             .required_fields()
@@ -146,7 +175,22 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             ));
         }
 
-        buffer.push(bitwise_exists_flag);
+        // $transferredAtCoreBlockHeight
+        if let Some(transferred_at_core_block_height) = &self.transferred_at_core_block_height {
+            bitwise_exists_flag |= 256;
+            time_fields_data_buffer.extend(transferred_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        buffer.extend(bitwise_exists_flag.to_be_bytes().as_slice());
         buffer.append(&mut time_fields_data_buffer);
 
         // User defined properties
@@ -217,7 +261,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(revision) = self.revision {
             buffer.extend(revision.to_be_bytes())
         }
-        let mut bitwise_exists_flag: u8 = 0;
+        let mut bitwise_exists_flag: u16 = 0;
 
         let mut time_fields_data_buffer = vec![];
 
@@ -247,9 +291,22 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             ));
         }
 
+        // $transferredAt
+        if let Some(transferred_at) = &self.transferred_at {
+            bitwise_exists_flag |= 4;
+            // dbg!("we pushed transferred at {}", hex::encode(transferred_at.to_be_bytes()));
+            time_fields_data_buffer.extend(transferred_at.to_be_bytes());
+        } else if document_type.required_fields().contains(TRANSFERRED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred at field is not present".to_string(),
+                ),
+            ));
+        }
+
         // $createdAtBlockHeight
         if let Some(created_at_block_height) = &self.created_at_block_height {
-            bitwise_exists_flag |= 4;
+            bitwise_exists_flag |= 8;
             time_fields_data_buffer.extend(created_at_block_height.to_be_bytes());
         } else if document_type
             .required_fields()
@@ -264,7 +321,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
 
         // $updatedAtBlockHeight
         if let Some(updated_at_block_height) = &self.updated_at_block_height {
-            bitwise_exists_flag |= 8;
+            bitwise_exists_flag |= 16;
             time_fields_data_buffer.extend(updated_at_block_height.to_be_bytes());
         } else if document_type
             .required_fields()
@@ -277,9 +334,24 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             ));
         }
 
+        // $transferredAtBlockHeight
+        if let Some(transferred_at_block_height) = &self.transferred_at_block_height {
+            bitwise_exists_flag |= 32;
+            time_fields_data_buffer.extend(transferred_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
         // $createdAtCoreBlockHeight
         if let Some(created_at_core_block_height) = &self.created_at_core_block_height {
-            bitwise_exists_flag |= 16;
+            bitwise_exists_flag |= 64;
             time_fields_data_buffer.extend(created_at_core_block_height.to_be_bytes());
         } else if document_type
             .required_fields()
@@ -294,7 +366,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
 
         // $updatedAtCoreBlockHeight
         if let Some(updated_at_core_block_height) = &self.updated_at_core_block_height {
-            bitwise_exists_flag |= 32;
+            bitwise_exists_flag |= 128;
             time_fields_data_buffer.extend(updated_at_core_block_height.to_be_bytes());
         } else if document_type
             .required_fields()
@@ -307,7 +379,22 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             ));
         }
 
-        buffer.push(bitwise_exists_flag);
+        // $transferredAtCoreBlockHeight
+        if let Some(transferred_at_core_block_height) = &self.transferred_at_core_block_height {
+            bitwise_exists_flag |= 256;
+            time_fields_data_buffer.extend(transferred_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        buffer.extend(bitwise_exists_flag.to_be_bytes().as_slice());
         buffer.append(&mut time_fields_data_buffer);
 
         // User defined properties
@@ -404,7 +491,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             None
         };
 
-        let timestamp_flags = buf.read_u8().map_err(|_| {
+        let timestamp_flags = buf.read_u16::<BigEndian>().map_err(|_| {
             DataContractError::CorruptedSerialization(
                 "error reading timestamp flags from serialized document".to_string(),
             )
@@ -430,7 +517,17 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             None
         };
 
-        let created_at_block_height = if timestamp_flags & 4 > 0 {
+        let transferred_at = if timestamp_flags & 4 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading transferred_at timestamp from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let created_at_block_height = if timestamp_flags & 8 > 0 {
             Some(buf.read_u64::<BigEndian>().map_err(|_| {
                 DataContractError::CorruptedSerialization(
                     "error reading created_at_block_height from serialized document".to_string(),
@@ -440,7 +537,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             None
         };
 
-        let updated_at_block_height = if timestamp_flags & 8 > 0 {
+        let updated_at_block_height = if timestamp_flags & 16 > 0 {
             Some(buf.read_u64::<BigEndian>().map_err(|_| {
                 DataContractError::CorruptedSerialization(
                     "error reading updated_at_block_height from serialized document".to_string(),
@@ -450,7 +547,18 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             None
         };
 
-        let created_at_core_block_height = if timestamp_flags & 16 > 0 {
+        let transferred_at_block_height = if timestamp_flags & 32 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading transferred_at_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let created_at_core_block_height = if timestamp_flags & 64 > 0 {
             Some(buf.read_u32::<BigEndian>().map_err(|_| {
                 DataContractError::CorruptedSerialization(
                     "error reading created_at_core_block_height from serialized document"
@@ -461,7 +569,18 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             None
         };
 
-        let updated_at_core_block_height = if timestamp_flags & 32 > 0 {
+        let updated_at_core_block_height = if timestamp_flags & 128 > 0 {
+            Some(buf.read_u32::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading updated_at_core_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let transferred_at_core_block_height = if timestamp_flags & 256 > 0 {
             Some(buf.read_u32::<BigEndian>().map_err(|_| {
                 DataContractError::CorruptedSerialization(
                     "error reading updated_at_core_block_height from serialized document"
@@ -508,10 +627,13 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             revision,
             created_at,
             updated_at,
+            transferred_at,
             created_at_block_height,
             updated_at_block_height,
+            transferred_at_block_height,
             created_at_core_block_height,
             updated_at_core_block_height,
+            transferred_at_core_block_height,
         })
     }
 }

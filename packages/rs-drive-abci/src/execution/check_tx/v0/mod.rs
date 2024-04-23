@@ -434,7 +434,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2970480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2978520);
 
         let check_result = platform
             .check_tx(
@@ -625,7 +625,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 909500);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 909510);
 
         let check_result = platform
             .check_tx(
@@ -767,7 +767,7 @@ mod tests {
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            2970480 * 2
+            2978520 * 2
         );
 
         let check_result = platform
@@ -1005,7 +1005,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2970480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2978520);
 
         platform
             .drive
@@ -1089,7 +1089,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            7066460
+            7098500
         );
 
         let check_result = platform
@@ -1201,7 +1201,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2970480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2978520);
 
         platform
             .drive
@@ -1320,7 +1320,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1231110);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1231120);
 
         let check_result = platform
             .check_tx(

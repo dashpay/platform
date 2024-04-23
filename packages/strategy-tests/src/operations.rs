@@ -37,7 +37,8 @@ pub enum DocumentAction {
         DocumentFieldFillSize,
     ),
     DocumentActionDelete,
-    DocumentActionReplace,
+    DocumentActionReplaceRandom,
+    DocumentActionTransferRandom,
 }
 
 #[derive(Clone, Debug, PartialEq)]

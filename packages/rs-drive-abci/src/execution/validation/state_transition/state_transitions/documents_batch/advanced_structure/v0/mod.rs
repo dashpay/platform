@@ -28,6 +28,7 @@ use drive::state_transition_action::system::bump_identity_data_contract_nonce_ac
 use crate::error::execution::ExecutionError;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {
@@ -132,7 +133,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
                     let result = replace_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
                         let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the create action"), self.owner_id(), self.user_fee_increase()),
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the replace action"), self.owner_id(), self.user_fee_increase()),
                         );
 
                         return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -145,7 +146,20 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
                     let result = delete_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
                         let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the create action"), self.owner_id(), self.user_fee_increase()),
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the delete action"), self.owner_id(), self.user_fee_increase()),
+                        );
+
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            bump_action,
+                            result.errors,
+                        ));
+                    }
+                }
+                DocumentTransitionAction::TransferAction(transfer_action) => {
+                    let result = transfer_action.validate_structure(platform_version)?;
+                    if !result.is_valid() {
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the transfer action"), self.owner_id(), self.user_fee_increase()),
                         );
 
                         return Ok(ConsensusValidationResult::new_with_data_and_errors(
