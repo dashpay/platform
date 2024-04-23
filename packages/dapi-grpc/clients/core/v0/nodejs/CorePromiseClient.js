@@ -24,8 +24,8 @@ const {
       platform: {
         dapi: {
           v0: {
-            GetCoreChainStatusRequest: PBJSGetCoreChainStatusRequest,
-            GetCoreChainStatusResponse: PBJSGetCoreChainStatusResponse,
+            GetBlockchainStatusRequest: PBJSGetBlockchainStatusRequest,
+            GetBlockchainStatusResponse: PBJSGetBlockchainStatusResponse,
             GetMasternodeStatusRequest: PBJSGetMasternodeStatusRequest,
             GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
             GetBlockRequest: PBJSGetBlockRequest,
@@ -48,7 +48,7 @@ const {
 } = require('./core_pbjs');
 
 const {
-  GetCoreChainStatusResponse: ProtocGetCoreChainStatusResponse,
+  GetBlockchainStatusResponse: ProtocGetBlockchainStatusResponse,
   GetMasternodeStatusResponse: ProtocGetMasternodeStatusResponse,
   GetBlockResponse: ProtocGetBlockResponse,
   BroadcastTransactionResponse: ProtocBroadcastTransactionResponse,
@@ -82,8 +82,8 @@ class CorePromiseClient {
 
     this.client = new CoreNodeJSClient(strippedHostname, credentials, options);
 
-    this.client.getCoreChainStatus = promisify(
-      this.client.getCoreChainStatus.bind(this.client),
+    this.client.getBlockchainStatus = promisify(
+      this.client.getBlockchainStatus.bind(this.client),
     );
 
     this.client.getMasternodeStatus = promisify(
@@ -108,28 +108,28 @@ class CorePromiseClient {
   }
 
   /**
-   * @param {!GetCoreChainStatusRequest} getCoreChainStatusRequest
+   * @param {!GetBlockchainStatusRequest} getBlockchainStatusRequest
    * @param {?Object<string, string>} metadata
    * @param {CallOptions} [options={}]
-   * @return {Promise<!GetCoreChainStatusResponse>}
+   * @return {Promise<!GetBlockchainStatusResponse>}
    */
-  getCoreChainStatus(getCoreChainStatusRequest, metadata = {}, options = {}) {
+  getBlockchainStatus(getBlockchainStatusRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
 
-    return this.client.getCoreChainStatus(
-      getCoreChainStatusRequest,
+    return this.client.getBlockchainStatus(
+      getBlockchainStatusRequest,
       convertObjectToMetadata(metadata),
       {
         interceptors: [
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
-              ProtocGetCoreChainStatusResponse,
-              PBJSGetCoreChainStatusResponse,
+              ProtocGetBlockchainStatusResponse,
+              PBJSGetBlockchainStatusResponse,
             ),
             protobufToJsonFactory(
-              PBJSGetCoreChainStatusRequest,
+              PBJSGetBlockchainStatusRequest,
             ),
           ),
         ],

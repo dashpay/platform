@@ -11,7 +11,7 @@ describe('CorePromiseClient', () => {
 
     corePromiseClient = new CorePromiseClient('https://localhost/');
     corePromiseClient.client = {
-      getCoreChainStatus: this.sinon.stub().resolves(response),
+      getBlockchainStatus: this.sinon.stub().resolves(response),
       getMasternodeStatus: this.sinon.stub().resolves(response),
       getBlock: this.sinon.stub().resolves(response),
       broadcastTransaction: this.sinon.stub().resolves(response),
@@ -21,17 +21,17 @@ describe('CorePromiseClient', () => {
     };
   });
 
-  describe('#getCoreChainStatus', () => {
+  describe('#getBlockchainStatus', () => {
     it('should return core chain status', async () => {
-      const result = await corePromiseClient.getCoreChainStatus(request);
+      const result = await corePromiseClient.getBlockchainStatus(request);
 
       expect(result).to.equal(response);
-      expect(corePromiseClient.client.getCoreChainStatus).to.be.calledOnceWith(request);
+      expect(corePromiseClient.client.getBlockchainStatus).to.be.calledOnceWith(request);
     });
 
     it('should throw an error when metadata is not an object', async () => {
       try {
-        corePromiseClient.getCoreChainStatus({}, 'metadata');
+        corePromiseClient.getBlockchainStatus({}, 'metadata');
 
         expect.fail('Error was not thrown');
       } catch (e) {

@@ -4,13 +4,13 @@
 import * as core_pb from "./core_pb";
 import {grpc} from "@improbable-eng/grpc-web";
 
-type CoregetCoreChainStatus = {
+type CoregetBlockchainStatus = {
   readonly methodName: string;
   readonly service: typeof Core;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof core_pb.GetCoreChainStatusRequest;
-  readonly responseType: typeof core_pb.GetCoreChainStatusResponse;
+  readonly requestType: typeof core_pb.GetBlockchainStatusRequest;
+  readonly responseType: typeof core_pb.GetBlockchainStatusResponse;
 };
 
 type CoregetMasternodeStatus = {
@@ -78,7 +78,7 @@ type CoresubscribeToTransactionsWithProofs = {
 
 export class Core {
   static readonly serviceName: string;
-  static readonly getCoreChainStatus: CoregetCoreChainStatus;
+  static readonly getBlockchainStatus: CoregetBlockchainStatus;
   static readonly getMasternodeStatus: CoregetMasternodeStatus;
   static readonly getBlock: CoregetBlock;
   static readonly broadcastTransaction: CorebroadcastTransaction;
@@ -120,14 +120,14 @@ export class CoreClient {
   readonly serviceHost: string;
 
   constructor(serviceHost: string, options?: grpc.RpcOptions);
-  getCoreChainStatus(
-    requestMessage: core_pb.GetCoreChainStatusRequest,
+  getBlockchainStatus(
+    requestMessage: core_pb.GetBlockchainStatusRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: core_pb.GetCoreChainStatusResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetBlockchainStatusResponse|null) => void
   ): UnaryResponse;
-  getCoreChainStatus(
-    requestMessage: core_pb.GetCoreChainStatusRequest,
-    callback: (error: ServiceError|null, responseMessage: core_pb.GetCoreChainStatusResponse|null) => void
+  getBlockchainStatus(
+    requestMessage: core_pb.GetBlockchainStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetBlockchainStatusResponse|null) => void
   ): UnaryResponse;
   getMasternodeStatus(
     requestMessage: core_pb.GetMasternodeStatusRequest,

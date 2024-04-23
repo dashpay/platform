@@ -1,29 +1,29 @@
 const {
   v0: {
-    GetCoreChainStatusRequest,
-    GetCoreChainStatusResponse,
+    GetBlockchainStatusRequest,
+    GetBlockchainStatusResponse,
     CorePromiseClient,
   },
 } = require('@dashevo/dapi-grpc');
 
 /**
  * @param {GrpcTransport} grpcTransport
- * @returns {getCoreChainStatus}
+ * @returns {getBlockchainStatus}
  */
-function getCoreChainStatusFactory(grpcTransport) {
+function getBlockchainStatusFactory(grpcTransport) {
   /**
    * Get Core chain status
-   * @typedef {getCoreChainStatus}
+   * @typedef {getBlockchainStatus}
    * @param {DAPIClientOptions} [options]
    * @returns {Promise<object>}
    */
-  async function getCoreChainStatus(options = {}) {
-    const getCoreChainStatusRequest = new GetCoreChainStatusRequest();
+  async function getBlockchainStatus(options = {}) {
+    const getBlockchainStatusRequest = new GetBlockchainStatusRequest();
 
     const response = await grpcTransport.request(
       CorePromiseClient,
-      'getCoreChainStatus',
-      getCoreChainStatusRequest,
+      'getBlockchainStatus',
+      getBlockchainStatusRequest,
       options,
     );
 
@@ -47,13 +47,13 @@ function getCoreChainStatusFactory(grpcTransport) {
 
     // Respond with constant names instead of constant values
 
-    responseObject.status = Object.keys(GetCoreChainStatusResponse.Status)
-      .find((key) => GetCoreChainStatusResponse.Status[key] === responseObject.status);
+    responseObject.status = Object.keys(GetBlockchainStatusResponse.Status)
+      .find((key) => GetBlockchainStatusResponse.Status[key] === responseObject.status);
 
     return responseObject;
   }
 
-  return getCoreChainStatus;
+  return getBlockchainStatus;
 }
 
-module.exports = getCoreChainStatusFactory;
+module.exports = getBlockchainStatusFactory;

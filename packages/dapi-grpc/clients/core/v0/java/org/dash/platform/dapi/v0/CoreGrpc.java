@@ -15,35 +15,35 @@ public final class CoreGrpc {
   public static final String SERVICE_NAME = "org.dash.platform.dapi.v0.Core";
 
   // Static method descriptors that strictly reflect the proto.
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest,
-      org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> getGetCoreChainStatusMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> getGetBlockchainStatusMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "getCoreChainStatus",
-      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest.class,
-      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "getBlockchainStatus",
+      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest,
-      org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> getGetCoreChainStatusMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> getGetCoreChainStatusMethod;
-    if ((getGetCoreChainStatusMethod = CoreGrpc.getGetCoreChainStatusMethod) == null) {
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> getGetBlockchainStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> getGetBlockchainStatusMethod;
+    if ((getGetBlockchainStatusMethod = CoreGrpc.getGetBlockchainStatusMethod) == null) {
       synchronized (CoreGrpc.class) {
-        if ((getGetCoreChainStatusMethod = CoreGrpc.getGetCoreChainStatusMethod) == null) {
-          CoreGrpc.getGetCoreChainStatusMethod = getGetCoreChainStatusMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse>newBuilder()
+        if ((getGetBlockchainStatusMethod = CoreGrpc.getGetBlockchainStatusMethod) == null) {
+          CoreGrpc.getGetBlockchainStatusMethod = getGetBlockchainStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getCoreChainStatus"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getBlockchainStatus"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getCoreChainStatus"))
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getBlockchainStatus"))
               .build();
         }
       }
     }
-    return getGetCoreChainStatusMethod;
+    return getGetBlockchainStatusMethod;
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest,
@@ -313,9 +313,9 @@ public final class CoreGrpc {
 
     /**
      */
-    public void getCoreChainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetCoreChainStatusMethod(), responseObserver);
+    public void getBlockchainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetBlockchainStatusMethod(), responseObserver);
     }
 
     /**
@@ -370,12 +370,12 @@ public final class CoreGrpc {
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
-            getGetCoreChainStatusMethod(),
+            getGetBlockchainStatusMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest,
-                org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse>(
-                  this, METHODID_GET_CORE_CHAIN_STATUS)))
+                org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest,
+                org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse>(
+                  this, METHODID_GET_BLOCKCHAIN_STATUS)))
           .addMethod(
             getGetMasternodeStatusMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -445,10 +445,10 @@ public final class CoreGrpc {
 
     /**
      */
-    public void getCoreChainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> responseObserver) {
+    public void getBlockchainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getGetCoreChainStatusMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getGetBlockchainStatusMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -524,9 +524,9 @@ public final class CoreGrpc {
 
     /**
      */
-    public org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse getCoreChainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest request) {
+    public org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse getBlockchainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getGetCoreChainStatusMethod(), getCallOptions(), request);
+          getChannel(), getGetBlockchainStatusMethod(), getCallOptions(), request);
     }
 
     /**
@@ -597,10 +597,10 @@ public final class CoreGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse> getCoreChainStatus(
-        org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> getBlockchainStatus(
+        org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getGetCoreChainStatusMethod(), getCallOptions()), request);
+          getChannel().newCall(getGetBlockchainStatusMethod(), getCallOptions()), request);
     }
 
     /**
@@ -644,7 +644,7 @@ public final class CoreGrpc {
     }
   }
 
-  private static final int METHODID_GET_CORE_CHAIN_STATUS = 0;
+  private static final int METHODID_GET_BLOCKCHAIN_STATUS = 0;
   private static final int METHODID_GET_MASTERNODE_STATUS = 1;
   private static final int METHODID_GET_BLOCK = 2;
   private static final int METHODID_BROADCAST_TRANSACTION = 3;
@@ -670,9 +670,9 @@ public final class CoreGrpc {
     @java.lang.SuppressWarnings("unchecked")
     public void invoke(Req request, io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
-        case METHODID_GET_CORE_CHAIN_STATUS:
-          serviceImpl.getCoreChainStatus((org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetCoreChainStatusResponse>) responseObserver);
+        case METHODID_GET_BLOCKCHAIN_STATUS:
+          serviceImpl.getBlockchainStatus((org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse>) responseObserver);
           break;
         case METHODID_GET_MASTERNODE_STATUS:
           serviceImpl.getMasternodeStatus((org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest) request,
@@ -763,7 +763,7 @@ public final class CoreGrpc {
         if (result == null) {
           serviceDescriptor = result = io.grpc.ServiceDescriptor.newBuilder(SERVICE_NAME)
               .setSchemaDescriptor(new CoreFileDescriptorSupplier())
-              .addMethod(getGetCoreChainStatusMethod())
+              .addMethod(getGetBlockchainStatusMethod())
               .addMethod(getGetMasternodeStatusMethod())
               .addMethod(getGetBlockMethod())
               .addMethod(getBroadcastTransactionMethod())

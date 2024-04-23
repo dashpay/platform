@@ -60,7 +60,7 @@ describe('Wallet', () => {
           return streamMock;
         });
 
-      this.sinon.stub(wallet.transport.client.core, 'getCoreChainStatus')
+      this.sinon.stub(wallet.transport.client.core, 'getBlockchainStatus')
         .resolves({
           chain: { blocksCount: bestBlockHeight },
           network: { fee: 237 }

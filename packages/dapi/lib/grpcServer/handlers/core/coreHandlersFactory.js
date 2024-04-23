@@ -17,7 +17,7 @@ const {
   v0: {
     BroadcastTransactionRequest,
     GetTransactionRequest,
-    GetCoreChainStatusRequest,
+    GetBlockchainStatusRequest,
     GetMasternodeStatusRequest,
     GetBlockRequest,
     pbjs: {
@@ -25,8 +25,8 @@ const {
       BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
       GetTransactionRequest: PBJSGetTransactionRequest,
       GetTransactionResponse: PBJSGetTransactionResponse,
-      GetCoreChainStatusRequest: PBJSGetCoreChainStatusRequest,
-      GetCoreChainStatusResponse: PBJSGetCoreChainStatusResponse,
+      GetBlockchainStatusRequest: PBJSGetBlockchainStatusRequest,
+      GetBlockchainStatusResponse: PBJSGetBlockchainStatusResponse,
       GetMasternodeStatusRequest: PBJSGetMasternodeStatusRequest,
       GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
       GetBlockRequest: PBJSGetBlockRequest,
@@ -40,8 +40,8 @@ const logger = require('../../../logger');
 const getBlockHandlerFactory = require(
   './getBlockHandlerFactory',
 );
-const getCoreChainStatusHandlerFactory = require(
-  './getCoreChainStatusHandlerFactory',
+const getBlockchainStatusHandlerFactory = require(
+  './getBlockchainStatusHandlerFactory',
 );
 const getMasternodeStatusHandlerFactory = require(
   './getMasternodeStatusHandlerFactory',
@@ -74,17 +74,17 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
     wrapInErrorHandler(getBlockHandler),
   );
 
-  // getCoreChainStatus
-  const getCoreChainStatusHandler = getCoreChainStatusHandlerFactory(coreRPCClient);
-  const wrappedGetCoreChainStatus = jsonToProtobufHandlerWrapper(
+  // getBlockchainStatus
+  const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(coreRPCClient);
+  const wrappedGetBlockchainStatus = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetCoreChainStatusRequest,
-      PBJSGetCoreChainStatusRequest,
+      GetBlockchainStatusRequest,
+      PBJSGetBlockchainStatusRequest,
     ),
     protobufToJsonFactory(
-      PBJSGetCoreChainStatusResponse,
+      PBJSGetBlockchainStatusResponse,
     ),
-    wrapInErrorHandler(getCoreChainStatusHandler),
+    wrapInErrorHandler(getBlockchainStatusHandler),
   );
 
   // getMasternodeStatus
@@ -128,7 +128,7 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
 
   return {
     getBlock: wrappedGetBlock,
-    getCoreChainStatus: wrappedGetCoreChainStatus,
+    getBlockchainStatus: wrappedGetBlockchainStatus,
     getMasternodeStatus: wrappedGetMasternodeStatus,
     getTransaction: wrappedGetTransaction,
     broadcastTransaction: wrappedBroadcastTransaction,

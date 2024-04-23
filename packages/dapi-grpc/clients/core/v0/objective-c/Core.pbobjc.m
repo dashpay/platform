@@ -29,12 +29,12 @@
 // We don't use [Foo class] because it is not a static value.
 GPBObjCClassDeclaration(BlockHeaders);
 GPBObjCClassDeclaration(BloomFilter);
-GPBObjCClassDeclaration(GetCoreChainStatusResponse);
-GPBObjCClassDeclaration(GetCoreChainStatusResponse_Chain);
-GPBObjCClassDeclaration(GetCoreChainStatusResponse_Network);
-GPBObjCClassDeclaration(GetCoreChainStatusResponse_NetworkFee);
-GPBObjCClassDeclaration(GetCoreChainStatusResponse_Time);
-GPBObjCClassDeclaration(GetCoreChainStatusResponse_Version);
+GPBObjCClassDeclaration(GetBlockchainStatusResponse);
+GPBObjCClassDeclaration(GetBlockchainStatusResponse_Chain);
+GPBObjCClassDeclaration(GetBlockchainStatusResponse_Network);
+GPBObjCClassDeclaration(GetBlockchainStatusResponse_NetworkFee);
+GPBObjCClassDeclaration(GetBlockchainStatusResponse_Time);
+GPBObjCClassDeclaration(GetBlockchainStatusResponse_Version);
 GPBObjCClassDeclaration(InstantSendLockMessages);
 GPBObjCClassDeclaration(RawTransactions);
 
@@ -61,14 +61,14 @@ static GPBFileDescriptor *CoreRoot_FileDescriptor(void) {
   return descriptor;
 }
 
-#pragma mark - GetCoreChainStatusRequest
+#pragma mark - GetBlockchainStatusRequest
 
-@implementation GetCoreChainStatusRequest
+@implementation GetBlockchainStatusRequest
 
 
-typedef struct GetCoreChainStatusRequest__storage_ {
+typedef struct GetBlockchainStatusRequest__storage_ {
   uint32_t _has_storage_[1];
-} GetCoreChainStatusRequest__storage_;
+} GetBlockchainStatusRequest__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -76,12 +76,12 @@ typedef struct GetCoreChainStatusRequest__storage_ {
   static GPBDescriptor *descriptor = nil;
   if (!descriptor) {
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetCoreChainStatusRequest class]
+        [GPBDescriptor allocDescriptorForClass:[GetBlockchainStatusRequest class]
                                      rootClass:[CoreRoot class]
                                           file:CoreRoot_FileDescriptor()
                                         fields:NULL
                                     fieldCount:0
-                                   storageSize:sizeof(GetCoreChainStatusRequest__storage_)
+                                   storageSize:sizeof(GetBlockchainStatusRequest__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
@@ -93,9 +93,9 @@ typedef struct GetCoreChainStatusRequest__storage_ {
 
 @end
 
-#pragma mark - GetCoreChainStatusResponse
+#pragma mark - GetBlockchainStatusResponse
 
-@implementation GetCoreChainStatusResponse
+@implementation GetBlockchainStatusResponse
 
 @dynamic hasVersion, version;
 @dynamic hasTime, time;
@@ -104,15 +104,15 @@ typedef struct GetCoreChainStatusRequest__storage_ {
 @dynamic hasChain, chain;
 @dynamic hasNetwork, network;
 
-typedef struct GetCoreChainStatusResponse__storage_ {
+typedef struct GetBlockchainStatusResponse__storage_ {
   uint32_t _has_storage_[1];
-  GetCoreChainStatusResponse_Status status;
-  GetCoreChainStatusResponse_Version *version;
-  GetCoreChainStatusResponse_Time *time;
-  GetCoreChainStatusResponse_Chain *chain;
-  GetCoreChainStatusResponse_Network *network;
+  GetBlockchainStatusResponse_Status status;
+  GetBlockchainStatusResponse_Version *version;
+  GetBlockchainStatusResponse_Time *time;
+  GetBlockchainStatusResponse_Chain *chain;
+  GetBlockchainStatusResponse_Network *network;
   double syncProgress;
-} GetCoreChainStatusResponse__storage_;
+} GetBlockchainStatusResponse__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -122,66 +122,66 @@ typedef struct GetCoreChainStatusResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "version",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetCoreChainStatusResponse_Version),
-        .number = GetCoreChainStatusResponse_FieldNumber_Version,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetBlockchainStatusResponse_Version),
+        .number = GetBlockchainStatusResponse_FieldNumber_Version,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse__storage_, version),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse__storage_, version),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
       {
         .name = "time",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetCoreChainStatusResponse_Time),
-        .number = GetCoreChainStatusResponse_FieldNumber_Time,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetBlockchainStatusResponse_Time),
+        .number = GetBlockchainStatusResponse_FieldNumber_Time,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse__storage_, time),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse__storage_, time),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
       {
         .name = "status",
-        .dataTypeSpecific.enumDescFunc = GetCoreChainStatusResponse_Status_EnumDescriptor,
-        .number = GetCoreChainStatusResponse_FieldNumber_Status,
+        .dataTypeSpecific.enumDescFunc = GetBlockchainStatusResponse_Status_EnumDescriptor,
+        .number = GetBlockchainStatusResponse_FieldNumber_Status,
         .hasIndex = 2,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse__storage_, status),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse__storage_, status),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeEnum,
       },
       {
         .name = "syncProgress",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_FieldNumber_SyncProgress,
+        .number = GetBlockchainStatusResponse_FieldNumber_SyncProgress,
         .hasIndex = 3,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse__storage_, syncProgress),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse__storage_, syncProgress),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
       {
         .name = "chain",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetCoreChainStatusResponse_Chain),
-        .number = GetCoreChainStatusResponse_FieldNumber_Chain,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetBlockchainStatusResponse_Chain),
+        .number = GetBlockchainStatusResponse_FieldNumber_Chain,
         .hasIndex = 4,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse__storage_, chain),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse__storage_, chain),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
       {
         .name = "network",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetCoreChainStatusResponse_Network),
-        .number = GetCoreChainStatusResponse_FieldNumber_Network,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetBlockchainStatusResponse_Network),
+        .number = GetBlockchainStatusResponse_FieldNumber_Network,
         .hasIndex = 5,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse__storage_, network),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse__storage_, network),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetCoreChainStatusResponse class]
+        [GPBDescriptor allocDescriptorForClass:[GetBlockchainStatusResponse class]
                                      rootClass:[CoreRoot class]
                                           file:CoreRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetCoreChainStatusResponse__storage_)
+                                   storageSize:sizeof(GetBlockchainStatusResponse__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
@@ -193,37 +193,37 @@ typedef struct GetCoreChainStatusResponse__storage_ {
 
 @end
 
-int32_t GetCoreChainStatusResponse_Status_RawValue(GetCoreChainStatusResponse *message) {
-  GPBDescriptor *descriptor = [GetCoreChainStatusResponse descriptor];
-  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetCoreChainStatusResponse_FieldNumber_Status];
+int32_t GetBlockchainStatusResponse_Status_RawValue(GetBlockchainStatusResponse *message) {
+  GPBDescriptor *descriptor = [GetBlockchainStatusResponse descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetBlockchainStatusResponse_FieldNumber_Status];
   return GPBGetMessageRawEnumField(message, field);
 }
 
-void SetGetCoreChainStatusResponse_Status_RawValue(GetCoreChainStatusResponse *message, int32_t value) {
-  GPBDescriptor *descriptor = [GetCoreChainStatusResponse descriptor];
-  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetCoreChainStatusResponse_FieldNumber_Status];
+void SetGetBlockchainStatusResponse_Status_RawValue(GetBlockchainStatusResponse *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetBlockchainStatusResponse descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetBlockchainStatusResponse_FieldNumber_Status];
   GPBSetMessageRawEnumField(message, field, value);
 }
 
-#pragma mark - Enum GetCoreChainStatusResponse_Status
+#pragma mark - Enum GetBlockchainStatusResponse_Status
 
-GPBEnumDescriptor *GetCoreChainStatusResponse_Status_EnumDescriptor(void) {
+GPBEnumDescriptor *GetBlockchainStatusResponse_Status_EnumDescriptor(void) {
   static _Atomic(GPBEnumDescriptor*) descriptor = nil;
   if (!descriptor) {
     static const char *valueNames =
         "NotStarted\000Syncing\000Ready\000Error\000";
     static const int32_t values[] = {
-        GetCoreChainStatusResponse_Status_NotStarted,
-        GetCoreChainStatusResponse_Status_Syncing,
-        GetCoreChainStatusResponse_Status_Ready,
-        GetCoreChainStatusResponse_Status_Error,
+        GetBlockchainStatusResponse_Status_NotStarted,
+        GetBlockchainStatusResponse_Status_Syncing,
+        GetBlockchainStatusResponse_Status_Ready,
+        GetBlockchainStatusResponse_Status_Error,
     };
     GPBEnumDescriptor *worker =
-        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetCoreChainStatusResponse_Status)
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetBlockchainStatusResponse_Status)
                                        valueNames:valueNames
                                            values:values
                                             count:(uint32_t)(sizeof(values) / sizeof(int32_t))
-                                     enumVerifier:GetCoreChainStatusResponse_Status_IsValidValue];
+                                     enumVerifier:GetBlockchainStatusResponse_Status_IsValidValue];
     GPBEnumDescriptor *expected = nil;
     if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
       [worker release];
@@ -232,32 +232,32 @@ GPBEnumDescriptor *GetCoreChainStatusResponse_Status_EnumDescriptor(void) {
   return descriptor;
 }
 
-BOOL GetCoreChainStatusResponse_Status_IsValidValue(int32_t value__) {
+BOOL GetBlockchainStatusResponse_Status_IsValidValue(int32_t value__) {
   switch (value__) {
-    case GetCoreChainStatusResponse_Status_NotStarted:
-    case GetCoreChainStatusResponse_Status_Syncing:
-    case GetCoreChainStatusResponse_Status_Ready:
-    case GetCoreChainStatusResponse_Status_Error:
+    case GetBlockchainStatusResponse_Status_NotStarted:
+    case GetBlockchainStatusResponse_Status_Syncing:
+    case GetBlockchainStatusResponse_Status_Ready:
+    case GetBlockchainStatusResponse_Status_Error:
       return YES;
     default:
       return NO;
   }
 }
 
-#pragma mark - GetCoreChainStatusResponse_Version
+#pragma mark - GetBlockchainStatusResponse_Version
 
-@implementation GetCoreChainStatusResponse_Version
+@implementation GetBlockchainStatusResponse_Version
 
 @dynamic protocol;
 @dynamic software;
 @dynamic agent;
 
-typedef struct GetCoreChainStatusResponse_Version__storage_ {
+typedef struct GetBlockchainStatusResponse_Version__storage_ {
   uint32_t _has_storage_[1];
   uint32_t protocol;
   uint32_t software;
   NSString *agent;
-} GetCoreChainStatusResponse_Version__storage_;
+} GetBlockchainStatusResponse_Version__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -268,40 +268,40 @@ typedef struct GetCoreChainStatusResponse_Version__storage_ {
       {
         .name = "protocol",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Version_FieldNumber_Protocol,
+        .number = GetBlockchainStatusResponse_Version_FieldNumber_Protocol,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Version__storage_, protocol),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Version__storage_, protocol),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "software",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Version_FieldNumber_Software,
+        .number = GetBlockchainStatusResponse_Version_FieldNumber_Software,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Version__storage_, software),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Version__storage_, software),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "agent",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Version_FieldNumber_Agent,
+        .number = GetBlockchainStatusResponse_Version_FieldNumber_Agent,
         .hasIndex = 2,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Version__storage_, agent),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Version__storage_, agent),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetCoreChainStatusResponse_Version class]
+        [GPBDescriptor allocDescriptorForClass:[GetBlockchainStatusResponse_Version class]
                                      rootClass:[CoreRoot class]
                                           file:CoreRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetCoreChainStatusResponse_Version__storage_)
+                                   storageSize:sizeof(GetBlockchainStatusResponse_Version__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetCoreChainStatusResponse)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetBlockchainStatusResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -312,20 +312,20 @@ typedef struct GetCoreChainStatusResponse_Version__storage_ {
 
 @end
 
-#pragma mark - GetCoreChainStatusResponse_Time
+#pragma mark - GetBlockchainStatusResponse_Time
 
-@implementation GetCoreChainStatusResponse_Time
+@implementation GetBlockchainStatusResponse_Time
 
 @dynamic now;
 @dynamic offset;
 @dynamic median;
 
-typedef struct GetCoreChainStatusResponse_Time__storage_ {
+typedef struct GetBlockchainStatusResponse_Time__storage_ {
   uint32_t _has_storage_[1];
   uint32_t now;
   int32_t offset;
   uint32_t median;
-} GetCoreChainStatusResponse_Time__storage_;
+} GetBlockchainStatusResponse_Time__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -336,40 +336,40 @@ typedef struct GetCoreChainStatusResponse_Time__storage_ {
       {
         .name = "now",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Time_FieldNumber_Now,
+        .number = GetBlockchainStatusResponse_Time_FieldNumber_Now,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Time__storage_, now),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Time__storage_, now),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "offset",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Time_FieldNumber_Offset,
+        .number = GetBlockchainStatusResponse_Time_FieldNumber_Offset,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Time__storage_, offset),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Time__storage_, offset),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeInt32,
       },
       {
         .name = "median",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Time_FieldNumber_Median,
+        .number = GetBlockchainStatusResponse_Time_FieldNumber_Median,
         .hasIndex = 2,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Time__storage_, median),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Time__storage_, median),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetCoreChainStatusResponse_Time class]
+        [GPBDescriptor allocDescriptorForClass:[GetBlockchainStatusResponse_Time class]
                                      rootClass:[CoreRoot class]
                                           file:CoreRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetCoreChainStatusResponse_Time__storage_)
+                                   storageSize:sizeof(GetBlockchainStatusResponse_Time__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetCoreChainStatusResponse)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetBlockchainStatusResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -380,9 +380,9 @@ typedef struct GetCoreChainStatusResponse_Time__storage_ {
 
 @end
 
-#pragma mark - GetCoreChainStatusResponse_Chain
+#pragma mark - GetBlockchainStatusResponse_Chain
 
-@implementation GetCoreChainStatusResponse_Chain
+@implementation GetBlockchainStatusResponse_Chain
 
 @dynamic name;
 @dynamic headersCount;
@@ -393,7 +393,7 @@ typedef struct GetCoreChainStatusResponse_Time__storage_ {
 @dynamic isSynced;
 @dynamic syncProgress;
 
-typedef struct GetCoreChainStatusResponse_Chain__storage_ {
+typedef struct GetBlockchainStatusResponse_Chain__storage_ {
   uint32_t _has_storage_[1];
   uint32_t headersCount;
   uint32_t blocksCount;
@@ -402,7 +402,7 @@ typedef struct GetCoreChainStatusResponse_Chain__storage_ {
   NSData *chainWork;
   double difficulty;
   double syncProgress;
-} GetCoreChainStatusResponse_Chain__storage_;
+} GetBlockchainStatusResponse_Chain__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -413,61 +413,61 @@ typedef struct GetCoreChainStatusResponse_Chain__storage_ {
       {
         .name = "name",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Chain_FieldNumber_Name,
+        .number = GetBlockchainStatusResponse_Chain_FieldNumber_Name,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Chain__storage_, name),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Chain__storage_, name),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
       },
       {
         .name = "headersCount",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Chain_FieldNumber_HeadersCount,
+        .number = GetBlockchainStatusResponse_Chain_FieldNumber_HeadersCount,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Chain__storage_, headersCount),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Chain__storage_, headersCount),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "blocksCount",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Chain_FieldNumber_BlocksCount,
+        .number = GetBlockchainStatusResponse_Chain_FieldNumber_BlocksCount,
         .hasIndex = 2,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Chain__storage_, blocksCount),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Chain__storage_, blocksCount),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "bestBlockHash",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Chain_FieldNumber_BestBlockHash,
+        .number = GetBlockchainStatusResponse_Chain_FieldNumber_BestBlockHash,
         .hasIndex = 3,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Chain__storage_, bestBlockHash),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Chain__storage_, bestBlockHash),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "difficulty",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Chain_FieldNumber_Difficulty,
+        .number = GetBlockchainStatusResponse_Chain_FieldNumber_Difficulty,
         .hasIndex = 4,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Chain__storage_, difficulty),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Chain__storage_, difficulty),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
       {
         .name = "chainWork",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Chain_FieldNumber_ChainWork,
+        .number = GetBlockchainStatusResponse_Chain_FieldNumber_ChainWork,
         .hasIndex = 5,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Chain__storage_, chainWork),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Chain__storage_, chainWork),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "isSynced",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Chain_FieldNumber_IsSynced,
+        .number = GetBlockchainStatusResponse_Chain_FieldNumber_IsSynced,
         .hasIndex = 6,
         .offset = 7,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
@@ -476,22 +476,22 @@ typedef struct GetCoreChainStatusResponse_Chain__storage_ {
       {
         .name = "syncProgress",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Chain_FieldNumber_SyncProgress,
+        .number = GetBlockchainStatusResponse_Chain_FieldNumber_SyncProgress,
         .hasIndex = 8,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Chain__storage_, syncProgress),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Chain__storage_, syncProgress),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetCoreChainStatusResponse_Chain class]
+        [GPBDescriptor allocDescriptorForClass:[GetBlockchainStatusResponse_Chain class]
                                      rootClass:[CoreRoot class]
                                           file:CoreRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetCoreChainStatusResponse_Chain__storage_)
+                                   storageSize:sizeof(GetBlockchainStatusResponse_Chain__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetCoreChainStatusResponse)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetBlockchainStatusResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -502,18 +502,18 @@ typedef struct GetCoreChainStatusResponse_Chain__storage_ {
 
 @end
 
-#pragma mark - GetCoreChainStatusResponse_NetworkFee
+#pragma mark - GetBlockchainStatusResponse_NetworkFee
 
-@implementation GetCoreChainStatusResponse_NetworkFee
+@implementation GetBlockchainStatusResponse_NetworkFee
 
 @dynamic relay;
 @dynamic incremental;
 
-typedef struct GetCoreChainStatusResponse_NetworkFee__storage_ {
+typedef struct GetBlockchainStatusResponse_NetworkFee__storage_ {
   uint32_t _has_storage_[1];
   double relay;
   double incremental;
-} GetCoreChainStatusResponse_NetworkFee__storage_;
+} GetBlockchainStatusResponse_NetworkFee__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -524,31 +524,31 @@ typedef struct GetCoreChainStatusResponse_NetworkFee__storage_ {
       {
         .name = "relay",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_NetworkFee_FieldNumber_Relay,
+        .number = GetBlockchainStatusResponse_NetworkFee_FieldNumber_Relay,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_NetworkFee__storage_, relay),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_NetworkFee__storage_, relay),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
       {
         .name = "incremental",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_NetworkFee_FieldNumber_Incremental,
+        .number = GetBlockchainStatusResponse_NetworkFee_FieldNumber_Incremental,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_NetworkFee__storage_, incremental),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_NetworkFee__storage_, incremental),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetCoreChainStatusResponse_NetworkFee class]
+        [GPBDescriptor allocDescriptorForClass:[GetBlockchainStatusResponse_NetworkFee class]
                                      rootClass:[CoreRoot class]
                                           file:CoreRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetCoreChainStatusResponse_NetworkFee__storage_)
+                                   storageSize:sizeof(GetBlockchainStatusResponse_NetworkFee__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetCoreChainStatusResponse)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetBlockchainStatusResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -559,18 +559,18 @@ typedef struct GetCoreChainStatusResponse_NetworkFee__storage_ {
 
 @end
 
-#pragma mark - GetCoreChainStatusResponse_Network
+#pragma mark - GetBlockchainStatusResponse_Network
 
-@implementation GetCoreChainStatusResponse_Network
+@implementation GetBlockchainStatusResponse_Network
 
 @dynamic peersCount;
 @dynamic hasFee, fee;
 
-typedef struct GetCoreChainStatusResponse_Network__storage_ {
+typedef struct GetBlockchainStatusResponse_Network__storage_ {
   uint32_t _has_storage_[1];
   uint32_t peersCount;
-  GetCoreChainStatusResponse_NetworkFee *fee;
-} GetCoreChainStatusResponse_Network__storage_;
+  GetBlockchainStatusResponse_NetworkFee *fee;
+} GetBlockchainStatusResponse_Network__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -581,31 +581,31 @@ typedef struct GetCoreChainStatusResponse_Network__storage_ {
       {
         .name = "peersCount",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetCoreChainStatusResponse_Network_FieldNumber_PeersCount,
+        .number = GetBlockchainStatusResponse_Network_FieldNumber_PeersCount,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Network__storage_, peersCount),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Network__storage_, peersCount),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "fee",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetCoreChainStatusResponse_NetworkFee),
-        .number = GetCoreChainStatusResponse_Network_FieldNumber_Fee,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetBlockchainStatusResponse_NetworkFee),
+        .number = GetBlockchainStatusResponse_Network_FieldNumber_Fee,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetCoreChainStatusResponse_Network__storage_, fee),
+        .offset = (uint32_t)offsetof(GetBlockchainStatusResponse_Network__storage_, fee),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetCoreChainStatusResponse_Network class]
+        [GPBDescriptor allocDescriptorForClass:[GetBlockchainStatusResponse_Network class]
                                      rootClass:[CoreRoot class]
                                           file:CoreRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetCoreChainStatusResponse_Network__storage_)
+                                   storageSize:sizeof(GetBlockchainStatusResponse_Network__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetCoreChainStatusResponse)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetBlockchainStatusResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG

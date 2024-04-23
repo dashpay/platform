@@ -14,10 +14,10 @@ class CoreStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.getCoreChainStatus = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Core/getCoreChainStatus',
-                request_serializer=core__pb2.GetCoreChainStatusRequest.SerializeToString,
-                response_deserializer=core__pb2.GetCoreChainStatusResponse.FromString,
+        self.getBlockchainStatus = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Core/getBlockchainStatus',
+                request_serializer=core__pb2.GetBlockchainStatusRequest.SerializeToString,
+                response_deserializer=core__pb2.GetBlockchainStatusResponse.FromString,
                 )
         self.getMasternodeStatus = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Core/getMasternodeStatus',
@@ -59,7 +59,7 @@ class CoreStub(object):
 class CoreServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def getCoreChainStatus(self, request, context):
+    def getBlockchainStatus(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -110,10 +110,10 @@ class CoreServicer(object):
 
 def add_CoreServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'getCoreChainStatus': grpc.unary_unary_rpc_method_handler(
-                    servicer.getCoreChainStatus,
-                    request_deserializer=core__pb2.GetCoreChainStatusRequest.FromString,
-                    response_serializer=core__pb2.GetCoreChainStatusResponse.SerializeToString,
+            'getBlockchainStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.getBlockchainStatus,
+                    request_deserializer=core__pb2.GetBlockchainStatusRequest.FromString,
+                    response_serializer=core__pb2.GetBlockchainStatusResponse.SerializeToString,
             ),
             'getMasternodeStatus': grpc.unary_unary_rpc_method_handler(
                     servicer.getMasternodeStatus,
@@ -161,7 +161,7 @@ class Core(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def getCoreChainStatus(request,
+    def getBlockchainStatus(request,
             target,
             options=(),
             channel_credentials=None,
@@ -171,9 +171,9 @@ class Core(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Core/getCoreChainStatus',
-            core__pb2.GetCoreChainStatusRequest.SerializeToString,
-            core__pb2.GetCoreChainStatusResponse.FromString,
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Core/getBlockchainStatus',
+            core__pb2.GetBlockchainStatusRequest.SerializeToString,
+            core__pb2.GetBlockchainStatusResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

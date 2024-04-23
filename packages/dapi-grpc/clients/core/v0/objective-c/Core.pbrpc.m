@@ -55,24 +55,24 @@
 
 #pragma mark - Method Implementations
 
-#pragma mark getCoreChainStatus(GetCoreChainStatusRequest) returns (GetCoreChainStatusResponse)
+#pragma mark getBlockchainStatus(GetBlockchainStatusRequest) returns (GetBlockchainStatusResponse)
 
-- (void)getCoreChainStatusWithRequest:(GetCoreChainStatusRequest *)request handler:(void(^)(GetCoreChainStatusResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetCoreChainStatusWithRequest:request handler:handler] start];
+- (void)getBlockchainStatusWithRequest:(GetBlockchainStatusRequest *)request handler:(void(^)(GetBlockchainStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetBlockchainStatusWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetCoreChainStatusWithRequest:(GetCoreChainStatusRequest *)request handler:(void(^)(GetCoreChainStatusResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getCoreChainStatus"
+- (GRPCProtoCall *)RPCTogetBlockchainStatusWithRequest:(GetBlockchainStatusRequest *)request handler:(void(^)(GetBlockchainStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getBlockchainStatus"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetCoreChainStatusResponse class]
+             responseClass:[GetBlockchainStatusResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getCoreChainStatusWithMessage:(GetCoreChainStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getCoreChainStatus"
+- (GRPCUnaryProtoCall *)getBlockchainStatusWithMessage:(GetBlockchainStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getBlockchainStatus"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[GetCoreChainStatusResponse class]];
+             responseClass:[GetBlockchainStatusResponse class]];
 }
 
 #pragma mark getMasternodeStatus(GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse)

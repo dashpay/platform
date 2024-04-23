@@ -1,26 +1,26 @@
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetCoreChainStatusRequest {}
+pub struct GetBlockchainStatusRequest {}
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetCoreChainStatusResponse {
+pub struct GetBlockchainStatusResponse {
     #[prost(message, optional, tag = "1")]
-    pub version: ::core::option::Option<get_core_chain_status_response::Version>,
+    pub version: ::core::option::Option<get_blockchain_status_response::Version>,
     #[prost(message, optional, tag = "2")]
-    pub time: ::core::option::Option<get_core_chain_status_response::Time>,
-    #[prost(enumeration = "get_core_chain_status_response::Status", tag = "3")]
+    pub time: ::core::option::Option<get_blockchain_status_response::Time>,
+    #[prost(enumeration = "get_blockchain_status_response::Status", tag = "3")]
     pub status: i32,
     #[prost(double, tag = "4")]
     pub sync_progress: f64,
     #[prost(message, optional, tag = "5")]
-    pub chain: ::core::option::Option<get_core_chain_status_response::Chain>,
+    pub chain: ::core::option::Option<get_blockchain_status_response::Chain>,
     #[prost(message, optional, tag = "7")]
-    pub network: ::core::option::Option<get_core_chain_status_response::Network>,
+    pub network: ::core::option::Option<get_blockchain_status_response::Network>,
 }
-/// Nested message and enum types in `GetCoreChainStatusResponse`.
-pub mod get_core_chain_status_response {
+/// Nested message and enum types in `GetBlockchainStatusResponse`.
+pub mod get_blockchain_status_response {
     #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -409,11 +409,11 @@ pub mod core_server {
     /// Generated trait containing gRPC methods that should be implemented for use with CoreServer.
     #[async_trait]
     pub trait Core: Send + Sync + 'static {
-        async fn get_core_chain_status(
+        async fn get_blockchain_status(
             &self,
-            request: tonic::Request<super::GetCoreChainStatusRequest>,
+            request: tonic::Request<super::GetBlockchainStatusRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetCoreChainStatusResponse>,
+            tonic::Response<super::GetBlockchainStatusResponse>,
             tonic::Status,
         >;
         async fn get_masternode_status(
@@ -563,25 +563,25 @@ pub mod core_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/org.dash.platform.dapi.v0.Core/getCoreChainStatus" => {
+                "/org.dash.platform.dapi.v0.Core/getBlockchainStatus" => {
                     #[allow(non_camel_case_types)]
-                    struct getCoreChainStatusSvc<T: Core>(pub Arc<T>);
+                    struct getBlockchainStatusSvc<T: Core>(pub Arc<T>);
                     impl<
                         T: Core,
-                    > tonic::server::UnaryService<super::GetCoreChainStatusRequest>
-                    for getCoreChainStatusSvc<T> {
-                        type Response = super::GetCoreChainStatusResponse;
+                    > tonic::server::UnaryService<super::GetBlockchainStatusRequest>
+                    for getBlockchainStatusSvc<T> {
+                        type Response = super::GetBlockchainStatusResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetCoreChainStatusRequest>,
+                            request: tonic::Request<super::GetBlockchainStatusRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_core_chain_status(request).await
+                                (*inner).get_blockchain_status(request).await
                             };
                             Box::pin(fut)
                         }
@@ -593,7 +593,7 @@ pub mod core_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = getCoreChainStatusSvc(inner);
+                        let method = getBlockchainStatusSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -1,5 +1,5 @@
 const EventEmitter = require('events');
-const getCoreChainStatus = require('../../transport/FixtureTransport/methods/getCoreChainStatus');
+const getBlockchainStatus = require('../../transport/FixtureTransport/methods/getBlockchainStatus');
 
 class TransportMock extends EventEmitter {
   constructor(sinon, transactionStreamMock) {
@@ -25,7 +25,7 @@ class TransportMock extends EventEmitter {
     this.sendTransaction = sinon.stub();
     this.getTransaction = sinon.stub();
     this.getBlockHeaderByHash = sinon.stub();
-    this.getCoreChainStatus = sinon.stub().resolves(getCoreChainStatus.call(this));
+    this.getBlockchainStatus = sinon.stub().resolves(getBlockchainStatus.call(this));
 
     const provider = new EventEmitter();
     provider.stop = sinon.stub().callsFake(() => {

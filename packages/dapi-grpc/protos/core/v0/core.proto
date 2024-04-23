@@ -3,7 +3,7 @@ syntax = "proto3";
 package org.dash.platform.dapi.v0;
 
 service Core {
-  rpc getCoreChainStatus (GetCoreChainStatusRequest) returns (GetCoreChainStatusResponse);
+  rpc getBlockchainStatus (GetBlockchainStatusRequest) returns (GetBlockchainStatusResponse);
   rpc getMasternodeStatus (GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse);
   rpc getBlock (GetBlockRequest) returns (GetBlockResponse);
   rpc broadcastTransaction (BroadcastTransactionRequest) returns (BroadcastTransactionResponse);
@@ -13,11 +13,11 @@ service Core {
   rpc subscribeToTransactionsWithProofs (TransactionsWithProofsRequest) returns (stream TransactionsWithProofsResponse);
 }
 
-message GetCoreChainStatusRequest {
+message GetBlockchainStatusRequest {
 
 }
 
-message GetCoreChainStatusResponse {
+message GetBlockchainStatusResponse {
   message Version {
     uint32 protocol = 1;
     uint32 software = 2;

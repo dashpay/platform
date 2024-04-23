@@ -20,8 +20,8 @@
 @class BroadcastTransactionResponse;
 @class GetBlockRequest;
 @class GetBlockResponse;
-@class GetCoreChainStatusRequest;
-@class GetCoreChainStatusResponse;
+@class GetBlockchainStatusRequest;
+@class GetBlockchainStatusResponse;
 @class GetEstimatedTransactionFeeRequest;
 @class GetEstimatedTransactionFeeResponse;
 @class GetMasternodeStatusRequest;
@@ -45,9 +45,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 @protocol Core2 <NSObject>
 
-#pragma mark getCoreChainStatus(GetCoreChainStatusRequest) returns (GetCoreChainStatusResponse)
+#pragma mark getBlockchainStatus(GetBlockchainStatusRequest) returns (GetBlockchainStatusResponse)
 
-- (GRPCUnaryProtoCall *)getCoreChainStatusWithMessage:(GetCoreChainStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getBlockchainStatusWithMessage:(GetBlockchainStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getMasternodeStatus(GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse)
 
@@ -85,11 +85,11 @@ NS_ASSUME_NONNULL_BEGIN
  */
 @protocol Core <NSObject>
 
-#pragma mark getCoreChainStatus(GetCoreChainStatusRequest) returns (GetCoreChainStatusResponse)
+#pragma mark getBlockchainStatus(GetBlockchainStatusRequest) returns (GetBlockchainStatusResponse)
 
-- (void)getCoreChainStatusWithRequest:(GetCoreChainStatusRequest *)request handler:(void(^)(GetCoreChainStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getBlockchainStatusWithRequest:(GetBlockchainStatusRequest *)request handler:(void(^)(GetBlockchainStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetCoreChainStatusWithRequest:(GetCoreChainStatusRequest *)request handler:(void(^)(GetCoreChainStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetBlockchainStatusWithRequest:(GetBlockchainStatusRequest *)request handler:(void(^)(GetBlockchainStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getMasternodeStatus(GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse)

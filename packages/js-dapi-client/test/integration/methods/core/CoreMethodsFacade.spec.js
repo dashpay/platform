@@ -5,7 +5,7 @@ const {
     BroadcastTransactionResponse,
     GetBlockResponse,
     GetTransactionResponse,
-    GetCoreChainStatusResponse,
+    GetBlockchainStatusResponse,
     GetMasternodeStatusResponse,
   },
 } = require('@dashevo/dapi-grpc');
@@ -122,15 +122,15 @@ describe('CoreMethodsFacade', () => {
     });
   });
 
-  describe('#getCoreChainStatus', () => {
+  describe('#getBlockchainStatus', () => {
     it('should get status', async () => {
-      const response = new GetCoreChainStatusResponse();
+      const response = new GetBlockchainStatusResponse();
 
-      response.setStatus(GetCoreChainStatusResponse.Status.READY);
+      response.setStatus(GetBlockchainStatusResponse.Status.READY);
 
       grpcTransportMock.request.resolves(response);
 
-      await coreMethods.getCoreChainStatus();
+      await coreMethods.getBlockchainStatus();
 
       expect(jsonRpcTransportMock.request).to.be.not.called();
       expect(grpcTransportMock.request).to.be.calledOnce();

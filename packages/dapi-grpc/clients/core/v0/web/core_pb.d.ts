@@ -3,67 +3,67 @@
 
 import * as jspb from "google-protobuf";
 
-export class GetCoreChainStatusRequest extends jspb.Message {
+export class GetBlockchainStatusRequest extends jspb.Message {
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetCoreChainStatusRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetCoreChainStatusRequest): GetCoreChainStatusRequest.AsObject;
+  toObject(includeInstance?: boolean): GetBlockchainStatusRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetBlockchainStatusRequest): GetBlockchainStatusRequest.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetCoreChainStatusRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetCoreChainStatusRequest;
-  static deserializeBinaryFromReader(message: GetCoreChainStatusRequest, reader: jspb.BinaryReader): GetCoreChainStatusRequest;
+  static serializeBinaryToWriter(message: GetBlockchainStatusRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetBlockchainStatusRequest;
+  static deserializeBinaryFromReader(message: GetBlockchainStatusRequest, reader: jspb.BinaryReader): GetBlockchainStatusRequest;
 }
 
-export namespace GetCoreChainStatusRequest {
+export namespace GetBlockchainStatusRequest {
   export type AsObject = {
   }
 }
 
-export class GetCoreChainStatusResponse extends jspb.Message {
+export class GetBlockchainStatusResponse extends jspb.Message {
   hasVersion(): boolean;
   clearVersion(): void;
-  getVersion(): GetCoreChainStatusResponse.Version | undefined;
-  setVersion(value?: GetCoreChainStatusResponse.Version): void;
+  getVersion(): GetBlockchainStatusResponse.Version | undefined;
+  setVersion(value?: GetBlockchainStatusResponse.Version): void;
 
   hasTime(): boolean;
   clearTime(): void;
-  getTime(): GetCoreChainStatusResponse.Time | undefined;
-  setTime(value?: GetCoreChainStatusResponse.Time): void;
+  getTime(): GetBlockchainStatusResponse.Time | undefined;
+  setTime(value?: GetBlockchainStatusResponse.Time): void;
 
-  getStatus(): GetCoreChainStatusResponse.StatusMap[keyof GetCoreChainStatusResponse.StatusMap];
-  setStatus(value: GetCoreChainStatusResponse.StatusMap[keyof GetCoreChainStatusResponse.StatusMap]): void;
+  getStatus(): GetBlockchainStatusResponse.StatusMap[keyof GetBlockchainStatusResponse.StatusMap];
+  setStatus(value: GetBlockchainStatusResponse.StatusMap[keyof GetBlockchainStatusResponse.StatusMap]): void;
 
   getSyncProgress(): number;
   setSyncProgress(value: number): void;
 
   hasChain(): boolean;
   clearChain(): void;
-  getChain(): GetCoreChainStatusResponse.Chain | undefined;
-  setChain(value?: GetCoreChainStatusResponse.Chain): void;
+  getChain(): GetBlockchainStatusResponse.Chain | undefined;
+  setChain(value?: GetBlockchainStatusResponse.Chain): void;
 
   hasNetwork(): boolean;
   clearNetwork(): void;
-  getNetwork(): GetCoreChainStatusResponse.Network | undefined;
-  setNetwork(value?: GetCoreChainStatusResponse.Network): void;
+  getNetwork(): GetBlockchainStatusResponse.Network | undefined;
+  setNetwork(value?: GetBlockchainStatusResponse.Network): void;
 
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetCoreChainStatusResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetCoreChainStatusResponse): GetCoreChainStatusResponse.AsObject;
+  toObject(includeInstance?: boolean): GetBlockchainStatusResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetBlockchainStatusResponse): GetBlockchainStatusResponse.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetCoreChainStatusResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetCoreChainStatusResponse;
-  static deserializeBinaryFromReader(message: GetCoreChainStatusResponse, reader: jspb.BinaryReader): GetCoreChainStatusResponse;
+  static serializeBinaryToWriter(message: GetBlockchainStatusResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetBlockchainStatusResponse;
+  static deserializeBinaryFromReader(message: GetBlockchainStatusResponse, reader: jspb.BinaryReader): GetBlockchainStatusResponse;
 }
 
-export namespace GetCoreChainStatusResponse {
+export namespace GetBlockchainStatusResponse {
   export type AsObject = {
-    version?: GetCoreChainStatusResponse.Version.AsObject,
-    time?: GetCoreChainStatusResponse.Time.AsObject,
-    status: GetCoreChainStatusResponse.StatusMap[keyof GetCoreChainStatusResponse.StatusMap],
+    version?: GetBlockchainStatusResponse.Version.AsObject,
+    time?: GetBlockchainStatusResponse.Time.AsObject,
+    status: GetBlockchainStatusResponse.StatusMap[keyof GetBlockchainStatusResponse.StatusMap],
     syncProgress: number,
-    chain?: GetCoreChainStatusResponse.Chain.AsObject,
-    network?: GetCoreChainStatusResponse.Network.AsObject,
+    chain?: GetBlockchainStatusResponse.Chain.AsObject,
+    network?: GetBlockchainStatusResponse.Network.AsObject,
   }
 
   export class Version extends jspb.Message {
@@ -204,8 +204,8 @@ export namespace GetCoreChainStatusResponse {
 
     hasFee(): boolean;
     clearFee(): void;
-    getFee(): GetCoreChainStatusResponse.NetworkFee | undefined;
-    setFee(value?: GetCoreChainStatusResponse.NetworkFee): void;
+    getFee(): GetBlockchainStatusResponse.NetworkFee | undefined;
+    setFee(value?: GetBlockchainStatusResponse.NetworkFee): void;
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): Network.AsObject;
@@ -220,7 +220,7 @@ export namespace GetCoreChainStatusResponse {
   export namespace Network {
     export type AsObject = {
       peersCount: number,
-      fee?: GetCoreChainStatusResponse.NetworkFee.AsObject,
+      fee?: GetBlockchainStatusResponse.NetworkFee.AsObject,
     }
   }
 

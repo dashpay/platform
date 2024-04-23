@@ -87,35 +87,35 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Callback as used by {@link org.dash.platform.dapi.v0.Core#getCoreChainStatus}.
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Core#getBlockchainStatus}.
                          * @memberof org.dash.platform.dapi.v0.Core
-                         * @typedef getCoreChainStatusCallback
+                         * @typedef getBlockchainStatusCallback
                          * @type {function}
                          * @param {Error|null} error Error, if any
-                         * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse} [response] GetCoreChainStatusResponse
+                         * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse} [response] GetBlockchainStatusResponse
                          */
 
                         /**
-                         * Calls getCoreChainStatus.
-                         * @function getCoreChainStatus
+                         * Calls getBlockchainStatus.
+                         * @function getBlockchainStatus
                          * @memberof org.dash.platform.dapi.v0.Core
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusRequest} request GetCoreChainStatusRequest message or plain object
-                         * @param {org.dash.platform.dapi.v0.Core.getCoreChainStatusCallback} callback Node-style callback called with the error, if any, and GetCoreChainStatusResponse
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusRequest} request GetBlockchainStatusRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Core.getBlockchainStatusCallback} callback Node-style callback called with the error, if any, and GetBlockchainStatusResponse
                          * @returns {undefined}
                          * @variation 1
                          */
-                        Object.defineProperty(Core.prototype.getCoreChainStatus = function getCoreChainStatus(request, callback) {
-                            return this.rpcCall(getCoreChainStatus, $root.org.dash.platform.dapi.v0.GetCoreChainStatusRequest, $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse, request, callback);
-                        }, "name", { value: "getCoreChainStatus" });
+                        Object.defineProperty(Core.prototype.getBlockchainStatus = function getBlockchainStatus(request, callback) {
+                            return this.rpcCall(getBlockchainStatus, $root.org.dash.platform.dapi.v0.GetBlockchainStatusRequest, $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse, request, callback);
+                        }, "name", { value: "getBlockchainStatus" });
 
                         /**
-                         * Calls getCoreChainStatus.
-                         * @function getCoreChainStatus
+                         * Calls getBlockchainStatus.
+                         * @function getBlockchainStatus
                          * @memberof org.dash.platform.dapi.v0.Core
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusRequest} request GetCoreChainStatusRequest message or plain object
-                         * @returns {Promise<org.dash.platform.dapi.v0.GetCoreChainStatusResponse>} Promise
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusRequest} request GetBlockchainStatusRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetBlockchainStatusResponse>} Promise
                          * @variation 2
                          */
 
@@ -353,23 +353,23 @@ $root.org = (function() {
                         return Core;
                     })();
 
-                    v0.GetCoreChainStatusRequest = (function() {
+                    v0.GetBlockchainStatusRequest = (function() {
 
                         /**
-                         * Properties of a GetCoreChainStatusRequest.
+                         * Properties of a GetBlockchainStatusRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetCoreChainStatusRequest
+                         * @interface IGetBlockchainStatusRequest
                          */
 
                         /**
-                         * Constructs a new GetCoreChainStatusRequest.
+                         * Constructs a new GetBlockchainStatusRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetCoreChainStatusRequest.
-                         * @implements IGetCoreChainStatusRequest
+                         * @classdesc Represents a GetBlockchainStatusRequest.
+                         * @implements IGetBlockchainStatusRequest
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusRequest=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusRequest=} [properties] Properties to set
                          */
-                        function GetCoreChainStatusRequest(properties) {
+                        function GetBlockchainStatusRequest(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -377,60 +377,60 @@ $root.org = (function() {
                         }
 
                         /**
-                         * Creates a new GetCoreChainStatusRequest instance using the specified properties.
+                         * Creates a new GetBlockchainStatusRequest instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusRequest=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusRequest} GetCoreChainStatusRequest instance
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusRequest} GetBlockchainStatusRequest instance
                          */
-                        GetCoreChainStatusRequest.create = function create(properties) {
-                            return new GetCoreChainStatusRequest(properties);
+                        GetBlockchainStatusRequest.create = function create(properties) {
+                            return new GetBlockchainStatusRequest(properties);
                         };
 
                         /**
-                         * Encodes the specified GetCoreChainStatusRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusRequest.verify|verify} messages.
+                         * Encodes the specified GetBlockchainStatusRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusRequest.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusRequest} message GetCoreChainStatusRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusRequest} message GetBlockchainStatusRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetCoreChainStatusRequest.encode = function encode(message, writer) {
+                        GetBlockchainStatusRequest.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             return writer;
                         };
 
                         /**
-                         * Encodes the specified GetCoreChainStatusRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusRequest.verify|verify} messages.
+                         * Encodes the specified GetBlockchainStatusRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusRequest.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusRequest} message GetCoreChainStatusRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusRequest} message GetBlockchainStatusRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetCoreChainStatusRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetBlockchainStatusRequest.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a GetCoreChainStatusRequest message from the specified reader or buffer.
+                         * Decodes a GetBlockchainStatusRequest message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusRequest} GetCoreChainStatusRequest
+                         * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusRequest} GetBlockchainStatusRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetCoreChainStatusRequest.decode = function decode(reader, length) {
+                        GetBlockchainStatusRequest.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusRequest();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusRequest();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
@@ -443,99 +443,99 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a GetCoreChainStatusRequest message from the specified reader or buffer, length delimited.
+                         * Decodes a GetBlockchainStatusRequest message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusRequest} GetCoreChainStatusRequest
+                         * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusRequest} GetBlockchainStatusRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetCoreChainStatusRequest.decodeDelimited = function decodeDelimited(reader) {
+                        GetBlockchainStatusRequest.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a GetCoreChainStatusRequest message.
+                         * Verifies a GetBlockchainStatusRequest message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusRequest
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        GetCoreChainStatusRequest.verify = function verify(message) {
+                        GetBlockchainStatusRequest.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             return null;
                         };
 
                         /**
-                         * Creates a GetCoreChainStatusRequest message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetBlockchainStatusRequest message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusRequest
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusRequest} GetCoreChainStatusRequest
+                         * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusRequest} GetBlockchainStatusRequest
                          */
-                        GetCoreChainStatusRequest.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetCoreChainStatusRequest)
+                        GetBlockchainStatusRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetBlockchainStatusRequest)
                                 return object;
-                            return new $root.org.dash.platform.dapi.v0.GetCoreChainStatusRequest();
+                            return new $root.org.dash.platform.dapi.v0.GetBlockchainStatusRequest();
                         };
 
                         /**
-                         * Creates a plain object from a GetCoreChainStatusRequest message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetBlockchainStatusRequest message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.GetCoreChainStatusRequest} message GetCoreChainStatusRequest
+                         * @param {org.dash.platform.dapi.v0.GetBlockchainStatusRequest} message GetBlockchainStatusRequest
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        GetCoreChainStatusRequest.toObject = function toObject() {
+                        GetBlockchainStatusRequest.toObject = function toObject() {
                             return {};
                         };
 
                         /**
-                         * Converts this GetCoreChainStatusRequest to JSON.
+                         * Converts this GetBlockchainStatusRequest to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusRequest
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        GetCoreChainStatusRequest.prototype.toJSON = function toJSON() {
+                        GetBlockchainStatusRequest.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        return GetCoreChainStatusRequest;
+                        return GetBlockchainStatusRequest;
                     })();
 
-                    v0.GetCoreChainStatusResponse = (function() {
+                    v0.GetBlockchainStatusResponse = (function() {
 
                         /**
-                         * Properties of a GetCoreChainStatusResponse.
+                         * Properties of a GetBlockchainStatusResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetCoreChainStatusResponse
-                         * @property {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IVersion|null} [version] GetCoreChainStatusResponse version
-                         * @property {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.ITime|null} [time] GetCoreChainStatusResponse time
-                         * @property {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Status|null} [status] GetCoreChainStatusResponse status
-                         * @property {number|null} [syncProgress] GetCoreChainStatusResponse syncProgress
-                         * @property {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IChain|null} [chain] GetCoreChainStatusResponse chain
-                         * @property {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetwork|null} [network] GetCoreChainStatusResponse network
+                         * @interface IGetBlockchainStatusResponse
+                         * @property {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IVersion|null} [version] GetBlockchainStatusResponse version
+                         * @property {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.ITime|null} [time] GetBlockchainStatusResponse time
+                         * @property {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Status|null} [status] GetBlockchainStatusResponse status
+                         * @property {number|null} [syncProgress] GetBlockchainStatusResponse syncProgress
+                         * @property {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IChain|null} [chain] GetBlockchainStatusResponse chain
+                         * @property {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetwork|null} [network] GetBlockchainStatusResponse network
                          */
 
                         /**
-                         * Constructs a new GetCoreChainStatusResponse.
+                         * Constructs a new GetBlockchainStatusResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetCoreChainStatusResponse.
-                         * @implements IGetCoreChainStatusResponse
+                         * @classdesc Represents a GetBlockchainStatusResponse.
+                         * @implements IGetBlockchainStatusResponse
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusResponse=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusResponse=} [properties] Properties to set
                          */
-                        function GetCoreChainStatusResponse(properties) {
+                        function GetBlockchainStatusResponse(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -543,128 +543,128 @@ $root.org = (function() {
                         }
 
                         /**
-                         * GetCoreChainStatusResponse version.
-                         * @member {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IVersion|null|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * GetBlockchainStatusResponse version.
+                         * @member {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IVersion|null|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @instance
                          */
-                        GetCoreChainStatusResponse.prototype.version = null;
+                        GetBlockchainStatusResponse.prototype.version = null;
 
                         /**
-                         * GetCoreChainStatusResponse time.
-                         * @member {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.ITime|null|undefined} time
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * GetBlockchainStatusResponse time.
+                         * @member {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.ITime|null|undefined} time
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @instance
                          */
-                        GetCoreChainStatusResponse.prototype.time = null;
+                        GetBlockchainStatusResponse.prototype.time = null;
 
                         /**
-                         * GetCoreChainStatusResponse status.
-                         * @member {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Status} status
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * GetBlockchainStatusResponse status.
+                         * @member {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Status} status
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @instance
                          */
-                        GetCoreChainStatusResponse.prototype.status = 0;
+                        GetBlockchainStatusResponse.prototype.status = 0;
 
                         /**
-                         * GetCoreChainStatusResponse syncProgress.
+                         * GetBlockchainStatusResponse syncProgress.
                          * @member {number} syncProgress
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @instance
                          */
-                        GetCoreChainStatusResponse.prototype.syncProgress = 0;
+                        GetBlockchainStatusResponse.prototype.syncProgress = 0;
 
                         /**
-                         * GetCoreChainStatusResponse chain.
-                         * @member {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IChain|null|undefined} chain
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * GetBlockchainStatusResponse chain.
+                         * @member {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IChain|null|undefined} chain
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @instance
                          */
-                        GetCoreChainStatusResponse.prototype.chain = null;
+                        GetBlockchainStatusResponse.prototype.chain = null;
 
                         /**
-                         * GetCoreChainStatusResponse network.
-                         * @member {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetwork|null|undefined} network
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * GetBlockchainStatusResponse network.
+                         * @member {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetwork|null|undefined} network
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @instance
                          */
-                        GetCoreChainStatusResponse.prototype.network = null;
+                        GetBlockchainStatusResponse.prototype.network = null;
 
                         /**
-                         * Creates a new GetCoreChainStatusResponse instance using the specified properties.
+                         * Creates a new GetBlockchainStatusResponse instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusResponse=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse} GetCoreChainStatusResponse instance
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse} GetBlockchainStatusResponse instance
                          */
-                        GetCoreChainStatusResponse.create = function create(properties) {
-                            return new GetCoreChainStatusResponse(properties);
+                        GetBlockchainStatusResponse.create = function create(properties) {
+                            return new GetBlockchainStatusResponse(properties);
                         };
 
                         /**
-                         * Encodes the specified GetCoreChainStatusResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.verify|verify} messages.
+                         * Encodes the specified GetBlockchainStatusResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusResponse} message GetCoreChainStatusResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusResponse} message GetBlockchainStatusResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetCoreChainStatusResponse.encode = function encode(message, writer) {
+                        GetBlockchainStatusResponse.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             if (message.version != null && Object.hasOwnProperty.call(message, "version"))
-                                $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version.encode(message.version, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.encode(message.version, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             if (message.time != null && Object.hasOwnProperty.call(message, "time"))
-                                $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time.encode(message.time, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.encode(message.time, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             if (message.status != null && Object.hasOwnProperty.call(message, "status"))
                                 writer.uint32(/* id 3, wireType 0 =*/24).int32(message.status);
                             if (message.syncProgress != null && Object.hasOwnProperty.call(message, "syncProgress"))
                                 writer.uint32(/* id 4, wireType 1 =*/33).double(message.syncProgress);
                             if (message.chain != null && Object.hasOwnProperty.call(message, "chain"))
-                                $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain.encode(message.chain, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.encode(message.chain, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
                             if (message.network != null && Object.hasOwnProperty.call(message, "network"))
-                                $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network.encode(message.network, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.encode(message.network, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
                             return writer;
                         };
 
                         /**
-                         * Encodes the specified GetCoreChainStatusResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.verify|verify} messages.
+                         * Encodes the specified GetBlockchainStatusResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetCoreChainStatusResponse} message GetCoreChainStatusResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetBlockchainStatusResponse} message GetBlockchainStatusResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetCoreChainStatusResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetBlockchainStatusResponse.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a GetCoreChainStatusResponse message from the specified reader or buffer.
+                         * Decodes a GetBlockchainStatusResponse message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse} GetCoreChainStatusResponse
+                         * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse} GetBlockchainStatusResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetCoreChainStatusResponse.decode = function decode(reader, length) {
+                        GetBlockchainStatusResponse.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.version = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version.decode(reader, reader.uint32());
+                                    message.version = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.decode(reader, reader.uint32());
                                     break;
                                 case 2:
-                                    message.time = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time.decode(reader, reader.uint32());
+                                    message.time = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.decode(reader, reader.uint32());
                                     break;
                                 case 3:
                                     message.status = reader.int32();
@@ -673,10 +673,10 @@ $root.org = (function() {
                                     message.syncProgress = reader.double();
                                     break;
                                 case 5:
-                                    message.chain = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain.decode(reader, reader.uint32());
+                                    message.chain = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.decode(reader, reader.uint32());
                                     break;
                                 case 7:
-                                    message.network = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network.decode(reader, reader.uint32());
+                                    message.network = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -687,39 +687,39 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a GetCoreChainStatusResponse message from the specified reader or buffer, length delimited.
+                         * Decodes a GetBlockchainStatusResponse message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse} GetCoreChainStatusResponse
+                         * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse} GetBlockchainStatusResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetCoreChainStatusResponse.decodeDelimited = function decodeDelimited(reader) {
+                        GetBlockchainStatusResponse.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a GetCoreChainStatusResponse message.
+                         * Verifies a GetBlockchainStatusResponse message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        GetCoreChainStatusResponse.verify = function verify(message) {
+                        GetBlockchainStatusResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             if (message.version != null && message.hasOwnProperty("version")) {
-                                var error = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version.verify(message.version);
+                                var error = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.verify(message.version);
                                 if (error)
                                     return "version." + error;
                             }
                             if (message.time != null && message.hasOwnProperty("time")) {
-                                var error = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time.verify(message.time);
+                                var error = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.verify(message.time);
                                 if (error)
                                     return "time." + error;
                             }
@@ -737,12 +737,12 @@ $root.org = (function() {
                                 if (typeof message.syncProgress !== "number")
                                     return "syncProgress: number expected";
                             if (message.chain != null && message.hasOwnProperty("chain")) {
-                                var error = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain.verify(message.chain);
+                                var error = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.verify(message.chain);
                                 if (error)
                                     return "chain." + error;
                             }
                             if (message.network != null && message.hasOwnProperty("network")) {
-                                var error = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network.verify(message.network);
+                                var error = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.verify(message.network);
                                 if (error)
                                     return "network." + error;
                             }
@@ -750,26 +750,26 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Creates a GetCoreChainStatusResponse message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetBlockchainStatusResponse message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse} GetCoreChainStatusResponse
+                         * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse} GetBlockchainStatusResponse
                          */
-                        GetCoreChainStatusResponse.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse)
+                        GetBlockchainStatusResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse)
                                 return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse();
+                            var message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse();
                             if (object.version != null) {
                                 if (typeof object.version !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetCoreChainStatusResponse.version: object expected");
-                                message.version = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version.fromObject(object.version);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetBlockchainStatusResponse.version: object expected");
+                                message.version = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.fromObject(object.version);
                             }
                             if (object.time != null) {
                                 if (typeof object.time !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetCoreChainStatusResponse.time: object expected");
-                                message.time = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time.fromObject(object.time);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetBlockchainStatusResponse.time: object expected");
+                                message.time = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.fromObject(object.time);
                             }
                             switch (object.status) {
                             case "NOT_STARTED":
@@ -793,27 +793,27 @@ $root.org = (function() {
                                 message.syncProgress = Number(object.syncProgress);
                             if (object.chain != null) {
                                 if (typeof object.chain !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetCoreChainStatusResponse.chain: object expected");
-                                message.chain = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain.fromObject(object.chain);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetBlockchainStatusResponse.chain: object expected");
+                                message.chain = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.fromObject(object.chain);
                             }
                             if (object.network != null) {
                                 if (typeof object.network !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetCoreChainStatusResponse.network: object expected");
-                                message.network = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network.fromObject(object.network);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetBlockchainStatusResponse.network: object expected");
+                                message.network = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.fromObject(object.network);
                             }
                             return message;
                         };
 
                         /**
-                         * Creates a plain object from a GetCoreChainStatusResponse message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetBlockchainStatusResponse message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse} message GetCoreChainStatusResponse
+                         * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse} message GetBlockchainStatusResponse
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        GetCoreChainStatusResponse.toObject = function toObject(message, options) {
+                        GetBlockchainStatusResponse.toObject = function toObject(message, options) {
                             if (!options)
                                 options = {};
                             var object = {};
@@ -826,36 +826,36 @@ $root.org = (function() {
                                 object.network = null;
                             }
                             if (message.version != null && message.hasOwnProperty("version"))
-                                object.version = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version.toObject(message.version, options);
+                                object.version = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.toObject(message.version, options);
                             if (message.time != null && message.hasOwnProperty("time"))
-                                object.time = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time.toObject(message.time, options);
+                                object.time = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.toObject(message.time, options);
                             if (message.status != null && message.hasOwnProperty("status"))
-                                object.status = options.enums === String ? $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Status[message.status] : message.status;
+                                object.status = options.enums === String ? $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Status[message.status] : message.status;
                             if (message.syncProgress != null && message.hasOwnProperty("syncProgress"))
                                 object.syncProgress = options.json && !isFinite(message.syncProgress) ? String(message.syncProgress) : message.syncProgress;
                             if (message.chain != null && message.hasOwnProperty("chain"))
-                                object.chain = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain.toObject(message.chain, options);
+                                object.chain = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.toObject(message.chain, options);
                             if (message.network != null && message.hasOwnProperty("network"))
-                                object.network = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network.toObject(message.network, options);
+                                object.network = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.toObject(message.network, options);
                             return object;
                         };
 
                         /**
-                         * Converts this GetCoreChainStatusResponse to JSON.
+                         * Converts this GetBlockchainStatusResponse to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        GetCoreChainStatusResponse.prototype.toJSON = function toJSON() {
+                        GetBlockchainStatusResponse.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        GetCoreChainStatusResponse.Version = (function() {
+                        GetBlockchainStatusResponse.Version = (function() {
 
                             /**
                              * Properties of a Version.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @interface IVersion
                              * @property {number|null} [protocol] Version protocol
                              * @property {number|null} [software] Version software
@@ -864,11 +864,11 @@ $root.org = (function() {
 
                             /**
                              * Constructs a new Version.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @classdesc Represents a Version.
                              * @implements IVersion
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IVersion=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IVersion=} [properties] Properties to set
                              */
                             function Version(properties) {
                                 if (properties)
@@ -880,7 +880,7 @@ $root.org = (function() {
                             /**
                              * Version protocol.
                              * @member {number} protocol
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @instance
                              */
                             Version.prototype.protocol = 0;
@@ -888,7 +888,7 @@ $root.org = (function() {
                             /**
                              * Version software.
                              * @member {number} software
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @instance
                              */
                             Version.prototype.software = 0;
@@ -896,7 +896,7 @@ $root.org = (function() {
                             /**
                              * Version agent.
                              * @member {string} agent
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @instance
                              */
                             Version.prototype.agent = "";
@@ -904,21 +904,21 @@ $root.org = (function() {
                             /**
                              * Creates a new Version instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IVersion=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version} Version instance
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IVersion=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version} Version instance
                              */
                             Version.create = function create(properties) {
                                 return new Version(properties);
                             };
 
                             /**
-                             * Encodes the specified Version message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version.verify|verify} messages.
+                             * Encodes the specified Version message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IVersion} message Version message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IVersion} message Version message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -935,11 +935,11 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified Version message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version.verify|verify} messages.
+                             * Encodes the specified Version message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IVersion} message Version message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IVersion} message Version message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -950,18 +950,18 @@ $root.org = (function() {
                             /**
                              * Decodes a Version message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version} Version
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version} Version
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
                             Version.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -985,10 +985,10 @@ $root.org = (function() {
                             /**
                              * Decodes a Version message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version} Version
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version} Version
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
@@ -1001,7 +1001,7 @@ $root.org = (function() {
                             /**
                              * Verifies a Version message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -1024,15 +1024,15 @@ $root.org = (function() {
                             /**
                              * Creates a Version message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version} Version
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version} Version
                              */
                             Version.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version)
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version();
+                                var message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version();
                                 if (object.protocol != null)
                                     message.protocol = object.protocol >>> 0;
                                 if (object.software != null)
@@ -1045,9 +1045,9 @@ $root.org = (function() {
                             /**
                              * Creates a plain object from a Version message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version} message Version
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version} message Version
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
@@ -1072,7 +1072,7 @@ $root.org = (function() {
                             /**
                              * Converts this Version to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Version
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
@@ -1083,11 +1083,11 @@ $root.org = (function() {
                             return Version;
                         })();
 
-                        GetCoreChainStatusResponse.Time = (function() {
+                        GetBlockchainStatusResponse.Time = (function() {
 
                             /**
                              * Properties of a Time.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @interface ITime
                              * @property {number|null} [now] Time now
                              * @property {number|null} [offset] Time offset
@@ -1096,11 +1096,11 @@ $root.org = (function() {
 
                             /**
                              * Constructs a new Time.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @classdesc Represents a Time.
                              * @implements ITime
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.ITime=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.ITime=} [properties] Properties to set
                              */
                             function Time(properties) {
                                 if (properties)
@@ -1112,7 +1112,7 @@ $root.org = (function() {
                             /**
                              * Time now.
                              * @member {number} now
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @instance
                              */
                             Time.prototype.now = 0;
@@ -1120,7 +1120,7 @@ $root.org = (function() {
                             /**
                              * Time offset.
                              * @member {number} offset
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @instance
                              */
                             Time.prototype.offset = 0;
@@ -1128,7 +1128,7 @@ $root.org = (function() {
                             /**
                              * Time median.
                              * @member {number} median
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @instance
                              */
                             Time.prototype.median = 0;
@@ -1136,21 +1136,21 @@ $root.org = (function() {
                             /**
                              * Creates a new Time instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.ITime=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time} Time instance
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.ITime=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time} Time instance
                              */
                             Time.create = function create(properties) {
                                 return new Time(properties);
                             };
 
                             /**
-                             * Encodes the specified Time message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time.verify|verify} messages.
+                             * Encodes the specified Time message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.ITime} message Time message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.ITime} message Time message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -1167,11 +1167,11 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified Time message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time.verify|verify} messages.
+                             * Encodes the specified Time message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.ITime} message Time message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.ITime} message Time message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -1182,18 +1182,18 @@ $root.org = (function() {
                             /**
                              * Decodes a Time message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time} Time
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time} Time
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
                             Time.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -1217,10 +1217,10 @@ $root.org = (function() {
                             /**
                              * Decodes a Time message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time} Time
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time} Time
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
@@ -1233,7 +1233,7 @@ $root.org = (function() {
                             /**
                              * Verifies a Time message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -1256,15 +1256,15 @@ $root.org = (function() {
                             /**
                              * Creates a Time message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time} Time
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time} Time
                              */
                             Time.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time)
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time();
+                                var message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time();
                                 if (object.now != null)
                                     message.now = object.now >>> 0;
                                 if (object.offset != null)
@@ -1277,9 +1277,9 @@ $root.org = (function() {
                             /**
                              * Creates a plain object from a Time message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time} message Time
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time} message Time
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
@@ -1304,7 +1304,7 @@ $root.org = (function() {
                             /**
                              * Converts this Time to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Time
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
@@ -1317,14 +1317,14 @@ $root.org = (function() {
 
                         /**
                          * Status enum.
-                         * @name org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Status
+                         * @name org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Status
                          * @enum {number}
                          * @property {number} NOT_STARTED=0 NOT_STARTED value
                          * @property {number} SYNCING=1 SYNCING value
                          * @property {number} READY=2 READY value
                          * @property {number} ERROR=3 ERROR value
                          */
-                        GetCoreChainStatusResponse.Status = (function() {
+                        GetBlockchainStatusResponse.Status = (function() {
                             var valuesById = {}, values = Object.create(valuesById);
                             values[valuesById[0] = "NOT_STARTED"] = 0;
                             values[valuesById[1] = "SYNCING"] = 1;
@@ -1333,11 +1333,11 @@ $root.org = (function() {
                             return values;
                         })();
 
-                        GetCoreChainStatusResponse.Chain = (function() {
+                        GetBlockchainStatusResponse.Chain = (function() {
 
                             /**
                              * Properties of a Chain.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @interface IChain
                              * @property {string|null} [name] Chain name
                              * @property {number|null} [headersCount] Chain headersCount
@@ -1351,11 +1351,11 @@ $root.org = (function() {
 
                             /**
                              * Constructs a new Chain.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @classdesc Represents a Chain.
                              * @implements IChain
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IChain=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IChain=} [properties] Properties to set
                              */
                             function Chain(properties) {
                                 if (properties)
@@ -1367,7 +1367,7 @@ $root.org = (function() {
                             /**
                              * Chain name.
                              * @member {string} name
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @instance
                              */
                             Chain.prototype.name = "";
@@ -1375,7 +1375,7 @@ $root.org = (function() {
                             /**
                              * Chain headersCount.
                              * @member {number} headersCount
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @instance
                              */
                             Chain.prototype.headersCount = 0;
@@ -1383,7 +1383,7 @@ $root.org = (function() {
                             /**
                              * Chain blocksCount.
                              * @member {number} blocksCount
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @instance
                              */
                             Chain.prototype.blocksCount = 0;
@@ -1391,7 +1391,7 @@ $root.org = (function() {
                             /**
                              * Chain bestBlockHash.
                              * @member {Uint8Array} bestBlockHash
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @instance
                              */
                             Chain.prototype.bestBlockHash = $util.newBuffer([]);
@@ -1399,7 +1399,7 @@ $root.org = (function() {
                             /**
                              * Chain difficulty.
                              * @member {number} difficulty
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @instance
                              */
                             Chain.prototype.difficulty = 0;
@@ -1407,7 +1407,7 @@ $root.org = (function() {
                             /**
                              * Chain chainWork.
                              * @member {Uint8Array} chainWork
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @instance
                              */
                             Chain.prototype.chainWork = $util.newBuffer([]);
@@ -1415,7 +1415,7 @@ $root.org = (function() {
                             /**
                              * Chain isSynced.
                              * @member {boolean} isSynced
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @instance
                              */
                             Chain.prototype.isSynced = false;
@@ -1423,7 +1423,7 @@ $root.org = (function() {
                             /**
                              * Chain syncProgress.
                              * @member {number} syncProgress
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @instance
                              */
                             Chain.prototype.syncProgress = 0;
@@ -1431,21 +1431,21 @@ $root.org = (function() {
                             /**
                              * Creates a new Chain instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IChain=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain} Chain instance
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IChain=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain} Chain instance
                              */
                             Chain.create = function create(properties) {
                                 return new Chain(properties);
                             };
 
                             /**
-                             * Encodes the specified Chain message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain.verify|verify} messages.
+                             * Encodes the specified Chain message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IChain} message Chain message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IChain} message Chain message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -1472,11 +1472,11 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified Chain message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain.verify|verify} messages.
+                             * Encodes the specified Chain message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.IChain} message Chain message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.IChain} message Chain message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -1487,18 +1487,18 @@ $root.org = (function() {
                             /**
                              * Decodes a Chain message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain} Chain
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain} Chain
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
                             Chain.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -1537,10 +1537,10 @@ $root.org = (function() {
                             /**
                              * Decodes a Chain message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain} Chain
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain} Chain
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
@@ -1553,7 +1553,7 @@ $root.org = (function() {
                             /**
                              * Verifies a Chain message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -1591,15 +1591,15 @@ $root.org = (function() {
                             /**
                              * Creates a Chain message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain} Chain
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain} Chain
                              */
                             Chain.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain)
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain();
+                                var message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain();
                                 if (object.name != null)
                                     message.name = String(object.name);
                                 if (object.headersCount != null)
@@ -1628,9 +1628,9 @@ $root.org = (function() {
                             /**
                              * Creates a plain object from a Chain message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain} message Chain
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain} message Chain
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
@@ -1682,7 +1682,7 @@ $root.org = (function() {
                             /**
                              * Converts this Chain to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Chain
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
@@ -1693,11 +1693,11 @@ $root.org = (function() {
                             return Chain;
                         })();
 
-                        GetCoreChainStatusResponse.NetworkFee = (function() {
+                        GetBlockchainStatusResponse.NetworkFee = (function() {
 
                             /**
                              * Properties of a NetworkFee.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @interface INetworkFee
                              * @property {number|null} [relay] NetworkFee relay
                              * @property {number|null} [incremental] NetworkFee incremental
@@ -1705,11 +1705,11 @@ $root.org = (function() {
 
                             /**
                              * Constructs a new NetworkFee.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @classdesc Represents a NetworkFee.
                              * @implements INetworkFee
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetworkFee=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetworkFee=} [properties] Properties to set
                              */
                             function NetworkFee(properties) {
                                 if (properties)
@@ -1721,7 +1721,7 @@ $root.org = (function() {
                             /**
                              * NetworkFee relay.
                              * @member {number} relay
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @instance
                              */
                             NetworkFee.prototype.relay = 0;
@@ -1729,7 +1729,7 @@ $root.org = (function() {
                             /**
                              * NetworkFee incremental.
                              * @member {number} incremental
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @instance
                              */
                             NetworkFee.prototype.incremental = 0;
@@ -1737,21 +1737,21 @@ $root.org = (function() {
                             /**
                              * Creates a new NetworkFee instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetworkFee=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee} NetworkFee instance
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetworkFee=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee} NetworkFee instance
                              */
                             NetworkFee.create = function create(properties) {
                                 return new NetworkFee(properties);
                             };
 
                             /**
-                             * Encodes the specified NetworkFee message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee.verify|verify} messages.
+                             * Encodes the specified NetworkFee message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetworkFee} message NetworkFee message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetworkFee} message NetworkFee message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -1766,11 +1766,11 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified NetworkFee message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee.verify|verify} messages.
+                             * Encodes the specified NetworkFee message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetworkFee} message NetworkFee message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetworkFee} message NetworkFee message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -1781,18 +1781,18 @@ $root.org = (function() {
                             /**
                              * Decodes a NetworkFee message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee} NetworkFee
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee} NetworkFee
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
                             NetworkFee.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -1813,10 +1813,10 @@ $root.org = (function() {
                             /**
                              * Decodes a NetworkFee message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee} NetworkFee
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee} NetworkFee
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
@@ -1829,7 +1829,7 @@ $root.org = (function() {
                             /**
                              * Verifies a NetworkFee message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -1849,15 +1849,15 @@ $root.org = (function() {
                             /**
                              * Creates a NetworkFee message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee} NetworkFee
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee} NetworkFee
                              */
                             NetworkFee.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee)
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee();
+                                var message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee();
                                 if (object.relay != null)
                                     message.relay = Number(object.relay);
                                 if (object.incremental != null)
@@ -1868,9 +1868,9 @@ $root.org = (function() {
                             /**
                              * Creates a plain object from a NetworkFee message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee} message NetworkFee
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee} message NetworkFee
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
@@ -1892,7 +1892,7 @@ $root.org = (function() {
                             /**
                              * Converts this NetworkFee to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
@@ -1903,23 +1903,23 @@ $root.org = (function() {
                             return NetworkFee;
                         })();
 
-                        GetCoreChainStatusResponse.Network = (function() {
+                        GetBlockchainStatusResponse.Network = (function() {
 
                             /**
                              * Properties of a Network.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @interface INetwork
                              * @property {number|null} [peersCount] Network peersCount
-                             * @property {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetworkFee|null} [fee] Network fee
+                             * @property {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetworkFee|null} [fee] Network fee
                              */
 
                             /**
                              * Constructs a new Network.
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse
                              * @classdesc Represents a Network.
                              * @implements INetwork
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetwork=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetwork=} [properties] Properties to set
                              */
                             function Network(properties) {
                                 if (properties)
@@ -1931,15 +1931,15 @@ $root.org = (function() {
                             /**
                              * Network peersCount.
                              * @member {number} peersCount
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @instance
                              */
                             Network.prototype.peersCount = 0;
 
                             /**
                              * Network fee.
-                             * @member {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetworkFee|null|undefined} fee
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @member {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetworkFee|null|undefined} fee
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @instance
                              */
                             Network.prototype.fee = null;
@@ -1947,21 +1947,21 @@ $root.org = (function() {
                             /**
                              * Creates a new Network instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetwork=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network} Network instance
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetwork=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network} Network instance
                              */
                             Network.create = function create(properties) {
                                 return new Network(properties);
                             };
 
                             /**
-                             * Encodes the specified Network message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network.verify|verify} messages.
+                             * Encodes the specified Network message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetwork} message Network message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetwork} message Network message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -1971,16 +1971,16 @@ $root.org = (function() {
                                 if (message.peersCount != null && Object.hasOwnProperty.call(message, "peersCount"))
                                     writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.peersCount);
                                 if (message.fee != null && Object.hasOwnProperty.call(message, "fee"))
-                                    $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee.encode(message.fee, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee.encode(message.fee, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 return writer;
                             };
 
                             /**
-                             * Encodes the specified Network message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network.verify|verify} messages.
+                             * Encodes the specified Network message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.INetwork} message Network message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.INetwork} message Network message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -1991,18 +1991,18 @@ $root.org = (function() {
                             /**
                              * Decodes a Network message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network} Network
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network} Network
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
                             Network.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -2010,7 +2010,7 @@ $root.org = (function() {
                                         message.peersCount = reader.uint32();
                                         break;
                                     case 2:
-                                        message.fee = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee.decode(reader, reader.uint32());
+                                        message.fee = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -2023,10 +2023,10 @@ $root.org = (function() {
                             /**
                              * Decodes a Network message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network} Network
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network} Network
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
@@ -2039,7 +2039,7 @@ $root.org = (function() {
                             /**
                              * Verifies a Network message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -2051,7 +2051,7 @@ $root.org = (function() {
                                     if (!$util.isInteger(message.peersCount))
                                         return "peersCount: integer expected";
                                 if (message.fee != null && message.hasOwnProperty("fee")) {
-                                    var error = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee.verify(message.fee);
+                                    var error = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee.verify(message.fee);
                                     if (error)
                                         return "fee." + error;
                                 }
@@ -2061,21 +2061,21 @@ $root.org = (function() {
                             /**
                              * Creates a Network message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network} Network
+                             * @returns {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network} Network
                              */
                             Network.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network)
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network();
+                                var message = new $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network();
                                 if (object.peersCount != null)
                                     message.peersCount = object.peersCount >>> 0;
                                 if (object.fee != null) {
                                     if (typeof object.fee !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network.fee: object expected");
-                                    message.fee = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee.fromObject(object.fee);
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.fee: object expected");
+                                    message.fee = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee.fromObject(object.fee);
                                 }
                                 return message;
                             };
@@ -2083,9 +2083,9 @@ $root.org = (function() {
                             /**
                              * Creates a plain object from a Network message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network} message Network
+                             * @param {org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network} message Network
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
@@ -2100,14 +2100,14 @@ $root.org = (function() {
                                 if (message.peersCount != null && message.hasOwnProperty("peersCount"))
                                     object.peersCount = message.peersCount;
                                 if (message.fee != null && message.hasOwnProperty("fee"))
-                                    object.fee = $root.org.dash.platform.dapi.v0.GetCoreChainStatusResponse.NetworkFee.toObject(message.fee, options);
+                                    object.fee = $root.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee.toObject(message.fee, options);
                                 return object;
                             };
 
                             /**
                              * Converts this Network to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetCoreChainStatusResponse.Network
+                             * @memberof org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
@@ -2118,7 +2118,7 @@ $root.org = (function() {
                             return Network;
                         })();
 
-                        return GetCoreChainStatusResponse;
+                        return GetBlockchainStatusResponse;
                     })();
 
                     v0.GetMasternodeStatusRequest = (function() {

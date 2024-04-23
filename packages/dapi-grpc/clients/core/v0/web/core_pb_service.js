@@ -10,13 +10,13 @@ var Core = (function () {
   return Core;
 }());
 
-Core.getCoreChainStatus = {
-  methodName: "getCoreChainStatus",
+Core.getBlockchainStatus = {
+  methodName: "getBlockchainStatus",
   service: Core,
   requestStream: false,
   responseStream: false,
-  requestType: core_pb.GetCoreChainStatusRequest,
-  responseType: core_pb.GetCoreChainStatusResponse
+  requestType: core_pb.GetBlockchainStatusRequest,
+  responseType: core_pb.GetBlockchainStatusResponse
 };
 
 Core.getMasternodeStatus = {
@@ -89,11 +89,11 @@ function CoreClient(serviceHost, options) {
   this.options = options || {};
 }
 
-CoreClient.prototype.getCoreChainStatus = function getCoreChainStatus(requestMessage, metadata, callback) {
+CoreClient.prototype.getBlockchainStatus = function getBlockchainStatus(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Core.getCoreChainStatus, {
+  var client = grpc.unary(Core.getBlockchainStatus, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
