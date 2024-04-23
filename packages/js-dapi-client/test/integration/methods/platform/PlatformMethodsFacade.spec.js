@@ -5,7 +5,7 @@ const {
     GetDocumentsResponse,
     GetIdentityResponse,
     GetIdentityByPublicKeyHashResponse,
-    GetPartialIdentitiesResponse,
+    GetIdentitiesContractKeysResponse,
     GetEpochsInfoResponse,
     GetProtocolVersionUpgradeVoteStatusResponse,
     GetProtocolVersionUpgradeStateResponse,
@@ -27,7 +27,7 @@ const PlatformMethodsFacade = require('../../../../lib/methods/platform/Platform
 const { WaitForStateTransitionResultResponseV0 } = WaitForStateTransitionResultResponse;
 const { GetIdentityResponseV0 } = GetIdentityResponse;
 const { GetIdentityByPublicKeyHashResponseV0 } = GetIdentityByPublicKeyHashResponse;
-const { GetPartialIdentitiesResponseV0 } = GetPartialIdentitiesResponse;
+const { GetIdentitiesContractKeysResponseV0 } = GetIdentitiesContractKeysResponse;
 const { GetDocumentsResponseV0 } = GetDocumentsResponse;
 const { GetDataContractResponseV0 } = GetDataContractResponse;
 const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
@@ -135,13 +135,13 @@ describe('PlatformMethodsFacade', () => {
     });
   });
 
-  describe('#getPartialIdentities', () => {
+  describe('#getIdentitiesContractKeys', () => {
     it('should get partial Identities', async () => {
-      const { Identities, IdentityEntry, IdentityValue } = GetPartialIdentitiesResponse;
+      const { Identities, IdentityEntry, IdentityValue } = GetIdentitiesContractKeysResponse;
 
-      const response = new GetPartialIdentitiesResponse();
+      const response = new GetIdentitiesContractKeysResponse();
       response.setV0(
-        new GetPartialIdentitiesResponseV0()
+        new GetIdentitiesContractKeysResponseV0()
           .setMetadata(new ResponseMetadata())
           .setIdentities(
             new Identities()
@@ -155,7 +155,7 @@ describe('PlatformMethodsFacade', () => {
 
       grpcTransportMock.request.resolves(response);
 
-      await platformMethods.getPartialIdentities([
+      await platformMethods.getIdentitiesContractKeys([
         Buffer.from('41nthkqvHBLnqiMkSbsdTNANzYu9bgdv4etKoRUunY1M', 'base64'),
       ]);
 

@@ -13,7 +13,7 @@ describe('PlatformPromiseClient', () => {
     platformPromiseClient.client = {
       broadcastStateTransition: this.sinon.stub().resolves(response),
       getIdentity: this.sinon.stub().resolves(response),
-      getPartialIdentities: this.sinon.stub().resolves(response),
+      getIdentitiesContractKeys: this.sinon.stub().resolves(response),
       getDataContract: this.sinon.stub().resolves(response),
       getDocuments: this.sinon.stub().resolves(response),
       getEpochsInfo: this.sinon.stub().resolves(response),
@@ -64,18 +64,18 @@ describe('PlatformPromiseClient', () => {
     });
   });
 
-  describe('#getPartialIdentities', () => {
+  describe('#getIdentitiesContractKeys', () => {
     it('should get identities', async () => {
-      const result = await platformPromiseClient.getPartialIdentities(request);
+      const result = await platformPromiseClient.getIdentitiesContractKeys(request);
 
       expect(result).to.equal(response);
-      expect(platformPromiseClient.client.getPartialIdentities)
+      expect(platformPromiseClient.client.getIdentitiesContractKeys)
         .to.be.calledOnceWith(request);
     });
 
     it('should throw an error when metadata is not an object', async () => {
       try {
-        platformPromiseClient.getPartialIdentities({}, 'metadata');
+        platformPromiseClient.getIdentitiesContractKeys({}, 'metadata');
 
         expect.fail('Error was not thrown');
       } catch (e) {

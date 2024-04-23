@@ -4,7 +4,7 @@ const getDataContractHistoryFactory = require('./getDataContractHistory/getDataC
 const getDocumentsFactory = require('./getDocuments/getDocumentsFactory');
 const getIdentityFactory = require('./getIdentity/getIdentityFactory');
 const getIdentityByPublicKeyHashFactory = require('./getIdentityByPublicKeyHash/getIdentityByPublicKeyHashFactory');
-const getPartialIdentitiesFactory = require('./getPartialIdentities/getPartialIdentitiesFactory');
+const getIdentitiesContractKeysFactory = require('./getIdentitiesContractKeys/getIdentitiesContractKeysFactory');
 const waitForStateTransitionResultFactory = require('./waitForStateTransitionResult/waitForStateTransitionResultFactory');
 const getConsensusParamsFactory = require('./getConsensusParams/getConsensusParamsFactory');
 const getEpochsInfoFactory = require('./getEpochsInfo/getEpochsInfoFactory');
@@ -25,7 +25,7 @@ class PlatformMethodsFacade {
     this.getDocuments = getDocumentsFactory(grpcTransport);
     this.getIdentity = getIdentityFactory(grpcTransport);
     this.getIdentityByPublicKeyHash = getIdentityByPublicKeyHashFactory(grpcTransport);
-    this.getPartialIdentities = getPartialIdentitiesFactory(grpcTransport);
+    this.getIdentitiesContractKeys = getIdentitiesContractKeysFactory(grpcTransport);
     this.waitForStateTransitionResult = waitForStateTransitionResultFactory(grpcTransport);
     this.getConsensusParams = getConsensusParamsFactory(grpcTransport);
     this.getEpochsInfo = getEpochsInfoFactory(grpcTransport);

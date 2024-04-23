@@ -42,15 +42,15 @@ class PlatformPromiseClient {
   }
 
   /**
-   * @param {!GetPartialIdentitiesRequest} getPartialIdentitiesRequest
+   * @param {!GetIdentitiesContractKeysRequest} getIdentitiesContractKeysRequest
    * @param {?Object<string, string>} metadata
-   * @return {Promise<!GetPartialIdentitiesResponse>}
+   * @return {Promise<!GetIdentitiesContractKeysResponse>}
    */
-  getPartialIdentities(getPartialIdentitiesRequest, metadata = {}) {
+  getIdentitiesContractKeys(getIdentitiesContractKeysRequest, metadata = {}) {
     return promisify(
-      this.client.getPartialIdentities.bind(this.client),
+      this.client.getIdentitiesContractKeys.bind(this.client),
     )(
-      getPartialIdentitiesRequest,
+      getIdentitiesContractKeysRequest,
       metadata,
     );
   }

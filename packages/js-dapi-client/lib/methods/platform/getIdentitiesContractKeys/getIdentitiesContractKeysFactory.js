@@ -1,28 +1,28 @@
 const {
   v0: {
     PlatformPromiseClient,
-    GetPartialIdentitiesRequest,
+    GetIdentitiesContractKeysRequest,
   },
 } = require('@dashevo/dapi-grpc');
 
-const GetPartialIdentitiesResponse = require('./GetPartialIdentitiesResponse');
+const GetIdentitiesContractKeysResponse = require('./GetIdentitiesContractKeysResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
  * @param {GrpcTransport} grpcTransport
- * @returns {getPartialIdentities}
+ * @returns {getIdentitiesContractKeys}
  */
-function getPartialIdentitiesFactory(grpcTransport) {
+function getIdentitiesContractKeysFactory(grpcTransport) {
   /**
    * Fetch the identities by public key hashes
-   * @typedef {getPartialIdentities}
+   * @typedef {getIdentitiesContractKeys}
    * @param {Buffer[]} ids
    * @param {DAPIClientOptions & {prove: boolean}} [options]
-   * @returns {Promise<GetPartialIdentitiesResponse>}
+   * @returns {Promise<GetIdentitiesContractKeysResponse>}
    */
-  async function getPartialIdentities(ids, options = {}) {
-    const { GetPartialIdentitiesRequestV0 } = GetPartialIdentitiesRequest;
-    const getPartialIdentitiesRequest = new GetPartialIdentitiesRequest();
+  async function getIdentitiesContractKeys(ids, options = {}) {
+    const { GetIdentitiesContractKeysRequestV0 } = GetIdentitiesContractKeysRequest;
+    const getIdentitiesContractKeysRequest = new GetIdentitiesContractKeysRequest();
 
     // eslint-disable-next-line no-param-reassign
     ids = ids.map((id) => {
@@ -34,8 +34,8 @@ function getPartialIdentitiesFactory(grpcTransport) {
       return id;
     });
 
-    getPartialIdentitiesRequest.setV0(
-      new GetPartialIdentitiesRequestV0()
+    getIdentitiesContractKeysRequest.setV0(
+      new GetIdentitiesContractKeysRequestV0()
         .setProve(!!options.prove)
         .setIdsList(ids),
     );
@@ -46,15 +46,15 @@ function getPartialIdentitiesFactory(grpcTransport) {
     for (let i = 0; i < 3; i += 1) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        const getPartialIdentitiesResponse = await grpcTransport.request(
+        const getIdentitiesContractKeysResponse = await grpcTransport.request(
           PlatformPromiseClient,
-          'getPartialIdentities',
-          getPartialIdentitiesRequest,
+          'getIdentitiesContractKeys',
+          getIdentitiesContractKeysRequest,
           options,
         );
 
-        return GetPartialIdentitiesResponse
-          .createFromProto(getPartialIdentitiesResponse);
+        return GetIdentitiesContractKeysResponse
+          .createFromProto(getIdentitiesContractKeysResponse);
       } catch (e) {
         if (e instanceof InvalidResponseError) {
           lastError = e;
@@ -69,7 +69,7 @@ function getPartialIdentitiesFactory(grpcTransport) {
     throw lastError;
   }
 
-  return getPartialIdentities;
+  return getIdentitiesContractKeys;
 }
 
-module.exports = getPartialIdentitiesFactory;
+module.exports = getIdentitiesContractKeysFactory;

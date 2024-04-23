@@ -2,8 +2,8 @@ const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
 const {
   v0: {
     PlatformPromiseClient,
-    GetPartialIdentitiesRequest,
-    GetPartialIdentitiesResponse,
+    GetIdentitiesContractKeysRequest,
+    GetIdentitiesContractKeysResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
@@ -13,14 +13,14 @@ const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdent
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 
-const getPartialIdentitiesFactory = require(
-  '../../../../../lib/methods/platform/getPartialIdentities/getPartialIdentitiesFactory',
+const getIdentitiesContractKeysFactory = require(
+  '../../../../../lib/methods/platform/getIdentitiesContractKeys/getIdentitiesContractKeysFactory',
 );
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
 
-describe('getPartialIdentitiesFactory', () => {
+describe('getIdentitiesContractKeysFactory', () => {
   let grpcTransportMock;
-  let getPartialIdentities;
+  let getIdentitiesContractKeys;
   let options;
   let response;
   let identityFixture;
@@ -42,12 +42,12 @@ describe('getPartialIdentitiesFactory', () => {
 
     const {
       Identities, IdentityEntry, IdentityValue,
-      GetPartialIdentitiesResponseV0,
-    } = GetPartialIdentitiesResponse;
+      GetIdentitiesContractKeysResponseV0,
+    } = GetIdentitiesContractKeysResponse;
 
-    response = new GetPartialIdentitiesResponse();
+    response = new GetIdentitiesContractKeysResponse();
     response.setV0(
-      new GetPartialIdentitiesResponseV0().setIdentities(
+      new GetIdentitiesContractKeysResponseV0().setIdentities(
         new Identities()
           .setIdentityEntriesList([
             new IdentityEntry()
@@ -73,23 +73,23 @@ describe('getPartialIdentitiesFactory', () => {
       timeout: 1000,
     };
 
-    getPartialIdentities = getPartialIdentitiesFactory(grpcTransportMock);
+    getIdentitiesContractKeys = getIdentitiesContractKeysFactory(grpcTransportMock);
   });
 
   it('should return id to identity map', async () => {
-    const result = await getPartialIdentities([identityFixture.getId()], options);
+    const result = await getIdentitiesContractKeys([identityFixture.getId()], options);
 
-    const { GetPartialIdentitiesRequestV0 } = GetPartialIdentitiesRequest;
-    const request = new GetPartialIdentitiesRequest();
+    const { GetIdentitiesContractKeysRequestV0 } = GetIdentitiesContractKeysRequest;
+    const request = new GetIdentitiesContractKeysRequest();
     request.setV0(
-      new GetPartialIdentitiesRequestV0()
+      new GetIdentitiesContractKeysRequestV0()
         .setIdsList([Buffer.from(identityFixture.getId())])
         .setProve(false),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
-      'getPartialIdentities',
+      'getIdentitiesContractKeys',
       request,
       options,
     );
@@ -103,19 +103,19 @@ describe('getPartialIdentitiesFactory', () => {
     response.getV0().setProof(proofResponse);
 
     const identityId = Buffer.from(identityFixture.getId());
-    const result = await getPartialIdentities([identityId], options);
+    const result = await getIdentitiesContractKeys([identityId], options);
 
-    const { GetPartialIdentitiesRequestV0 } = GetPartialIdentitiesRequest;
-    const request = new GetPartialIdentitiesRequest();
+    const { GetIdentitiesContractKeysRequestV0 } = GetIdentitiesContractKeysRequest;
+    const request = new GetIdentitiesContractKeysRequest();
     request.setV0(
-      new GetPartialIdentitiesRequestV0()
+      new GetIdentitiesContractKeysRequestV0()
         .setIdsList([identityId])
         .setProve(true),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
-      'getPartialIdentities',
+      'getIdentitiesContractKeys',
       request,
       options,
     );
@@ -141,23 +141,23 @@ describe('getPartialIdentitiesFactory', () => {
     grpcTransportMock.request.throws(error);
 
     const identityId = Buffer.from(identityFixture.getId());
-    const { GetPartialIdentitiesRequestV0 } = GetPartialIdentitiesRequest;
-    const request = new GetPartialIdentitiesRequest();
+    const { GetIdentitiesContractKeysRequestV0 } = GetIdentitiesContractKeysRequest;
+    const request = new GetIdentitiesContractKeysRequest();
     request.setV0(
-      new GetPartialIdentitiesRequestV0()
+      new GetIdentitiesContractKeysRequestV0()
         .setIdsList([identityId])
         .setProve(false),
     );
 
     try {
-      await getPartialIdentities([identityId], options);
+      await getIdentitiesContractKeys([identityId], options);
 
       expect.fail('should throw unknown error');
     } catch (e) {
       expect(e).to.deep.equal(error);
       expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
         PlatformPromiseClient,
-        'getPartialIdentities',
+        'getIdentitiesContractKeys',
         request,
         options,
       );

@@ -28,8 +28,8 @@ const {
             BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
             GetIdentityRequest: PBJSGetIdentityRequest,
             GetIdentityResponse: PBJSGetIdentityResponse,
-            GetPartialIdentitiesRequest: PBJSGetPartialIdentitiesRequest,
-            GetPartialIdentitiesResponse: PBJSGetPartialIdentitiesResponse,
+            GetIdentitiesContractKeysRequest: PBJSGetIdentitiesContractKeysRequest,
+            GetIdentitiesContractKeysResponse: PBJSGetIdentitiesContractKeysResponse,
             GetDataContractRequest: PBJSGetDataContractRequest,
             GetDataContractResponse: PBJSGetDataContractResponse,
             GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
@@ -68,7 +68,7 @@ const {
 const {
   BroadcastStateTransitionResponse: ProtocBroadcastStateTransitionResponse,
   GetIdentityResponse: ProtocGetIdentityResponse,
-  GetPartialIdentitiesResponse: ProtocGetPartialIdentitiesResponse,
+  GetIdentitiesContractKeysResponse: ProtocGetIdentitiesContractKeysResponse,
   GetDataContractResponse: ProtocGetDataContractResponse,
   GetDataContractHistoryResponse: ProtocGetDataContractHistoryResponse,
   GetDocumentsResponse: ProtocGetDocumentsResponse,
@@ -116,8 +116,8 @@ class PlatformPromiseClient {
       this.client.getIdentity.bind(this.client),
     );
 
-    this.client.getPartialIdentities = promisify(
-      this.client.getPartialIdentities.bind(this.client),
+    this.client.getIdentitiesContractKeys = promisify(
+      this.client.getIdentitiesContractKeys.bind(this.client),
     );
 
     this.client.getDataContract = promisify(
@@ -238,31 +238,31 @@ class PlatformPromiseClient {
   }
 
   /**
-   * @param {!GetPartialIdentitiesRequest} getPartialIdentitiesRequest
+   * @param {!GetIdentitiesContractKeysRequest} getIdentitiesContractKeysRequest
    * @param {?Object<string, string>} metadata
    * @param {CallOptions} [options={}]
-   * @returns {Promise<!GetPartialIdentitiesResponse>}
+   * @returns {Promise<!GetIdentitiesContractKeysResponse>}
    */
-  getPartialIdentities(
-    getPartialIdentitiesRequest,
+  getIdentitiesContractKeys(
+    getIdentitiesContractKeysRequest,
     metadata = {},
     options = {},
   ) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
-    return this.client.getPartialIdentities(
-      getPartialIdentitiesRequest,
+    return this.client.getIdentitiesContractKeys(
+      getIdentitiesContractKeysRequest,
       convertObjectToMetadata(metadata),
       {
         interceptors: [
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
-              ProtocGetPartialIdentitiesResponse,
-              PBJSGetPartialIdentitiesResponse,
+              ProtocGetIdentitiesContractKeysResponse,
+              PBJSGetIdentitiesContractKeysResponse,
             ),
             protobufToJsonFactory(
-              PBJSGetPartialIdentitiesRequest,
+              PBJSGetIdentitiesContractKeysRequest,
             ),
           ),
         ],
