@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Execution Tests
 //!
 
@@ -79,7 +50,9 @@ mod tests {
     use dashcore_rpc::json::AssetUnlockStatusResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use std::sync::{Arc, Mutex};
-    use strategy_tests::operations::DocumentAction::DocumentActionReplace;
+    use strategy_tests::operations::DocumentAction::{
+        DocumentActionReplaceRandom, DocumentActionTransferRandom,
+    };
     use strategy_tests::operations::{
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
@@ -1115,7 +1088,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "5dda9668d6efe6a481ec1d7ce3a1a77785aace12a853bea7eedcf37e9c5f8374".to_string()
+            "547963a6f85f531173493bc145bdec8796bfd4d61240ef108c3a2644175939eb".to_string()
         )
     }
 
@@ -1804,7 +1777,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "909c3c0655fcb31a992899a1d2af59a8847f72126db56140ca91ac9591561ebe".to_string()
+            "2609439c79ea50f6f6a2d4e4f357f710097fa2fab8a196e35c176689b2f2687a".to_string()
         )
     }
 
@@ -1929,7 +1902,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "58b6ae6a0468cb62d1947362cf92915ae046027a0501d808caa7bdcd2a23a10c".to_string()
+            "58b927769fb1782259883aa91a91a60c6d451cc5f95d3e0d905abcd9ff61f434".to_string()
         )
     }
 
@@ -2302,7 +2275,7 @@ mod tests {
 
         let document_replace_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionReplace,
+            action: DocumentActionReplaceRandom,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -2394,6 +2367,151 @@ mod tests {
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, 90);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let balance_count = outcome
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+    }
+
+    #[test]
+    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_transfers_and_deletions_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplaceRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_transfer_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionTransferRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..40,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_replace_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_transfer_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..6,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_rotation_block_count: 100,
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let block_count = 30;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        assert_eq!(outcome.identities.len() as u64, 97);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances

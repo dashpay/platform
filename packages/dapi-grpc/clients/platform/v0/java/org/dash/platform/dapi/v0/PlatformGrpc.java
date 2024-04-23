@@ -604,6 +604,37 @@ public final class PlatformGrpc {
     return getGetEpochsInfoMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> getGetPathElementsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getPathElements",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> getGetPathElementsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> getGetPathElementsMethod;
+    if ((getGetPathElementsMethod = PlatformGrpc.getGetPathElementsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetPathElementsMethod = PlatformGrpc.getGetPathElementsMethod) == null) {
+          PlatformGrpc.getGetPathElementsMethod = getGetPathElementsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getPathElements"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getPathElements"))
+              .build();
+        }
+      }
+    }
+    return getGetPathElementsMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -785,6 +816,13 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetEpochsInfoMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void getPathElements(org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetPathElementsMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -920,6 +958,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoResponse>(
                   this, METHODID_GET_EPOCHS_INFO)))
+          .addMethod(
+            getGetPathElementsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse>(
+                  this, METHODID_GET_PATH_ELEMENTS)))
           .build();
     }
   }
@@ -1089,6 +1134,14 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetEpochsInfoMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getPathElements(org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetPathElementsMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -1236,6 +1289,13 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoResponse getEpochsInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetEpochsInfoMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse getPathElements(org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetPathElementsMethod(), getCallOptions(), request);
     }
   }
 
@@ -1404,6 +1464,14 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetEpochsInfoMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> getPathElements(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetPathElementsMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -1425,6 +1493,7 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 16;
   private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 17;
   private static final int METHODID_GET_EPOCHS_INFO = 18;
+  private static final int METHODID_GET_PATH_ELEMENTS = 19;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1519,6 +1588,10 @@ public final class PlatformGrpc {
           serviceImpl.getEpochsInfo((org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoResponse>) responseObserver);
           break;
+        case METHODID_GET_PATH_ELEMENTS:
+          serviceImpl.getPathElements((org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -1599,6 +1672,7 @@ public final class PlatformGrpc {
               .addMethod(getGetProtocolVersionUpgradeStateMethod())
               .addMethod(getGetProtocolVersionUpgradeVoteStatusMethod())
               .addMethod(getGetEpochsInfoMethod())
+              .addMethod(getGetPathElementsMethod())
               .build();
         }
       }

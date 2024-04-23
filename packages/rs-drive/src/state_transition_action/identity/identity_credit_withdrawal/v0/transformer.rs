@@ -39,10 +39,13 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             revision: Some(1),
             created_at: Some(creation_time_ms),
             updated_at: Some(creation_time_ms),
+            transferred_at: None,
             created_at_block_height: None,
             updated_at_block_height: None,
+            transferred_at_block_height: None,
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
         }
         .into();
 

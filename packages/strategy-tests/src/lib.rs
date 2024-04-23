@@ -58,8 +58,9 @@ use dpp::state_transition::documents_batch_transition::document_create_transitio
 use dpp::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransferTransition};
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
 use simple_signer::signer::SimpleSigner;
 
 pub mod frequency;
@@ -545,6 +546,7 @@ impl Strategy {
 
         // Lists to keep track of replaced and deleted documents
         let mut replaced = vec![];
+        let mut transferred = vec![];
         let mut deleted = vec![];
 
         // Loop through the operations and generate state transitions based on frequency and type
@@ -772,21 +774,12 @@ impl Strategy {
                                 document_type,
                             }),
                         );
-                        //// the following is removed in favor of the local document query callback above
-                        // let mut items = drive
-                        //     .query_documents(
-                        //         any_item_query,
-                        //         Some(&block_info.epoch),
-                        //         false,
-                        //         None,
-                        //         Some(platform_version.protocol_version),
-                        //     )
-                        //     .expect("expect to execute query")
-                        //     .documents_owned();
 
                         items.retain(|item| !deleted.contains(&item.id()));
 
                         items.retain(|item| !replaced.contains(&item.id()));
+
+                        items.retain(|item| !transferred.contains(&item.id()));
 
                         if !items.is_empty() {
                             let document = items.remove(0);
@@ -858,7 +851,7 @@ impl Strategy {
 
                     // Generate state transition for document replace operation
                     OperationType::Document(DocumentOp {
-                        action: DocumentAction::DocumentActionReplace,
+                        action: DocumentAction::DocumentActionReplaceRandom,
                         document_type,
                         contract,
                     }) => {
@@ -868,22 +861,12 @@ impl Strategy {
                                 document_type,
                             }),
                         );
-                        // let any_item_query =
-                        //     DriveQuery::any_item_query(contract, document_type.as_ref());
-                        // let mut items = drive
-                        //     .query_documents(
-                        //         any_item_query,
-                        //         Some(&block_info.epoch),
-                        //         false,
-                        //         None,
-                        //         Some(platform_version.protocol_version),
-                        //     )
-                        //     .expect("expect to execute query")
-                        //     .documents_owned();
 
                         items.retain(|item| !deleted.contains(&item.id()));
 
                         items.retain(|item| !replaced.contains(&item.id()));
+
+                        items.retain(|item| !transferred.contains(&item.id()));
 
                         if !items.is_empty() {
                             let document = items.remove(0);
@@ -932,6 +915,110 @@ impl Strategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_replace_transition.into()],
+                                    user_fee_increase: 0,
+                                    signature_public_key_id: 1,
+                                    signature: BinaryData::default(),
+                                }
+                                .into();
+
+                            let mut document_batch_transition: StateTransition =
+                                document_batch_transition.into();
+
+                            let identity_public_key = identity
+                                .loaded_public_keys
+                                .values()
+                                .next()
+                                .expect("expected a key");
+
+                            document_batch_transition
+                                .sign_external(
+                                    identity_public_key,
+                                    signer,
+                                    Some(|_data_contract_id, _document_type_name| {
+                                        Ok(SecurityLevel::HIGH)
+                                    }),
+                                )
+                                .expect("expected to sign");
+
+                            operations.push(document_batch_transition);
+                        }
+                    }
+
+                    // Generate state transition for document transfer operation
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionTransferRandom,
+                        document_type,
+                        contract,
+                    }) => {
+                        let mut items = document_query_callback(
+                            LocalDocumentQuery::RandomDocumentQuery(RandomDocumentQuery {
+                                data_contract: contract,
+                                document_type,
+                            }),
+                        );
+
+                        items.retain(|item| !deleted.contains(&item.id()));
+
+                        items.retain(|item| !replaced.contains(&item.id()));
+
+                        items.retain(|item| !transferred.contains(&item.id()));
+
+                        if !items.is_empty() {
+                            let document = items.remove(0);
+
+                            let random_index = rng.gen_range(0..current_identities.len());
+                            let mut random_identity_id = current_identities[random_index].id();
+
+                            if random_identity_id == document.owner_id() {
+                                if current_identities.len() == 1 {
+                                    continue;
+                                }
+                                if random_index == current_identities.len() - 1 {
+                                    // we are at the end
+                                    random_identity_id = current_identities[random_index - 1].id();
+                                } else {
+                                    random_identity_id = current_identities[random_index + 1].id();
+                                }
+                            }
+
+                            transferred.push(document.id());
+
+                            let request = IdentityKeysRequest {
+                                identity_id: document.owner_id().to_buffer(),
+                                request_type: KeyRequestType::SpecificKeys(vec![1]),
+                                limit: Some(1),
+                                offset: None,
+                            };
+                            let identity =
+                                identity_fetch_callback(request.identity_id.into(), Some(request));
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
+
+                            let document_transfer_transition: DocumentTransferTransition =
+                                DocumentTransferTransitionV0 {
+                                    base: DocumentBaseTransitionV0 {
+                                        id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
+                                        document_type_name: document_type.name().clone(),
+                                        data_contract_id: contract.id(),
+                                    }
+                                    .into(),
+                                    revision: document
+                                        .revision()
+                                        .expect("expected to unwrap revision")
+                                        + 1,
+                                    recipient_owner_id: random_identity_id,
+                                }
+                                .into();
+
+                            let document_batch_transition: DocumentsBatchTransition =
+                                DocumentsBatchTransitionV0 {
+                                    owner_id: identity.id,
+                                    transitions: vec![document_transfer_transition.into()],
                                     user_fee_increase: 0,
                                     signature_public_key_id: 1,
                                     signature: BinaryData::default(),
