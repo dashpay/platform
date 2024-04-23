@@ -19,7 +19,7 @@ services:
     networks:
       - envoy_rate_limiter
     volumes:
-      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/rate_limiter.yaml:/data/ratelimit/config/config.yaml:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/rate_limiter/rate_limiter.yaml:/data/ratelimit/config/config.yaml:ro
     environment:
       - LOG_LEVEL=info
       - LOG_FORMAT=text
