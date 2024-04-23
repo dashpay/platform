@@ -45,6 +45,7 @@ describe('getMasternodeStatusFactory', () => {
 
     const expectedResult = {
       ...response.toObject(),
+      proTxHash: Buffer.alloc(0),
       status: 'READY',
     };
 
