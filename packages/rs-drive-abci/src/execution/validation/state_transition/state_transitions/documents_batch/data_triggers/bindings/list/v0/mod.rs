@@ -64,18 +64,6 @@ pub(super) fn data_trigger_bindings_list_v0() -> Result<Vec<DataTriggerBindingV0
         },
         DataTriggerBindingV0 {
             data_contract_id: dashpay_contract::ID,
-            document_type: "contactRequest".to_string(),
-            transition_action_type: DocumentTransitionActionType::Replace,
-            data_trigger: reject_data_trigger,
-        },
-        DataTriggerBindingV0 {
-            data_contract_id: dashpay_contract::ID,
-            document_type: "contactRequest".to_string(),
-            transition_action_type: DocumentTransitionActionType::Delete,
-            data_trigger: reject_data_trigger,
-        },
-        DataTriggerBindingV0 {
-            data_contract_id: dashpay_contract::ID,
             document_type: update_consensus_params::NAME.to_string(),
             transition_action_type: DocumentTransitionActionType::Create,
             data_trigger: create_feature_flag_data_trigger,

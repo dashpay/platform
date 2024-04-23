@@ -132,6 +132,7 @@
   },
   "contactRequest": {
     "documentsMutable": false,
+    "canBeDeleted": false,
     "requiresIdentityEncryptionBoundedKey": 2,
     "requiresIdentityDecryptionBoundedKey": 2,
     "type": "object",

@@ -199,6 +199,8 @@ impl ErrorWithCode for StateError {
             Self::DuplicateUniqueIndexError { .. } => 40105,
             Self::InvalidDocumentRevisionError { .. } => 40106,
             Self::DocumentTimestampsAreEqualError(_) => 40107,
+            Self::DocumentNotForSaleError(_) => 40108,
+            Self::DocumentIncorrectPurchasePriceError(_) => 40109,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

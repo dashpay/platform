@@ -47,6 +47,9 @@ pub trait DocumentTypeV0Getters {
     /// Returns the documents mutable flag of the document type.
     fn documents_mutable(&self) -> bool;
 
+    /// Returns the documents can be deleted flag of the document type.
+    fn documents_can_be_deleted(&self) -> bool;
+
     /// Returns the documents transferable flag of the document type.
     fn documents_transferable(&self) -> Transferable;
 

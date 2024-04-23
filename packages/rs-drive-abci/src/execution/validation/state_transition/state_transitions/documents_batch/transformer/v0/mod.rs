@@ -15,7 +15,12 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
+use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
+use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::Credits;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::Revision;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
@@ -579,6 +584,27 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 }
 
                 let original_document = validation_result.into_data()?;
+
+                let Some(listed_price) = original_document
+                    .properties()
+                    .get_optional_integer::<Credits>(PRICE)?
+                else {
+                    result.add_error(StateError::DocumentNotForSaleError(
+                        DocumentNotForSaleError::new(original_document.id()),
+                    ));
+                    return Ok(result);
+                };
+
+                if listed_price != document_purchase_transition.price() {
+                    result.add_error(StateError::DocumentIncorrectPurchasePriceError(
+                        DocumentIncorrectPurchasePriceError::new(
+                            original_document.id(),
+                            document_purchase_transition.price(),
+                            listed_price,
+                        ),
+                    ));
+                    return Ok(result);
+                }
 
                 if validate_against_state {
                     //there are situations where we don't want to validate this against the state

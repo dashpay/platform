@@ -10,6 +10,7 @@
       "canBeDeleted": true,
       "transferable": 1,
       "tradeMode": 1,
+      "creationRestrictionMode": 1,
       "properties": {
         "name": {
           "type": "string",

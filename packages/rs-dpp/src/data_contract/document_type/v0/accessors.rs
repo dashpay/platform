@@ -63,6 +63,10 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         self.documents_mutable
     }
 
+    fn documents_can_be_deleted(&self) -> bool {
+        self.documents_can_be_deleted
+    }
+
     fn documents_transferable(&self) -> Transferable {
         self.documents_transferable
     }
