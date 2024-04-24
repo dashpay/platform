@@ -52,9 +52,6 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-    use rand::prelude::StdRng;
-    use rand::SeedableRng;
     use crate::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
     use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
@@ -62,24 +59,29 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
+    use std::collections::BTreeMap;
 
     use dpp::data_contract::DataContract;
     use dpp::fee::Credits;
     use dpp::identifier::Identifier;
-    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::data_contract_update_transition::{DataContractUpdateTransition, DataContractUpdateTransitionV0};
     use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+    use dpp::state_transition::data_contract_update_transition::{
+        DataContractUpdateTransition, DataContractUpdateTransitionV0,
+    };
 
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
     use drive::drive::flags::StorageFlags;
     use simple_signer::signer::SimpleSigner;
-    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 
     struct TestData<T> {
         data_contract: DataContract,
@@ -102,7 +104,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-                .expect("expected to get key pair");
+            .expect("expected to get key pair");
 
         signer.add_key(master_key.clone(), master_private_key.clone());
 
@@ -112,7 +114,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-                .expect("expected to get key pair");
+            .expect("expected to get key pair");
 
         signer.add_key(critical_public_key.clone(), private_key.clone());
 
@@ -125,7 +127,7 @@ mod tests {
             balance: credits,
             revision: 0,
         }
-            .into();
+        .into();
 
         // We just add this identity to the system first
 
@@ -560,8 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn test_data_contract_update_changing_various_document_type_options(
-    ) {
+    fn test_data_contract_update_changing_various_document_type_options() {
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -596,29 +597,28 @@ mod tests {
             )
             .expect("expected to apply contract successfully");
 
-
         let updated_card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json";
 
         // let's construct the grovedb structure for the card game data contract
-        let mut contract_not_restricted_to_owner = json_document_to_contract(updated_card_game_path, true, platform_version)
-            .expect("expected to get data contract");
+        let mut contract_not_restricted_to_owner =
+            json_document_to_contract(updated_card_game_path, true, platform_version)
+                .expect("expected to get data contract");
 
         contract_not_restricted_to_owner.set_owner_id(identity.id());
 
         contract_not_restricted_to_owner.set_version(2);
-        
-        let data_contract_update_transition =
-            DataContractUpdateTransition::new_from_data_contract(
-                contract_not_restricted_to_owner,
-                &identity.into_partial_identity_info(),
-                key.id(),
-                2,
-                0,
-                &signer,
-                platform_version,
-                None,
-            )
-                .expect("expect to create documents batch transition");
+
+        let data_contract_update_transition = DataContractUpdateTransition::new_from_data_contract(
+            contract_not_restricted_to_owner,
+            &identity.into_partial_identity_info(),
+            key.id(),
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create documents batch transition");
 
         let data_contract_update_serialized_transition = data_contract_update_transition
             .serialize_to_bytes()
@@ -650,10 +650,9 @@ mod tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result
-            else {
-                panic!("expected a paid consensus error");
-            };
+        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
+            panic!("expected a paid consensus error");
+        };
         assert_eq!(consensus_error.to_string(), "Data Contract updated schema is not backward compatible with one defined in Data Contract with id 86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e. Field: '/creationRestrictionMode', Operation: 'remove'");
     }
 }

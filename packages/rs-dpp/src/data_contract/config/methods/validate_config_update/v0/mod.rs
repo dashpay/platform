@@ -102,7 +102,7 @@ impl DataContractConfig {
                     contract_id,
                     "contract can not change the default of whether documents can be deleted",
                 )
-                    .into(),
+                .into(),
             );
         }
 
