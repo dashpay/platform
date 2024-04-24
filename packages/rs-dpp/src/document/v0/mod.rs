@@ -60,6 +60,12 @@ pub struct DocumentV0 {
         serde(rename = "$updatedAt", default)
     )]
     pub updated_at: Option<TimestampMillis>,
+    /// The time in milliseconds that the document was last transferred, if it is set as required by the document type schema.
+    #[cfg_attr(
+        feature = "document-serde-conversion",
+        serde(rename = "$transferredAt", default)
+    )]
+    pub transferred_at: Option<TimestampMillis>,
     /// The block that the document was created, if it is set as required by the document type schema.
     #[cfg_attr(
         feature = "document-serde-conversion",
@@ -72,6 +78,12 @@ pub struct DocumentV0 {
         serde(rename = "$updatedAtBlockHeight", default)
     )]
     pub updated_at_block_height: Option<BlockHeight>,
+    /// The block that the document was last transferred to a new identity, if it is set as required by the document type schema.
+    #[cfg_attr(
+        feature = "document-serde-conversion",
+        serde(rename = "$transferredAtBlockHeight", default)
+    )]
+    pub transferred_at_block_height: Option<BlockHeight>,
     /// The core block that the document was created, if it is set as required by the document type schema.
     #[cfg_attr(
         feature = "document-serde-conversion",
@@ -84,6 +96,12 @@ pub struct DocumentV0 {
         serde(rename = "$updatedAtCoreBlockHeight", default)
     )]
     pub updated_at_core_block_height: Option<CoreBlockHeight>,
+    /// The core block that the document was last transferred to a new identity, if it is set as required by the document type schema.
+    #[cfg_attr(
+        feature = "document-serde-conversion",
+        serde(rename = "$transferredAtCoreBlockHeight", default)
+    )]
+    pub transferred_at_core_block_height: Option<CoreBlockHeight>,
 }
 
 impl DocumentGetRawForContractV0 for DocumentV0 {

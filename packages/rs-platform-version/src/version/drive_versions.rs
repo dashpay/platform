@@ -330,6 +330,7 @@ pub struct DriveDocumentIndexUniquenessMethodVersions {
     pub validate_document_uniqueness: FeatureVersion,
     pub validate_document_create_transition_action_uniqueness: FeatureVersion,
     pub validate_document_replace_transition_action_uniqueness: FeatureVersion,
+    pub validate_document_transfer_transition_action_uniqueness: FeatureVersion,
     pub validate_uniqueness_of_data: FeatureVersion,
 }
 

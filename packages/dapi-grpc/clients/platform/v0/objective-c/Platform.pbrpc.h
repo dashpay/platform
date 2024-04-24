@@ -18,12 +18,6 @@
 @class BroadcastStateTransitionResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
-@class GetContestedResourceVoteStateRequest;
-@class GetContestedResourceVoteStateResponse;
-@class GetContestedResourceVoteStatusRequest;
-@class GetContestedResourceVoteStatusResponse;
-@class GetContestedResourcesRequest;
-@class GetContestedResourcesResponse;
 @class GetDataContractHistoryRequest;
 @class GetDataContractHistoryResponse;
 @class GetDataContractRequest;
@@ -52,6 +46,8 @@
 @class GetIdentityNonceResponse;
 @class GetIdentityRequest;
 @class GetIdentityResponse;
+@class GetPathElementsRequest;
+@class GetPathElementsResponse;
 @class GetProofsRequest;
 @class GetProofsResponse;
 @class GetProtocolVersionUpgradeStateRequest;
@@ -170,17 +166,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getEpochsInfoWithMessage:(GetEpochsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse)
+#pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
 
-- (GRPCUnaryProtoCall *)getContestedResourcesWithMessage:(GetContestedResourcesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
-#pragma mark getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse)
-
-- (GRPCUnaryProtoCall *)getContestedResourceVoteStateWithMessage:(GetContestedResourceVoteStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
-#pragma mark getContestedResourceVoteStatus(GetContestedResourceVoteStatusRequest) returns (GetContestedResourceVoteStatusResponse)
-
-- (GRPCUnaryProtoCall *)getContestedResourceVoteStatusWithMessage:(GetContestedResourceVoteStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getPathElementsWithMessage:(GetPathElementsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -330,25 +318,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse)
+#pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
 
-- (void)getContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse)
-
-- (void)getContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getContestedResourceVoteStatus(GetContestedResourceVoteStatusRequest) returns (GetContestedResourceVoteStatusResponse)
-
-- (void)getContestedResourceVoteStatusWithRequest:(GetContestedResourceVoteStatusRequest *)request handler:(void(^)(GetContestedResourceVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetContestedResourceVoteStatusWithRequest:(GetContestedResourceVoteStatusRequest *)request handler:(void(^)(GetContestedResourceVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

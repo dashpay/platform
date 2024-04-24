@@ -190,31 +190,13 @@ Platform.getEpochsInfo = {
   responseType: platform_pb.GetEpochsInfoResponse
 };
 
-Platform.getContestedResources = {
-  methodName: "getContestedResources",
+Platform.getPathElements = {
+  methodName: "getPathElements",
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetContestedResourcesRequest,
-  responseType: platform_pb.GetContestedResourcesResponse
-};
-
-Platform.getContestedResourceVoteState = {
-  methodName: "getContestedResourceVoteState",
-  service: Platform,
-  requestStream: false,
-  responseStream: false,
-  requestType: platform_pb.GetContestedResourceVoteStateRequest,
-  responseType: platform_pb.GetContestedResourceVoteStateResponse
-};
-
-Platform.getContestedResourceVoteStatus = {
-  methodName: "getContestedResourceVoteStatus",
-  service: Platform,
-  requestStream: false,
-  responseStream: false,
-  requestType: platform_pb.GetContestedResourceVoteStatusRequest,
-  responseType: platform_pb.GetContestedResourceVoteStatusResponse
+  requestType: platform_pb.GetPathElementsRequest,
+  responseType: platform_pb.GetPathElementsResponse
 };
 
 exports.Platform = Platform;
@@ -844,73 +826,11 @@ PlatformClient.prototype.getEpochsInfo = function getEpochsInfo(requestMessage, 
   };
 };
 
-PlatformClient.prototype.getContestedResources = function getContestedResources(requestMessage, metadata, callback) {
+PlatformClient.prototype.getPathElements = function getPathElements(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getContestedResources, {
-    request: requestMessage,
-    host: this.serviceHost,
-    metadata: metadata,
-    transport: this.options.transport,
-    debug: this.options.debug,
-    onEnd: function (response) {
-      if (callback) {
-        if (response.status !== grpc.Code.OK) {
-          var err = new Error(response.statusMessage);
-          err.code = response.status;
-          err.metadata = response.trailers;
-          callback(err, null);
-        } else {
-          callback(null, response.message);
-        }
-      }
-    }
-  });
-  return {
-    cancel: function () {
-      callback = null;
-      client.close();
-    }
-  };
-};
-
-PlatformClient.prototype.getContestedResourceVoteState = function getContestedResourceVoteState(requestMessage, metadata, callback) {
-  if (arguments.length === 2) {
-    callback = arguments[1];
-  }
-  var client = grpc.unary(Platform.getContestedResourceVoteState, {
-    request: requestMessage,
-    host: this.serviceHost,
-    metadata: metadata,
-    transport: this.options.transport,
-    debug: this.options.debug,
-    onEnd: function (response) {
-      if (callback) {
-        if (response.status !== grpc.Code.OK) {
-          var err = new Error(response.statusMessage);
-          err.code = response.status;
-          err.metadata = response.trailers;
-          callback(err, null);
-        } else {
-          callback(null, response.message);
-        }
-      }
-    }
-  });
-  return {
-    cancel: function () {
-      callback = null;
-      client.close();
-    }
-  };
-};
-
-PlatformClient.prototype.getContestedResourceVoteStatus = function getContestedResourceVoteStatus(requestMessage, metadata, callback) {
-  if (arguments.length === 2) {
-    callback = arguments[1];
-  }
-  var client = grpc.unary(Platform.getContestedResourceVoteStatus, {
+  var client = grpc.unary(Platform.getPathElements, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

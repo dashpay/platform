@@ -204,28 +204,30 @@ where
             .unsigned_withdrawal_transactions_mut()
             .drain();
 
-        // Drain signatures instead of cloning
-        let signatures = commit_info
-            .threshold_vote_extensions
-            .drain(..)
-            .map(|vote_extension| {
-                let signature_bytes: [u8; 96] =
-                    vote_extension.signature.try_into().map_err(|e| {
-                        AbciError::BadRequestDataSize(format!(
-                            "invalid vote extension signature size: {}",
-                            hex::encode(e)
-                        ))
-                    })?;
+        if !unsigned_withdrawal_transactions.is_empty() {
+            // Drain signatures instead of cloning
+            let signatures = commit_info
+                .threshold_vote_extensions
+                .drain(..)
+                .map(|vote_extension| {
+                    let signature_bytes: [u8; 96] =
+                        vote_extension.signature.try_into().map_err(|e| {
+                            AbciError::BadRequestDataSize(format!(
+                                "invalid vote extension signature size: {}",
+                                hex::encode(e)
+                            ))
+                        })?;
 
-                Ok(BLSSignature::from(signature_bytes))
-            })
-            .collect::<Result<_, AbciError>>()?;
+                    Ok(BLSSignature::from(signature_bytes))
+                })
+                .collect::<Result<_, AbciError>>()?;
 
-        self.append_signatures_and_broadcast_withdrawal_transactions(
-            unsigned_withdrawal_transactions,
-            signatures,
-            platform_version,
-        )?;
+            self.append_signatures_and_broadcast_withdrawal_transactions(
+                unsigned_withdrawal_transactions,
+                signatures,
+                platform_version,
+            )?;
+        }
 
         // Update platform (drive abci) state
 

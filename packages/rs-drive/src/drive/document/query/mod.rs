@@ -35,10 +35,11 @@
 mod query_documents;
 pub use query_documents::*;
 
-#[cfg(feature = "fixtures-and-mocks")]
+#[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::block::epoch::Epoch;
+#[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 #[cfg(feature = "fixtures-and-mocks")]
 #[cfg(feature = "fixtures-and-mocks")]
@@ -46,9 +47,9 @@ use grovedb::TransactionArg;
 
 use crate::drive::Drive;
 
-#[cfg(feature = "fixtures-and-mocks")]
+#[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use crate::drive::verify::RootHash;
-#[cfg(feature = "fixtures-and-mocks")]
+#[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use crate::error::query::QuerySyntaxError;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::error::Error;
@@ -61,12 +62,13 @@ use crate::query::DriveQuery;
     feature = "data-contract-cbor-conversion"
 ))]
 use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
-#[cfg(feature = "fixtures-and-mocks")]
+#[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
-#[cfg(feature = "fixtures-and-mocks")]
+#[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::data_contract::DataContract;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::version::PlatformVersion;
+#[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::version::PlatformVersionCurrentVersion;
 
 // TODO: Not using

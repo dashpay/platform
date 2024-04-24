@@ -114,20 +114,10 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetEpochsInfoRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetEpochsInfoResponse.FromString,
                 )
-        self.getContestedResources = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getContestedResources',
-                request_serializer=platform__pb2.GetContestedResourcesRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetContestedResourcesResponse.FromString,
-                )
-        self.getContestedResourceVoteState = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteState',
-                request_serializer=platform__pb2.GetContestedResourceVoteStateRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetContestedResourceVoteStateResponse.FromString,
-                )
-        self.getContestedResourceVoteStatus = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteStatus',
-                request_serializer=platform__pb2.GetContestedResourceVoteStatusRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetContestedResourceVoteStatusResponse.FromString,
+        self.getPathElements = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getPathElements',
+                request_serializer=platform__pb2.GetPathElementsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetPathElementsResponse.FromString,
                 )
 
 
@@ -254,19 +244,7 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getContestedResources(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getContestedResourceVoteState(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getContestedResourceVoteStatus(self, request, context):
+    def getPathElements(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -375,20 +353,10 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetEpochsInfoRequest.FromString,
                     response_serializer=platform__pb2.GetEpochsInfoResponse.SerializeToString,
             ),
-            'getContestedResources': grpc.unary_unary_rpc_method_handler(
-                    servicer.getContestedResources,
-                    request_deserializer=platform__pb2.GetContestedResourcesRequest.FromString,
-                    response_serializer=platform__pb2.GetContestedResourcesResponse.SerializeToString,
-            ),
-            'getContestedResourceVoteState': grpc.unary_unary_rpc_method_handler(
-                    servicer.getContestedResourceVoteState,
-                    request_deserializer=platform__pb2.GetContestedResourceVoteStateRequest.FromString,
-                    response_serializer=platform__pb2.GetContestedResourceVoteStateResponse.SerializeToString,
-            ),
-            'getContestedResourceVoteStatus': grpc.unary_unary_rpc_method_handler(
-                    servicer.getContestedResourceVoteStatus,
-                    request_deserializer=platform__pb2.GetContestedResourceVoteStatusRequest.FromString,
-                    response_serializer=platform__pb2.GetContestedResourceVoteStatusResponse.SerializeToString,
+            'getPathElements': grpc.unary_unary_rpc_method_handler(
+                    servicer.getPathElements,
+                    request_deserializer=platform__pb2.GetPathElementsRequest.FromString,
+                    response_serializer=platform__pb2.GetPathElementsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -741,7 +709,7 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def getContestedResources(request,
+    def getPathElements(request,
             target,
             options=(),
             channel_credentials=None,
@@ -751,42 +719,8 @@ class Platform(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContestedResources',
-            platform__pb2.GetContestedResourcesRequest.SerializeToString,
-            platform__pb2.GetContestedResourcesResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getContestedResourceVoteState(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteState',
-            platform__pb2.GetContestedResourceVoteStateRequest.SerializeToString,
-            platform__pb2.GetContestedResourceVoteStateResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getContestedResourceVoteStatus(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteStatus',
-            platform__pb2.GetContestedResourceVoteStatusRequest.SerializeToString,
-            platform__pb2.GetContestedResourceVoteStatusResponse.FromString,
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getPathElements',
+            platform__pb2.GetPathElementsRequest.SerializeToString,
+            platform__pb2.GetPathElementsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

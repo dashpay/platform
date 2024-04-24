@@ -39,4 +39,5 @@ mod validate_document_create_transition_action_uniqueness;
 
 mod validate_document_replace_transition_action_uniqueness;
 
+mod validate_document_transfer_transition_action_uniqueness;
 mod validate_document_uniqueness;

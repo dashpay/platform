@@ -32,33 +32,6 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.Co
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.ConsensusParamsEvidence', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.GetConsensusParamsResponseV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ResultCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ResultCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ResultCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHistoryRequestV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.VersionCase', null, { proto });
@@ -172,6 +145,14 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetIdentityResponse', null, {
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetIdentityResponse.GetIdentityResponseV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetIdentityResponse.GetIdentityResponseV0.ResultCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetIdentityResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsRequest.GetProofsRequestV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsRequest.GetProofsRequestV0.ContractRequest', null, { proto });
@@ -2516,16 +2497,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetPathElementsRequest.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetPathElementsRequest, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest';
+  proto.org.dash.platform.dapi.v0.GetPathElementsRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetPathElementsRequest';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2537,16 +2518,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.repeatedFields_, null);
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.repeatedFields_, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0';
+  proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2558,16 +2539,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetPathElementsResponse, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse';
+  proto.org.dash.platform.dapi.v0.GetPathElementsResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetPathElementsResponse';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2579,16 +2560,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0';
+  proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2600,289 +2581,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.repeatedFields_, null);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.repeatedFields_, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.repeatedFields_, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.repeatedFields_, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.repeatedFields_, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.repeatedFields_, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.displayName = 'proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter';
+  proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.displayName = 'proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements';
 }
 
 
@@ -25300,21 +25008,21 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.prototype.hasV0 = function
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.oneofGroups_ = [[1]];
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.oneofGroups_ = [[1]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.VersionCase = {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.VersionCase = {
   VERSION_NOT_SET: 0,
   V0: 1
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.VersionCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetPathElementsRequest.VersionCase}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetPathElementsRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetPathElementsRequest.oneofGroups_[0]));
 };
 
 
@@ -25332,8 +25040,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetPathElementsRequest.toObject(opt_includeInstance, this);
 };
 
 
@@ -25342,13 +25050,13 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.toObject 
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.toObject(includeInstance, f)
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -25362,23 +25070,23 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.toObject = function
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetPathElementsRequest;
+  return proto.org.dash.platform.dapi.v0.GetPathElementsRequest.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -25386,8 +25094,8 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.deserializeBinaryFr
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.deserializeBinaryFromReader);
       msg.setV0(value);
       break;
     default:
@@ -25403,9 +25111,9 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.deserializeBinaryFr
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetPathElementsRequest.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -25413,18 +25121,18 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.serialize
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getV0();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.serializeBinaryToWriter
     );
   }
 };
@@ -25436,7 +25144,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.serializeBinaryToWr
  * @private {!Array<number>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.repeatedFields_ = [2];
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.repeatedFields_ = [1,2];
 
 
 
@@ -25453,8 +25161,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.toObject(opt_includeInstance, this);
 };
 
 
@@ -25463,17 +25171,15 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourc
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    prove: jspb.Message.getBooleanFieldWithDefault(msg, 1, false),
-    resourcePathList: msg.getResourcePathList_asB64(),
-    startContestedResourceIdentifier: msg.getStartContestedResourceIdentifier_asB64(),
-    count: jspb.Message.getFieldWithDefault(msg, 4, 0),
-    ascending: jspb.Message.getBooleanFieldWithDefault(msg, 5, false)
+    pathList: msg.getPathList_asB64(),
+    keysList: msg.getKeysList_asB64(),
+    prove: jspb.Message.getBooleanFieldWithDefault(msg, 3, false)
   };
 
   if (includeInstance) {
@@ -25487,23 +25193,23 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourc
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -25511,24 +25217,16 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourc
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setProve(value);
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.addPath(value);
       break;
     case 2:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.addResourcePath(value);
+      msg.addKeys(value);
       break;
     case 3:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setStartContestedResourceIdentifier(value);
-      break;
-    case 4:
-      var value = /** @type {number} */ (reader.readUint32());
-      msg.setCount(value);
-      break;
-    case 5:
       var value = /** @type {boolean} */ (reader.readBool());
-      msg.setAscending(value);
+      msg.setProve(value);
       break;
     default:
       reader.skipField();
@@ -25543,9 +25241,9 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourc
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -25553,106 +25251,135 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourc
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getProve();
-  if (f) {
-    writer.writeBool(
+  f = message.getPathList_asU8();
+  if (f.length > 0) {
+    writer.writeRepeatedBytes(
       1,
       f
     );
   }
-  f = message.getResourcePathList_asU8();
+  f = message.getKeysList_asU8();
   if (f.length > 0) {
     writer.writeRepeatedBytes(
       2,
       f
     );
   }
-  f = /** @type {!(string|Uint8Array)} */ (jspb.Message.getField(message, 3));
-  if (f != null) {
-    writer.writeBytes(
+  f = message.getProve();
+  if (f) {
+    writer.writeBool(
       3,
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 4));
-  if (f != null) {
-    writer.writeUint32(
-      4,
-      f
-    );
-  }
-  f = /** @type {boolean} */ (jspb.Message.getField(message, 5));
-  if (f != null) {
-    writer.writeBool(
-      5,
-      f
-    );
-  }
 };
 
 
 /**
- * optional bool prove = 1;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.getProve = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 1, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.setProve = function(value) {
-  return jspb.Message.setProto3BooleanField(this, 1, value);
-};
-
-
-/**
- * repeated bytes resource_path = 2;
+ * repeated bytes path = 1;
  * @return {!Array<string>}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.getResourcePathList = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 2));
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.getPathList = function() {
+  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 1));
 };
 
 
 /**
- * repeated bytes resource_path = 2;
- * This is a type-conversion wrapper around `getResourcePathList()`
+ * repeated bytes path = 1;
+ * This is a type-conversion wrapper around `getPathList()`
  * @return {!Array<string>}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.getResourcePathList_asB64 = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.getPathList_asB64 = function() {
   return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
-      this.getResourcePathList()));
+      this.getPathList()));
 };
 
 
 /**
- * repeated bytes resource_path = 2;
+ * repeated bytes path = 1;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getResourcePathList()`
+ * This is a type-conversion wrapper around `getPathList()`
  * @return {!Array<!Uint8Array>}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.getResourcePathList_asU8 = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.getPathList_asU8 = function() {
   return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
-      this.getResourcePathList()));
+      this.getPathList()));
 };
 
 
 /**
  * @param {!(Array<!Uint8Array>|Array<string>)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.setResourcePathList = function(value) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.setPathList = function(value) {
+  return jspb.Message.setField(this, 1, value || []);
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.addPath = function(value, opt_index) {
+  return jspb.Message.addToRepeatedField(this, 1, value, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.clearPathList = function() {
+  return this.setPathList([]);
+};
+
+
+/**
+ * repeated bytes keys = 2;
+ * @return {!Array<string>}
+ */
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.getKeysList = function() {
+  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 2));
+};
+
+
+/**
+ * repeated bytes keys = 2;
+ * This is a type-conversion wrapper around `getKeysList()`
+ * @return {!Array<string>}
+ */
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.getKeysList_asB64 = function() {
+  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
+      this.getKeysList()));
+};
+
+
+/**
+ * repeated bytes keys = 2;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getKeysList()`
+ * @return {!Array<!Uint8Array>}
+ */
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.getKeysList_asU8 = function() {
+  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
+      this.getKeysList()));
+};
+
+
+/**
+ * @param {!(Array<!Uint8Array>|Array<string>)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.setKeysList = function(value) {
   return jspb.Message.setField(this, 2, value || []);
 };
 
@@ -25660,178 +25387,64 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourc
 /**
  * @param {!(string|Uint8Array)} value
  * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.addResourcePath = function(value, opt_index) {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.addKeys = function(value, opt_index) {
   return jspb.Message.addToRepeatedField(this, 2, value, opt_index);
 };
 
 
 /**
  * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.clearResourcePathList = function() {
-  return this.setResourcePathList([]);
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.clearKeysList = function() {
+  return this.setKeysList([]);
 };
 
 
 /**
- * optional bytes start_contested_resource_identifier = 3;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.getStartContestedResourceIdentifier = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
-};
-
-
-/**
- * optional bytes start_contested_resource_identifier = 3;
- * This is a type-conversion wrapper around `getStartContestedResourceIdentifier()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.getStartContestedResourceIdentifier_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getStartContestedResourceIdentifier()));
-};
-
-
-/**
- * optional bytes start_contested_resource_identifier = 3;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getStartContestedResourceIdentifier()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.getStartContestedResourceIdentifier_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getStartContestedResourceIdentifier()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.setStartContestedResourceIdentifier = function(value) {
-  return jspb.Message.setField(this, 3, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.clearStartContestedResourceIdentifier = function() {
-  return jspb.Message.setField(this, 3, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
+ * optional bool prove = 3;
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.hasStartContestedResourceIdentifier = function() {
-  return jspb.Message.getField(this, 3) != null;
-};
-
-
-/**
- * optional uint32 count = 4;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.getCount = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.setCount = function(value) {
-  return jspb.Message.setField(this, 4, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.clearCount = function() {
-  return jspb.Message.setField(this, 4, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.hasCount = function() {
-  return jspb.Message.getField(this, 4) != null;
-};
-
-
-/**
- * optional bool ascending = 5;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.getAscending = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 5, false));
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.getProve = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 3, false));
 };
 
 
 /**
  * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.setAscending = function(value) {
-  return jspb.Message.setField(this, 5, value);
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0.prototype.setProve = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 3, value);
 };
 
 
 /**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} returns this
+ * optional GetPathElementsRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.clearAscending = function() {
-  return jspb.Message.setField(this, 5, undefined);
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0, 1));
 };
 
 
 /**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.prototype.hasAscending = function() {
-  return jspb.Message.getField(this, 5) != null;
-};
-
-
-/**
- * optional GetContestedResourcesRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetPathElementsRequest.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsRequest} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.clearV0 = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.prototype.clearV0 = function() {
   return this.setV0(undefined);
 };
 
@@ -25840,7 +25453,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.clearV0 =
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.hasV0 = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsRequest.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 
@@ -25854,21 +25467,21 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesRequest.prototype.hasV0 = f
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.oneofGroups_ = [[1]];
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.oneofGroups_ = [[1]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.VersionCase = {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.VersionCase = {
   VERSION_NOT_SET: 0,
   V0: 1
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.VersionCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetPathElementsResponse.VersionCase}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetPathElementsResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.oneofGroups_[0]));
 };
 
 
@@ -25886,8 +25499,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetPathElementsResponse.toObject(opt_includeInstance, this);
 };
 
 
@@ -25896,13 +25509,13 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.prototype.toObject
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.toObject(includeInstance, f)
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -25916,23 +25529,23 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.toObject = functio
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetPathElementsResponse;
+  return proto.org.dash.platform.dapi.v0.GetPathElementsResponse.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -25940,8 +25553,8 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.deserializeBinaryF
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.deserializeBinaryFromReader);
       msg.setV0(value);
       break;
     default:
@@ -25957,9 +25570,9 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.deserializeBinaryF
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetPathElementsResponse.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -25967,18 +25580,18 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.prototype.serializ
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getV0();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.serializeBinaryToWriter
     );
   }
 };
@@ -25993,22 +25606,22 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.serializeBinaryToW
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.oneofGroups_ = [[1,2]];
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.oneofGroups_ = [[1,2]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ResultCase = {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.ResultCase = {
   RESULT_NOT_SET: 0,
-  CONTESTED_RESOURCES: 1,
+  ELEMENTS: 1,
   PROOF: 2
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ResultCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.ResultCase}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.getResultCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.oneofGroups_[0]));
 };
 
 
@@ -26026,8 +25639,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.toObject(opt_includeInstance, this);
 };
 
 
@@ -26036,13 +25649,13 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    contestedResources: (f = msg.getContestedResources()) && proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.toObject(includeInstance, f),
+    elements: (f = msg.getElements()) && proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.toObject(includeInstance, f),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
   };
@@ -26058,23 +25671,23 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -26082,9 +25695,9 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.deserializeBinaryFromReader);
-      msg.setContestedResources(value);
+      var value = new proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.deserializeBinaryFromReader);
+      msg.setElements(value);
       break;
     case 2:
       var value = new proto.org.dash.platform.dapi.v0.Proof;
@@ -26109,9 +25722,9 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -26119,18 +25732,18 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getContestedResources();
+  f = message.getElements();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.serializeBinaryToWriter
     );
   }
   f = message.getProof();
@@ -26158,7 +25771,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
  * @private {!Array<number>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.repeatedFields_ = [1];
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.repeatedFields_ = [1];
 
 
 
@@ -26175,8 +25788,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.toObject(opt_includeInstance, this);
 };
 
 
@@ -26185,15 +25798,13 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.toObject = function(includeInstance, msg) {
   var f, obj = {
-    contestedResourcesList: jspb.Message.toObjectList(msg.getContestedResourcesList(),
-    proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.toObject, includeInstance),
-    finishedResults: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
+    elementsList: msg.getElementsList_asB64()
   };
 
   if (includeInstance) {
@@ -26207,23 +25818,23 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements;
+  return proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources}
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -26231,13 +25842,8 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.deserializeBinaryFromReader);
-      msg.addContestedResources(value);
-      break;
-    case 2:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setFinishedResults(value);
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.addElements(value);
       break;
     default:
       reader.skipField();
@@ -26252,9 +25858,9 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -26262,700 +25868,16 @@ proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResour
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getContestedResourcesList();
-  if (f.length > 0) {
-    writer.writeRepeatedMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.serializeBinaryToWriter
-    );
-  }
-  f = message.getFinishedResults();
-  if (f) {
-    writer.writeBool(
-      2,
-      f
-    );
-  }
-};
-
-
-/**
- * repeated ContestedResource contested_resources = 1;
- * @return {!Array<!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource>}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.prototype.getContestedResourcesList = function() {
-  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource>} */ (
-    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource, 1));
-};
-
-
-/**
- * @param {!Array<!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource>} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.prototype.setContestedResourcesList = function(value) {
-  return jspb.Message.setRepeatedWrapperField(this, 1, value);
-};
-
-
-/**
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource=} opt_value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.prototype.addContestedResources = function(opt_value, opt_index) {
-  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.prototype.clearContestedResourcesList = function() {
-  return this.setContestedResourcesList([]);
-};
-
-
-/**
- * optional bool finished_results = 2;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.prototype.getFinishedResults = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 2, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.prototype.setFinishedResults = function(value) {
-  return jspb.Message.setProto3BooleanField(this, 2, value);
-};
-
-
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    identifier: msg.getIdentifier_asB64()
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setIdentifier(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getIdentifier_asU8();
-  if (f.length > 0) {
-    writer.writeBytes(
-      1,
-      f
-    );
-  }
-};
-
-
-/**
- * optional bytes identifier = 1;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.prototype.getIdentifier = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
-};
-
-
-/**
- * optional bytes identifier = 1;
- * This is a type-conversion wrapper around `getIdentifier()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.prototype.getIdentifier_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getIdentifier()));
-};
-
-
-/**
- * optional bytes identifier = 1;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getIdentifier()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.prototype.getIdentifier_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getIdentifier()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.prototype.setIdentifier = function(value) {
-  return jspb.Message.setProto3BytesField(this, 1, value);
-};
-
-
-/**
- * optional ContestedResources contested_resources = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.getContestedResources = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.setContestedResources = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.clearContestedResources = function() {
-  return this.setContestedResources(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.hasContestedResources = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-/**
- * optional Proof proof = 2;
- * @return {?proto.org.dash.platform.dapi.v0.Proof}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.getProof = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.clearProof = function() {
-  return this.setProof(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.hasProof = function() {
-  return jspb.Message.getField(this, 2) != null;
-};
-
-
-/**
- * optional ResponseMetadata metadata = 3;
- * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.getMetadata = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.setMetadata = function(value) {
-  return jspb.Message.setWrapperField(this, 3, value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.clearMetadata = function() {
-  return this.setMetadata(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.prototype.hasMetadata = function() {
-  return jspb.Message.getField(this, 3) != null;
-};
-
-
-/**
- * optional GetContestedResourcesResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourcesResponse.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.repeatedFields_ = [2];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    prove: jspb.Message.getBooleanFieldWithDefault(msg, 1, false),
-    resourcePathList: msg.getResourcePathList_asB64(),
-    contestedResource: msg.getContestedResource_asB64(),
-    startIdentifier: msg.getStartIdentifier_asB64(),
-    count: jspb.Message.getFieldWithDefault(msg, 5, 0),
-    ascending: jspb.Message.getBooleanFieldWithDefault(msg, 6, false)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setProve(value);
-      break;
-    case 2:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.addResourcePath(value);
-      break;
-    case 3:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setContestedResource(value);
-      break;
-    case 4:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setStartIdentifier(value);
-      break;
-    case 5:
-      var value = /** @type {number} */ (reader.readUint32());
-      msg.setCount(value);
-      break;
-    case 6:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setAscending(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getProve();
-  if (f) {
-    writer.writeBool(
-      1,
-      f
-    );
-  }
-  f = message.getResourcePathList_asU8();
+  f = message.getElementsList_asU8();
   if (f.length > 0) {
     writer.writeRepeatedBytes(
-      2,
-      f
-    );
-  }
-  f = message.getContestedResource_asU8();
-  if (f.length > 0) {
-    writer.writeBytes(
-      3,
-      f
-    );
-  }
-  f = /** @type {!(string|Uint8Array)} */ (jspb.Message.getField(message, 4));
-  if (f != null) {
-    writer.writeBytes(
-      4,
-      f
-    );
-  }
-  f = /** @type {number} */ (jspb.Message.getField(message, 5));
-  if (f != null) {
-    writer.writeUint32(
-      5,
-      f
-    );
-  }
-  f = /** @type {boolean} */ (jspb.Message.getField(message, 6));
-  if (f != null) {
-    writer.writeBool(
-      6,
+      1,
       f
     );
   }
@@ -26963,283 +25885,91 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetConteste
 
 
 /**
- * optional bool prove = 1;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getProve = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 1, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.setProve = function(value) {
-  return jspb.Message.setProto3BooleanField(this, 1, value);
-};
-
-
-/**
- * repeated bytes resource_path = 2;
+ * repeated bytes elements = 1;
  * @return {!Array<string>}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getResourcePathList = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 2));
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.prototype.getElementsList = function() {
+  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 1));
 };
 
 
 /**
- * repeated bytes resource_path = 2;
- * This is a type-conversion wrapper around `getResourcePathList()`
+ * repeated bytes elements = 1;
+ * This is a type-conversion wrapper around `getElementsList()`
  * @return {!Array<string>}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getResourcePathList_asB64 = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.prototype.getElementsList_asB64 = function() {
   return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
-      this.getResourcePathList()));
+      this.getElementsList()));
 };
 
 
 /**
- * repeated bytes resource_path = 2;
+ * repeated bytes elements = 1;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getResourcePathList()`
+ * This is a type-conversion wrapper around `getElementsList()`
  * @return {!Array<!Uint8Array>}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getResourcePathList_asU8 = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.prototype.getElementsList_asU8 = function() {
   return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
-      this.getResourcePathList()));
+      this.getElementsList()));
 };
 
 
 /**
  * @param {!(Array<!Uint8Array>|Array<string>)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.setResourcePathList = function(value) {
-  return jspb.Message.setField(this, 2, value || []);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.prototype.setElementsList = function(value) {
+  return jspb.Message.setField(this, 1, value || []);
 };
 
 
 /**
  * @param {!(string|Uint8Array)} value
  * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.addResourcePath = function(value, opt_index) {
-  return jspb.Message.addToRepeatedField(this, 2, value, opt_index);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.prototype.addElements = function(value, opt_index) {
+  return jspb.Message.addToRepeatedField(this, 1, value, opt_index);
 };
 
 
 /**
  * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.clearResourcePathList = function() {
-  return this.setResourcePathList([]);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements.prototype.clearElementsList = function() {
+  return this.setElementsList([]);
 };
 
 
 /**
- * optional bytes contested_resource = 3;
- * @return {string}
+ * optional Elements elements = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getContestedResource = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.getElements = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements, 1));
 };
 
 
 /**
- * optional bytes contested_resource = 3;
- * This is a type-conversion wrapper around `getContestedResource()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getContestedResource_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getContestedResource()));
-};
-
-
-/**
- * optional bytes contested_resource = 3;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getContestedResource()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getContestedResource_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getContestedResource()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.setContestedResource = function(value) {
-  return jspb.Message.setProto3BytesField(this, 3, value);
-};
-
-
-/**
- * optional bytes start_identifier = 4;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getStartIdentifier = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, ""));
-};
-
-
-/**
- * optional bytes start_identifier = 4;
- * This is a type-conversion wrapper around `getStartIdentifier()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getStartIdentifier_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getStartIdentifier()));
-};
-
-
-/**
- * optional bytes start_identifier = 4;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getStartIdentifier()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getStartIdentifier_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getStartIdentifier()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.setStartIdentifier = function(value) {
-  return jspb.Message.setField(this, 4, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.clearStartIdentifier = function() {
-  return jspb.Message.setField(this, 4, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.hasStartIdentifier = function() {
-  return jspb.Message.getField(this, 4) != null;
-};
-
-
-/**
- * optional uint32 count = 5;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getCount = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 5, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.setCount = function(value) {
-  return jspb.Message.setField(this, 5, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.clearCount = function() {
-  return jspb.Message.setField(this, 5, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.hasCount = function() {
-  return jspb.Message.getField(this, 5) != null;
-};
-
-
-/**
- * optional bool ascending = 6;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.getAscending = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 6, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.setAscending = function(value) {
-  return jspb.Message.setField(this, 6, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.clearAscending = function() {
-  return jspb.Message.setField(this, 6, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.prototype.hasAscending = function() {
-  return jspb.Message.getField(this, 6) != null;
-};
-
-
-/**
- * optional GetContestedResourceVoteStateRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.Elements|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.setElements = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.prototype.clearV0 = function() {
-  return this.setV0(undefined);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.clearElements = function() {
+  return this.setElements(undefined);
 };
 
 
@@ -27247,725 +25977,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.prototype.c
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.oneofGroups_ = [[1,2]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ResultCase = {
-  RESULT_NOT_SET: 0,
-  CONTESTED_RESOURCE_CONTENDERS: 1,
-  PROOF: 2
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ResultCase}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.getResultCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    contestedResourceContenders: (f = msg.getContestedResourceContenders()) && proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.toObject(includeInstance, f),
-    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
-    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.deserializeBinaryFromReader);
-      msg.setContestedResourceContenders(value);
-      break;
-    case 2:
-      var value = new proto.org.dash.platform.dapi.v0.Proof;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
-      msg.setProof(value);
-      break;
-    case 3:
-      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
-      msg.setMetadata(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getContestedResourceContenders();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.serializeBinaryToWriter
-    );
-  }
-  f = message.getProof();
-  if (f != null) {
-    writer.writeMessage(
-      2,
-      f,
-      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
-    );
-  }
-  f = message.getMetadata();
-  if (f != null) {
-    writer.writeMessage(
-      3,
-      f,
-      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.repeatedFields_ = [1];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    contendersList: jspb.Message.toObjectList(msg.getContendersList(),
-    proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.toObject, includeInstance),
-    finishedResults: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.deserializeBinaryFromReader);
-      msg.addContenders(value);
-      break;
-    case 2:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setFinishedResults(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getContendersList();
-  if (f.length > 0) {
-    writer.writeRepeatedMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.serializeBinaryToWriter
-    );
-  }
-  f = message.getFinishedResults();
-  if (f) {
-    writer.writeBool(
-      2,
-      f
-    );
-  }
-};
-
-
-/**
- * repeated Contender contenders = 1;
- * @return {!Array<!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender>}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.prototype.getContendersList = function() {
-  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender>} */ (
-    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender, 1));
-};
-
-
-/**
- * @param {!Array<!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender>} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.prototype.setContendersList = function(value) {
-  return jspb.Message.setRepeatedWrapperField(this, 1, value);
-};
-
-
-/**
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender=} opt_value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.prototype.addContenders = function(opt_value, opt_index) {
-  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.prototype.clearContendersList = function() {
-  return this.setContendersList([]);
-};
-
-
-/**
- * optional bool finished_results = 2;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.prototype.getFinishedResults = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 2, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.prototype.setFinishedResults = function(value) {
-  return jspb.Message.setProto3BooleanField(this, 2, value);
-};
-
-
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    identifier: msg.getIdentifier_asB64(),
-    voteCount: jspb.Message.getFieldWithDefault(msg, 2, 0)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setIdentifier(value);
-      break;
-    case 2:
-      var value = /** @type {number} */ (reader.readUint32());
-      msg.setVoteCount(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getIdentifier_asU8();
-  if (f.length > 0) {
-    writer.writeBytes(
-      1,
-      f
-    );
-  }
-  f = message.getVoteCount();
-  if (f !== 0) {
-    writer.writeUint32(
-      2,
-      f
-    );
-  }
-};
-
-
-/**
- * optional bytes identifier = 1;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.prototype.getIdentifier = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
-};
-
-
-/**
- * optional bytes identifier = 1;
- * This is a type-conversion wrapper around `getIdentifier()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.prototype.getIdentifier_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getIdentifier()));
-};
-
-
-/**
- * optional bytes identifier = 1;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getIdentifier()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.prototype.getIdentifier_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getIdentifier()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.prototype.setIdentifier = function(value) {
-  return jspb.Message.setProto3BytesField(this, 1, value);
-};
-
-
-/**
- * optional uint32 vote_count = 2;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.prototype.getVoteCount = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.prototype.setVoteCount = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
-};
-
-
-/**
- * optional ContestedResourceContenders contested_resource_contenders = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.getContestedResourceContenders = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.setContestedResourceContenders = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.clearContestedResourceContenders = function() {
-  return this.setContestedResourceContenders(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.hasContestedResourceContenders = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.hasElements = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 
@@ -27974,7 +25986,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
  * optional Proof proof = 2;
  * @return {?proto.org.dash.platform.dapi.v0.Proof}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.getProof = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.getProof = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
     jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
 };
@@ -27982,18 +25994,18 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
 
 /**
  * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.clearProof = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.clearProof = function() {
   return this.setProof(undefined);
 };
 
@@ -28002,7 +26014,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.hasProof = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.hasProof = function() {
   return jspb.Message.getField(this, 2) != null;
 };
 
@@ -28011,7 +26023,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
  * optional ResponseMetadata metadata = 3;
  * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.getMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.getMetadata = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
     jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
 };
@@ -28019,18 +26031,18 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
 
 /**
  * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.setMetadata = function(value) {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.setMetadata = function(value) {
   return jspb.Message.setWrapperField(this, 3, value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.clearMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.clearMetadata = function() {
   return this.setMetadata(undefined);
 };
 
@@ -28039,35 +26051,35 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.prototype.hasMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.prototype.hasMetadata = function() {
   return jspb.Message.getField(this, 3) != null;
 };
 
 
 /**
- * optional GetContestedResourceVoteStateResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0}
+ * optional GetPathElementsResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0, 1));
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse} returns this
 */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetPathElementsResponse.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetPathElementsResponse} returns this
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.prototype.clearV0 = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.prototype.clearV0 = function() {
   return this.setV0(undefined);
 };
 
@@ -28076,1414 +26088,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.prototype.
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.repeatedFields_ = [2];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    prove: jspb.Message.getBooleanFieldWithDefault(msg, 1, false),
-    resourcePathList: msg.getResourcePathList_asB64(),
-    resourceIdentifier: msg.getResourceIdentifier_asB64(),
-    voterIdentifier: msg.getVoterIdentifier_asB64(),
-    count: jspb.Message.getFieldWithDefault(msg, 5, 0),
-    ascending: jspb.Message.getBooleanFieldWithDefault(msg, 6, false)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setProve(value);
-      break;
-    case 2:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.addResourcePath(value);
-      break;
-    case 3:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setResourceIdentifier(value);
-      break;
-    case 4:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setVoterIdentifier(value);
-      break;
-    case 5:
-      var value = /** @type {number} */ (reader.readUint32());
-      msg.setCount(value);
-      break;
-    case 6:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setAscending(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getProve();
-  if (f) {
-    writer.writeBool(
-      1,
-      f
-    );
-  }
-  f = message.getResourcePathList_asU8();
-  if (f.length > 0) {
-    writer.writeRepeatedBytes(
-      2,
-      f
-    );
-  }
-  f = message.getResourceIdentifier_asU8();
-  if (f.length > 0) {
-    writer.writeBytes(
-      3,
-      f
-    );
-  }
-  f = /** @type {!(string|Uint8Array)} */ (jspb.Message.getField(message, 4));
-  if (f != null) {
-    writer.writeBytes(
-      4,
-      f
-    );
-  }
-  f = /** @type {number} */ (jspb.Message.getField(message, 5));
-  if (f != null) {
-    writer.writeUint32(
-      5,
-      f
-    );
-  }
-  f = /** @type {boolean} */ (jspb.Message.getField(message, 6));
-  if (f != null) {
-    writer.writeBool(
-      6,
-      f
-    );
-  }
-};
-
-
-/**
- * optional bool prove = 1;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getProve = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 1, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.setProve = function(value) {
-  return jspb.Message.setProto3BooleanField(this, 1, value);
-};
-
-
-/**
- * repeated bytes resource_path = 2;
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getResourcePathList = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 2));
-};
-
-
-/**
- * repeated bytes resource_path = 2;
- * This is a type-conversion wrapper around `getResourcePathList()`
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getResourcePathList_asB64 = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
-      this.getResourcePathList()));
-};
-
-
-/**
- * repeated bytes resource_path = 2;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getResourcePathList()`
- * @return {!Array<!Uint8Array>}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getResourcePathList_asU8 = function() {
-  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
-      this.getResourcePathList()));
-};
-
-
-/**
- * @param {!(Array<!Uint8Array>|Array<string>)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.setResourcePathList = function(value) {
-  return jspb.Message.setField(this, 2, value || []);
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.addResourcePath = function(value, opt_index) {
-  return jspb.Message.addToRepeatedField(this, 2, value, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.clearResourcePathList = function() {
-  return this.setResourcePathList([]);
-};
-
-
-/**
- * optional bytes resource_identifier = 3;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getResourceIdentifier = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
-};
-
-
-/**
- * optional bytes resource_identifier = 3;
- * This is a type-conversion wrapper around `getResourceIdentifier()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getResourceIdentifier_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getResourceIdentifier()));
-};
-
-
-/**
- * optional bytes resource_identifier = 3;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getResourceIdentifier()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getResourceIdentifier_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getResourceIdentifier()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.setResourceIdentifier = function(value) {
-  return jspb.Message.setProto3BytesField(this, 3, value);
-};
-
-
-/**
- * optional bytes voter_identifier = 4;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getVoterIdentifier = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, ""));
-};
-
-
-/**
- * optional bytes voter_identifier = 4;
- * This is a type-conversion wrapper around `getVoterIdentifier()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getVoterIdentifier_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getVoterIdentifier()));
-};
-
-
-/**
- * optional bytes voter_identifier = 4;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getVoterIdentifier()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getVoterIdentifier_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getVoterIdentifier()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.setVoterIdentifier = function(value) {
-  return jspb.Message.setField(this, 4, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.clearVoterIdentifier = function() {
-  return jspb.Message.setField(this, 4, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.hasVoterIdentifier = function() {
-  return jspb.Message.getField(this, 4) != null;
-};
-
-
-/**
- * optional uint32 count = 5;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getCount = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 5, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.setCount = function(value) {
-  return jspb.Message.setField(this, 5, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.clearCount = function() {
-  return jspb.Message.setField(this, 5, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.hasCount = function() {
-  return jspb.Message.getField(this, 5) != null;
-};
-
-
-/**
- * optional bool ascending = 6;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.getAscending = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 6, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.setAscending = function(value) {
-  return jspb.Message.setField(this, 6, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.clearAscending = function() {
-  return jspb.Message.setField(this, 6, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.prototype.hasAscending = function() {
-  return jspb.Message.getField(this, 6) != null;
-};
-
-
-/**
- * optional GetContestedResourceVoteStatusRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.oneofGroups_ = [[1,2]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ResultCase = {
-  RESULT_NOT_SET: 0,
-  CONTESTED_RESOURCE_VOTERS: 1,
-  PROOF: 2
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ResultCase}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.getResultCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    contestedResourceVoters: (f = msg.getContestedResourceVoters()) && proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.toObject(includeInstance, f),
-    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
-    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.deserializeBinaryFromReader);
-      msg.setContestedResourceVoters(value);
-      break;
-    case 2:
-      var value = new proto.org.dash.platform.dapi.v0.Proof;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
-      msg.setProof(value);
-      break;
-    case 3:
-      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
-      msg.setMetadata(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getContestedResourceVoters();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.serializeBinaryToWriter
-    );
-  }
-  f = message.getProof();
-  if (f != null) {
-    writer.writeMessage(
-      2,
-      f,
-      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
-    );
-  }
-  f = message.getMetadata();
-  if (f != null) {
-    writer.writeMessage(
-      3,
-      f,
-      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.repeatedFields_ = [1];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    votersList: jspb.Message.toObjectList(msg.getVotersList(),
-    proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.toObject, includeInstance),
-    finishedResults: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.deserializeBinaryFromReader);
-      msg.addVoters(value);
-      break;
-    case 2:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setFinishedResults(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getVotersList();
-  if (f.length > 0) {
-    writer.writeRepeatedMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.serializeBinaryToWriter
-    );
-  }
-  f = message.getFinishedResults();
-  if (f) {
-    writer.writeBool(
-      2,
-      f
-    );
-  }
-};
-
-
-/**
- * repeated Voter voters = 1;
- * @return {!Array<!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter>}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.prototype.getVotersList = function() {
-  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter>} */ (
-    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter, 1));
-};
-
-
-/**
- * @param {!Array<!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter>} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.prototype.setVotersList = function(value) {
-  return jspb.Message.setRepeatedWrapperField(this, 1, value);
-};
-
-
-/**
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter=} opt_value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.prototype.addVoters = function(opt_value, opt_index) {
-  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.prototype.clearVotersList = function() {
-  return this.setVotersList([]);
-};
-
-
-/**
- * optional bool finished_results = 2;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.prototype.getFinishedResults = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 2, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.prototype.setFinishedResults = function(value) {
-  return jspb.Message.setProto3BooleanField(this, 2, value);
-};
-
-
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    identifier: msg.getIdentifier_asB64()
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter;
-  return proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setIdentifier(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getIdentifier_asU8();
-  if (f.length > 0) {
-    writer.writeBytes(
-      1,
-      f
-    );
-  }
-};
-
-
-/**
- * optional bytes identifier = 1;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.prototype.getIdentifier = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
-};
-
-
-/**
- * optional bytes identifier = 1;
- * This is a type-conversion wrapper around `getIdentifier()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.prototype.getIdentifier_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getIdentifier()));
-};
-
-
-/**
- * optional bytes identifier = 1;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getIdentifier()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.prototype.getIdentifier_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getIdentifier()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.prototype.setIdentifier = function(value) {
-  return jspb.Message.setProto3BytesField(this, 1, value);
-};
-
-
-/**
- * optional ContestedResourceVoters contested_resource_voters = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.getContestedResourceVoters = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.setContestedResourceVoters = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.clearContestedResourceVoters = function() {
-  return this.setContestedResourceVoters(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.hasContestedResourceVoters = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-/**
- * optional Proof proof = 2;
- * @return {?proto.org.dash.platform.dapi.v0.Proof}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.getProof = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.clearProof = function() {
-  return this.setProof(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.hasProof = function() {
-  return jspb.Message.getField(this, 2) != null;
-};
-
-
-/**
- * optional ResponseMetadata metadata = 3;
- * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.getMetadata = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.setMetadata = function(value) {
-  return jspb.Message.setWrapperField(this, 3, value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.clearMetadata = function() {
-  return this.setMetadata(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.prototype.hasMetadata = function() {
-  return jspb.Message.getField(this, 3) != null;
-};
-
-
-/**
- * optional GetContestedResourceVoteStatusResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} returns this
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.prototype.hasV0 = function() {
+proto.org.dash.platform.dapi.v0.GetPathElementsResponse.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 

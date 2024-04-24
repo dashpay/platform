@@ -8,7 +8,17 @@ pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
 
 pub const PROPERTY_SCHEMA: &str = "$schema";
 
-const TIMESTAMPS: [&str; 2] = ["$createdAt", "$updatedAt"];
+const SYSTEM_GENERATED_FIELDS: [&str; 9] = [
+    "$createdAt",
+    "$updatedAt",
+    "$transferredAt",
+    "$createdAtBlockHeight",
+    "$updatedAtBlockHeight",
+    "$transferredAtBlockHeight",
+    "$createdAtCoreBlockHeight",
+    "$updatedAtCoreBlockHeight",
+    "$transferredAtCoreBlockHeight",
+];
 
 #[inline(always)]
 pub(super) fn enrich_with_base_schema_v0(
@@ -43,13 +53,14 @@ pub(super) fn enrich_with_base_schema_v0(
         ));
     }
 
-    // Remove $createdAt and $updatedAt from JSON Schema since they aren't part of
+    // Remove $createdAt, $updatedAt and $transferredAt and their height and core height variants
+    // from JSON Schema since they aren't part of
     // dynamic (user defined) document data which is validating against the schema
     if let Some(required) = schema_map.get_optional_key_mut(property_names::REQUIRED) {
         if let Some(required_array) = required.as_array_mut() {
             required_array.retain(|field_value| {
                 if let Some(field) = field_value.as_text() {
-                    !TIMESTAMPS.contains(&field)
+                    !SYSTEM_GENERATED_FIELDS.contains(&field)
                 } else {
                     true
                 }

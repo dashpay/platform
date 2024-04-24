@@ -40,6 +40,7 @@ mod property_names {
     pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
+    pub const TRANSFERRED_AT: &str = "$transferredAt";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
     pub const MIN_LENGTH: &str = "minLength";
