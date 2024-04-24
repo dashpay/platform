@@ -1,6 +1,6 @@
 [package]
 name = "simple-signer"
-version = "1.0.0-pr.1825.2"
+version = "1.0.0-pr.1825.3"
 edition = "2021"
 rust-version = "1.76"
 
