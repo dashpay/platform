@@ -16,12 +16,11 @@ use crate::state_transition::documents_batch_transition::accessors::DocumentsBat
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use crate::state_transition::documents_batch_transition::document_transition::{
-    DocumentPurchaseTransition, DocumentTransition, DocumentTransitionV0Methods,
-    DocumentUpdatePriceTransition,
+    DocumentTransition, DocumentTransitionV0Methods,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::document_transition::{
-    DocumentReplaceTransition, DocumentTransferTransition,
+    DocumentReplaceTransition, DocumentTransferTransition, DocumentPurchaseTransition, DocumentUpdatePriceTransition,
 };
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
