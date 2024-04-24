@@ -45,10 +45,10 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "2.0.0", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.11.0", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", branch = "feat/ElementFlagsReplacements", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", branch = "feat/ElementFlagsReplacements", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", branch = "feat/ElementFlagsReplacements" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", branch = "feat/ElementFlagsReplacements", optional = true }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "941dd86d70c86e7a236541919e789dba078abae6", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "941dd86d70c86e7a236541919e789dba078abae6", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "941dd86d70c86e7a236541919e789dba078abae6" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "941dd86d70c86e7a236541919e789dba078abae6", optional = true }
 
 [dev-dependencies]
 criterion = "0.3.5"
