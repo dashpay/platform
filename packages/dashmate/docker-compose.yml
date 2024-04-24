@@ -9,8 +9,6 @@ services:
     environment:
       - LOCAL_UID=${LOCAL_UID:?err}
       - LOCAL_GID=${LOCAL_GID:?err}
-    networks:
-      - main
     ports:
       - 127.0.0.1:${DASHMATE_HELPER_API_PORT:?err}:${DASHMATE_HELPER_API_PORT:?err}
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
@@ -25,8 +23,6 @@ services:
     labels:
       org.dashmate.service.title: "Core"
     restart: unless-stopped
-    networks:
-      - main
     ports:
       - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err}
       - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err}
@@ -81,8 +77,6 @@ services:
       - TOKIO_CONSOLE_ADDRESS=0.0.0.0:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
       - TOKIO_CONSOLE_RETENTION_SECS=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_RETENTION:?err}
     stop_grace_period: 30s
-    networks:
-      - main
     expose:
       - 26658
       - 26659
@@ -103,8 +97,6 @@ services:
     restart: unless-stopped
     depends_on:
       - drive_abci
-    networks:
-      - main
     ports:
       - ${PLATFORM_DRIVE_TENDERDASH_P2P_HOST:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
       - ${PLATFORM_DRIVE_TENDERDASH_RPC_HOST}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
@@ -148,8 +140,6 @@ services:
       - DRIVE_RPC_PORT=26670
     command: yarn run api
     stop_grace_period: 10s
-    networks:
-      - main
     expose:
       - 3004
       - 3005
@@ -180,8 +170,6 @@ services:
       - TENDERMINT_RPC_PORT=26657
       - DRIVE_RPC_HOST=drive_abci
       - DRIVE_RPC_PORT=26670
-    networks:
-      - main
     expose:
       - 3006
     command: yarn run core-streams
@@ -206,7 +194,7 @@ services:
       - dapi_tx_filter_stream
       - drive_abci
     networks:
-      - main
+      - default
       - gateway_rate_limiter
     environment:
       - ENVOY_UID=${LOCAL_UID:?err}
@@ -225,7 +213,7 @@ volumes:
   drive_tenderdash:
 
 networks:
-  main:
+  default:
     driver: bridge
     ipam:
       config:
