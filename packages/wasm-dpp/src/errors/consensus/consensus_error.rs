@@ -65,6 +65,8 @@ use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLe
 use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
+use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 
@@ -228,6 +230,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentTypeUpdateError(e) => {
             generic_consensus_error!(DocumentTypeUpdateError, e).into()
+        }
+        StateError::DocumentNotForSaleError(e) => {
+            generic_consensus_error!(DocumentNotForSaleError, e).into()
+        }
+        StateError::DocumentIncorrectPurchasePriceError(e) => {
+            generic_consensus_error!(DocumentIncorrectPurchasePriceError, e).into()
         }
     }
 }
