@@ -103,6 +103,10 @@ impl IdentityPublicKeyInCreationV0Setters for IdentityPublicKeyInCreationV0 {
         self.security_level = security_level;
     }
 
+    fn set_contract_bounds(&mut self, contract_bounds: Option<ContractBounds>) {
+        self.contract_bounds = contract_bounds;
+    }
+
     fn set_purpose(&mut self, purpose: Purpose) {
         self.purpose = purpose;
     }

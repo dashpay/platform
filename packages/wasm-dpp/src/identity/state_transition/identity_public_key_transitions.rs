@@ -12,11 +12,14 @@ pub use serde::{Deserialize, Serialize};
 use dpp::ProtocolError;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
+use dpp::identity::contract_bounds::ContractBounds;
 
 use crate::errors::from_dpp_err;
 use crate::utils::WithJsError;
 use crate::{buffer::Buffer, with_js_error};
 use dpp::version::PlatformVersion;
+use crate::identifier::IdentifierWrapper;
+
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct ToObjectOptions {
@@ -100,6 +103,21 @@ impl IdentityPublicKeyWithWitnessWasm {
                 .map_err(|e: ProtocolError| e.to_string())?,
         );
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name=setContractBounds)]
+    pub fn set_contract_bounds(&mut self, contract_id: IdentifierWrapper, document_type_name: Option<String>) {
+        let contract_bounds = if document_type_name.is_some() {
+            ContractBounds::SingleContractDocumentType {
+                id: contract_id.into(),
+                document_type_name: document_type_name.unwrap(),
+            }
+        }  else {
+            ContractBounds::SingleContract {
+                id: contract_id.into()
+            }
+        };
+        self.0.set_contract_bounds(Some(contract_bounds))
     }
 
     #[wasm_bindgen(js_name=getSecurityLevel)]

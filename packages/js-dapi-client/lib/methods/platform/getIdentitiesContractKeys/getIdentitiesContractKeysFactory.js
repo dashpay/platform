@@ -4,6 +4,7 @@ const {
     GetIdentitiesContractKeysRequest,
   },
 } = require('@dashevo/dapi-grpc');
+const { IdentityPublicKey } = require('@dashevo/wasm-dpp');
 
 const GetIdentitiesContractKeysResponse = require('./GetIdentitiesContractKeysResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
@@ -16,16 +17,25 @@ function getIdentitiesContractKeysFactory(grpcTransport) {
   /**
    * Fetch the identities by public key hashes
    * @typedef {getIdentitiesContractKeys}
-   * @param {Buffer[]} ids
+   * @param {Buffer[]} identitiesIds
+   * @param {Buffer} contractId
+   * @param {IdentityPublicKey.PURPOSES[]} keyPurposes
+   * @param {string | null} documentTypeName
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentitiesContractKeysResponse>}
    */
-  async function getIdentitiesContractKeys(ids, options = {}) {
+  async function getIdentitiesContractKeys(
+    identitiesIds,
+    contractId,
+    keyPurposes,
+    documentTypeName = null,
+    options = {},
+  ) {
     const { GetIdentitiesContractKeysRequestV0 } = GetIdentitiesContractKeysRequest;
     const getIdentitiesContractKeysRequest = new GetIdentitiesContractKeysRequest();
 
     // eslint-disable-next-line no-param-reassign
-    ids = ids.map((id) => {
+    identitiesIds = identitiesIds.map((id) => {
       if (Buffer.isBuffer(id)) {
         // eslint-disable-next-line no-param-reassign
         id = Buffer.from(id);
@@ -34,10 +44,18 @@ function getIdentitiesContractKeysFactory(grpcTransport) {
       return id;
     });
 
+    if (Buffer.isBuffer(contractId)) {
+      // eslint-disable-next-line no-param-reassign
+      contractId = Buffer.from(contractId);
+    }
+
     getIdentitiesContractKeysRequest.setV0(
       new GetIdentitiesContractKeysRequestV0()
         .setProve(!!options.prove)
-        .setIdsList(ids),
+        .setIdentitiesIdsList(identitiesIds)
+        .setContractId(contractId)
+        .setPurposesList(keyPurposes)
+        .setDocumentTypeName(documentTypeName),
     );
 
     let lastError;

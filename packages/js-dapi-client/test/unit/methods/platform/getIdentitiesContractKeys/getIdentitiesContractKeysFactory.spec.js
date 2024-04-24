@@ -1,13 +1,14 @@
-const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
 const {
   v0: {
     PlatformPromiseClient,
     GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse,
+    KeyPurpose,
     ResponseMetadata,
     Proof: ProofResponse,
   },
 } = require('@dashevo/dapi-grpc');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
@@ -23,14 +24,22 @@ describe('getIdentitiesContractKeysFactory', () => {
   let getIdentitiesContractKeys;
   let options;
   let response;
-  let identityFixture;
-  let publicKeyHash;
+
+  let identityFixtureA;
+  let identityFixtureB;
+  let contractId;
+  let identitiesContractKeys;
+
   let metadataFixture;
   let proofFixture;
   let proofResponse;
 
+  let mockRequest;
+
   beforeEach(async function beforeEach() {
-    identityFixture = await getIdentityFixture();
+    identityFixtureA = await getIdentityFixture(await generateRandomIdentifier());
+    identityFixtureB = await getIdentityFixture(await generateRandomIdentifier());
+    contractId = await generateRandomIdentifier();
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();
 
@@ -41,19 +50,34 @@ describe('getIdentitiesContractKeysFactory', () => {
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     const {
-      Identities, IdentityEntry, IdentityValue,
       GetIdentitiesContractKeysResponseV0,
     } = GetIdentitiesContractKeysResponse;
 
+    const { IdentitiesKeys, IdentityKeys, PurposeKeys } = GetIdentitiesContractKeysResponseV0;
+
     response = new GetIdentitiesContractKeysResponse();
     response.setV0(
-      new GetIdentitiesContractKeysResponseV0().setIdentities(
-        new Identities()
-          .setIdentityEntriesList([
-            new IdentityEntry()
-              .setValue(new IdentityValue().setValue(identityFixture.toBuffer())),
-          ]),
-      ).setMetadata(metadata),
+      new GetIdentitiesContractKeysResponseV0()
+        .setIdentitiesKeys(new IdentitiesKeys()
+          .setEntriesList([
+            new IdentityKeys()
+              .setIdentityId(new Uint8Array(identityFixtureA.getId().toBuffer()))
+              .setKeysList([
+                new PurposeKeys()
+                  .setPurpose(KeyPurpose.ENCRYPTION)
+                  .setKeysBytesList(identityFixtureA.getPublicKeys()
+                    .map((key) => new Uint8Array(key.toBuffer()))),
+              ]),
+            new IdentityKeys()
+              .setIdentityId(new Uint8Array(identityFixtureB.getId().toBuffer()))
+              .setKeysList([
+                new PurposeKeys()
+                  .setPurpose(KeyPurpose.DECRYPTION)
+                  .setKeysBytesList(identityFixtureB.getPublicKeys()
+                    .map((key) => new Uint8Array(key.toBuffer()))),
+              ]),
+          ]))
+        .setMetadata(metadata),
     );
 
     proofResponse = new ProofResponse();
@@ -63,7 +87,16 @@ describe('getIdentitiesContractKeysFactory', () => {
     proofResponse.setGrovedbProof(proofFixture.merkleProof);
     proofResponse.setRound(proofFixture.round);
 
-    publicKeyHash = identityFixture.getPublicKeyById(1).hash();
+    identitiesContractKeys = {
+      [identityFixtureA.getId().toString()]: {
+        [KeyPurpose.ENCRYPTION]: identityFixtureA.getPublicKeys()
+          .map((key) => new Uint8Array(key.toBuffer())),
+      },
+      [identityFixtureB.getId().toString()]: {
+        [KeyPurpose.DECRYPTION]: identityFixtureB.getPublicKeys()
+          .map((key) => new Uint8Array(key.toBuffer())),
+      },
+    };
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -73,19 +106,36 @@ describe('getIdentitiesContractKeysFactory', () => {
       timeout: 1000,
     };
 
+    mockRequest = () => {
+      const { GetIdentitiesContractKeysRequestV0 } = GetIdentitiesContractKeysRequest;
+      const request = new GetIdentitiesContractKeysRequest();
+      request.setV0(
+        new GetIdentitiesContractKeysRequestV0()
+          .setProve(!!options.prove)
+          .setIdentitiesIdsList(
+            [Buffer.from(identityFixtureA.getId()), Buffer.from(identityFixtureB.getId())],
+          )
+          .setContractId(Buffer.from(contractId))
+          .setPurposesList([KeyPurpose.ENCRYPTION, KeyPurpose.DECRYPTION])
+          .setDocumentTypeName('contactRequest'),
+      );
+
+      return request;
+    };
+
     getIdentitiesContractKeys = getIdentitiesContractKeysFactory(grpcTransportMock);
   });
 
-  it('should return id to identity map', async () => {
-    const result = await getIdentitiesContractKeys([identityFixture.getId()], options);
-
-    const { GetIdentitiesContractKeysRequestV0 } = GetIdentitiesContractKeysRequest;
-    const request = new GetIdentitiesContractKeysRequest();
-    request.setV0(
-      new GetIdentitiesContractKeysRequestV0()
-        .setIdsList([Buffer.from(identityFixture.getId())])
-        .setProve(false),
+  it('should return identity ids to key purposes to keys', async () => {
+    const result = await getIdentitiesContractKeys(
+      [identityFixtureA.getId(), identityFixtureB.getId()],
+      contractId,
+      [KeyPurpose.ENCRYPTION, KeyPurpose.DECRYPTION],
+      'contactRequest',
+      options,
     );
+
+    const request = mockRequest();
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -93,7 +143,7 @@ describe('getIdentitiesContractKeysFactory', () => {
       request,
       options,
     );
-    expect(result.getIdentities()).to.have.deep.equal([identityFixture.toBuffer()]);
+    expect(result.getIdentitiesKeys()).to.deep.equal(identitiesContractKeys);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
     expect(result.getProof()).to.equal(undefined);
   });
@@ -102,16 +152,15 @@ describe('getIdentitiesContractKeysFactory', () => {
     options.prove = true;
     response.getV0().setProof(proofResponse);
 
-    const identityId = Buffer.from(identityFixture.getId());
-    const result = await getIdentitiesContractKeys([identityId], options);
-
-    const { GetIdentitiesContractKeysRequestV0 } = GetIdentitiesContractKeysRequest;
-    const request = new GetIdentitiesContractKeysRequest();
-    request.setV0(
-      new GetIdentitiesContractKeysRequestV0()
-        .setIdsList([identityId])
-        .setProve(true),
+    const result = await getIdentitiesContractKeys(
+      [identityFixtureA.getId(), identityFixtureB.getId()],
+      contractId,
+      [KeyPurpose.ENCRYPTION, KeyPurpose.DECRYPTION],
+      'contactRequest',
+      options,
     );
+
+    const request = mockRequest();
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -119,7 +168,7 @@ describe('getIdentitiesContractKeysFactory', () => {
       request,
       options,
     );
-    expect(result.getIdentities()).to.have.deep.members([]);
+    expect(result.getIdentitiesKeys()).to.deep.equal({});
 
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
 
@@ -140,17 +189,16 @@ describe('getIdentitiesContractKeysFactory', () => {
 
     grpcTransportMock.request.throws(error);
 
-    const identityId = Buffer.from(identityFixture.getId());
-    const { GetIdentitiesContractKeysRequestV0 } = GetIdentitiesContractKeysRequest;
-    const request = new GetIdentitiesContractKeysRequest();
-    request.setV0(
-      new GetIdentitiesContractKeysRequestV0()
-        .setIdsList([identityId])
-        .setProve(false),
-    );
+    const request = mockRequest();
 
     try {
-      await getIdentitiesContractKeys([identityId], options);
+      await getIdentitiesContractKeys(
+        [identityFixtureA.getId(), identityFixtureB.getId()],
+        contractId,
+        [KeyPurpose.ENCRYPTION, KeyPurpose.DECRYPTION],
+        'contactRequest',
+        options,
+      );
 
       expect.fail('should throw unknown error');
     } catch (e) {

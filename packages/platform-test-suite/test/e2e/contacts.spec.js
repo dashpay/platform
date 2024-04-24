@@ -1,4 +1,4 @@
-const { Identifier } = require('@dashevo/wasm-dpp');
+const { Identifier, IdentityPublicKey, IdentityPublicKeyWithWitness } = require('@dashevo/wasm-dpp');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
@@ -49,6 +49,8 @@ describe('e2e', () => {
         },
         contact: {
           type: 'object',
+          requiresIdentityEncryptionBoundedKey: 2,
+          requiresIdentityDecryptionBoundedKey: 2,
           indices: [
             {
               name: 'onwerIdToUserId',
@@ -148,6 +150,63 @@ describe('e2e', () => {
         );
 
         expect(fetchedProfile.toObject()).to.be.deep.equal(profile.toObject());
+      });
+
+      it('should add encryption and decryption keys to the identity', async () => {
+        const account = await bobClient.getWalletAccount();
+
+        const numKeys = bobIdentity.getPublicKeys().length;
+        const identityIndex = await account.getUnusedIdentityIndex();
+
+        const { privateKey: encryptionPrivateKey } = account
+          .identities
+          .getIdentityHDKeyByIndex(identityIndex, 1);
+
+        const { privateKey: decryptionPrivateKey } = account
+          .identities
+          .getIdentityHDKeyByIndex(identityIndex, 2);
+
+        const encryptionPublicKey = new IdentityPublicKeyWithWitness(1);
+        encryptionPublicKey.setId(numKeys + 1);
+        encryptionPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+        encryptionPublicKey.setPurpose(IdentityPublicKey.PURPOSES.ENCRYPTION);
+        encryptionPublicKey.setContractBounds(dataContract.getId(), 'contact');
+        encryptionPublicKey.setData(encryptionPrivateKey.toPublicKey().toBuffer());
+
+        const decryptionPublicKey = new IdentityPublicKeyWithWitness(1);
+        decryptionPublicKey.setId(numKeys + 2);
+        decryptionPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+        decryptionPublicKey.setPurpose(IdentityPublicKey.PURPOSES.DECRYPTION);
+        decryptionPublicKey.setContractBounds(dataContract.getId(), 'contact');
+        decryptionPublicKey.setData(decryptionPrivateKey.toPublicKey().toBuffer());
+
+        const update = {
+          add: [encryptionPublicKey, decryptionPublicKey],
+        };
+
+        await bobClient.platform.identities.update(
+          bobIdentity,
+          update,
+          {
+            [encryptionPublicKey.getId()]: encryptionPrivateKey,
+            [decryptionPublicKey.getId()]: decryptionPrivateKey,
+          },
+        );
+
+        await waitForSTPropagated();
+
+        const { identitiesKeys } = await bobClient.getDAPIClient().platform
+          .getIdentitiesContractKeys(
+            [bobIdentity.getId()],
+            dataContract.getId(),
+            [IdentityPublicKey.PURPOSES.ENCRYPTION, IdentityPublicKey.PURPOSES.DECRYPTION],
+            'contact',
+          );
+
+        const bobKeys = identitiesKeys[bobIdentity.getId().toString()];
+        expect(bobKeys).to.exist();
+        expect(bobKeys[IdentityPublicKey.PURPOSES.ENCRYPTION]).to.have.length(1);
+        expect(bobKeys[IdentityPublicKey.PURPOSES.DECRYPTION]).to.have.length(1);
       });
     });
 

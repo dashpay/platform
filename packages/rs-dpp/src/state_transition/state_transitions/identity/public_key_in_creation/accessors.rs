@@ -40,6 +40,8 @@ pub trait IdentityPublicKeyInCreationV0Setters {
 
     fn set_security_level(&mut self, security_level: SecurityLevel);
 
+    fn set_contract_bounds(&mut self, contract_bounds: Option<ContractBounds>);
+
     fn set_read_only(&mut self, read_only: bool);
 }
 
@@ -77,6 +79,12 @@ impl IdentityPublicKeyInCreationV0Setters for IdentityPublicKeyInCreation {
     fn set_security_level(&mut self, security_level: SecurityLevel) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.security_level = security_level,
+        }
+    }
+
+    fn set_contract_bounds(&mut self, contract_bounds: Option<ContractBounds>) {
+        match self {
+            IdentityPublicKeyInCreation::V0(v0) => v0.contract_bounds = contract_bounds,
         }
     }
 

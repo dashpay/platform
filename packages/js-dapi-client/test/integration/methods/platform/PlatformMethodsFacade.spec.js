@@ -14,6 +14,7 @@ const {
     GetIdentityKeysResponse,
     BroadcastStateTransitionResponse,
     WaitForStateTransitionResultResponse,
+    KeyPurpose,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -136,28 +137,33 @@ describe('PlatformMethodsFacade', () => {
   });
 
   describe('#getIdentitiesContractKeys', () => {
-    it('should get partial Identities', async () => {
-      const { Identities, IdentityEntry, IdentityValue } = GetIdentitiesContractKeysResponse;
+    it('should get identities keys', async () => {
+      const identityFixture = await getIdentityFixture();
+
+      const { IdentitiesKeys, IdentityKeys, PurposeKeys } = GetIdentitiesContractKeysResponseV0;
 
       const response = new GetIdentitiesContractKeysResponse();
       response.setV0(
         new GetIdentitiesContractKeysResponseV0()
-          .setMetadata(new ResponseMetadata())
-          .setIdentities(
-            new Identities()
-              .setIdentityEntriesList([
-                new IdentityEntry()
-                  .setValue(new IdentityValue()
-                    .setValue((await getIdentityFixture()).toBuffer())),
-              ]),
-          ),
+          .setIdentitiesKeys(new IdentitiesKeys()
+            .setEntriesList([
+              new IdentityKeys()
+                .setIdentityId(new Uint8Array(identityFixture.getId().toBuffer()))
+                .setKeysList([
+                  new PurposeKeys()
+                    .setPurpose(KeyPurpose.ENCRYPTION)
+                    .setKeysBytesList(identityFixture.getPublicKeys()
+                      .map((key) => new Uint8Array(key.toBuffer()))),
+                ]),
+            ]))
+          .setMetadata(new ResponseMetadata()),
       );
 
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getIdentitiesContractKeys([
-        Buffer.from('41nthkqvHBLnqiMkSbsdTNANzYu9bgdv4etKoRUunY1M', 'base64'),
-      ]);
+        Buffer.alloc(32).fill(1),
+      ], Buffer.alloc(32).fill(2), [KeyPurpose.ENCRYPTION]);
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
