@@ -83,6 +83,9 @@ pub trait DataContractConfigSettersV0 {
     /// Sets whether documents in the contract are mutable by default.
     fn set_documents_mutable_contract_default(&mut self, value: bool);
 
+    /// Sets whether documents in the contract can be deleted by default.
+    fn set_documents_can_be_deleted_contract_default(&mut self, value: bool);
+
     /// Sets Encryption key storage requirements.
     fn set_requires_identity_encryption_bounded_key(
         &mut self,

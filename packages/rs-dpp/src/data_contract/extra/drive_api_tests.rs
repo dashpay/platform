@@ -219,6 +219,9 @@ mod test {
             .set_documents_mutable_contract_default(false);
         contract
             .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract
+            .config
             .set_documents_keep_history_contract_default(true);
 
         let contract_cbor = contract
@@ -265,6 +268,9 @@ mod test {
         contract_v0
             .config
             .set_documents_mutable_contract_default(false);
+        contract_v0
+            .config
+            .set_documents_can_be_deleted_contract_default(false);
         contract_v0
             .config
             .set_documents_keep_history_contract_default(true);

@@ -163,6 +163,12 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         }
     }
 
+    fn set_documents_can_be_deleted_contract_default(&mut self, value: bool) {
+        match self {
+            DataContractConfig::V0(v0) => v0.documents_can_be_deleted_contract_default = value,
+        }
+    }
+
     fn set_documents_mutable_contract_default(&mut self, value: bool) {
         match self {
             DataContractConfig::V0(v0) => v0.documents_mutable_contract_default = value,
