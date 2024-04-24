@@ -1,37 +1,32 @@
 const {
   v0: {
-    GetStatusRequest,
-    GetStatusResponse,
+    GetBlockchainStatusRequest,
+    GetBlockchainStatusResponse,
     CorePromiseClient,
   },
 } = require('@dashevo/dapi-grpc');
 
-const getStatusFactory = require('../../../../lib/methods/core/getStatusFactory');
+const getBlockchainStatusFactory = require('../../../../lib/methods/core/getBlockchainStatusFactory');
 
-describe('getStatusFactory', () => {
-  let getStatus;
+describe('getBlockchainStatusFactory', () => {
+  let getBlockchainStatus;
   let grpcTransportMock;
 
   beforeEach(function beforeEach() {
     grpcTransportMock = {
       request: this.sinon.stub(),
     };
-    getStatus = getStatusFactory(grpcTransportMock);
+    getBlockchainStatus = getBlockchainStatusFactory(grpcTransportMock);
   });
 
   it('should return status', async () => {
-    const response = new GetStatusResponse();
+    const response = new GetBlockchainStatusResponse();
 
-    response.setStatus(GetStatusResponse.Status.READY);
+    response.setStatus(GetBlockchainStatusResponse.Status.READY);
 
-    const masternode = new GetStatusResponse.Masternode();
-
-    masternode.setStatus(GetStatusResponse.Masternode.Status.READY);
-
-    const chain = new GetStatusResponse.Chain();
+    const chain = new GetBlockchainStatusResponse.Chain();
     chain.setBestBlockHash(Buffer.from('bestBlockHash'));
 
-    response.setMasternode(masternode);
     response.setChain(chain);
 
     grpcTransportMock.request.resolves(response);
@@ -40,15 +35,15 @@ describe('getStatusFactory', () => {
       timeout: 1000,
     };
 
-    const result = await getStatus(
+    const result = await getBlockchainStatus(
       options,
     );
 
-    const request = new GetStatusRequest();
+    const request = new GetBlockchainStatusRequest();
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       CorePromiseClient,
-      'getStatus',
+      'getBlockchainStatus',
       request,
       options,
     );
@@ -56,10 +51,6 @@ describe('getStatusFactory', () => {
     const expectedResult = {
       ...response.toObject(),
       status: 'READY',
-      masternode: {
-        ...response.getMasternode().toObject(),
-        status: 'READY',
-      },
     };
 
     expectedResult.chain.bestBlockHash = Buffer.from(expectedResult.chain.bestBlockHash, 'base64');

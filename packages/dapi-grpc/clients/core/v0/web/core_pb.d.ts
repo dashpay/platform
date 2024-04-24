@@ -3,73 +3,67 @@
 
 import * as jspb from "google-protobuf";
 
-export class GetStatusRequest extends jspb.Message {
+export class GetBlockchainStatusRequest extends jspb.Message {
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetStatusRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetStatusRequest): GetStatusRequest.AsObject;
+  toObject(includeInstance?: boolean): GetBlockchainStatusRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetBlockchainStatusRequest): GetBlockchainStatusRequest.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetStatusRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetStatusRequest;
-  static deserializeBinaryFromReader(message: GetStatusRequest, reader: jspb.BinaryReader): GetStatusRequest;
+  static serializeBinaryToWriter(message: GetBlockchainStatusRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetBlockchainStatusRequest;
+  static deserializeBinaryFromReader(message: GetBlockchainStatusRequest, reader: jspb.BinaryReader): GetBlockchainStatusRequest;
 }
 
-export namespace GetStatusRequest {
+export namespace GetBlockchainStatusRequest {
   export type AsObject = {
   }
 }
 
-export class GetStatusResponse extends jspb.Message {
+export class GetBlockchainStatusResponse extends jspb.Message {
   hasVersion(): boolean;
   clearVersion(): void;
-  getVersion(): GetStatusResponse.Version | undefined;
-  setVersion(value?: GetStatusResponse.Version): void;
+  getVersion(): GetBlockchainStatusResponse.Version | undefined;
+  setVersion(value?: GetBlockchainStatusResponse.Version): void;
 
   hasTime(): boolean;
   clearTime(): void;
-  getTime(): GetStatusResponse.Time | undefined;
-  setTime(value?: GetStatusResponse.Time): void;
+  getTime(): GetBlockchainStatusResponse.Time | undefined;
+  setTime(value?: GetBlockchainStatusResponse.Time): void;
 
-  getStatus(): GetStatusResponse.StatusMap[keyof GetStatusResponse.StatusMap];
-  setStatus(value: GetStatusResponse.StatusMap[keyof GetStatusResponse.StatusMap]): void;
+  getStatus(): GetBlockchainStatusResponse.StatusMap[keyof GetBlockchainStatusResponse.StatusMap];
+  setStatus(value: GetBlockchainStatusResponse.StatusMap[keyof GetBlockchainStatusResponse.StatusMap]): void;
 
   getSyncProgress(): number;
   setSyncProgress(value: number): void;
 
   hasChain(): boolean;
   clearChain(): void;
-  getChain(): GetStatusResponse.Chain | undefined;
-  setChain(value?: GetStatusResponse.Chain): void;
-
-  hasMasternode(): boolean;
-  clearMasternode(): void;
-  getMasternode(): GetStatusResponse.Masternode | undefined;
-  setMasternode(value?: GetStatusResponse.Masternode): void;
+  getChain(): GetBlockchainStatusResponse.Chain | undefined;
+  setChain(value?: GetBlockchainStatusResponse.Chain): void;
 
   hasNetwork(): boolean;
   clearNetwork(): void;
-  getNetwork(): GetStatusResponse.Network | undefined;
-  setNetwork(value?: GetStatusResponse.Network): void;
+  getNetwork(): GetBlockchainStatusResponse.Network | undefined;
+  setNetwork(value?: GetBlockchainStatusResponse.Network): void;
 
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetStatusResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetStatusResponse): GetStatusResponse.AsObject;
+  toObject(includeInstance?: boolean): GetBlockchainStatusResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetBlockchainStatusResponse): GetBlockchainStatusResponse.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetStatusResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetStatusResponse;
-  static deserializeBinaryFromReader(message: GetStatusResponse, reader: jspb.BinaryReader): GetStatusResponse;
+  static serializeBinaryToWriter(message: GetBlockchainStatusResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetBlockchainStatusResponse;
+  static deserializeBinaryFromReader(message: GetBlockchainStatusResponse, reader: jspb.BinaryReader): GetBlockchainStatusResponse;
 }
 
-export namespace GetStatusResponse {
+export namespace GetBlockchainStatusResponse {
   export type AsObject = {
-    version?: GetStatusResponse.Version.AsObject,
-    time?: GetStatusResponse.Time.AsObject,
-    status: GetStatusResponse.StatusMap[keyof GetStatusResponse.StatusMap],
+    version?: GetBlockchainStatusResponse.Version.AsObject,
+    time?: GetBlockchainStatusResponse.Time.AsObject,
+    status: GetBlockchainStatusResponse.StatusMap[keyof GetBlockchainStatusResponse.StatusMap],
     syncProgress: number,
-    chain?: GetStatusResponse.Chain.AsObject,
-    masternode?: GetStatusResponse.Masternode.AsObject,
-    network?: GetStatusResponse.Network.AsObject,
+    chain?: GetBlockchainStatusResponse.Chain.AsObject,
+    network?: GetBlockchainStatusResponse.Network.AsObject,
   }
 
   export class Version extends jspb.Message {
@@ -180,57 +174,6 @@ export namespace GetStatusResponse {
     }
   }
 
-  export class Masternode extends jspb.Message {
-    getStatus(): GetStatusResponse.Masternode.StatusMap[keyof GetStatusResponse.Masternode.StatusMap];
-    setStatus(value: GetStatusResponse.Masternode.StatusMap[keyof GetStatusResponse.Masternode.StatusMap]): void;
-
-    getProTxHash(): Uint8Array | string;
-    getProTxHash_asU8(): Uint8Array;
-    getProTxHash_asB64(): string;
-    setProTxHash(value: Uint8Array | string): void;
-
-    getPosePenalty(): number;
-    setPosePenalty(value: number): void;
-
-    getIsSynced(): boolean;
-    setIsSynced(value: boolean): void;
-
-    getSyncProgress(): number;
-    setSyncProgress(value: number): void;
-
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): Masternode.AsObject;
-    static toObject(includeInstance: boolean, msg: Masternode): Masternode.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: Masternode, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): Masternode;
-    static deserializeBinaryFromReader(message: Masternode, reader: jspb.BinaryReader): Masternode;
-  }
-
-  export namespace Masternode {
-    export type AsObject = {
-      status: GetStatusResponse.Masternode.StatusMap[keyof GetStatusResponse.Masternode.StatusMap],
-      proTxHash: Uint8Array | string,
-      posePenalty: number,
-      isSynced: boolean,
-      syncProgress: number,
-    }
-
-    export interface StatusMap {
-      UNKNOWN: 0;
-      WAITING_FOR_PROTX: 1;
-      POSE_BANNED: 2;
-      REMOVED: 3;
-      OPERATOR_KEY_CHANGED: 4;
-      PROTX_IP_CHANGED: 5;
-      READY: 6;
-      ERROR: 7;
-    }
-
-    export const Status: StatusMap;
-  }
-
   export class NetworkFee extends jspb.Message {
     getRelay(): number;
     setRelay(value: number): void;
@@ -261,8 +204,8 @@ export namespace GetStatusResponse {
 
     hasFee(): boolean;
     clearFee(): void;
-    getFee(): GetStatusResponse.NetworkFee | undefined;
-    setFee(value?: GetStatusResponse.NetworkFee): void;
+    getFee(): GetBlockchainStatusResponse.NetworkFee | undefined;
+    setFee(value?: GetBlockchainStatusResponse.NetworkFee): void;
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): Network.AsObject;
@@ -277,7 +220,7 @@ export namespace GetStatusResponse {
   export namespace Network {
     export type AsObject = {
       peersCount: number,
-      fee?: GetStatusResponse.NetworkFee.AsObject,
+      fee?: GetBlockchainStatusResponse.NetworkFee.AsObject,
     }
   }
 
@@ -286,6 +229,73 @@ export namespace GetStatusResponse {
     SYNCING: 1;
     READY: 2;
     ERROR: 3;
+  }
+
+  export const Status: StatusMap;
+}
+
+export class GetMasternodeStatusRequest extends jspb.Message {
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetMasternodeStatusRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetMasternodeStatusRequest): GetMasternodeStatusRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetMasternodeStatusRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetMasternodeStatusRequest;
+  static deserializeBinaryFromReader(message: GetMasternodeStatusRequest, reader: jspb.BinaryReader): GetMasternodeStatusRequest;
+}
+
+export namespace GetMasternodeStatusRequest {
+  export type AsObject = {
+  }
+}
+
+export class GetMasternodeStatusResponse extends jspb.Message {
+  getStatus(): GetMasternodeStatusResponse.StatusMap[keyof GetMasternodeStatusResponse.StatusMap];
+  setStatus(value: GetMasternodeStatusResponse.StatusMap[keyof GetMasternodeStatusResponse.StatusMap]): void;
+
+  getProTxHash(): Uint8Array | string;
+  getProTxHash_asU8(): Uint8Array;
+  getProTxHash_asB64(): string;
+  setProTxHash(value: Uint8Array | string): void;
+
+  getPosePenalty(): number;
+  setPosePenalty(value: number): void;
+
+  getIsSynced(): boolean;
+  setIsSynced(value: boolean): void;
+
+  getSyncProgress(): number;
+  setSyncProgress(value: number): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetMasternodeStatusResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetMasternodeStatusResponse): GetMasternodeStatusResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetMasternodeStatusResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetMasternodeStatusResponse;
+  static deserializeBinaryFromReader(message: GetMasternodeStatusResponse, reader: jspb.BinaryReader): GetMasternodeStatusResponse;
+}
+
+export namespace GetMasternodeStatusResponse {
+  export type AsObject = {
+    status: GetMasternodeStatusResponse.StatusMap[keyof GetMasternodeStatusResponse.StatusMap],
+    proTxHash: Uint8Array | string,
+    posePenalty: number,
+    isSynced: boolean,
+    syncProgress: number,
+  }
+
+  export interface StatusMap {
+    UNKNOWN: 0;
+    WAITING_FOR_PROTX: 1;
+    POSE_BANNED: 2;
+    REMOVED: 3;
+    OPERATOR_KEY_CHANGED: 4;
+    PROTX_IP_CHANGED: 5;
+    READY: 6;
+    ERROR: 7;
   }
 
   export const Status: StatusMap;

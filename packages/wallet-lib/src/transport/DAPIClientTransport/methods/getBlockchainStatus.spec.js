@@ -2,7 +2,7 @@ const { expect } = require('chai');
 
 const DAPIClientTransport = require('../DAPIClientTransport');
 
-describe('transports - DAPIClientTransport - .getStatus', function suite() {
+describe('transports - DAPIClientTransport - .getBlockchainStatus', function suite() {
   let fixture;
   let transport;
   let clientMock;
@@ -14,7 +14,7 @@ describe('transports - DAPIClientTransport - .getStatus', function suite() {
 
     clientMock = {
       core: {
-        getStatus: () => fixture,
+        getBlockchainStatus: () => fixture,
       }
     }
 
@@ -26,7 +26,7 @@ describe('transports - DAPIClientTransport - .getStatus', function suite() {
   })
 
   it('should work', async () => {
-    const res = await transport.getStatus();
+    const res = await transport.getBlockchainStatus();
 
     expect(res).to.deep.equal(fixture);
   });
