@@ -223,7 +223,8 @@ describe('DataContract', () => {
         config: {
           $format_version: '0',
           canBeDeleted: false,
-          documentsKeepHistoryContractDefault: true,
+          documentsCanBeDeletedContractDefault: true,
+          documentsKeepHistoryContractDefault: false,
           documentsMutableContractDefault: true,
           keepsHistory: false,
           readonly: false,
