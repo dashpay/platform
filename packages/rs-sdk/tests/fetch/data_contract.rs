@@ -93,11 +93,11 @@ async fn test_data_contracts_2_nx() {
 }
 
 // This test currently supports offline mode only.
-// It needs Data Contract with `keep_history` set to true, which is not available in the network 
-// by default and has to be created manually.  
+// It needs Data Contract with `keep_history` set to true, which is not available in the network
+// by default and has to be created manually.
 // At the moment tests in rs-sdk do not provide Core Wallet signer, and unable to create
 // identities and data contracts.
-// The contract for this test was pre-created with 
+// The contract for this test was pre-created with
 // `packages/platform-test-suite/test/functional/platform/DataContract.spec.js`
 // and stored as a test vector for offline testing only.
 #[cfg(not(feature = "network-testing"))]
