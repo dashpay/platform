@@ -14,8 +14,11 @@ describe('getCoreDefinition', () => {
       expect(coreDefinition.service).to.have.property('getTransaction');
       expect(coreDefinition.service.getTransaction.path).to.equal('/org.dash.platform.dapi.v0.Core/getTransaction');
 
-      expect(coreDefinition.service).to.have.property('getStatus');
-      expect(coreDefinition.service.getStatus.path).to.equal('/org.dash.platform.dapi.v0.Core/getStatus');
+      expect(coreDefinition.service).to.have.property('getBlockchainStatus');
+      expect(coreDefinition.service.getBlockchainStatus.path).to.equal('/org.dash.platform.dapi.v0.Core/getBlockchainStatus');
+
+      expect(coreDefinition.service).to.have.property('getMasternodeStatus');
+      expect(coreDefinition.service.getMasternodeStatus.path).to.equal('/org.dash.platform.dapi.v0.Core/getMasternodeStatus');
 
       expect(coreDefinition.service).to.have.property('getBlock');
       expect(coreDefinition.service.getBlock.path).to.equal('/org.dash.platform.dapi.v0.Core/getBlock');

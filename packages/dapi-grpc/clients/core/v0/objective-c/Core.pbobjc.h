@@ -29,66 +29,65 @@ CF_EXTERN_C_BEGIN
 
 @class BlockHeaders;
 @class BloomFilter;
-@class GetStatusResponse_Chain;
-@class GetStatusResponse_Masternode;
-@class GetStatusResponse_Network;
-@class GetStatusResponse_NetworkFee;
-@class GetStatusResponse_Time;
-@class GetStatusResponse_Version;
+@class GetBlockchainStatusResponse_Chain;
+@class GetBlockchainStatusResponse_Network;
+@class GetBlockchainStatusResponse_NetworkFee;
+@class GetBlockchainStatusResponse_Time;
+@class GetBlockchainStatusResponse_Version;
 @class InstantSendLockMessages;
 @class RawTransactions;
 
 NS_ASSUME_NONNULL_BEGIN
 
-#pragma mark - Enum GetStatusResponse_Status
+#pragma mark - Enum GetBlockchainStatusResponse_Status
 
-typedef GPB_ENUM(GetStatusResponse_Status) {
+typedef GPB_ENUM(GetBlockchainStatusResponse_Status) {
   /**
    * Value used if any message's field encounters a value that is not defined
    * by this enum. The message will also have C functions to get/set the rawValue
    * of the field.
    **/
-  GetStatusResponse_Status_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
-  GetStatusResponse_Status_NotStarted = 0,
-  GetStatusResponse_Status_Syncing = 1,
-  GetStatusResponse_Status_Ready = 2,
-  GetStatusResponse_Status_Error = 3,
+  GetBlockchainStatusResponse_Status_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetBlockchainStatusResponse_Status_NotStarted = 0,
+  GetBlockchainStatusResponse_Status_Syncing = 1,
+  GetBlockchainStatusResponse_Status_Ready = 2,
+  GetBlockchainStatusResponse_Status_Error = 3,
 };
 
-GPBEnumDescriptor *GetStatusResponse_Status_EnumDescriptor(void);
+GPBEnumDescriptor *GetBlockchainStatusResponse_Status_EnumDescriptor(void);
 
 /**
  * Checks to see if the given value is defined by the enum or was not known at
  * the time this source was generated.
  **/
-BOOL GetStatusResponse_Status_IsValidValue(int32_t value);
+BOOL GetBlockchainStatusResponse_Status_IsValidValue(int32_t value);
 
-#pragma mark - Enum GetStatusResponse_Masternode_Status
+#pragma mark - Enum GetMasternodeStatusResponse_Status
 
-typedef GPB_ENUM(GetStatusResponse_Masternode_Status) {
+typedef GPB_ENUM(GetMasternodeStatusResponse_Status) {
   /**
    * Value used if any message's field encounters a value that is not defined
    * by this enum. The message will also have C functions to get/set the rawValue
    * of the field.
    **/
-  GetStatusResponse_Masternode_Status_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
-  GetStatusResponse_Masternode_Status_Unknown = 0,
-  GetStatusResponse_Masternode_Status_WaitingForProtx = 1,
-  GetStatusResponse_Masternode_Status_PoseBanned = 2,
-  GetStatusResponse_Masternode_Status_Removed = 3,
-  GetStatusResponse_Masternode_Status_OperatorKeyChanged = 4,
-  GetStatusResponse_Masternode_Status_ProtxIpChanged = 5,
-  GetStatusResponse_Masternode_Status_Ready = 6,
-  GetStatusResponse_Masternode_Status_Error = 7,
+  GetMasternodeStatusResponse_Status_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetMasternodeStatusResponse_Status_Unknown = 0,
+  GetMasternodeStatusResponse_Status_WaitingForProtx = 1,
+  GetMasternodeStatusResponse_Status_PoseBanned = 2,
+  GetMasternodeStatusResponse_Status_Removed = 3,
+  GetMasternodeStatusResponse_Status_OperatorKeyChanged = 4,
+  GetMasternodeStatusResponse_Status_ProtxIpChanged = 5,
+  GetMasternodeStatusResponse_Status_Ready = 6,
+  GetMasternodeStatusResponse_Status_Error = 7,
 };
 
-GPBEnumDescriptor *GetStatusResponse_Masternode_Status_EnumDescriptor(void);
+GPBEnumDescriptor *GetMasternodeStatusResponse_Status_EnumDescriptor(void);
 
 /**
  * Checks to see if the given value is defined by the enum or was not known at
  * the time this source was generated.
  **/
-BOOL GetStatusResponse_Masternode_Status_IsValidValue(int32_t value);
+BOOL GetMasternodeStatusResponse_Status_IsValidValue(int32_t value);
 
 #pragma mark - CoreRoot
 
@@ -105,73 +104,68 @@ BOOL GetStatusResponse_Masternode_Status_IsValidValue(int32_t value);
 GPB_FINAL @interface CoreRoot : GPBRootObject
 @end
 
-#pragma mark - GetStatusRequest
+#pragma mark - GetBlockchainStatusRequest
 
-GPB_FINAL @interface GetStatusRequest : GPBMessage
+GPB_FINAL @interface GetBlockchainStatusRequest : GPBMessage
 
 @end
 
-#pragma mark - GetStatusResponse
+#pragma mark - GetBlockchainStatusResponse
 
-typedef GPB_ENUM(GetStatusResponse_FieldNumber) {
-  GetStatusResponse_FieldNumber_Version = 1,
-  GetStatusResponse_FieldNumber_Time = 2,
-  GetStatusResponse_FieldNumber_Status = 3,
-  GetStatusResponse_FieldNumber_SyncProgress = 4,
-  GetStatusResponse_FieldNumber_Chain = 5,
-  GetStatusResponse_FieldNumber_Masternode = 6,
-  GetStatusResponse_FieldNumber_Network = 7,
+typedef GPB_ENUM(GetBlockchainStatusResponse_FieldNumber) {
+  GetBlockchainStatusResponse_FieldNumber_Version = 1,
+  GetBlockchainStatusResponse_FieldNumber_Time = 2,
+  GetBlockchainStatusResponse_FieldNumber_Status = 3,
+  GetBlockchainStatusResponse_FieldNumber_SyncProgress = 4,
+  GetBlockchainStatusResponse_FieldNumber_Chain = 5,
+  GetBlockchainStatusResponse_FieldNumber_Network = 7,
 };
 
-GPB_FINAL @interface GetStatusResponse : GPBMessage
+GPB_FINAL @interface GetBlockchainStatusResponse : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_Version *version;
+@property(nonatomic, readwrite, strong, null_resettable) GetBlockchainStatusResponse_Version *version;
 /** Test to see if @c version has been set. */
 @property(nonatomic, readwrite) BOOL hasVersion;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_Time *time;
+@property(nonatomic, readwrite, strong, null_resettable) GetBlockchainStatusResponse_Time *time;
 /** Test to see if @c time has been set. */
 @property(nonatomic, readwrite) BOOL hasTime;
 
-@property(nonatomic, readwrite) GetStatusResponse_Status status;
+@property(nonatomic, readwrite) GetBlockchainStatusResponse_Status status;
 
 @property(nonatomic, readwrite) double syncProgress;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_Chain *chain;
+@property(nonatomic, readwrite, strong, null_resettable) GetBlockchainStatusResponse_Chain *chain;
 /** Test to see if @c chain has been set. */
 @property(nonatomic, readwrite) BOOL hasChain;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_Masternode *masternode;
-/** Test to see if @c masternode has been set. */
-@property(nonatomic, readwrite) BOOL hasMasternode;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_Network *network;
+@property(nonatomic, readwrite, strong, null_resettable) GetBlockchainStatusResponse_Network *network;
 /** Test to see if @c network has been set. */
 @property(nonatomic, readwrite) BOOL hasNetwork;
 
 @end
 
 /**
- * Fetches the raw value of a @c GetStatusResponse's @c status property, even
+ * Fetches the raw value of a @c GetBlockchainStatusResponse's @c status property, even
  * if the value was not defined by the enum at the time the code was generated.
  **/
-int32_t GetStatusResponse_Status_RawValue(GetStatusResponse *message);
+int32_t GetBlockchainStatusResponse_Status_RawValue(GetBlockchainStatusResponse *message);
 /**
- * Sets the raw value of an @c GetStatusResponse's @c status property, allowing
+ * Sets the raw value of an @c GetBlockchainStatusResponse's @c status property, allowing
  * it to be set to a value that was not defined by the enum at the time the code
  * was generated.
  **/
-void SetGetStatusResponse_Status_RawValue(GetStatusResponse *message, int32_t value);
+void SetGetBlockchainStatusResponse_Status_RawValue(GetBlockchainStatusResponse *message, int32_t value);
 
-#pragma mark - GetStatusResponse_Version
+#pragma mark - GetBlockchainStatusResponse_Version
 
-typedef GPB_ENUM(GetStatusResponse_Version_FieldNumber) {
-  GetStatusResponse_Version_FieldNumber_Protocol = 1,
-  GetStatusResponse_Version_FieldNumber_Software = 2,
-  GetStatusResponse_Version_FieldNumber_Agent = 3,
+typedef GPB_ENUM(GetBlockchainStatusResponse_Version_FieldNumber) {
+  GetBlockchainStatusResponse_Version_FieldNumber_Protocol = 1,
+  GetBlockchainStatusResponse_Version_FieldNumber_Software = 2,
+  GetBlockchainStatusResponse_Version_FieldNumber_Agent = 3,
 };
 
-GPB_FINAL @interface GetStatusResponse_Version : GPBMessage
+GPB_FINAL @interface GetBlockchainStatusResponse_Version : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t protocol;
 
@@ -181,15 +175,15 @@ GPB_FINAL @interface GetStatusResponse_Version : GPBMessage
 
 @end
 
-#pragma mark - GetStatusResponse_Time
+#pragma mark - GetBlockchainStatusResponse_Time
 
-typedef GPB_ENUM(GetStatusResponse_Time_FieldNumber) {
-  GetStatusResponse_Time_FieldNumber_Now = 1,
-  GetStatusResponse_Time_FieldNumber_Offset = 2,
-  GetStatusResponse_Time_FieldNumber_Median = 3,
+typedef GPB_ENUM(GetBlockchainStatusResponse_Time_FieldNumber) {
+  GetBlockchainStatusResponse_Time_FieldNumber_Now = 1,
+  GetBlockchainStatusResponse_Time_FieldNumber_Offset = 2,
+  GetBlockchainStatusResponse_Time_FieldNumber_Median = 3,
 };
 
-GPB_FINAL @interface GetStatusResponse_Time : GPBMessage
+GPB_FINAL @interface GetBlockchainStatusResponse_Time : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t now;
 
@@ -199,20 +193,20 @@ GPB_FINAL @interface GetStatusResponse_Time : GPBMessage
 
 @end
 
-#pragma mark - GetStatusResponse_Chain
+#pragma mark - GetBlockchainStatusResponse_Chain
 
-typedef GPB_ENUM(GetStatusResponse_Chain_FieldNumber) {
-  GetStatusResponse_Chain_FieldNumber_Name = 1,
-  GetStatusResponse_Chain_FieldNumber_HeadersCount = 2,
-  GetStatusResponse_Chain_FieldNumber_BlocksCount = 3,
-  GetStatusResponse_Chain_FieldNumber_BestBlockHash = 4,
-  GetStatusResponse_Chain_FieldNumber_Difficulty = 5,
-  GetStatusResponse_Chain_FieldNumber_ChainWork = 6,
-  GetStatusResponse_Chain_FieldNumber_IsSynced = 7,
-  GetStatusResponse_Chain_FieldNumber_SyncProgress = 8,
+typedef GPB_ENUM(GetBlockchainStatusResponse_Chain_FieldNumber) {
+  GetBlockchainStatusResponse_Chain_FieldNumber_Name = 1,
+  GetBlockchainStatusResponse_Chain_FieldNumber_HeadersCount = 2,
+  GetBlockchainStatusResponse_Chain_FieldNumber_BlocksCount = 3,
+  GetBlockchainStatusResponse_Chain_FieldNumber_BestBlockHash = 4,
+  GetBlockchainStatusResponse_Chain_FieldNumber_Difficulty = 5,
+  GetBlockchainStatusResponse_Chain_FieldNumber_ChainWork = 6,
+  GetBlockchainStatusResponse_Chain_FieldNumber_IsSynced = 7,
+  GetBlockchainStatusResponse_Chain_FieldNumber_SyncProgress = 8,
 };
 
-GPB_FINAL @interface GetStatusResponse_Chain : GPBMessage
+GPB_FINAL @interface GetBlockchainStatusResponse_Chain : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSString *name;
 
@@ -232,19 +226,57 @@ GPB_FINAL @interface GetStatusResponse_Chain : GPBMessage
 
 @end
 
-#pragma mark - GetStatusResponse_Masternode
+#pragma mark - GetBlockchainStatusResponse_NetworkFee
 
-typedef GPB_ENUM(GetStatusResponse_Masternode_FieldNumber) {
-  GetStatusResponse_Masternode_FieldNumber_Status = 1,
-  GetStatusResponse_Masternode_FieldNumber_ProTxHash = 2,
-  GetStatusResponse_Masternode_FieldNumber_PosePenalty = 3,
-  GetStatusResponse_Masternode_FieldNumber_IsSynced = 4,
-  GetStatusResponse_Masternode_FieldNumber_SyncProgress = 5,
+typedef GPB_ENUM(GetBlockchainStatusResponse_NetworkFee_FieldNumber) {
+  GetBlockchainStatusResponse_NetworkFee_FieldNumber_Relay = 1,
+  GetBlockchainStatusResponse_NetworkFee_FieldNumber_Incremental = 2,
 };
 
-GPB_FINAL @interface GetStatusResponse_Masternode : GPBMessage
+GPB_FINAL @interface GetBlockchainStatusResponse_NetworkFee : GPBMessage
 
-@property(nonatomic, readwrite) GetStatusResponse_Masternode_Status status;
+@property(nonatomic, readwrite) double relay;
+
+@property(nonatomic, readwrite) double incremental;
+
+@end
+
+#pragma mark - GetBlockchainStatusResponse_Network
+
+typedef GPB_ENUM(GetBlockchainStatusResponse_Network_FieldNumber) {
+  GetBlockchainStatusResponse_Network_FieldNumber_PeersCount = 1,
+  GetBlockchainStatusResponse_Network_FieldNumber_Fee = 2,
+};
+
+GPB_FINAL @interface GetBlockchainStatusResponse_Network : GPBMessage
+
+@property(nonatomic, readwrite) uint32_t peersCount;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetBlockchainStatusResponse_NetworkFee *fee;
+/** Test to see if @c fee has been set. */
+@property(nonatomic, readwrite) BOOL hasFee;
+
+@end
+
+#pragma mark - GetMasternodeStatusRequest
+
+GPB_FINAL @interface GetMasternodeStatusRequest : GPBMessage
+
+@end
+
+#pragma mark - GetMasternodeStatusResponse
+
+typedef GPB_ENUM(GetMasternodeStatusResponse_FieldNumber) {
+  GetMasternodeStatusResponse_FieldNumber_Status = 1,
+  GetMasternodeStatusResponse_FieldNumber_ProTxHash = 2,
+  GetMasternodeStatusResponse_FieldNumber_PosePenalty = 3,
+  GetMasternodeStatusResponse_FieldNumber_IsSynced = 4,
+  GetMasternodeStatusResponse_FieldNumber_SyncProgress = 5,
+};
+
+GPB_FINAL @interface GetMasternodeStatusResponse : GPBMessage
+
+@property(nonatomic, readwrite) GetMasternodeStatusResponse_Status status;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
 
@@ -257,48 +289,16 @@ GPB_FINAL @interface GetStatusResponse_Masternode : GPBMessage
 @end
 
 /**
- * Fetches the raw value of a @c GetStatusResponse_Masternode's @c status property, even
+ * Fetches the raw value of a @c GetMasternodeStatusResponse's @c status property, even
  * if the value was not defined by the enum at the time the code was generated.
  **/
-int32_t GetStatusResponse_Masternode_Status_RawValue(GetStatusResponse_Masternode *message);
+int32_t GetMasternodeStatusResponse_Status_RawValue(GetMasternodeStatusResponse *message);
 /**
- * Sets the raw value of an @c GetStatusResponse_Masternode's @c status property, allowing
+ * Sets the raw value of an @c GetMasternodeStatusResponse's @c status property, allowing
  * it to be set to a value that was not defined by the enum at the time the code
  * was generated.
  **/
-void SetGetStatusResponse_Masternode_Status_RawValue(GetStatusResponse_Masternode *message, int32_t value);
-
-#pragma mark - GetStatusResponse_NetworkFee
-
-typedef GPB_ENUM(GetStatusResponse_NetworkFee_FieldNumber) {
-  GetStatusResponse_NetworkFee_FieldNumber_Relay = 1,
-  GetStatusResponse_NetworkFee_FieldNumber_Incremental = 2,
-};
-
-GPB_FINAL @interface GetStatusResponse_NetworkFee : GPBMessage
-
-@property(nonatomic, readwrite) double relay;
-
-@property(nonatomic, readwrite) double incremental;
-
-@end
-
-#pragma mark - GetStatusResponse_Network
-
-typedef GPB_ENUM(GetStatusResponse_Network_FieldNumber) {
-  GetStatusResponse_Network_FieldNumber_PeersCount = 1,
-  GetStatusResponse_Network_FieldNumber_Fee = 2,
-};
-
-GPB_FINAL @interface GetStatusResponse_Network : GPBMessage
-
-@property(nonatomic, readwrite) uint32_t peersCount;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_NetworkFee *fee;
-/** Test to see if @c fee has been set. */
-@property(nonatomic, readwrite) BOOL hasFee;
-
-@end
+void SetGetMasternodeStatusResponse_Status_RawValue(GetMasternodeStatusResponse *message, int32_t value);
 
 #pragma mark - GetBlockRequest
 

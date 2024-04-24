@@ -8,7 +8,7 @@ async function fetchStatus() {
     throw new ValidTransportLayerRequired('fetchStatus');
   }
 
-  return this.transport.getStatus();
+  return this.transport.getBlockchainStatus();
 }
 
 module.exports = fetchStatus;
