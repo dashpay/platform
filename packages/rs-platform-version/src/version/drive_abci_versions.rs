@@ -87,6 +87,7 @@ pub struct DriveAbciValidationVersions {
 #[derive(Clone, Debug, Default)]
 pub struct PenaltyAmounts {
     pub identity_id_not_correct: u64,
+    pub unique_key_already_present: u64,
     pub validation_of_added_keys_structure_failure: u64,
     pub validation_of_added_keys_proof_of_possession_failure: u64,
 }
@@ -108,9 +109,11 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_create_transition_structure_validation: FeatureVersion,
     pub document_delete_transition_structure_validation: FeatureVersion,
     pub document_replace_transition_structure_validation: FeatureVersion,
+    pub document_transfer_transition_structure_validation: FeatureVersion,
     pub document_create_transition_state_validation: FeatureVersion,
     pub document_delete_transition_state_validation: FeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,
+    pub document_transfer_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -144,6 +147,7 @@ pub struct DriveAbciStateTransitionValidationVersion {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersions {
     pub common_validation_methods: DriveAbciStateTransitionCommonValidationVersions,
+    pub max_asset_lock_usage_attempts: u16,
     pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,

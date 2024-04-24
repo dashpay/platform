@@ -2,7 +2,7 @@ const { expect } = require('chai');
 
 const DAPIClientTransport = require('../DAPIClientTransport');
 
-const getStatus = require('../../FixtureTransport/methods/getStatus');
+const getBlockchainStatus = require('../../FixtureTransport/methods/getBlockchainStatus');
 
 describe('transports - DAPIClientTransport - .getBestBlockHeight', function suite() {
   let fixture;
@@ -10,11 +10,11 @@ describe('transports - DAPIClientTransport - .getBestBlockHeight', function suit
   let clientMock;
 
   beforeEach(() => {
-    fixture = getStatus();
+    fixture = getBlockchainStatus();
 
     clientMock = {
       core: {
-        getStatus: () => fixture,
+        getBlockchainStatus: () => fixture,
       }
     }
 

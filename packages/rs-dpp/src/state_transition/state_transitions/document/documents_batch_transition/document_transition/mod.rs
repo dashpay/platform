@@ -13,6 +13,7 @@ pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;
 pub mod document_replace_transition;
+pub mod document_transfer_transition;
 
 use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -20,11 +21,13 @@ use derive_more::Display;
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
+pub use document_transfer_transition::DocumentTransferTransition;
 use platform_value::Value;
 
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 
 pub const PROPERTY_ACTION: &str = "$action";
 
@@ -75,115 +78,10 @@ pub enum DocumentTransition {
 
     #[display(fmt = "DeleteDocumentTransition({})", "_0")]
     Delete(DocumentDeleteTransition),
-}
 
-//
-// impl AsRef<Self> for DocumentTransition {
-//     fn as_ref(&self) -> &Self {
-//         self
-//     }
-// }
-//
-// macro_rules! call_method {
-//     ($state_transition:expr, $method:ident, $args:tt ) => {
-//         match $state_transition {
-//             DocumentTransition::Create(st) => st.$method($args),
-//             DocumentTransition::Replace(st) => st.$method($args),
-//             DocumentTransition::Delete(st) => st.$method($args),
-//         }
-//     };
-//     ($state_transition:expr, $method:ident ) => {
-//         match $state_transition {
-//             DocumentTransition::Create(st) => st.$method(),
-//             DocumentTransition::Replace(st) => st.$method(),
-//             DocumentTransition::Delete(st) => st.$method(),
-//         }
-//     };
-// }
-//
-// impl DocumentTransitionObjectLike for DocumentTransition {
-//     #[cfg(feature = "state-transition-json-conversion")]
-//     fn from_json_object(
-//         json_value: JsonValue,
-//         data_contract: DataContract,
-//     ) -> Result<Self, ProtocolError>
-//     where
-//         Self: Sized,
-//     {
-//         let action: Action = TryFrom::try_from(json_value.get_u64(PROPERTY_ACTION)? as u8)
-//             .context("invalid document transition action")?;
-//
-//         Ok(match action {
-//             Action::Create => DocumentTransition::Create(
-//                 DocumentCreateTransition::from_json_object(json_value, data_contract)?,
-//             ),
-//             Action::Replace => DocumentTransition::Replace(
-//                 DocumentReplaceTransitionV0::from_json_object(json_value, data_contract)?,
-//             ),
-//             Action::Delete => DocumentTransition::Delete(
-//                 DocumentDeleteTransition::from_json_object(json_value, data_contract)?,
-//             ),
-//         })
-//     }
-//
-//     #[cfg(feature = "state-transition-value-conversion")]
-//     fn from_object(
-//         raw_transition: Value,
-//         data_contract: DataContract,
-//     ) -> Result<Self, ProtocolError>
-//     where
-//         Self: Sized,
-//     {
-//         let map = raw_transition
-//             .into_btree_string_map()
-//             .map_err(ProtocolError::ValueError)?;
-//         Self::from_value_map(map, data_contract)
-//     }
-//
-//     #[cfg(feature = "state-transition-json-conversion")]
-//     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-//         call_method!(self, to_json)
-//     }
-//
-//     #[cfg(feature = "state-transition-value-conversion")]
-//     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
-//         call_method!(self, to_value_map)
-//     }
-//
-//     #[cfg(feature = "state-transition-value-conversion")]
-//     fn to_object(&self) -> Result<Value, ProtocolError> {
-//         call_method!(self, to_object)
-//     }
-//
-//     #[cfg(feature = "state-transition-value-conversion")]
-//     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-//         call_method!(self, to_cleaned_object)
-//     }
-//
-//     #[cfg(feature = "state-transition-value-conversion")]
-//     fn from_value_map(
-//         map: BTreeMap<String, Value>,
-//         data_contract: DataContract,
-//     ) -> Result<Self, ProtocolError>
-//     where
-//         Self: Sized,
-//     {
-//         let action: Action = map.get_integer::<u8>(PROPERTY_ACTION)?.try_into()?;
-//         Ok(match action {
-//             Action::Create => DocumentTransition::Create(DocumentCreateTransition::from_value_map(
-//                 map,
-//                 data_contract,
-//             )?),
-//             Action::Replace => DocumentTransition::Replace(
-//                 DocumentReplaceTransitionV0::from_value_map(map, data_contract)?,
-//             ),
-//             Action::Delete => DocumentTransition::Delete(DocumentDeleteTransition::from_value_map(
-//                 map,
-//                 data_contract,
-//             )?),
-//         })
-//     }
-// }
+    #[display(fmt = "TransferDocumentTransition({})", "_0")]
+    Transfer(DocumentTransferTransition),
+}
 
 impl DocumentTransition {
     pub fn as_transition_create(&self) -> Option<&DocumentCreateTransition> {
@@ -216,6 +114,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => t.base(),
             DocumentTransition::Replace(t) => t.base(),
             DocumentTransition::Delete(t) => t.base(),
+            DocumentTransition::Transfer(t) => t.base(),
         }
     }
 
@@ -224,6 +123,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => t.data().get(path),
             DocumentTransition::Replace(t) => t.data().get(path),
             DocumentTransition::Delete(_) => None,
+            DocumentTransition::Transfer(_) => None,
         }
     }
 
@@ -244,6 +144,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => Some(t.data()),
             DocumentTransition::Replace(t) => Some(t.data()),
             DocumentTransition::Delete(_) => None,
+            DocumentTransition::Transfer(_) => None,
         }
     }
 
@@ -252,6 +153,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(_) => Some(1),
             DocumentTransition::Replace(t) => Some(t.revision()),
             DocumentTransition::Delete(_) => None,
+            DocumentTransition::Transfer(t) => Some(t.revision()),
         }
     }
 
@@ -260,6 +162,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => t.base().identity_contract_nonce(),
             DocumentTransition::Replace(t) => t.base().identity_contract_nonce(),
             DocumentTransition::Delete(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Transfer(t) => t.base().identity_contract_nonce(),
         }
     }
 
@@ -277,6 +180,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
                     .insert(property_name, value);
             }
             DocumentTransition::Delete(_) => {}
+            DocumentTransition::Transfer(_) => {}
         }
     }
 
@@ -289,6 +193,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => t.base_mut(),
             DocumentTransition::Replace(t) => t.base_mut(),
             DocumentTransition::Delete(t) => t.base_mut(),
+            DocumentTransition::Transfer(t) => t.base_mut(),
         }
     }
 
@@ -297,6 +202,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => Some(t.data_mut()),
             DocumentTransition::Replace(t) => Some(t.data_mut()),
             DocumentTransition::Delete(_) => None,
+            DocumentTransition::Transfer(_) => None,
         }
     }
 
@@ -305,6 +211,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(_) => {}
             DocumentTransition::Replace(ref mut t) => t.set_revision(revision),
             DocumentTransition::Delete(_) => {}
+            DocumentTransition::Transfer(_) => {}
         }
     }
 
@@ -313,6 +220,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => t.base_mut().set_identity_contract_nonce(nonce),
             DocumentTransition::Replace(t) => t.base_mut().set_identity_contract_nonce(nonce),
             DocumentTransition::Delete(t) => t.base_mut().set_identity_contract_nonce(nonce),
+            DocumentTransition::Transfer(t) => t.base_mut().set_identity_contract_nonce(nonce),
         }
     }
 }

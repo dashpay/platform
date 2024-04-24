@@ -49,10 +49,13 @@ impl Drive {
             allow_original,
             created_at,
             updated_at,
+            transferred_at,
             created_at_block_height,
             updated_at_block_height,
+            transferred_at_block_height,
             created_at_core_block_height,
             updated_at_core_block_height,
+            transferred_at_core_block_height,
             data,
         } = request;
 
@@ -86,6 +89,13 @@ impl Drive {
                                         return None;
                                     }
                                 }
+                                property_names::TRANSFERRED_AT => {
+                                    if let Some(transferred_at) = transferred_at {
+                                        platform_value!(transferred_at)
+                                    } else {
+                                        return None;
+                                    }
+                                }
                                 property_names::CREATED_AT_BLOCK_HEIGHT => {
                                     if let Some(created_at_block_height) = created_at_block_height {
                                         platform_value!(created_at_block_height)
@@ -96,6 +106,15 @@ impl Drive {
                                 property_names::UPDATED_AT_BLOCK_HEIGHT => {
                                     if let Some(updated_at_block_height) = updated_at_block_height {
                                         platform_value!(updated_at_block_height)
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                property_names::TRANSFERRED_AT_BLOCK_HEIGHT => {
+                                    if let Some(transferred_at_block_height) =
+                                        transferred_at_block_height
+                                    {
+                                        platform_value!(transferred_at_block_height)
                                     } else {
                                         return None;
                                     }
@@ -118,7 +137,15 @@ impl Drive {
                                         return None;
                                     }
                                 }
-
+                                property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
+                                    if let Some(transferred_at_core_block_height) =
+                                        transferred_at_core_block_height
+                                    {
+                                        platform_value!(transferred_at_core_block_height)
+                                    } else {
+                                        return None;
+                                    }
+                                }
                                 _ => {
                                     if let Some(value) = data.get(property.name.as_str()) {
                                         value.clone()

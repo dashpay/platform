@@ -9,12 +9,15 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::Identity;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 /// action v0
 #[derive(Debug, Clone)]
 pub struct IdentityCreateTransitionActionV0 {
+    /// The state transition signable bytes hash
+    pub signable_bytes_hasher: SignableBytesHasher,
     /// public keys
     pub public_keys: Vec<IdentityPublicKey>,
     /// the initial balance amount is equal to the remaining asset lock value

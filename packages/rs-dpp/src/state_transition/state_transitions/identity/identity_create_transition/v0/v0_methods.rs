@@ -17,6 +17,8 @@ use crate::identity::KeyType::ECDSA_HASH160;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
+use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
@@ -38,9 +40,13 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         asset_lock_proof_private_key: &[u8],
         signer: &S,
         bls: &impl BlsModule,
+        user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
-        let mut identity_create_transition = IdentityCreateTransitionV0::default();
+        let mut identity_create_transition = IdentityCreateTransitionV0 {
+            user_fee_increase,
+            ..Default::default()
+        };
         let public_keys = identity
             .public_keys()
             .iter()

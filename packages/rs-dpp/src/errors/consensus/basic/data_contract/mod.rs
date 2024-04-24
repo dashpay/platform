@@ -22,6 +22,7 @@ mod undefined_index_property_error;
 mod unique_indices_limit_reached_error;
 mod unknown_security_level_error;
 mod unknown_storage_key_requirements_error;
+mod unknown_transferable_type_error;
 
 pub use data_contract_empty_schema_error::*;
 pub use data_contract_have_new_unique_index_error::*;
@@ -48,3 +49,4 @@ pub use unique_indices_limit_reached_error::*;
 pub use invalid_document_type_name_error::*;
 pub use unknown_security_level_error::*;
 pub use unknown_storage_key_requirements_error::*;
+pub use unknown_transferable_type_error::*;
