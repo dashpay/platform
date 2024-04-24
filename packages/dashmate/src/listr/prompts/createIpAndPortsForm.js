@@ -107,7 +107,7 @@ export default function createIpAndPortsFormFactory(defaultConfigs) {
       if (initialPlatformHTTPPort === null
         || initialPlatformHTTPPort === undefined
         || network === PRESET_MAINNET) {
-        initialPlatformHTTPPort = defaultConfigs.get(network).get('platform.dapi.envoy.http.port').toString();
+        initialPlatformHTTPPort = defaultConfigs.get(network).get('platform.gateway.listeners.dapiAndDrive.port').toString();
       }
 
       fields.push({

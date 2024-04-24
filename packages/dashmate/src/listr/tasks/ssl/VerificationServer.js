@@ -39,8 +39,8 @@ export default class VerificationServer {
 
     dots.templateSettings.strip = false;
 
-    // Set up Envoy config
-    const configSubPath = path.join('platform', 'dapi', 'envoy');
+    // Set up Gateway config
+    const configSubPath = path.join('platform', 'gateway');
     const templatePath = path.join(TEMPLATES_DIR, configSubPath, '_zerossl_validation.yaml.dot');
     const templateString = fs.readFileSync(templatePath, 'utf-8');
     const template = dots.template(templateString);
@@ -48,9 +48,9 @@ export default class VerificationServer {
     const route = validationUrl.replace(`http://${config.get('externalIp')}`, '');
     const body = validationContent.join('\\n');
 
-    const envoyConfig = template({ route, body });
+    const gatewayConfig = template({ route, body });
 
-    const configDir = this.homeDir.joinPath(config.getName(), 'platform', 'dapi', 'envoy');
+    const configDir = this.homeDir.joinPath(config.getName(), 'platform', 'gateway');
     const configName = path.basename(templatePath, '.dot');
 
     this.configPath = path.join(configDir, configName);
@@ -59,7 +59,7 @@ export default class VerificationServer {
       fs.mkdirSync(configDir);
     }
     fs.rmSync(this.configPath, { force: true });
-    fs.writeFileSync(this.configPath, envoyConfig, 'utf8');
+    fs.writeFileSync(this.configPath, gatewayConfig, 'utf8');
   }
 
   /**
@@ -76,7 +76,7 @@ export default class VerificationServer {
       return false;
     }
 
-    const image = this.config.get('platform.dapi.envoy.docker.image');
+    const image = this.config.get('platform.gateway.docker.image');
 
     const name = 'dashmate-zerossl-validation';
 

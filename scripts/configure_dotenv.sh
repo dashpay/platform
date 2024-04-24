@@ -68,7 +68,7 @@ NETWORK=regtest" >>"${WALLET_LIB_ENV_FILE_PATH}"
 CORE_RPC_PORT=$(get_config core.rpc.port)
 CORE_RPC_USER=$(get_config core.rpc.user)
 CORE_RPC_PASSWORD=$(get_config core.rpc.password)
-PLATFORM_RPC_PORT=$(get_config platform.dapi.envoy.http.port)
+PLATFORM_RPC_PORT=$(get_config platform.gateway.listeners.dapiAndDrive.port)
 
 cat <<EOF >"${DASH_SDK_PATH}"/tests/.env
 # Configuration of dash-sdk network tests

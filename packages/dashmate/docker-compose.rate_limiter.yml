@@ -1,36 +1,36 @@
 version: '3.7'
 
 services:
-  dapi_envoy:
+  gateway:
     depends_on:
       - dapi_api
       - dapi_tx_filter_stream
       - drive_abci
-      - dapi_envoy_rate_limiter
+      - gateway_rate_limiter
 
-  dapi_envoy_rate_limiter:
+  gateway_rate_limiter:
     labels:
-      org.dashmate.service.title: "DAPI Envoy rate limiter"
+      org.dashmate.service.title: "Gateway rate limiter"
     restart: unless-stopped
-    image: ${PLATFORM_DAPI_ENVOY_RATE_LIMITER_DOCKER_IMAGE:?err}
+    image: ${PLATFORM_GATEWAY_RATE_LIMITER_DOCKER_IMAGE:?err}
     command: /bin/ratelimit
     depends_on:
-      - dapi_envoy_rate_limiter_redis
+      - gateway_rate_limiter_redis
     networks:
-      - envoy_rate_limiter
+      - gateway_rate_limiter
     volumes:
-      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/rate_limiter/rate_limiter.yaml:/data/ratelimit/config/config.yaml:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/rate_limiter/rate_limiter.yaml:/data/ratelimit/config/config.yaml:ro
     environment:
       - LOG_LEVEL=info
       - LOG_FORMAT=text
       - BACKEND_TYPE=redis
       - REDIS_SOCKET_TYPE=tcp
-      - REDIS_URL=dapi_envoy_rate_limiter_redis:6379
+      - REDIS_URL=gateway_rate_limiter_redis:6379
       - RUNTIME_ROOT=/data
       - RUNTIME_SUBDIRECTORY=ratelimit
       - RUNTIME_WATCH_ROOT=false
-      - DISABLE_STATS=${PLATFORM_DAPI_ENVOY_RATE_LIMITER_METRICS_DISABLED:?err}
-      - STATSD_HOST=dapi_envoy_rate_limiter_metrics
+      - DISABLE_STATS=${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DISABLED:?err}
+      - STATSD_HOST=gateway_rate_limiter_metrics
       - STATSD_PORT=9125
       - CONFIG_TYPE=FILE
       - GRPC_MAX_CONNECTION_AGE=1h
@@ -41,14 +41,14 @@ services:
     profiles:
       - platform
 
-  dapi_envoy_rate_limiter_redis:
+  gateway_rate_limiter_redis:
     labels:
-      org.dashmate.service.title: "DAPI Envoy rate limiter storage"
+      org.dashmate.service.title: "Gateway rate limiter storage"
     restart: unless-stopped
     image: redis:alpine
     expose:
       - 6379
     networks:
-      - envoy_rate_limiter
+      - gateway_rate_limiter
     profiles:
       - platform

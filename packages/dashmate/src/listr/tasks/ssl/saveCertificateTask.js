@@ -20,8 +20,7 @@ export default function saveCertificateTaskFactory(homeDir) {
           const certificatesDir = homeDir.joinPath(
             config.getName(),
             'platform',
-            'dapi',
-            'envoy',
+            'gateway',
             'ssl',
           );
 
@@ -34,7 +33,7 @@ export default function saveCertificateTaskFactory(homeDir) {
           const keyFile = path.join(certificatesDir, 'private.key');
           fs.writeFileSync(keyFile, ctx.privateKeyFile, 'utf8');
 
-          config.set('platform.dapi.envoy.ssl.enabled', true);
+          config.set('platform.gateway.ssl.enabled', true);
         },
       }]);
   }

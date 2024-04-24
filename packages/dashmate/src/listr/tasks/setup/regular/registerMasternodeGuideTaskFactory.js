@@ -73,7 +73,7 @@ export default function registerMasternodeGuideTaskFactory(
             ctx.config.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(state.platformNodeKey));
             ctx.config.set('platform.drive.tenderdash.node.key', state.platformNodeKey);
 
-            ctx.config.set('platform.dapi.envoy.http.port', state.ipAndPorts.platformHTTPPort);
+            ctx.config.set('platform.gateway.listeners.dapiAndDrive.port', state.ipAndPorts.platformHTTPPort);
             ctx.config.set('platform.drive.tenderdash.p2p.port', state.ipAndPorts.platformP2PPort);
           }
 

@@ -90,7 +90,7 @@ describe('Testnet Fullnode', function main() {
       config.set('dashmate.helper.api.port', 40000);
       config.set('core.p2p.port', 40001);
       config.set('core.rpc.port', 40002);
-      config.set('platform.dapi.envoy.http.port', 40003);
+      config.set('platform.gateway.listeners.dapiAndDrive.port', 40003);
       config.set('platform.drive.tenderdash.p2p.port', 40004);
       config.set('platform.drive.tenderdash.rpc.port', 40005);
       config.set('platform.drive.tenderdash.pprof.port', 40006);

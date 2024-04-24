@@ -44,9 +44,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
       },
       platform: {
-        dapi: {
-          envoy: {
-            http: {
+        gateway: {
+          listeners: {
+            dapiAndDrive: {
               port: 1443,
             },
           },

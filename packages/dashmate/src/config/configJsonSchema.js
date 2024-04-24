@@ -366,70 +366,82 @@ export default {
     platform: {
       type: 'object',
       properties: {
-        dapi: {
+        gateway: {
           type: 'object',
           properties: {
-            envoy: {
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            maxConnections: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Maximum number of connections that Gateway accepts from downstream clients',
+            },
+            maxHeapSizeInBytes: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Maximum heap size in bytes. If the heap size exceeds this value, Gateway will take actions to reduce memory usage',
+            },
+            upstreams: {
               type: 'object',
               properties: {
-                docker: {
-                  $ref: '#/definitions/docker',
-                },
-                maxConnections: {
-                  type: 'integer',
-                  minimum: 1,
-                  description: 'Maximum number of connections that Envoy accepts from downstream clients',
-                },
-                maxHeapSizeInBytes: {
-                  type: 'integer',
-                  minimum: 1,
-                  description: 'Maximum heap size in bytes. If the heap size exceeds this value, Envoy will take actions to reduce memory usage',
-                },
-                upstreams: {
+                driveGrpc: {
+                  $id: 'gatewayUpstream',
                   type: 'object',
                   properties: {
-                    driveGrpc: {
-                      $id: 'envoyUpstream',
-                      type: 'object',
-                      properties: {
-                        maxConnections: {
-                          type: 'integer',
-                          minimum: 1,
-                          description: 'The maximum number of connections that Envoy will establish to all hosts in a cluster',
-                        },
-                        maxPendingRequests: {
-                          type: 'integer',
-                          minimum: 1,
-                          description: 'The maximum number of requests that will be queued if `maxRequests` is reached.',
-                        },
-                        maxRequests: {
-                          type: 'integer',
-                          minimum: 1,
-                          description: 'The maximum number of parallel requests',
-                        },
-                      },
-                      required: ['maxConnections', 'maxPendingRequests', 'maxRequests'],
-                      additionalProperties: false,
+                    maxConnections: {
+                      type: 'integer',
+                      minimum: 1,
+                      description: 'The maximum number of connections that Gateway will establish to all hosts in a cluster',
                     },
-                    dapiApi: {
-                      $ref: 'envoyUpstream',
+                    maxPendingRequests: {
+                      type: 'integer',
+                      minimum: 1,
+                      description: 'The maximum number of requests that will be queued if `maxRequests` is reached.',
                     },
-                    dapiCoreStreams: {
-                      $ref: 'envoyUpstream',
+                    maxRequests: {
+                      type: 'integer',
+                      minimum: 1,
+                      description: 'The maximum number of parallel requests',
                     },
                   },
+                  required: ['maxConnections', 'maxPendingRequests', 'maxRequests'],
                   additionalProperties: false,
-                  required: ['driveGrpc', 'dapiApi', 'dapiCoreStreams'],
                 },
-                metrics: {
-                  $ref: '#/definitions/enabledHostPort',
+                dapiApi: {
+                  $ref: 'gatewayUpstream',
                 },
-                admin: {
-                  $ref: '#/definitions/enabledHostPort',
+                dapiCoreStreams: {
+                  $ref: 'gatewayUpstream',
                 },
-                http: {
+              },
+              additionalProperties: false,
+              required: ['driveGrpc', 'dapiApi', 'dapiCoreStreams'],
+            },
+            metrics: {
+              $ref: '#/definitions/enabledHostPort',
+            },
+            admin: {
+              $ref: '#/definitions/enabledHostPort',
+            },
+            listeners: {
+              type: 'object',
+              properties: {
+                dapiAndDrive: {
                   type: 'object',
                   properties: {
+                    http2: {
+                      type: 'object',
+                      properties: {
+                        maxConcurrentStreams: {
+                          type: 'integer',
+                          minimum: 1,
+                          description: 'Maximum number of concurrent streams allowed for each connection',
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['maxConcurrentStreams'],
+                    },
                     host: {
                       type: 'string',
                       minLength: 1,
@@ -439,101 +451,108 @@ export default {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['host', 'port'],
+                  required: ['http2', 'host', 'port'],
                   additionalProperties: false,
                 },
-                rateLimiter: {
+              },
+              required: ['dapiAndDrive'],
+              additionalProperties: false,
+            },
+            rateLimiter: {
+              type: 'object',
+              properties: {
+                docker: {
+                  $ref: '#/definitions/docker',
+                },
+                unit: {
+                  type: 'string',
+                  enum: ['second', 'minute', 'hour', 'day'],
+                },
+                requestsPerUnit: {
+                  type: 'integer',
+                  minimum: 1,
+                },
+                blacklist: {
+                  type: 'array',
+                  items: {
+                    $ref: '#/definitions/host',
+                  },
+                  description: 'List of IP addresses that are blacklisted from making requests',
+                },
+                whitelist: {
+                  type: 'array',
+                  items: {
+                    $ref: '#/definitions/host',
+                  },
+                  description: 'List of IP addresses that are whitelisted to make requests without limits',
+                },
+                metrics: {
                   type: 'object',
                   properties: {
                     docker: {
                       $ref: '#/definitions/docker',
                     },
-                    unit: {
-                      type: 'string',
-                      enum: ['second', 'minute', 'hour', 'day'],
-                    },
-                    requestsPerUnit: {
-                      type: 'integer',
-                      minimum: 1,
-                    },
-                    blacklist: {
-                      type: 'array',
-                      items: {
-                        $ref: '#/definitions/host',
-                      },
-                      description: 'List of IP addresses that are blacklisted from making requests',
-                    },
-                    whitelist: {
-                      type: 'array',
-                      items: {
-                        $ref: '#/definitions/host',
-                      },
-                      description: 'List of IP addresses that are whitelisted to make requests without limits',
-                    },
-                    metrics: {
-                      type: 'object',
-                      properties: {
-                        docker: {
-                          $ref: '#/definitions/docker',
-                        },
-                        enabled: {
-                          type: 'boolean',
-                        },
-                        host: {
-                          $ref: '#/definitions/host',
-                        },
-                        port: {
-                          $ref: '#/definitions/port',
-                        },
-                      },
-                      additionalProperties: false,
-                      required: ['docker', 'enabled', 'host', 'port'],
-                    },
                     enabled: {
                       type: 'boolean',
                     },
+                    host: {
+                      $ref: '#/definitions/host',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
                   },
-                  required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist', 'metrics'],
                   additionalProperties: false,
+                  required: ['docker', 'enabled', 'host', 'port'],
                 },
-                ssl: {
-                  type: 'object',
-                  properties: {
-                    enabled: {
-                      type: 'boolean',
-                    },
-                    provider: {
-                      type: 'string',
-                      enum: ['zerossl', 'self-signed', 'file'],
-                    },
-                    providerConfigs: {
-                      type: 'object',
-                      properties: {
-                        zerossl: {
-                          type: ['object'],
-                          properties: {
-                            apiKey: {
-                              type: ['string', 'null'],
-                              minLength: 32,
-                            },
-                            id: {
-                              type: ['string', 'null'],
-                              minLength: 32,
-                            },
-                          },
-                          required: ['apiKey', 'id'],
-                          additionalProperties: false,
-                        },
-                      },
-                    },
-                  },
-                  required: ['provider', 'providerConfigs', 'enabled'],
-                  additionalProperties: false,
+                enabled: {
+                  type: 'boolean',
                 },
               },
-              required: ['docker', 'http', 'rateLimiter', 'ssl', 'maxHeapSizeInBytes', 'maxConnections', 'upstreams', 'metrics', 'admin'],
+              required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist', 'metrics'],
               additionalProperties: false,
             },
+            ssl: {
+              type: 'object',
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                },
+                provider: {
+                  type: 'string',
+                  enum: ['zerossl', 'self-signed', 'file'],
+                },
+                providerConfigs: {
+                  type: 'object',
+                  properties: {
+                    zerossl: {
+                      type: ['object'],
+                      properties: {
+                        apiKey: {
+                          type: ['string', 'null'],
+                          minLength: 32,
+                        },
+                        id: {
+                          type: ['string', 'null'],
+                          minLength: 32,
+                        },
+                      },
+                      required: ['apiKey', 'id'],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+              },
+              required: ['provider', 'providerConfigs', 'enabled'],
+              additionalProperties: false,
+            },
+          },
+          required: ['docker', 'listeners', 'rateLimiter', 'ssl', 'maxHeapSizeInBytes', 'maxConnections', 'upstreams', 'metrics', 'admin'],
+          additionalProperties: false,
+        },
+        dapi: {
+          type: 'object',
+          properties: {
             api: {
               type: 'object',
               properties: {
@@ -567,7 +586,7 @@ export default {
               additionalProperties: false,
             },
           },
-          required: ['envoy', 'api'],
+          required: ['api'],
           additionalProperties: false,
         },
         drive: {
@@ -1058,7 +1077,7 @@ export default {
           type: 'boolean',
         },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enable'],
+      required: ['gateway', 'dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enable'],
       additionalProperties: false,
     },
     dashmate: {

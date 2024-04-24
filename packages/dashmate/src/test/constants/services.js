@@ -1,6 +1,6 @@
 export default {
   dashmate_helper: 'Dashmate Helper',
-  dapi_envoy: 'DAPI Envoy',
+  gateway: 'Gateway',
   dapi_api: 'DAPI API',
   drive_tenderdash: 'Drive Tenderdash',
   drive_abci: 'Drive ABCI',

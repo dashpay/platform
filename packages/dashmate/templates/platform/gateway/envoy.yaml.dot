@@ -29,8 +29,8 @@
         # The same but for connection-level flow-control
         initial_connection_window_size: 1048576  # 1 MiB
         # This option sets the maximum number of concurrent streams allowed for each connection.
-        # It means 100 requests can be in flight at the same time on a single connection.
-        max_concurrent_streams: 100
+        # It means N requests can be in flight at the same time on a single connection.
+        max_concurrent_streams: {{= it.platform.gateway.listeners.dapiAndDrive.http2.maxConcurrentStreams }}
       # Stream idle timeout
       stream_idle_timeout: 15s
       access_log:
@@ -53,7 +53,7 @@
                 duration: "%DURATION%"
                 authority: "%REQ(:AUTHORITY)%"
       http_filters:
-        {{? it.platform.dapi.envoy.rateLimiter.enabled}}
+        {{? it.platform.gateway.rateLimiter.enabled}}
         - name: envoy.filters.http.ratelimit
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
@@ -162,7 +162,7 @@
                   cluster: dapi_json_rpc
                   # Upstream response timeout
                   timeout: 10s
-            {{? it.platform.dapi.envoy.rateLimiter.enabled }}
+            {{? it.platform.gateway.rateLimiter.enabled }}
             rate_limits:
               - actions:
                   remote_address: {}
@@ -179,12 +179,12 @@
 
 static_resources:
   listeners:
-    - name: dapi_and_drive_queries
+    - name: dapi_and_drive
       address:
         socket_address:
           address: 0.0.0.0  # For docker container only. Must be a local/private interface.
           port_value: 10000
-      {{? it.platform.dapi.envoy.ssl.provider === 'self-signed'}}
+      {{? it.platform.gateway.ssl.provider === 'self-signed'}}
       listener_filters:
         - name: envoy.filters.listener.tls_inspector
           typed_config:
@@ -223,7 +223,7 @@ static_resources:
                   private_key:
                     filename: "/etc/ssl/private.key"
         {{?}}
-    {{? it.platform.dapi.envoy.metrics.enabled }}
+    {{? it.platform.gateway.metrics.enabled }}
     - name: prometheus_metrics
       address:
         socket_address:
@@ -244,7 +244,7 @@ static_resources:
                        - match:
                            prefix: "/metrics"
                          route:
-                           cluster: envoy_admin
+                           cluster: admin
                            prefix_rewrite: "/stats/prometheus"
                http_filters:
                  - name: envoy.filters.http.router
@@ -266,11 +266,11 @@ static_resources:
         thresholds:
           - priority: DEFAULT
             # The maximum number of connections that Envoy will establish to all hosts in a cluster.
-            max_connections: {{= it.platform.dapi.envoy.upstreams.dapiApi.maxConnections }}
+            max_connections: {{= it.platform.gateway.upstreams.dapiApi.maxConnections }}
             # The maximum number of requests that will be queued if `max_requests` is reached.
-            max_pending_requests: {{= it.platform.dapi.envoy.upstreams.dapiApi.maxPendingRequests }}
+            max_pending_requests: {{= it.platform.gateway.upstreams.dapiApi.maxPendingRequests }}
             # The maximum number of parallel requests.
-            max_requests: {{= it.platform.dapi.envoy.upstreams.dapiApi.maxRequests }}
+            max_requests: {{= it.platform.gateway.upstreams.dapiApi.maxRequests }}
       load_assignment:
         cluster_name: dapi_api
         endpoints:
@@ -294,11 +294,11 @@ static_resources:
         thresholds:
           - priority: DEFAULT
             # The maximum number of connections that Envoy will establish to all hosts in a cluster.
-            max_connections: {{= it.platform.dapi.envoy.upstreams.dapiCoreStreams.maxConnections }}
+            max_connections: {{= it.platform.gateway.upstreams.dapiCoreStreams.maxConnections }}
             # The maximum number of requests that will be queued if `max_requests` is reached.
-            max_pending_requests: {{= it.platform.dapi.envoy.upstreams.dapiCoreStreams.maxPendingRequests }}
+            max_pending_requests: {{= it.platform.gateway.upstreams.dapiCoreStreams.maxPendingRequests }}
             # The maximum number of parallel requests.
-            max_requests: {{= it.platform.dapi.envoy.upstreams.dapiCoreStreams.maxRequests }}
+            max_requests: {{= it.platform.gateway.upstreams.dapiCoreStreams.maxRequests }}
       load_assignment:
         cluster_name: dapi_core_streams
         endpoints:
@@ -341,11 +341,11 @@ static_resources:
         thresholds:
           - priority: DEFAULT
             # The maximum number of connections that Envoy will establish to all hosts in a cluster.
-            max_connections: {{= it.platform.dapi.envoy.upstreams.driveGrpc.maxConnections }}
+            max_connections: {{= it.platform.gateway.upstreams.driveGrpc.maxConnections }}
             # The maximum number of requests that will be queued if `max_requests` is reached.
-            max_pending_requests: {{= it.platform.dapi.envoy.upstreams.driveGrpc.maxPendingRequests }}
+            max_pending_requests: {{= it.platform.gateway.upstreams.driveGrpc.maxPendingRequests }}
             # The maximum number of parallel requests.
-            max_requests: {{= it.platform.dapi.envoy.upstreams.driveGrpc.maxRequests }}
+            max_requests: {{= it.platform.gateway.upstreams.driveGrpc.maxRequests }}
       load_assignment:
         cluster_name: drive_grpc
         endpoints:
@@ -355,7 +355,7 @@ static_resources:
                     socket_address:
                       address: drive_abci
                       port_value: 26670
-    {{? it.platform.dapi.envoy.rateLimiter.enabled }}
+    {{? it.platform.gateway.rateLimiter.enabled }}
     - name: ratelimit_service
       type: STRICT_DNS
       connect_timeout: 1s
@@ -372,15 +372,15 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: dapi_envoy_rate_limiter
+                      address: gateway_rate_limiter
                       port_value: 8081
     {{?}}
-    {{? it.platform.dapi.envoy.metrics.enabled }}
-    - name: envoy_admin
+    {{? it.platform.gateway.metrics.enabled && it.platform.gateway.admin.enabled }}
+    - name: admin
       connect_timeout: 0.25s
       type: STATIC
       load_assignment:
-        cluster_name: envoy_admin
+        cluster_name: admin
         endpoints:
           - lb_endpoints:
             - endpoint:
@@ -390,7 +390,7 @@ static_resources:
                     port_value: 9901
     {{?}}
 
-{{? it.platform.dapi.envoy.metrics.enabled }}
+{{? it.platform.gateway.admin.enabled }}
 admin:
  address:
    socket_address:
@@ -409,12 +409,12 @@ overload_manager:
       typed_config:
         "@type": type.googleapis.com/envoy.extensions.resource_monitors.fixed_heap.v3.FixedHeapConfig
         # Maximum heap size in bytes. If the heap size exceeds this value, Envoy will take actions to reduce memory usage.
-        max_heap_size_bytes: {{= it.platform.dapi.envoy.maxHeapSizeInBytes }}
+        max_heap_size_bytes: {{= it.platform.gateway.maxHeapSizeInBytes }}
     # Monitor the number of active downstream connections
     - name: "envoy.resource_monitors.global_downstream_max_connections"
       typed_config:
         "@type": type.googleapis.com/envoy.extensions.resource_monitors.downstream_connections.v3.DownstreamConnectionsConfig
-        max_active_downstream_connections: {{= it.platform.dapi.envoy.maxConnections }}
+        max_active_downstream_connections: {{= it.platform.gateway.maxConnections }}
   actions:
     # Reduce the heap size by releasing free memory if the current heap size is 92% of the maximum heap size.
     - name: "envoy.overload_actions.shrink_heap"

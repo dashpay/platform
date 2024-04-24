@@ -19,8 +19,8 @@ export default function waitForNodeToBeReadyTaskFactory() {
       {
         title: `Wait for node ${config.getName()} to be ready`,
         task: async () => {
-          let host = config.get('platform.dapi.envoy.http.host');
-          const port = config.get('platform.dapi.envoy.http.port');
+          let host = config.get('platform.gateway.listeners.dapiAndDrive.host');
+          const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
 
           if (host === '0.0.0.0') {
             host = '127.0.0.1';

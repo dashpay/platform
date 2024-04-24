@@ -125,73 +125,78 @@ export default function getBaseConfigFactory(homeDir) {
         indexes: true,
       },
       platform: {
-        dapi: {
-          envoy: {
-            docker: {
-              image: 'dashpay/envoy:1.30.1',
+        gateway: {
+          docker: {
+            image: 'dashpay/envoy:1.30.1',
+          },
+          maxConnections: 10000,
+          maxHeapSizeInBytes: 125000000, // 1 Gb
+          upstreams: {
+            driveGrpc: {
+              maxConnections: 1500,
+              maxRequests: 10000,
+              maxPendingRequests: 1000,
             },
-            maxConnections: 10000,
-            maxHeapSizeInBytes: 125000000, // 1 Gb
-            upstreams: {
-              driveGrpc: {
-                maxConnections: 1500,
-                maxRequests: 10000,
-                maxPendingRequests: 1000,
+            dapiApi: {
+              maxConnections: 1500,
+              maxRequests: 10000,
+              maxPendingRequests: 1000,
+            },
+            dapiCoreStreams: {
+              maxConnections: 100,
+              maxRequests: 100,
+              maxPendingRequests: 50,
+            },
+          },
+          metrics: {
+            enabled: false,
+            host: '127.0.0.1',
+            port: 9090,
+          },
+          admin: {
+            enabled: false,
+            host: '127.0.0.1',
+            port: 9901,
+          },
+          listeners: {
+            dapiAndDrive: {
+              http2: {
+                maxConcurrentStreams: 100,
               },
-              dapiApi: {
-                maxConnections: 1500,
-                maxRequests: 10000,
-                maxPendingRequests: 1000,
-              },
-              dapiCoreStreams: {
-                maxConnections: 100,
-                maxRequests: 100,
-                maxPendingRequests: 50,
-              },
-            },
-            metrics: {
-              enabled: false,
-              host: '127.0.0.1',
-              port: 9090,
-            },
-            admin: {
-              enabled: false,
-              host: '127.0.0.1',
-              port: 9901,
-            },
-            http: {
               host: '0.0.0.0',
               port: 443,
             },
-            rateLimiter: {
-              docker: {
-                image: 'envoyproxy/ratelimit:3fcc3609',
-              },
-              metrics: {
-                enabled: false,
-                docker: {
-                  image: 'prom/statsd-exporter:v0.26.1',
-                },
-                host: '127.0.0.1',
-                port: 9102,
-              },
-              unit: 'minute',
-              requestsPerUnit: 150,
-              blacklist: [],
-              whitelist: [],
-              enabled: true,
+          },
+          rateLimiter: {
+            docker: {
+              image: 'envoyproxy/ratelimit:3fcc3609',
             },
-            ssl: {
+            metrics: {
               enabled: false,
-              provider: 'zerossl',
-              providerConfigs: {
-                zerossl: {
-                  apiKey: null,
-                  id: null,
-                },
+              docker: {
+                image: 'prom/statsd-exporter:v0.26.1',
+              },
+              host: '127.0.0.1',
+              port: 9102,
+            },
+            unit: 'minute',
+            requestsPerUnit: 150,
+            blacklist: [],
+            whitelist: [],
+            enabled: true,
+          },
+          ssl: {
+            enabled: false,
+            provider: 'zerossl',
+            providerConfigs: {
+              zerossl: {
+                apiKey: null,
+                id: null,
               },
             },
           },
+        },
+        dapi: {
           api: {
             docker: {
               image: `dashpay/dapi:${dockerImageVersion}`,

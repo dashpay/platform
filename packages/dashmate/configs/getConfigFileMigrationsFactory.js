@@ -57,7 +57,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             options.platform.dapi.api.docker.image = base.get('platform.dapi.api.docker.image');
 
-            options.platform.dapi.envoy.docker.image = base.get('platform.dapi.envoy.docker.image');
+            options.platform.gateway.docker.image = base.get('platform.gateway.docker.image');
           });
 
         return configFile;
@@ -106,7 +106,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.24.16': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.dapi.envoy.docker = base.get('platform.dapi.envoy.docker');
+            options.platform.gateway.docker = base.get('platform.gateway.docker');
 
             options.platform.dapi.api.docker.build = base.get('platform.dapi.api.docker.build');
 
@@ -382,7 +382,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             options.core.p2p.host = base.get('core.p2p.host');
             options.core.rpc.host = base.get('core.rpc.host');
-            options.platform.dapi.envoy.http.host = base.get('platform.dapi.envoy.http.host');
+            options.platform.dapi.envoy.http.host = '0.0.0.0';
             options.platform.drive.tenderdash.p2p.host = base.get('platform.drive.tenderdash.p2p.host');
             options.platform.drive.tenderdash.rpc.host = base.get('platform.drive.tenderdash.rpc.host');
             options.platform.drive.tenderdash.metrics.host = base.get('platform.drive.tenderdash.metrics.host');
@@ -401,11 +401,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.20': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            // Removed in the future version
-            // options.platform.dapi.envoy.http.connectTimeout =
-            // base.get('platform.dapi.envoy.http.connectTimeout');
-            // options.platform.dapi.envoy.http.responseTimeout =
-            // base.get('platform.dapi.envoy.http.responseTimeout');
+            options.platform.dapi.envoy.http.connectTimeout = '5s';
+            options.platform.dapi.envoy.http.responseTimeout = '15s';
 
             options.platform.drive.tenderdash.rpc.maxOpenConnections = base.get('platform.drive.tenderdash.rpc.maxOpenConnections');
 
@@ -526,47 +523,85 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '1.0.0-dev.12': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
-            options.platform.dapi.envoy.maxConnections = base.get('platform.dapi.envoy.maxConnections');
-            options.platform.dapi.envoy.maxHeapSizeInBytes = base.get('platform.dapi.envoy.maxHeapSizeInBytes');
-
-            if (options.platform.dapi.envoy.http.connectTimeout) {
-              delete options.platform.dapi.envoy.http.connectTimeout;
+          .forEach(([name, options]) => {
+            // Do nothing if it's already migrated for some reason
+            if (!options.platform.dapi.envoy) {
+              return;
             }
 
-            if (options.platform.dapi.envoy.http.responseTimeout) {
-              delete options.platform.dapi.envoy.http.responseTimeout;
-            }
+            options.platform.gateway = lodash.cloneDeep(options.platform.dapi.envoy);
 
-            options.platform.dapi.envoy.metrics = base.get('platform.dapi.envoy.metrics');
-            options.platform.dapi.envoy.admin = base.get('platform.dapi.envoy.admin');
-            options.platform.dapi.envoy.upstreams = base.get('platform.dapi.envoy.upstreams');
+            // add new options
+            options.platform.gateway.maxConnections = base.get('platform.gateway.maxConnections');
+            options.platform.gateway.maxHeapSizeInBytes = base.get('platform.gateway.maxHeapSizeInBytes');
+            options.platform.gateway.metrics = base.get('platform.gateway.metrics');
+            options.platform.gateway.admin = base.get('platform.gateway.admin');
+            options.platform.gateway.upstreams = base.get('platform.gateway.upstreams');
 
-            options.platform.dapi.envoy.rateLimiter.docker = base.get('platform.dapi.envoy.rateLimiter.docker');
-            options.platform.dapi.envoy.rateLimiter.unit = base.get('platform.dapi.envoy.rateLimiter.unit');
-            options.platform.dapi.envoy.rateLimiter.requestsPerUnit = base.get('platform.dapi.envoy.rateLimiter.requestsPerUnit');
-            options.platform.dapi.envoy.rateLimiter.blacklist = base.get('platform.dapi.envoy.rateLimiter.blacklist');
-            options.platform.dapi.envoy.rateLimiter.whitelist = base.get('platform.dapi.envoy.rateLimiter.whitelist');
-            options.platform.dapi.envoy.rateLimiter.metrics = base.get('platform.dapi.envoy.rateLimiter.metrics');
+            // http -> listeners
+            options.platform.gateway.listeners = lodash.cloneDeep(
+              base.get('platform.gateway.listeners'),
+            );
 
-            if (options.platform.dapi.envoy.rateLimiter.fillInterval) {
-              delete options.platform.dapi.envoy.rateLimiter.fillInterval;
-            }
+            options.platform.gateway.listeners.dapiAndDrive.host = options.platform.dapi.envoy
+              .http.host;
+            options.platform.gateway.listeners.dapiAndDrive.port = options.platform.dapi.envoy
+              .http.port;
 
-            if (options.platform.dapi.envoy.rateLimiter.maxTokens) {
-              delete options.platform.dapi.envoy.rateLimiter.maxTokens;
-            }
+            delete options.platform.gateway.http;
 
-            if (options.platform.dapi.envoy.rateLimiter.tokensPerFill) {
-              delete options.platform.dapi.envoy.rateLimiter.tokensPerFill;
-            }
+            // update rate limiter
+            options.platform.gateway.rateLimiter.docker = base.get('platform.gateway.rateLimiter.docker');
+            options.platform.gateway.rateLimiter.unit = base.get('platform.gateway.rateLimiter.unit');
+            options.platform.gateway.rateLimiter.requestsPerUnit = base.get('platform.gateway.rateLimiter.requestsPerUnit');
+            options.platform.gateway.rateLimiter.blacklist = base.get('platform.gateway.rateLimiter.blacklist');
+            options.platform.gateway.rateLimiter.whitelist = base.get('platform.gateway.rateLimiter.whitelist');
+            options.platform.gateway.rateLimiter.metrics = base.get('platform.gateway.rateLimiter.metrics');
 
-            options.platform.dapi.envoy.docker.image = base.get('platform.dapi.envoy.docker.image');
+            delete options.platform.gateway.rateLimiter.fillInterval;
+            delete options.platform.gateway.rateLimiter.maxTokens;
+            delete options.platform.gateway.rateLimiter.tokensPerFill;
 
+            // delete envoy
+            delete options.platform.dapi.envoy;
+
+            // update image
+            options.platform.gateway.docker.image = base.get('platform.gateway.docker.image');
+
+            // rename non conventional field
             if (options.platform.drive.abci.tokioConsole.retention_secs) {
               options.platform.drive.abci.tokioConsole.retention = options.platform.drive.abci
                 .tokioConsole.retention_secs;
               delete options.platform.drive.abci.tokioConsole.retention_secs;
+            }
+
+            // move SSL files
+            if (options.network !== NETWORK_MAINNET) {
+              const filenames = ['private.key', 'bundle.crt', 'bundle.csr', 'csr.pem'];
+
+              for (const filename of filenames) {
+                const oldFilePath = homeDir.joinPath(
+                  name,
+                  'platform',
+                  'dapi',
+                  'envoy',
+                  'ssl',
+                  filename,
+                );
+                const newFilePath = homeDir.joinPath(
+                  name,
+                  'platform',
+                  'gateway',
+                  'ssl',
+                  filename,
+                );
+
+                if (fs.existsSync(oldFilePath)) {
+                  fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
+                  fs.copyFileSync(oldFilePath, newFilePath);
+                  fs.rmSync(oldFilePath, { recursive: true });
+                }
+              }
             }
           });
 
