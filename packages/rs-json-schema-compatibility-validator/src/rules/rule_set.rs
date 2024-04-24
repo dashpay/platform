@@ -1670,7 +1670,7 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<HashMap<&'static str, Compatibility
                             json!({ "requiresIdentityDecryptionBoundedKey": 1 }),
                             json!({}),
                             Some(JsonSchemaChange::Remove(RemoveOperation {
-                                path: "/tradeMode".to_string(),
+                                path: "/requiresIdentityDecryptionBoundedKey".to_string(),
                             })),
                         )
                             .into(),
