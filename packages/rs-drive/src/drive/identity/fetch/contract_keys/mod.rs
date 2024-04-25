@@ -27,7 +27,7 @@ impl Drive {
     /// # Returns
     ///
     /// Returns a `Result` containing a map with keys per purpose per identity id, otherwise an `Error` if the operation fails or the version is not supported.
-    pub fn get_identities_contract_keys(
+    pub fn fetch_identities_contract_keys(
         &self,
         identity_ids: &[[u8; 32]],
         contract_id: &[u8; 32],
@@ -44,7 +44,7 @@ impl Drive {
             .fetch
             .fetch_identities_contract_keys
         {
-            0 => self.get_identities_contract_keys_v0(
+            0 => self.fetch_identities_contract_keys_v0(
                 identity_ids,
                 contract_id,
                 document_type_name,
@@ -53,7 +53,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "get_identities_contract_keys".to_string(),
+                method: "fetch_identities_contract_keys".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

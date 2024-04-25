@@ -1,5 +1,5 @@
 use crate::drive::Drive;
-use crate::error::query::QuerySyntaxError;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::Purpose;
@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 impl Drive {
     /// Fetches identities keys bound to specified contract
-    pub(super) fn get_identities_contract_keys_v0(
+    pub(super) fn fetch_identities_contract_keys_v0(
         &self,
         identity_ids: &[[u8; 32]],
         contract_id: &[u8; 32],
@@ -91,17 +91,29 @@ impl Drive {
         for (path, _, element) in result {
             if let Some(identity_id_bytes) = path.get(1) {
                 let identity_id = Identifier::from_vec(identity_id_bytes.to_owned())?;
-                let purpose = *path
-                    .last()
-                    .expect("last path element is the purpose")
+                // We can use expect here because we have already shown that the path must have
+                //  at least 2 sub parts as we get index 1
+                let purpose_bytes = path.last().expect("last path element is the purpose");
+                if purpose_bytes.len() != 1 {
+                    return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                        "purpose for identifier {} at path {} is {}, should be 1 byte",
+                        identity_id,
+                        path.iter().map(hex::encode).collect::<Vec<_>>().join("/"),
+                        hex::encode(purpose_bytes)
+                    ))));
+                }
+
+                let purpose_first_byte = purpose_bytes
                     .first()
-                    .ok_or(Error::Query(QuerySyntaxError::InvalidKeyParameter(
-                        "invalid purpose".to_string(),
-                    )))?;
-                let purpose = Purpose::try_from(purpose).map_err(|_| {
-                    Error::Query(QuerySyntaxError::InvalidKeyParameter(
-                        "invalid purpose".to_string(),
-                    ))
+                    .expect("we have already shown there is 1 byte");
+
+                let purpose = Purpose::try_from(*purpose_first_byte).map_err(|e| {
+                    Error::Drive(DriveError::CorruptedDriveState(format!(
+                        "purpose for identifier {} at path {} has error : {}",
+                        identity_id,
+                        path.iter().map(hex::encode).collect::<Vec<_>>().join("/"),
+                        e
+                    )))
                 })?;
 
                 let entry = partial_identities

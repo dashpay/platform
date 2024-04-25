@@ -84,7 +84,7 @@ impl<C> Platform<C> {
             use get_identities_contract_keys_response_v0::PurposeKeys;
             use get_identities_contract_keys_response_v0::Result;
 
-            let keys = self.drive.get_identities_contract_keys(
+            let keys = self.drive.fetch_identities_contract_keys(
                 identities_ids.as_slice(),
                 &contract_id,
                 document_type_name,
