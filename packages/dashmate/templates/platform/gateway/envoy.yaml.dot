@@ -33,25 +33,38 @@
         max_concurrent_streams: {{= it.platform.gateway.listeners.dapiAndDrive.http2.maxConcurrentStreams }}
       # Stream idle timeout
       stream_idle_timeout: 15s
+{{? it.platform.gateway.log.accessLogs }}
       access_log:
-        - name: envoy.access_loggers.stdout
+      {{~ it.platform.gateway.log.accessLogs :log }}
+        {{ loggerType = {file: 'file.v3.FileAccessLog', stdout: 'stream.v3.StdoutAccessLog', stderr: 'stream.v3.StderrAccessLog'}; }}
+        - name: envoy.access_loggers.{{=log.type}}
           typed_config:
-            "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+            "@type": type.googleapis.com/envoy.extensions.access_loggers.{{=loggerType[log.type]}}
+            {{? log.type === 'file' }}
+            path: "/var/log/{{=log.path.split('/').reverse()[0]}}"
+            {{?? log.type === 'stream' }}
+            {{=log.destination}}
+            {{?}}
             log_format:
+              {{? log.format === 'json' }}
               json_format:
                 timestamp: "%START_TIME%"
                 client: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
                 protocol: "%PROTOCOL%"
                 method: "%REQ(:METHOD)%"
                 uri: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
-                upstream: "%UPSTREAM_HOST%"
                 "http-status": "%RESPONSE_CODE%"
                 "grpc-status": "%GRPC_STATUS%"
                 "rx-bytes": "%BYTES_RECEIVED%"
                 "tx-bytes": "%BYTES_SENT%"
                 "response-flags": "%RESPONSE_FLAGS%"
                 duration: "%DURATION%"
-                authority: "%REQ(:AUTHORITY)%"
+              {{??}}
+              text_format_source:
+                inline_string: "[%START_TIME%] \"%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%\" %RESPONSE_CODE% %GRPC_STATUS% %RESPONSE_FLAGS% R:%BYTES_RECEIVED% S:%BYTES_SENT% D:%DURATION%\n"
+              {{?}}
+      {{~}}
+{{?}}
       http_filters:
         {{? it.platform.gateway.rateLimiter.enabled}}
         - name: envoy.filters.http.ratelimit

@@ -127,7 +127,7 @@ export default function getBaseConfigFactory(homeDir) {
       platform: {
         gateway: {
           docker: {
-            image: 'dashpay/envoy:1.30.1',
+            image: 'dashpay/envoy:1.30.2-impr.1',
           },
           maxConnections: 10000,
           maxHeapSizeInBytes: 125000000, // 1 Gb
@@ -166,6 +166,15 @@ export default function getBaseConfigFactory(homeDir) {
               host: '0.0.0.0',
               port: 443,
             },
+          },
+          log: {
+            level: 'info',
+            accessLogs: [
+              {
+                type: 'stdout',
+                format: 'text',
+              },
+            ],
           },
           rateLimiter: {
             docker: {

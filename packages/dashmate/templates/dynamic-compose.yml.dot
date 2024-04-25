@@ -17,3 +17,12 @@ services:
       - {{=settings.destination}}:/var/log/dash/drive/{{=name}}/{{=settings.destination.split('/').reverse()[0]}}
       {{~}}
   {{?}}
+
+  {{ gatewayLogs = it.platform.gateway.log.accessLogs.filter((l) => l.type === 'file'); }}
+  {{? gatewayLogs.length > 0 }}
+  gateway:
+    volumes:
+     {{~ gatewayLogs :log }}
+     - {{= log.path }}:/var/log/{{= log.path.split('/').reverse()[0] }}
+     {{~}}
+  {{?}}

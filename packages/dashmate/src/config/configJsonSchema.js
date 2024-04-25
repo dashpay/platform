@@ -546,8 +546,63 @@ export default {
               required: ['provider', 'providerConfigs', 'enabled'],
               additionalProperties: false,
             },
+            log: {
+              type: 'object',
+              properties: {
+                level: {
+                  type: 'string',
+                  enum: ['trace', 'debug', 'info', 'warn', 'error', 'critical', 'off'],
+                },
+                accessLogs: {
+                  type: 'array',
+                  items: {
+                    oneOf: [
+                      {
+                        type: 'object',
+                        properties: {
+                          type: {
+                            type: 'string',
+                            minLength: 1,
+                            enum: ['stdout', 'stderr'],
+                            description: 'Access log type: stdout, stderr or file',
+                          },
+                          format: {
+                            type: 'string',
+                            enum: ['text', 'json'],
+                          },
+                        },
+                        required: ['type', 'format'],
+                        additionalProperties: false,
+                      },
+                      {
+                        type: 'object',
+                        properties: {
+                          type: {
+                            type: 'string',
+                            const: 'file',
+                            description: 'Access log type: stdout, stderr or file',
+                          },
+                          format: {
+                            type: 'string',
+                            enum: ['text', 'json'],
+                          },
+                          path: {
+                            type: 'string',
+                            minLength: 1,
+                          },
+                        },
+                        required: ['type', 'format', 'path'],
+                        additionalProperties: false,
+                      },
+                    ],
+                  },
+                },
+              },
+              additionalProperties: false,
+              required: ['level', 'accessLogs'],
+            },
           },
-          required: ['docker', 'listeners', 'rateLimiter', 'ssl', 'maxHeapSizeInBytes', 'maxConnections', 'upstreams', 'metrics', 'admin'],
+          required: ['docker', 'listeners', 'rateLimiter', 'ssl', 'maxHeapSizeInBytes', 'maxConnections', 'upstreams', 'metrics', 'admin', 'log'],
           additionalProperties: false,
         },
         dapi: {

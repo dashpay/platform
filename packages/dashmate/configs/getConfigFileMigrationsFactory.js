@@ -537,6 +537,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.gateway.metrics = base.get('platform.gateway.metrics');
             options.platform.gateway.admin = base.get('platform.gateway.admin');
             options.platform.gateway.upstreams = base.get('platform.gateway.upstreams');
+            options.platform.gateway.log = base.get('platform.gateway.log');
 
             // http -> listeners
             options.platform.gateway.listeners = lodash.cloneDeep(
