@@ -41,6 +41,7 @@ use crate::test::fixture::abci::static_system_identity_public_keys_v0;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use dpp::block::block_info::BlockInfo;
 use dpp::document::transfer::Transferable;
+use dpp::nft::TradeMode;
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
@@ -125,10 +126,44 @@ impl TempPlatform<MockCoreRPCLike> {
     }
 
     /// A function which adds the crypto card game to the state and returns it.
-    pub fn with_crypto_card_game(self, transferable: Transferable) -> (Self, DataContract) {
+    pub fn with_crypto_card_game_transfer_only(
+        self,
+        transferable: Transferable,
+    ) -> (Self, DataContract) {
         let card_game_path = match transferable {
             Transferable::Never => "tests/supporting_files/contract/crypto-card-game/crypto-card-game-not-transferable.json",
             Transferable::Always => "tests/supporting_files/contract/crypto-card-game/crypto-card-game-all-transferable.json",
+        };
+
+        let platform_version = self
+            .platform
+            .state
+            .load()
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        // let's construct the grovedb structure for the card game data contract
+        let card_game_contract = json_document_to_contract(card_game_path, true, platform_version)
+            .expect("expected to get data contract");
+        self.drive
+            .apply_contract(
+                &card_game_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        (self, card_game_contract)
+    }
+
+    /// A function which adds the crypto card game to the state and returns it.
+    pub fn with_crypto_card_game_nft(self, marketplace: TradeMode) -> (Self, DataContract) {
+        let card_game_path = match marketplace {
+            TradeMode::DirectPurchase => "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json",
+            _ => panic!("not yet supported")
         };
 
         let platform_version = self

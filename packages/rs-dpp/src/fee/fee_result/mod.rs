@@ -90,7 +90,7 @@ impl TryFrom<Vec<Option<FeeResult>>> for FeeResult {
 }
 
 /// The balance change for an identity
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BalanceChange {
     /// Add Balance
     AddToBalance(Credits),

@@ -434,7 +434,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2978520);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2985330);
 
         let check_result = platform
             .check_tx(
@@ -549,6 +549,7 @@ mod tests {
             },
             keep_history_chance: 0.0,
             documents_mutable_chance: 0.0,
+            documents_can_be_deleted_chance: 0.0,
         };
 
         let mut rng = StdRng::seed_from_u64(6);
@@ -625,7 +626,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 909510);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 909520);
 
         let check_result = platform
             .check_tx(
@@ -767,7 +768,7 @@ mod tests {
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            2978520 * 2
+            2985330 * 2
         );
 
         let check_result = platform
@@ -1005,7 +1006,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2978520);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2985330);
 
         platform
             .drive
@@ -1089,7 +1090,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            7098500
+            7125710
         );
 
         let check_result = platform
@@ -1201,7 +1202,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2978520);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2985330);
 
         platform
             .drive
@@ -1250,6 +1251,7 @@ mod tests {
             },
             keep_history_chance: 0.0,
             documents_mutable_chance: 0.0,
+            documents_can_be_deleted_chance: 0.0,
         };
 
         let mut rng = StdRng::seed_from_u64(6);
@@ -1320,7 +1322,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1231120);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1231130);
 
         let check_result = platform
             .check_tx(

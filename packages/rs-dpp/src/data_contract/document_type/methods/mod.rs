@@ -18,7 +18,6 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
-use crate::document::transfer::Transferable;
 use platform_value::{Identifier, Value};
 
 // TODO: Some of those methods are only for tests. Hide under feature
@@ -216,7 +215,9 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn requires_revision(&self) -> bool {
-        self.documents_mutable || self.documents_transferable != Transferable::Never
+        self.documents_mutable
+            || self.documents_transferable.is_transferable()
+            || self.trade_mode.seller_sets_price()
     }
 
     fn top_level_indices(&self) -> Vec<&IndexProperty> {

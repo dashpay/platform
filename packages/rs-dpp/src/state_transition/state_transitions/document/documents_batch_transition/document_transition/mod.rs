@@ -12,8 +12,10 @@ pub mod action_type;
 pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;
+pub mod document_purchase_transition;
 pub mod document_replace_transition;
 pub mod document_transfer_transition;
+pub mod document_update_price_transition;
 
 use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -22,7 +24,11 @@ pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 pub use document_transfer_transition::DocumentTransferTransition;
+pub use document_purchase_transition::DocumentPurchaseTransition;
+pub use document_update_price_transition::DocumentUpdatePriceTransition;
 use platform_value::Value;
+use crate::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use crate::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
@@ -81,6 +87,12 @@ pub enum DocumentTransition {
 
     #[display(fmt = "TransferDocumentTransition({})", "_0")]
     Transfer(DocumentTransferTransition),
+
+    #[display(fmt = "UpdatePriceDocumentTransition({})", "_0")]
+    UpdatePrice(DocumentUpdatePriceTransition),
+
+    #[display(fmt = "PurchaseDocumentTransition({})", "_0")]
+    Purchase(DocumentPurchaseTransition),
 }
 
 impl DocumentTransition {
@@ -106,6 +118,22 @@ impl DocumentTransition {
             None
         }
     }
+
+    pub fn as_transition_transfer(&self) -> Option<&DocumentTransferTransition> {
+        if let Self::Transfer(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_transition_purchase(&self) -> Option<&DocumentPurchaseTransition> {
+        if let Self::Purchase(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
 }
 
 impl DocumentTransitionV0Methods for DocumentTransition {
@@ -115,6 +143,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Replace(t) => t.base(),
             DocumentTransition::Delete(t) => t.base(),
             DocumentTransition::Transfer(t) => t.base(),
+            DocumentTransition::UpdatePrice(t) => t.base(),
+            DocumentTransition::Purchase(t) => t.base(),
         }
     }
 
@@ -124,6 +154,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Replace(t) => t.data().get(path),
             DocumentTransition::Delete(_) => None,
             DocumentTransition::Transfer(_) => None,
+            DocumentTransition::UpdatePrice(_) => None,
+            DocumentTransition::Purchase(_) => None,
         }
     }
 
@@ -145,6 +177,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Replace(t) => Some(t.data()),
             DocumentTransition::Delete(_) => None,
             DocumentTransition::Transfer(_) => None,
+            DocumentTransition::UpdatePrice(_) => None,
+            DocumentTransition::Purchase(_) => None,
         }
     }
 
@@ -154,6 +188,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Replace(t) => Some(t.revision()),
             DocumentTransition::Delete(_) => None,
             DocumentTransition::Transfer(t) => Some(t.revision()),
+            DocumentTransition::UpdatePrice(t) => Some(t.revision()),
+            DocumentTransition::Purchase(t) => Some(t.revision()),
         }
     }
 
@@ -163,6 +199,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Replace(t) => t.base().identity_contract_nonce(),
             DocumentTransition::Delete(t) => t.base().identity_contract_nonce(),
             DocumentTransition::Transfer(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::UpdatePrice(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Purchase(t) => t.base().identity_contract_nonce(),
         }
     }
 
@@ -181,6 +219,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             }
             DocumentTransition::Delete(_) => {}
             DocumentTransition::Transfer(_) => {}
+            DocumentTransition::UpdatePrice(_) => {}
+            DocumentTransition::Purchase(_) => {}
         }
     }
 
@@ -194,6 +234,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Replace(t) => t.base_mut(),
             DocumentTransition::Delete(t) => t.base_mut(),
             DocumentTransition::Transfer(t) => t.base_mut(),
+            DocumentTransition::UpdatePrice(t) => t.base_mut(),
+            DocumentTransition::Purchase(t) => t.base_mut(),
         }
     }
 
@@ -203,6 +245,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Replace(t) => Some(t.data_mut()),
             DocumentTransition::Delete(_) => None,
             DocumentTransition::Transfer(_) => None,
+            DocumentTransition::UpdatePrice(_) => None,
+            DocumentTransition::Purchase(_) => None,
         }
     }
 
@@ -211,7 +255,9 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(_) => {}
             DocumentTransition::Replace(ref mut t) => t.set_revision(revision),
             DocumentTransition::Delete(_) => {}
-            DocumentTransition::Transfer(_) => {}
+            DocumentTransition::Transfer(ref mut t) => t.set_revision(revision),
+            DocumentTransition::UpdatePrice(ref mut t) => t.set_revision(revision),
+            DocumentTransition::Purchase(ref mut t) => t.set_revision(revision),
         }
     }
 
@@ -221,6 +267,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Replace(t) => t.base_mut().set_identity_contract_nonce(nonce),
             DocumentTransition::Delete(t) => t.base_mut().set_identity_contract_nonce(nonce),
             DocumentTransition::Transfer(t) => t.base_mut().set_identity_contract_nonce(nonce),
+            DocumentTransition::UpdatePrice(t) => t.base_mut().set_identity_contract_nonce(nonce),
+            DocumentTransition::Purchase(t) => t.base_mut().set_identity_contract_nonce(nonce),
         }
     }
 }

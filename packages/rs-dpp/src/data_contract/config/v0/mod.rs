@@ -1,8 +1,8 @@
 use crate::data_contract::config;
 use crate::data_contract::config::{
-    DataContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
-    DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
-    DEFAULT_CONTRACT_MUTABILITY,
+    DataContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED,
+    DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY, DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
+    DEFAULT_CONTRACT_KEEPS_HISTORY, DEFAULT_CONTRACT_MUTABILITY,
 };
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::ProtocolError;
@@ -27,10 +27,14 @@ pub struct DataContractConfigV0 {
     /// Do documents in the contract keep history. This is a default for all documents in
     /// the contract, but can be overridden by the document itself
     pub documents_keep_history_contract_default: bool,
-    /// Are documents in the contract mutable. This specifies whether the document can be
-    /// changed or deleted. This is a default for all documents in the contract, but can be
-    /// overridden by the document itself
+    /// Are documents in the contract mutable? This specifies whether the documents can be
+    /// changed. This is a default for all document types in the contract, but can be
+    /// overridden by the document type config.
     pub documents_mutable_contract_default: bool,
+    /// Can documents in the contract be deleted? This specifies whether the documents can be
+    /// deleted. This is a default for all document types in the contract, but can be
+    /// overridden by the document types itself.
+    pub documents_can_be_deleted_contract_default: bool,
     /// Encryption key storage requirements
     pub requires_identity_encryption_bounded_key: Option<StorageKeyRequirements>,
     /// Decryption key storage requirements
@@ -53,6 +57,7 @@ pub trait DataContractConfigGettersV0 {
 
     /// Returns whether documents in the contract are mutable by default.
     fn documents_mutable_contract_default(&self) -> bool;
+    fn documents_can_be_deleted_contract_default(&self) -> bool;
 
     /// Encryption key storage requirements
     fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements>;
@@ -78,6 +83,9 @@ pub trait DataContractConfigSettersV0 {
     /// Sets whether documents in the contract are mutable by default.
     fn set_documents_mutable_contract_default(&mut self, value: bool);
 
+    /// Sets whether documents in the contract can be deleted by default.
+    fn set_documents_can_be_deleted_contract_default(&mut self, value: bool);
+
     /// Sets Encryption key storage requirements.
     fn set_requires_identity_encryption_bounded_key(
         &mut self,
@@ -99,6 +107,7 @@ impl std::default::Default for DataContractConfigV0 {
             keeps_history: DEFAULT_CONTRACT_KEEPS_HISTORY,
             documents_keep_history_contract_default: DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
             documents_mutable_contract_default: DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
+            documents_can_be_deleted_contract_default: DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED,
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
         }
@@ -157,6 +166,10 @@ impl DataContractConfigV0 {
             .get_optional_bool(config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT)?
             .unwrap_or(DEFAULT_CONTRACT_DOCUMENT_MUTABILITY);
 
+        let documents_can_be_deleted_contract_default = contract
+            .get_optional_bool(config::property::DOCUMENTS_CAN_BE_DELETED_CONTRACT_DEFAULT)?
+            .unwrap_or(DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED);
+
         let requires_identity_encryption_bounded_key = contract
             .get_optional_integer::<u8>(config::property::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)?
             .map(|int| int.try_into())
@@ -173,6 +186,7 @@ impl DataContractConfigV0 {
             keeps_history,
             documents_keep_history_contract_default,
             documents_mutable_contract_default,
+            documents_can_be_deleted_contract_default,
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,
         })

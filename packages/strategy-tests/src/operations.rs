@@ -323,6 +323,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                                 None,
                                 true,
                                 true,
+                                true,
                                 validate,
                                 &mut vec![],
                                 platform_version,
