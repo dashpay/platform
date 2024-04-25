@@ -173,6 +173,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         //     - Keeps history did not change
         //     - Can be deleted did not change
         //     - Documents keep history did not change
+        //     - Documents can be deleted contract default did not change
         //     - Documents mutable contract default did not change
         //     - Requires identity encryption bounded key did not change
         //     - Requires identity decryption bounded key did not change

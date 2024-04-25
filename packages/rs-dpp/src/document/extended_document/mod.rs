@@ -75,7 +75,7 @@ impl ExtendedDocument {
     /// Returns a `ProtocolError` if the document type is not found in the data contract.
     pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
         match self {
-            ExtendedDocument::V0(v0) => v0.needs_revision(),
+            ExtendedDocument::V0(v0) => v0.requires_revision(),
         }
     }
 

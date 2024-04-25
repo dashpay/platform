@@ -1,6 +1,9 @@
 use super::config::Config;
-use dash_sdk::platform::{Fetch, FetchMany};
+use dash_sdk::platform::{Fetch, FetchMany, LimitQuery};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
+use drive_proof_verifier::types::DataContractHistory;
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -87,4 +90,31 @@ async fn test_data_contracts_2_nx() {
         result.get(&nx_id_2).expect("found in result").is_none(),
         "proof of non-existence 2 failed"
     );
+}
+
+// This test currently supports offline mode only.
+// It needs Data Contract with `keep_history` set to true, which is not available in the network
+// by default and has to be created manually.
+// At the moment tests in rs-sdk do not provide Core Wallet signer, and unable to create
+// identities and data contracts.
+// The contract for this test was pre-created with
+// `packages/platform-test-suite/test/functional/platform/DataContract.spec.js`
+// and stored as a test vector for offline testing only.
+#[cfg(not(feature = "network-testing"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_data_contract_history_read() {
+    let cfg = Config::new();
+    let id = Identifier::from_string(
+        "3c71ba2d0b655ac3d231c4411d3c3fad43451d3f48213537ff9da331b24e5dea",
+        Encoding::Hex,
+    )
+    .unwrap();
+
+    let sdk = cfg.setup_api("test_data_contract_history_read").await;
+
+    let result = DataContractHistory::fetch(&sdk, LimitQuery::from((id, 10))).await;
+
+    assert!(matches!(result, Ok(Some(_))), "result: {:?}", result);
+    let (_, contract) = result.unwrap().unwrap().pop_first().unwrap();
+    assert_eq!(contract.id(), id);
 }

@@ -142,4 +142,5 @@ pub trait DocumentV0Setters: DocumentV0Getters {
     );
     fn set_transferred_at_block_height(&mut self, transferred_at_block_height: Option<u64>);
     fn set_transferred_at(&mut self, transferred_at: Option<TimestampMillis>);
+    fn bump_revision(&mut self);
 }

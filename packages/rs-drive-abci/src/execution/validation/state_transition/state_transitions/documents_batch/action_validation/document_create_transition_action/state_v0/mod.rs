@@ -4,6 +4,7 @@ use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -70,16 +71,21 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
 
         // we also need to validate that the new document wouldn't conflict with any other document
         // this means for example having overlapping unique indexes
-        platform
-            .drive
-            .validate_document_create_transition_action_uniqueness(
-                contract,
-                document_type,
-                self,
-                owner_id,
-                transaction,
-                platform_version,
-            )
-            .map_err(Error::Drive)
+
+        if document_type.indices().iter().any(|index| index.unique) {
+            platform
+                .drive
+                .validate_document_create_transition_action_uniqueness(
+                    contract,
+                    document_type,
+                    self,
+                    owner_id,
+                    transaction,
+                    platform_version,
+                )
+                .map_err(Error::Drive)
+        } else {
+            Ok(SimpleConsensusValidationResult::new())
+        }
     }
 }

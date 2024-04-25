@@ -292,11 +292,11 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
-    core_proto::GetStatusRequest,
-    core_proto::GetStatusResponse,
+    core_proto::GetBlockchainStatusRequest,
+    core_proto::GetBlockchainStatusResponse,
     CoreGrpcClient,
     RequestSettings::default(),
-    get_status
+    get_blockchain_status
 );
 
 impl_transport_request_grpc!(

@@ -219,6 +219,9 @@ mod test {
             .set_documents_mutable_contract_default(false);
         contract
             .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract
+            .config
             .set_documents_keep_history_contract_default(true);
 
         let contract_cbor = contract
@@ -235,6 +238,7 @@ mod test {
                 keeps_history: true,
                 documents_mutable_contract_default: false,
                 documents_keep_history_contract_default: true,
+                documents_can_be_deleted_contract_default: false,
                 requires_identity_encryption_bounded_key: None,
                 requires_identity_decryption_bounded_key: None,
             })
@@ -266,6 +270,9 @@ mod test {
             .set_documents_mutable_contract_default(false);
         contract_v0
             .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract_v0
+            .config
             .set_documents_keep_history_contract_default(true);
 
         let contract = contract
@@ -285,6 +292,7 @@ mod test {
                 documents_keep_history_contract_default: true,
                 requires_identity_encryption_bounded_key: None,
                 requires_identity_decryption_bounded_key: None,
+                documents_can_be_deleted_contract_default: false,
             })
         );
     }

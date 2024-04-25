@@ -223,6 +223,7 @@ describe('DataContract', () => {
         config: {
           $format_version: '0',
           canBeDeleted: false,
+          documentsCanBeDeletedContractDefault: true,
           documentsKeepHistoryContractDefault: false,
           documentsMutableContractDefault: true,
           keepsHistory: false,
@@ -252,6 +253,7 @@ describe('DataContract', () => {
         config: {
           $format_version: '0',
           canBeDeleted: false,
+          documentsCanBeDeletedContractDefault: true,
           documentsKeepHistoryContractDefault: false,
           documentsMutableContractDefault: true,
           keepsHistory: false,
@@ -272,7 +274,7 @@ describe('DataContract', () => {
     it('should return DataContract as a Buffer', () => {
       const result = dataContract.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(235);
+      expect(result).to.have.lengthOf(236);
     });
   });
 
