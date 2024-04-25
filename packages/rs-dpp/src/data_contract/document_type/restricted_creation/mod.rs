@@ -34,10 +34,7 @@ impl TryFrom<u8> for CreationRestrictionMode {
             value => Err(ProtocolError::ConsensusError(
                 ConsensusError::BasicError(
                     BasicError::UnknownDocumentCreationRestrictionModeError(
-                        UnknownDocumentCreationRestrictionModeError::new(
-                            vec![0, 1, 2],
-                            value,
-                        ),
+                        UnknownDocumentCreationRestrictionModeError::new(vec![0, 1, 2], value),
                     ),
                 )
                 .into(),

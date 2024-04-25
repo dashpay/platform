@@ -130,7 +130,7 @@ impl StorageFlags {
                 if our_owner_id != other_owner_id {
                     match merging_owners_strategy {
                         MergingOwnersStrategy::RaiseIssue => {
-                           Err(Error::StorageFlags(
+                            Err(Error::StorageFlags(
                                 StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
                                     "can not merge from different owners",
                                 ),
