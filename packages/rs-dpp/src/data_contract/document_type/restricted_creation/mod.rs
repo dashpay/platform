@@ -36,7 +36,7 @@ impl TryFrom<u8> for CreationRestrictionMode {
                     BasicError::UnknownDocumentCreationRestrictionModeError(
                         UnknownDocumentCreationRestrictionModeError::new(
                             vec![0, 1, 2],
-                            value.into(),
+                            value,
                         ),
                     ),
                 )
