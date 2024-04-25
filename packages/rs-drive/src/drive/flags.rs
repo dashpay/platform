@@ -134,8 +134,8 @@ impl StorageFlags {
                                 StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
                                     "can not merge from different owners",
                                 ),
-                            ));
-                        }
+                            ))
+                        },
                         MergingOwnersStrategy::UseOurs => Ok(Some(our_owner_id)),
                         MergingOwnersStrategy::UseTheirs => Ok(Some(other_owner_id)),
                     }
