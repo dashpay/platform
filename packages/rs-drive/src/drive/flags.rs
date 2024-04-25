@@ -129,13 +129,11 @@ impl StorageFlags {
             if let Some(other_owner_id) = rhs.owner_id() {
                 if our_owner_id != other_owner_id {
                     match merging_owners_strategy {
-                        MergingOwnersStrategy::RaiseIssue => {
-                            Err(Error::StorageFlags(
-                                StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
-                                    "can not merge from different owners",
-                                ),
-                            ))
-                        },
+                        MergingOwnersStrategy::RaiseIssue => Err(Error::StorageFlags(
+                            StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
+                                "can not merge from different owners",
+                            ),
+                        )),
                         MergingOwnersStrategy::UseOurs => Ok(Some(our_owner_id)),
                         MergingOwnersStrategy::UseTheirs => Ok(Some(other_owner_id)),
                     }
