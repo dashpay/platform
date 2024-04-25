@@ -46,7 +46,7 @@ impl TryFrom<u8> for TradeMode {
             // 3 => Ok(Self::PrivateOffer),
             value => Err(ProtocolError::ConsensusError(
                 ConsensusError::BasicError(BasicError::UnknownTradeModeError(
-                    UnknownTradeModeError::new(vec![0, 1], value.into()),
+                    UnknownTradeModeError::new(vec![0, 1], value),
                 ))
                 .into(),
             )),

@@ -247,7 +247,7 @@ impl DocumentTypeV0 {
 
         let trade_mode = documents_trade_mode_u8.try_into()?;
 
-        // Are documents of this type transferable?
+        // What is the creation restriction mode of this document type?
         let documents_creation_restriction_mode_u8: u8 =
             Value::inner_optional_integer_value(schema_map, CREATION_RESTRICTION_MODE)
                 .map_err(consensus_or_protocol_value_error)?

@@ -615,7 +615,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             None
         };
 
-        // Now we serialize the price which might not be necessary unless called for by the document type
+        // Now we deserialize the price which might not be necessary unless called for by the document type
 
         let price = if document_type.trade_mode().seller_sets_price() {
             let has_price = buf.read_u8().map_err(|_| {

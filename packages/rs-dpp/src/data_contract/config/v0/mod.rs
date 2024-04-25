@@ -27,13 +27,13 @@ pub struct DataContractConfigV0 {
     /// Do documents in the contract keep history. This is a default for all documents in
     /// the contract, but can be overridden by the document itself
     pub documents_keep_history_contract_default: bool,
-    /// Are documents in the contract mutable? This specifies whether the document can be
-    /// changed. This is a default for all documents in the contract, but can be
-    /// overridden by the document itself.
+    /// Are documents in the contract mutable? This specifies whether the documents can be
+    /// changed. This is a default for all document types in the contract, but can be
+    /// overridden by the document type config.
     pub documents_mutable_contract_default: bool,
-    /// Can documents in the contract be deleted? This specifies whether the document can be
-    /// deleted. This is a default for all documents in the contract, but can be
-    /// overridden by the document itself.
+    /// Can documents in the contract be deleted? This specifies whether the documents can be
+    /// deleted. This is a default for all document types in the contract, but can be
+    /// overridden by the document types itself.
     pub documents_can_be_deleted_contract_default: bool,
     /// Encryption key storage requirements
     pub requires_identity_encryption_bounded_key: Option<StorageKeyRequirements>,
