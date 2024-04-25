@@ -1506,7 +1506,7 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<HashMap<&'static str, Compatibility
                             json!({ "transferable": 1 }),
                             Some(JsonSchemaChange::Add(AddOperation {
                                 path: "/transferable".to_string(),
-                                value: json!(true),
+                                value: json!(1),
                             })),
                         )
                             .into(),
