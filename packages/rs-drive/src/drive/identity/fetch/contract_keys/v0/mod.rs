@@ -73,6 +73,7 @@ impl Drive {
             contract_id,
             &document_type_name,
             &purposes,
+            Some((identity_ids.len() * purposes.len()) as u16),
         );
 
         let result = self

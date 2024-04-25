@@ -187,7 +187,8 @@ impl Drive {
         identity_ids: &[[u8; 32]],
         contract_id: &[u8; 32],
         document_type_name: &Option<String>,
-        purposes: &Vec<Purpose>,
+        purposes: &[Purpose],
+        limit: Option<u16>,
     ) -> PathQuery {
         let identities_path = identity_tree_path_vec();
         let mut query = Query::new();
@@ -225,7 +226,7 @@ impl Drive {
             path: identities_path,
             query: SizedQuery {
                 query,
-                limit: Some(10),
+                limit,
                 offset: None,
             },
         }
