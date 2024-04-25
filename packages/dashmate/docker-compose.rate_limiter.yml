@@ -4,7 +4,7 @@ services:
   gateway:
     depends_on:
       - dapi_api
-      - dapi_tx_filter_stream
+      - dapi_core_streams
       - drive_abci
       - gateway_rate_limiter
 

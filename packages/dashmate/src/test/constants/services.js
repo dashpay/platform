@@ -4,6 +4,6 @@ export default {
   dapi_api: 'DAPI API',
   drive_tenderdash: 'Drive Tenderdash',
   drive_abci: 'Drive ABCI',
-  dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',
+  dapi_core_streams: 'DAPI Core Streams',
   core: 'Core',
 };

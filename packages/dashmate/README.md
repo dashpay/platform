@@ -503,7 +503,7 @@ again all your service configs (dashd.conf, config.toml, etc.), you can issue th
 
 ```bash
 dashmate config render
-Config "testnet" service configs rendered
+"testnet" service configs rendered
 ```
 
 ### Development

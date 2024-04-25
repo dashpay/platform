@@ -146,7 +146,7 @@ services:
     profiles:
       - platform
 
-  dapi_tx_filter_stream:
+  dapi_core_streams:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "DAPI Transactions Filter Stream"
@@ -177,7 +177,7 @@ services:
     profiles:
       - platform
 
-  gateway:
+  gateway: # TODO: add option to set logging level for envoy. Shall we store access logs to file?
     image: ${PLATFORM_GATEWAY_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Gateway"
@@ -191,7 +191,7 @@ services:
       - ${PLATFORM_GATEWAY_ADMIN_HOST:?err}:${PLATFORM_GATEWAY_ADMIN_PORT:?err}:9901
     depends_on:
       - dapi_api
-      - dapi_tx_filter_stream
+      - dapi_core_streams
       - drive_abci
     networks:
       - default

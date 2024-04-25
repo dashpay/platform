@@ -44,7 +44,7 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
 
       if (config.get('platform.dapi.api.docker.build.enabled')) {
         dockerComposeFiles.push('docker-compose.build.dapi_api.yml');
-        dockerComposeFiles.push('docker-compose.build.dapi_tx_filter_stream.yml');
+        dockerComposeFiles.push('docker-compose.build.dapi_core_streams.yml');
       }
     }
 

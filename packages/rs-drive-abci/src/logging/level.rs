@@ -110,7 +110,7 @@ impl TryFrom<&LogLevel> for EnvFilter {
                     .expect("should be a valid log specification")
             }
             LogLevel::Debug => EnvFilter::try_new(
-                "info,tenderdash_abci=debug,drive_abci=debug,drive=debug,dpp=debug",
+                "info,tenderdash_abci=debug,drive_abci=debug,drive=debug,dpp=debug",  // TODO: Add tonic
             )
             .expect("should be a valid log specification"),
             LogLevel::Trace => EnvFilter::try_new(
