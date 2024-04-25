@@ -263,6 +263,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     verify_identity_keys_by_identity_id: 0,
                     verify_identity_nonce: 0,
                     verify_identity_contract_nonce: 0,
+                    verify_identities_contract_keys: 0,
                 },
                 single_document: DriveVerifySingleDocumentMethodVersions {
                     verify_proof: 0,

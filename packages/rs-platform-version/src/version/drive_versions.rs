@@ -103,6 +103,7 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_keys_by_identity_id: FeatureVersion,
     pub verify_identity_nonce: FeatureVersion,
     pub verify_identity_contract_nonce: FeatureVersion,
+    pub verify_identities_contract_keys: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
