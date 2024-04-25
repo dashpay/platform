@@ -570,9 +570,41 @@ export default {
                             type: 'string',
                             enum: ['text', 'json'],
                           },
+                          template: true,
                         },
                         required: ['type', 'format'],
                         additionalProperties: false,
+                        if: {
+                          type: 'object',
+                          properties: {
+                            format: {
+                              const: 'json',
+                            },
+                          },
+                        },
+                        then: {
+                          type: 'object',
+                          properties: {
+                            template: {
+                              type: ['null', 'object'],
+                              additionalProperties: {
+                                type: 'string',
+                              },
+                              description: 'JSON fields and values. If null, default template is used.',
+                            },
+                          },
+                          required: ['template'],
+                        },
+                        else: {
+                          type: 'object',
+                          properties: {
+                            template: {
+                              type: ['null', 'string'],
+                              description: 'Template string. If null, default template is used.',
+                            },
+                          },
+                          required: ['template'],
+                        },
                       },
                       {
                         type: 'object',
@@ -590,9 +622,41 @@ export default {
                             type: 'string',
                             minLength: 1,
                           },
+                          template: true,
                         },
                         required: ['type', 'format', 'path'],
                         additionalProperties: false,
+                        if: {
+                          type: 'object',
+                          properties: {
+                            format: {
+                              const: 'json',
+                            },
+                          },
+                        },
+                        then: {
+                          type: 'object',
+                          properties: {
+                            template: {
+                              type: ['null', 'object'],
+                              additionalProperties: {
+                                type: 'string',
+                              },
+                              description: 'JSON fields and values. If null, default template is used.',
+                            },
+                          },
+                          required: ['template'],
+                        },
+                        else: {
+                          type: 'object',
+                          properties: {
+                            template: {
+                              type: ['null', 'string'],
+                              description: 'Template string. If null, default template is used.',
+                            },
+                          },
+                          required: ['template'],
+                        },
                       },
                     ],
                   },

@@ -173,6 +173,7 @@ export default function getBaseConfigFactory(homeDir) {
               {
                 type: 'stdout',
                 format: 'text',
+                template: null,
               },
             ],
           },

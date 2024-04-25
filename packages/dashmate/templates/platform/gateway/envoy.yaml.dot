@@ -46,8 +46,9 @@
             {{=log.destination}}
             {{?}}
             log_format:
-              {{? log.format === 'json' }}
+            {{? log.format === 'json' }}
               json_format:
+              {{? log.template === null }}
                 timestamp: "%START_TIME%"
                 client: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
                 protocol: "%PROTOCOL%"
@@ -60,9 +61,19 @@
                 "response-flags": "%RESPONSE_FLAGS%"
                 duration: "%DURATION%"
               {{??}}
-              text_format_source:
-                inline_string: "[%START_TIME%] \"%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%\" %RESPONSE_CODE% %GRPC_STATUS% %RESPONSE_FLAGS% R:%BYTES_RECEIVED% S:%BYTES_SENT% D:%DURATION%\n"
+                {{ template = Object.entries(log.template); }}
+                {{~ template :entry }}
+                "{{=entry[0]}}": "{{=entry[1]}}"
+                {{~}}
               {{?}}
+            {{??}}
+              text_format_source:
+                {{? log.template === null }}
+                inline_string: "[%START_TIME%] \"%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%\" %RESPONSE_CODE% %GRPC_STATUS% %RESPONSE_FLAGS% R:%BYTES_RECEIVED% S:%BYTES_SENT% D:%DURATION%\n"
+                {{??}}
+                inline_string: "{{=log.template}}\n"
+                {{?}}
+            {{?}}
       {{~}}
 {{?}}
       http_filters:
