@@ -1592,7 +1592,7 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<HashMap<&'static str, Compatibility
                             json!({ "creationRestrictionMode": 1 }),
                             json!({}),
                             Some(JsonSchemaChange::Remove(RemoveOperation {
-                                path: "/tradeMode".to_string(),
+                                path: "/creationRestrictionMode".to_string(),
                             })),
                         )
                             .into(),
@@ -1631,7 +1631,7 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<HashMap<&'static str, Compatibility
                             json!({ "requiresIdentityEncryptionBoundedKey": 1 }),
                             json!({}),
                             Some(JsonSchemaChange::Remove(RemoveOperation {
-                                path: "/tradeMode".to_string(),
+                                path: "/requiresIdentityEncryptionBoundedKey".to_string(),
                             })),
                         )
                             .into(),
