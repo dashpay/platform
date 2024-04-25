@@ -56,6 +56,7 @@ class Account extends EventEmitter {
     if (!wallet || wallet.constructor.name !== Wallet.name) throw new Error('Expected wallet to be passed as param');
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
+    this.wallet = wallet;
     this.logger = logger.getForWallet(this.walletId);
 
     this.logger.debug(`Loading up wallet ${this.walletId}`);
@@ -223,16 +224,12 @@ class Account extends EventEmitter {
     return `${EVENTS.INSTANT_LOCK}:${transactionHash}`;
   }
 
-  // It's actually Account that mutates wallet.accounts to add itself.
-  // We might want to get rid of that as it can be really confusing.
-  // It would gives that responsability to createAccount to create
-  // (and therefore push to accounts).
   async init(wallet) {
     if (this.state.isInitialized) {
       return true;
     }
     await _addAccountToWallet(this, wallet);
-    await _initializeAccount(this, wallet.plugins);
+    await _initializeAccount(this, wallet ? wallet.plugins : this.wallet.plugins);
     return true;
   }
 
