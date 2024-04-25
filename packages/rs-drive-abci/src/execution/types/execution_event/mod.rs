@@ -155,6 +155,25 @@ impl<'a> ExecutionEvent<'a> {
                     )))
                 }
             }
+            StateTransitionAction::DocumentsBatchAction(document_batch_action) => {
+                let user_fee_increase = action.user_fee_increase();
+                let removed_balance = document_batch_action.all_purchases_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                if let Some(identity) = identity {
+                    Ok(ExecutionEvent::Paid {
+                        identity,
+                        removed_balance,
+                        operations,
+                        execution_operations: execution_context.operations_consume(),
+                        user_fee_increase,
+                    })
+                } else {
+                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "partial identity should be present for other state transitions",
+                    )))
+                }
+            }
             _ => {
                 let user_fee_increase = action.user_fee_increase();
                 let operations =

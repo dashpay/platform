@@ -6,7 +6,10 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::property_names::PRICE;
+use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
@@ -24,7 +27,9 @@ use dpp::state_transition::documents_batch_transition::document_create_transitio
 use dpp::state_transition::documents_batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_replace_transition::DocumentFromReplaceTransition;
 use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedPartialIdentity};
 use platform_version::TryIntoPlatformVersioned;
@@ -93,6 +98,8 @@ impl Drive {
                         "no transition in a document batch transition".to_string(),
                     )));
                 };
+
+                let owner_id = documents_batch_transition.owner_id();
 
                 let data_contract_id = transition.data_contract_id();
 
@@ -196,6 +203,29 @@ impl Drive {
                                 delete_transition.base().id(),
                                 None,
                             )])),
+                        ))
+                    }
+                    DocumentTransition::UpdatePrice(update_price_transition) => {
+                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (update price)", update_price_transition.base().id()))))?;
+                        let new_document_price : Credits = document.properties().get_integer(PRICE).map_err(|e| Error::Proof(ProofError::IncorrectProof(format!("proof did not contain a document that contained a price field with id {} expected to exist because of state transition (update price): {}", update_price_transition.base().id(), e))))?;
+                        if new_document_price != update_price_transition.price() {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document update of price after price update with id {}", update_price_transition.base().id()))));
+                        }
+                        Ok((
+                            root_hash,
+                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
+                        ))
+                    }
+                    DocumentTransition::Purchase(purchase_transition) => {
+                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (purchase)", purchase_transition.base().id()))))?;
+
+                        if document.owner_id() != owner_id {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", purchase_transition.base().id()))));
+                        }
+
+                        Ok((
+                            root_hash,
+                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
                         ))
                     }
                 }

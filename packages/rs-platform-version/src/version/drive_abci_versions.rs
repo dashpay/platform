@@ -99,6 +99,7 @@ pub struct DriveAbciPlatformStateStorageMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciDocumentsStateTransitionValidationVersions {
+    pub balance_pre_check: FeatureVersion,
     pub basic_structure: FeatureVersion,
     pub advanced_structure: FeatureVersion,
     pub revision: FeatureVersion,
@@ -109,10 +110,14 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_delete_transition_structure_validation: FeatureVersion,
     pub document_replace_transition_structure_validation: FeatureVersion,
     pub document_transfer_transition_structure_validation: FeatureVersion,
+    pub document_purchase_transition_structure_validation: FeatureVersion,
+    pub document_update_price_transition_structure_validation: FeatureVersion,
     pub document_create_transition_state_validation: FeatureVersion,
     pub document_delete_transition_state_validation: FeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,
     pub document_transfer_transition_state_validation: FeatureVersion,
+    pub document_purchase_transition_state_validation: FeatureVersion,
+    pub document_update_price_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
