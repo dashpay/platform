@@ -36,6 +36,7 @@ impl Drive {
                 &PathQuery::new_unsized(pending_epoch_refunds_path_vec(), query),
                 transaction.is_some(),
                 true,
+                true,
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
             )

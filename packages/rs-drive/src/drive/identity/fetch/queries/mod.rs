@@ -194,7 +194,7 @@ impl Drive {
         let mut query = Query::new();
         query.insert_keys(
             identity_ids
-                .into_iter()
+                .iter()
                 .map(|identity_id| identity_id.to_vec())
                 .collect(),
         );

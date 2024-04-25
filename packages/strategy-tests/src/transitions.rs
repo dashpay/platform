@@ -40,7 +40,6 @@ use simple_signer::signer::SimpleSigner;
 use crate::KeyMaps;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use dpp::identity::contract_bounds::ContractBounds;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 

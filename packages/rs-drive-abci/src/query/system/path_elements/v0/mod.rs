@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_query_total_system_credits_from_path_elements_query() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let platform_version = PlatformVersion::latest();
 

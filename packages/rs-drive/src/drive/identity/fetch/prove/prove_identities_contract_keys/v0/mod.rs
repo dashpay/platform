@@ -7,6 +7,7 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves identities keys bound to specified contract
+    #[inline(always)]
     pub(super) fn prove_identities_contract_keys_v0(
         &self,
         identity_ids: &[[u8; 32]],

@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_query_empty_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_query_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_prove_empty_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_prove_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let mut rand = StdRng::seed_from_u64(10);
 

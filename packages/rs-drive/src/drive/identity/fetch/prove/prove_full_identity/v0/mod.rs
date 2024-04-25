@@ -147,6 +147,7 @@ mod tests {
                 &path_query,
                 true,
                 true,
+                true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,
             )

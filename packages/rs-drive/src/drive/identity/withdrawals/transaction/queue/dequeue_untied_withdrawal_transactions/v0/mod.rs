@@ -39,6 +39,7 @@ impl Drive {
                 &path_query,
                 transaction.is_some(),
                 true,
+                true,
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
             )

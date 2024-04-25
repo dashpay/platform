@@ -20,6 +20,7 @@ impl Drive {
             path_query,
             transaction.is_some(),
             true,
+            true,
             result_type,
             transaction,
         );

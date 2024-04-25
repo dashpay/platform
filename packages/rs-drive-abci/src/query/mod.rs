@@ -31,14 +31,22 @@ mod tests {
     use std::borrow::Cow;
     use std::sync::Arc;
 
-    pub fn setup_platform<'a>() -> (
+    pub fn setup_platform<'a>(
+        with_genesis_state: bool,
+    ) -> (
         TempPlatform<MockCoreRPCLike>,
         Arc<PlatformState>,
         &'a PlatformVersion,
     ) {
-        let platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_initial_state_structure();
+        let platform = if with_genesis_state {
+            TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state()
+        } else {
+            TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure()
+        };
 
         // We can't return a reference to Arc (`load` method) so we clone Arc (`load_full`).
         // This is a bit slower but we don't care since we are in test environment
