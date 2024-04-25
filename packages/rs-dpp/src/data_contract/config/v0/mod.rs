@@ -31,7 +31,7 @@ pub struct DataContractConfigV0 {
     /// changed. This is a default for all document types in the contract, but can be
     /// overridden by the document type config.
     pub documents_mutable_contract_default: bool,
-    /// Can documents in the contract be deleted? This specifies whether the document can be
+    /// Can documents in the contract be deleted? This specifies whether the documents can be
     /// deleted. This is a default for all documents in the contract, but can be
     /// overridden by the document itself.
     pub documents_can_be_deleted_contract_default: bool,
