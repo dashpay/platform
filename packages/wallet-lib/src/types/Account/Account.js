@@ -44,6 +44,7 @@ const defaultOptions = {
 
 /* eslint-disable no-underscore-dangle */
 const _initializeAccount = require('./_initializeAccount');
+const _addAccountToWallet = require('./_addAccountToWallet');
 const _loadStrategy = require('./_loadStrategy');
 
 const getNetwork = require('./_getNetwork');
@@ -227,6 +228,7 @@ class Account extends EventEmitter {
     if (this.state.isInitialized) {
       return true;
     }
+    await _addAccountToWallet(this, wallet);
     await _initializeAccount(this, wallet ? wallet.plugins : this.wallet.plugins);
     return true;
   }
