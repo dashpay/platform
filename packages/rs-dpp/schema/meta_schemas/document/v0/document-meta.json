@@ -505,9 +505,7 @@
       "type": "integer",
       "enum": [
         0,
-        1,
-        2,
-        3
+        1
       ],
       "description": "Built in marketplace system. 0 - None, 1 - Direct purchase (The user can buy the item without the need for an approval)"
     },

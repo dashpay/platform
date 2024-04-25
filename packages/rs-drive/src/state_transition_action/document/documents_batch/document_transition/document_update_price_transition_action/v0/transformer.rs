@@ -31,15 +31,15 @@ impl DocumentUpdatePriceTransitionActionV0 {
 
         modified_document.bump_revision();
 
-        if base.document_type_field_is_required(property_names::TRANSFERRED_AT)? {
+        if base.document_type_field_is_required(property_names::UPDATED_AT)? {
             modified_document.set_updated_at(Some(block_info.time_ms));
         }
 
-        if base.document_type_field_is_required(property_names::TRANSFERRED_AT_BLOCK_HEIGHT)? {
+        if base.document_type_field_is_required(property_names::UPDATED_AT_BLOCK_HEIGHT)? {
             modified_document.set_updated_at_block_height(Some(block_info.height));
         }
 
-        if base.document_type_field_is_required(property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT)? {
+        if base.document_type_field_is_required(property_names::UPDATED_AT_CORE_BLOCK_HEIGHT)? {
             modified_document.set_updated_at_core_block_height(Some(block_info.core_height));
         }
 
