@@ -10,11 +10,6 @@
 ###                   Main Base Config Options                      ###
 #######################################################################
 
-# TCP or UNIX socket address of the ABCI application,
-# or the name of an ABCI application compiled in with the Tendermint binary
-#proxy-app = "tcp://drive_abci:26658"
-proxy-app = "CheckTx:grpc:drive_abci:26670,*:socket:tcp://drive_abci:26658"
-
 # A custom human readable name for this node
 {{?it.platform.drive.tenderdash.moniker}}moniker = "{{=it.platform.drive.tenderdash.moniker}}"{{?}}
 
@@ -72,12 +67,37 @@ genesis-file = "config/genesis.json"
 # Path to the JSON file containing the private key to use for node authentication in the p2p protocol
 node-key-file = "config/node_key.json"
 
-# Mechanism to connect to the ABCI application: socket | grpc
-abci = "routed"
-
 # If true, query the ABCI app on connecting to a new peer
 # so the app can decide if we should keep the connection or not
 filter-peers = false
+
+#######################################################
+###       ABCI App Connection Options               ###
+#######################################################
+[abci]
+# TCP or UNIX socket address of the ABCI application,
+# or routing rules for routed multi-app setup,
+# or the name of an ABCI application compiled in with the Tendermint binary
+# Example for routed multi-app setup:
+#   abci = "routed"
+#   address = "Info:socket:unix:///tmp/socket.1,Info:socket:unix:///tmp/socket.2,CheckTx:socket:unix:///tmp/socket.1,*:socket:unix:///tmp/socket.3"
+address = "CheckTx:grpc:drive_abci:26670,*:socket:tcp://drive_abci:26658"
+# Transport mechanism to connect to the ABCI application: socket | grpc | routed
+transport = "routed"
+# Maximum number of simultaneous connections to the ABCI application
+# per each method. Map of a gRPC method name,like "echo", to the number of concurrent connections.
+# Special value "*" can be used to set the default limit for methods not explicitly listed.
+#
+# Example:
+#
+# grpc-concurrency = [
+#	{ "*" = 10 },
+#	{ "echo" = 2 },
+#	{ "info" = 2 },
+#]
+grpc-concurrency = [
+  { "check_tx" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
+]
 
 
 #######################################################
