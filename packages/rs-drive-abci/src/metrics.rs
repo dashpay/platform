@@ -4,7 +4,8 @@
 
 use std::{sync::Once, time::Instant};
 
-use metrics::{absolute_counter, describe_counter, describe_histogram, histogram, Label};
+use dapi_grpc::tonic::Code;
+use metrics::{counter, describe_counter, describe_histogram, histogram, Label};
 use metrics_exporter_prometheus::PrometheusBuilder;
 
 /// Default Prometheus port (29090)
@@ -15,6 +16,9 @@ const COUNTER_LAST_HEIGHT: &str = "abci_last_finalized_height";
 const HISTOGRAM_FINALIZED_ROUND: &str = "abci_finalized_round";
 const HISTOGRAM_ABCI_REQUEST_DURATION: &str = "abci_request_duration_seconds";
 const LABEL_ENDPOINT: &str = "endpoint";
+const LABEL_RESPONSE_CODE: &str = "response_code";
+const COUNTER_QUERY_COUNTER: &str = "abci_query_counter";
+const HISTOGRAM_QUERY_DURATION: &str = "abci_query_duration";
 
 /// Error returned by metrics subsystem
 #[derive(thiserror::Error, Debug)]
@@ -37,6 +41,7 @@ pub enum Error {
 pub struct HistogramTiming {
     key: metrics::Key,
     start: Instant,
+    skip: bool,
 }
 
 impl HistogramTiming {
@@ -54,12 +59,25 @@ impl HistogramTiming {
         Self {
             key: metric,
             start: Instant::now(),
+            skip: false,
         }
     }
 
     /// Returns the elapsed time since the metric was started.
     pub fn elapsed(&self) -> std::time::Duration {
         self.start.elapsed()
+    }
+
+    /// Add label to the histrgram
+    pub fn add_label(&mut self, label: Label) {
+        self.key = self.key.with_extra_labels(vec![label]);
+    }
+
+    /// Cancel timing measurement and discard the metric.
+    pub fn cancel(mut self) {
+        self.skip = true;
+
+        drop(self);
     }
 }
 
@@ -70,11 +88,15 @@ impl Drop for HistogramTiming {
     /// since the start time.
     #[inline]
     fn drop(&mut self) {
+        if self.skip {
+            return;
+        }
+
         let stop = self.start.elapsed();
         let key = self.key.name().to_string();
 
         let labels: Vec<Label> = self.key.labels().cloned().collect();
-        histogram!(key, stop.as_secs_f64(), labels);
+        histogram!(key, labels).record(stop.as_secs_f64());
     }
 }
 
@@ -170,7 +192,29 @@ impl Prometheus {
 
             describe_histogram!(
                 HISTOGRAM_ABCI_REQUEST_DURATION,
+                metrics::Unit::Seconds,
                 "Duration of ABCI request execution inside Drive per endpoint, in seconds"
+            );
+
+            describe_counter!(
+                COUNTER_LAST_HEIGHT,
+                "Last finalized height of platform chain (eg. Tenderdash)"
+            );
+
+            describe_counter!(
+                COUNTER_LAST_HEIGHT,
+                "Last finalized height of platform chain (eg. Tenderdash)"
+            );
+
+            describe_counter!(
+                COUNTER_QUERY_COUNTER,
+                "Total number of query requests per endpoint"
+            );
+
+            describe_histogram!(
+                HISTOGRAM_QUERY_DURATION,
+                metrics::Unit::Seconds,
+                "Duration of query request execution inside Drive per endpoint, in seconds"
             )
         });
     }
@@ -187,17 +231,17 @@ impl Prometheus {
 /// abci_last_platform_height(height);
 /// ```
 pub fn abci_last_platform_height(height: u64) {
-    absolute_counter!(COUNTER_LAST_HEIGHT, height);
+    counter!(COUNTER_LAST_HEIGHT).absolute(height);
 }
 
 /// Add round of last finalized round to [HISTOGRAM_FINALIZED_ROUND] metric.
 pub fn abci_last_finalized_round(round: u32) {
-    histogram!(HISTOGRAM_FINALIZED_ROUND, round as f64);
+    histogram!(HISTOGRAM_FINALIZED_ROUND).record(round as f64);
 }
 
 /// Set time of last block into [COUNTER_LAST_BLOCK_TIME].
 pub fn abci_last_block_time(time: u64) {
-    absolute_counter!(COUNTER_LAST_BLOCK_TIME, time);
+    counter!(COUNTER_LAST_BLOCK_TIME).absolute(time);
 }
 
 /// Returns a `[HistogramTiming]` instance for measuring ABCI request duration.
@@ -223,4 +267,59 @@ pub fn abci_request_duration(endpoint: &str) -> HistogramTiming {
     HistogramTiming::new(
         metrics::Key::from_name(HISTOGRAM_ABCI_REQUEST_DURATION).with_extra_labels(labels),
     )
+}
+
+/// Increment total counter for a query endpoint.
+///
+/// # Examples
+///
+/// ```
+/// use dapi_grpc::tonic::Code;
+/// use drive_abci::metrics::increment_query_counter_metric;
+///
+/// increment_query_counter_metric("get_identity", Code::Ok);
+/// ```
+pub fn increment_query_counter_metric(endpoint: &str, response_code: Code) {
+    let endpoint_label = endpoint_metric_label(endpoint);
+    let response_code_label = response_code_metric_label(response_code);
+    counter!(
+        HISTOGRAM_QUERY_DURATION,
+        vec![endpoint_label, response_code_label]
+    )
+    .increment(1);
+}
+
+/// Returns a `[HistogramTiming]` instance for measuring query duration.
+///
+/// Duration measurement starts when this function is called, and stops when returned value
+/// goes out of scope.
+///
+/// # Arguments
+///
+/// * `endpoint` - A string slice representing the query name.
+///
+/// # Examples
+///
+/// ```
+/// use drive_abci::metrics::query_duration_metric;
+/// let endpoint = "get_identity";
+/// let timing = query_duration_metric(endpoint);
+/// // Your code here
+/// drop(timing); // stop measurement and report the metric
+/// ```
+pub fn query_duration_metric(endpoint: &str) -> HistogramTiming {
+    let labels = vec![endpoint_metric_label(endpoint)];
+    HistogramTiming::new(
+        metrics::Key::from_name(HISTOGRAM_QUERY_DURATION).with_extra_labels(labels),
+    )
+}
+
+/// Create a label for the response code.
+pub fn response_code_metric_label(code: Code) -> Label {
+    Label::new(LABEL_RESPONSE_CODE, format!("{}", code).to_lowercase())
+}
+
+/// Create a label for the endpoint.
+pub fn endpoint_metric_label(name: &str) -> Label {
+    Label::new(LABEL_ENDPOINT, name.to_string())
 }

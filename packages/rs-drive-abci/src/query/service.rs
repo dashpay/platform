@@ -1,5 +1,8 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
+use crate::metrics::{
+    increment_query_counter_metric, query_duration_metric, response_code_metric_label,
+};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
@@ -25,8 +28,9 @@ use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
-use dapi_grpc::tonic::{Request, Response, Status};
+use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
+use std::fmt::Debug;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -59,14 +63,18 @@ impl QueryService {
     ) -> Result<Response<RS>, Status>
     where
         RS: Clone + Send + 'static,
-        RQ: Send + Clone + 'static,
+        RQ: Debug + Send + Clone + 'static,
     {
+        let mut response_duration_metric = query_duration_metric(endpoint_name);
+
         let platform = Arc::clone(&self.platform);
 
-        spawn_blocking_task_with_name_if_supported("query", move || {
+        let request_debug = format!("{:?}", &request);
+
+        let result = spawn_blocking_task_with_name_if_supported("query", move || {
             let mut result;
 
-            let request_query = request.into_inner();
+            let query_request = request.into_inner();
 
             let mut query_counter = 0;
 
@@ -77,6 +85,12 @@ impl QueryService {
                     .current_platform_version()
                     .map_err(|_| Status::unavailable("platform is not initialized"))?;
 
+                // Query is using Platform execution state and Drive state to during the execution.
+                // They are updating every block in finalize block ABCI handler.
+                // The problem is that these two operations aren't atomic and some latency between
+                // them could lead to data races. `committed_block_height_guard` counter that represents
+                // the latest the height of latest committed Drive state and logic bellow ensures
+                // that query is executed only after/before both states are updated.
                 let mut needs_restart = false;
 
                 loop {
@@ -112,7 +126,7 @@ impl QueryService {
 
                 result = query_method(
                     &platform,
-                    request_query.clone(),
+                    query_request.clone(),
                     &platform_state,
                     platform_version,
                 );
@@ -152,7 +166,69 @@ impl QueryService {
         })?
         .instrument(tracing::trace_span!("query", endpoint_name))
         .await
-        .map_err(|error| Status::internal(format!("join error: {}", error)))?
+        .map_err(|error| Status::internal(format!("query thread failed: {}", error)))?;
+
+        // Query logging and metrics
+        let code = match &result {
+            Ok(_) => Code::Ok,
+            Err(status) => status.code(),
+        };
+
+        match code {
+            // User errors
+            Code::Ok
+            | Code::InvalidArgument
+            | Code::NotFound
+            | Code::AlreadyExists
+            | Code::ResourceExhausted
+            | Code::PermissionDenied
+            | Code::Unavailable
+            | Code::FailedPrecondition
+            | Code::OutOfRange
+            | Code::Unauthenticated => {
+                let elapsed_time = response_duration_metric.elapsed().as_secs_f64();
+
+                tracing::trace!(
+                    request = request_debug,
+                    elapsed_time,
+                    endpoint_name,
+                    code = code.to_string().to_lowercase(),
+                    "query '{}' executed with code {:?} in {} secs",
+                    endpoint_name,
+                    code,
+                    elapsed_time
+                );
+
+                // Add code to response duration metric
+                let label = response_code_metric_label(code);
+                response_duration_metric.add_label(label);
+            }
+            // System errors
+            Code::Cancelled
+            | Code::Unknown
+            | Code::DeadlineExceeded
+            | Code::Aborted
+            | Code::Unimplemented
+            | Code::Internal
+            | Code::DataLoss => {
+                tracing::error!(
+                    request = request_debug,
+                    endpoint_name,
+                    code = code.to_string().to_lowercase(),
+                    "query '{}' execution failed with code {:?}",
+                    endpoint_name,
+                    code
+                );
+
+                // Discard response duration metric in case of system error
+                response_duration_metric.cancel();
+            }
+        }
+
+        // Increment query counter metric
+        increment_query_counter_metric(endpoint_name, code);
+
+        result
     }
 }
 
