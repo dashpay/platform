@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "1.0.0-pr.1825.4",
+  "version": "1.0.0-pr.1825.5",
   "description": "DAPI GRPC definition file and generated clients",
   "browser": "browser.js",
   "main": "node.js",
