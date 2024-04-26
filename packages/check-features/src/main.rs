@@ -4,7 +4,7 @@ use toml::Value;
 
 fn main() {
     let crates = [
-        "dash-sdk",
+        "rs-sdk",
         "rs-drive-abci",
         "rs-dpp",
         "rs-drive",

@@ -34,6 +34,7 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "server")]
 mod balance;
+#[cfg(feature = "server")]
 mod contract_keys;
 #[cfg(feature = "server")]
 mod fetch_by_public_key_hashes;

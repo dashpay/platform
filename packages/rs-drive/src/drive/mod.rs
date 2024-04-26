@@ -196,7 +196,7 @@ pub(crate) fn identity_tree_path() -> [&'static [u8]; 1] {
 }
 
 /// Returns the path to the identities as a vec
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn identity_tree_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Identities as u8]]
 }
