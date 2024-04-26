@@ -88,6 +88,7 @@ export declare interface getUTXOSOptions {
 export declare namespace Account {
     interface Options {
         index?: number,
+        synchronize?: boolean,
         network?: Network;
         debug?: boolean;
         label?: string;

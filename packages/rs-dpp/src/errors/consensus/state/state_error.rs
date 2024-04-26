@@ -28,6 +28,8 @@ use crate::consensus::state::identity::{
 };
 use crate::consensus::ConsensusError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
+use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 
@@ -54,6 +56,12 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentNotFoundError(DocumentNotFoundError),
+
+    #[error(transparent)]
+    DocumentNotForSaleError(DocumentNotForSaleError),
+
+    #[error(transparent)]
+    DocumentIncorrectPurchasePriceError(DocumentIncorrectPurchasePriceError),
 
     #[error(transparent)]
     DocumentOwnerIdMismatchError(DocumentOwnerIdMismatchError),

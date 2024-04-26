@@ -891,9 +891,13 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    maxConcurrentCheckTx: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
                   additionalProperties: false,
-                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit'],
+                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx'],
                 },
                 consensus: {
                   type: 'object',

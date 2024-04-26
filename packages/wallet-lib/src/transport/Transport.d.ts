@@ -22,7 +22,7 @@ export declare interface Transport {
 
     getIdentitiesByPublicKeyHashes(publicKeyHashes: Buffer[]): Promise<Buffer[]>
 
-    getStatus(): Promise<object>
+    getBlockchainStatus(): Promise<object>
 
     getTransaction(txid: string): Promise<Transaction>
 

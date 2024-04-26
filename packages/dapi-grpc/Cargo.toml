@@ -28,6 +28,7 @@ client = [
   "tonic/transport",
   "tonic/tls",
   "tonic/tls-roots",
+  "tonic/tls-webpki-roots",
   "platform",
 ]
 server = ["tonic/channel", "tonic/transport", "platform"]

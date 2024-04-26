@@ -26,7 +26,8 @@ class ChainPlugin extends StandardPlugin {
 
   /**
    * Used on ChainPlugin to be able to report on BLOCKHEIGHT_CHANGED.
-   * Neither Block or Blockheader contains blockheight, we need to fetch it from getStatus.blocks
+   * Neither Block or Blockheader contains blockheight, we need to fetch it
+   * from getBlockchainStatus.blocks
    * @return {Promise<boolean|*>}
    */
   async execStatusFetch() {

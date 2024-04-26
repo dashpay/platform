@@ -603,6 +603,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                   fs.rmSync(oldFilePath, { recursive: true });
                 }
               }
+
+              // Update tenderdash config
+              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+              options.platform.drive.tenderdash.mempool.maxConcurrentCheckTx = base.get('platform.drive.tenderdash.mempool.maxConcurrentCheckTx');
             }
           });
 

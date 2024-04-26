@@ -549,9 +549,11 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_minimum_balance_pre_check(identity, platform_version)
             }
+            StateTransition::DocumentsBatch(st) => {
+                st.validate_minimum_balance_pre_check(identity, platform_version)
+            }
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
-            | StateTransition::DocumentsBatch(_)
             | StateTransition::IdentityUpdate(_) => {
                 self.validate_simple_pre_check_minimum_balance(identity, platform_version)
             }
