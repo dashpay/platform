@@ -76,6 +76,11 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       tenderdashLogDirectoryPath = path.dirname(tenderdashLogFilePath);
     }
 
+    let driveAbciMetricsUrl = '';
+    if (config.get('platform.drive.abci.metrics.enabled')) {
+      driveAbciMetricsUrl = 'http://0.0.0.0:29090';
+    }
+
     return {
       DASHMATE_HOME_DIR: homeDir.getPath(),
       LOCAL_UID: uid,
@@ -93,6 +98,7 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       DASHMATE_HELPER_DOCKER_IMAGE,
       PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH: tenderdashLogDirectoryPath,
       PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DISABLED: config.get('platform.gateway.rateLimiter.metrics.enabled'),
+      PLATFORM_DRIVE_ABCI_METRICS_URL: driveAbciMetricsUrl,
       ...convertObjectToEnvs(config.getOptions()),
     };
   }

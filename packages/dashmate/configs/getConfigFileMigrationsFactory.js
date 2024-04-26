@@ -524,50 +524,55 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-dev.12': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            // Do nothing if it's already migrated for some reason
-            if (!options.platform.dapi.envoy) {
-              return;
+            // Update tenderdash config
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.mempool.maxConcurrentCheckTx = base.get('platform.drive.tenderdash.mempool.maxConcurrentCheckTx');
+
+            // Add metrics to Drive ABCI
+            options.platform.drive.abci.metrics = base.get('platform.drive.abci.metrics');
+
+            // Envoy -> Gateway
+            if (options.platform.dapi.envoy) {
+              options.platform.gateway = lodash.cloneDeep(options.platform.dapi.envoy);
+
+              // add new options
+              options.platform.gateway.maxConnections = base.get('platform.gateway.maxConnections');
+              options.platform.gateway.maxHeapSizeInBytes = base.get('platform.gateway.maxHeapSizeInBytes');
+              options.platform.gateway.metrics = base.get('platform.gateway.metrics');
+              options.platform.gateway.admin = base.get('platform.gateway.admin');
+              options.platform.gateway.upstreams = base.get('platform.gateway.upstreams');
+              options.platform.gateway.log = base.get('platform.gateway.log');
+
+              // http -> listeners
+              options.platform.gateway.listeners = lodash.cloneDeep(
+                base.get('platform.gateway.listeners'),
+              );
+
+              options.platform.gateway.listeners.dapiAndDrive.host = options.platform.dapi.envoy
+                .http.host;
+              options.platform.gateway.listeners.dapiAndDrive.port = options.platform.dapi.envoy
+                .http.port;
+
+              delete options.platform.gateway.http;
+
+              // update rate limiter
+              options.platform.gateway.rateLimiter.docker = base.get('platform.gateway.rateLimiter.docker');
+              options.platform.gateway.rateLimiter.unit = base.get('platform.gateway.rateLimiter.unit');
+              options.platform.gateway.rateLimiter.requestsPerUnit = base.get('platform.gateway.rateLimiter.requestsPerUnit');
+              options.platform.gateway.rateLimiter.blacklist = base.get('platform.gateway.rateLimiter.blacklist');
+              options.platform.gateway.rateLimiter.whitelist = base.get('platform.gateway.rateLimiter.whitelist');
+              options.platform.gateway.rateLimiter.metrics = base.get('platform.gateway.rateLimiter.metrics');
+
+              delete options.platform.gateway.rateLimiter.fillInterval;
+              delete options.platform.gateway.rateLimiter.maxTokens;
+              delete options.platform.gateway.rateLimiter.tokensPerFill;
+
+              // delete envoy
+              delete options.platform.dapi.envoy;
+
+              // update image
+              options.platform.gateway.docker.image = base.get('platform.gateway.docker.image');
             }
-
-            options.platform.gateway = lodash.cloneDeep(options.platform.dapi.envoy);
-
-            // add new options
-            options.platform.gateway.maxConnections = base.get('platform.gateway.maxConnections');
-            options.platform.gateway.maxHeapSizeInBytes = base.get('platform.gateway.maxHeapSizeInBytes');
-            options.platform.gateway.metrics = base.get('platform.gateway.metrics');
-            options.platform.gateway.admin = base.get('platform.gateway.admin');
-            options.platform.gateway.upstreams = base.get('platform.gateway.upstreams');
-            options.platform.gateway.log = base.get('platform.gateway.log');
-
-            // http -> listeners
-            options.platform.gateway.listeners = lodash.cloneDeep(
-              base.get('platform.gateway.listeners'),
-            );
-
-            options.platform.gateway.listeners.dapiAndDrive.host = options.platform.dapi.envoy
-              .http.host;
-            options.platform.gateway.listeners.dapiAndDrive.port = options.platform.dapi.envoy
-              .http.port;
-
-            delete options.platform.gateway.http;
-
-            // update rate limiter
-            options.platform.gateway.rateLimiter.docker = base.get('platform.gateway.rateLimiter.docker');
-            options.platform.gateway.rateLimiter.unit = base.get('platform.gateway.rateLimiter.unit');
-            options.platform.gateway.rateLimiter.requestsPerUnit = base.get('platform.gateway.rateLimiter.requestsPerUnit');
-            options.platform.gateway.rateLimiter.blacklist = base.get('platform.gateway.rateLimiter.blacklist');
-            options.platform.gateway.rateLimiter.whitelist = base.get('platform.gateway.rateLimiter.whitelist');
-            options.platform.gateway.rateLimiter.metrics = base.get('platform.gateway.rateLimiter.metrics');
-
-            delete options.platform.gateway.rateLimiter.fillInterval;
-            delete options.platform.gateway.rateLimiter.maxTokens;
-            delete options.platform.gateway.rateLimiter.tokensPerFill;
-
-            // delete envoy
-            delete options.platform.dapi.envoy;
-
-            // update image
-            options.platform.gateway.docker.image = base.get('platform.gateway.docker.image');
 
             // rename non conventional field
             if (options.platform.drive.abci.tokioConsole.retention_secs) {
@@ -603,10 +608,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                   fs.rmSync(oldFilePath, { recursive: true });
                 }
               }
-
-              // Update tenderdash config
-              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
-              options.platform.drive.tenderdash.mempool.maxConcurrentCheckTx = base.get('platform.drive.tenderdash.mempool.maxConcurrentCheckTx');
             }
           });
 

@@ -255,6 +255,11 @@ export default function getBaseConfigFactory(homeDir) {
               dkgInterval: 288,
               llmqSize: 400,
             },
+            metrics: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 29090,
+            },
             epochTime: 788400,
           },
           tenderdash: {

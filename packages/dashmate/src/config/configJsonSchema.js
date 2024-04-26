@@ -806,9 +806,12 @@ export default {
                   type: 'integer',
                   minimum: 180,
                 },
+                metrics: {
+                  $ref: '#/definitions/enabledHostPort',
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics'],
             },
             tenderdash: {
               type: 'object',

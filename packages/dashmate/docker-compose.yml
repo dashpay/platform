@@ -72,7 +72,7 @@ services:
       - DB_PATH=/var/lib/dash/rs-drive-abci/db
       - ABCI_CONSENSUS_BIND_ADDRESS=tcp://0.0.0.0:26658
       - GRPC_BIND_ADDRESS=0.0.0.0:26670
-      - PROMETHEUS_BIND_ADDRESS=http://0.0.0.0:29090
+      - PROMETHEUS_BIND_ADDRESS=${PLATFORM_DRIVE_ABCI_METRICS_URL}
       - TOKIO_CONSOLE_ENABLED=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_ENABLED:?err}
       - TOKIO_CONSOLE_ADDRESS=0.0.0.0:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
       - TOKIO_CONSOLE_RETENTION_SECS=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_RETENTION:?err}
@@ -81,7 +81,6 @@ services:
       - 26658
       - 26659
       - 26670
-      - 29090
     env_file:
       # Logger settings
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/abci/logger.env
@@ -89,6 +88,7 @@ services:
       - platform
     ports:
       - ${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_HOST:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
+      - ${PLATFORM_DRIVE_ABCI_METRICS_HOST:?err}:${PLATFORM_DRIVE_ABCI_METRICS_PORT:?err}:29090
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
