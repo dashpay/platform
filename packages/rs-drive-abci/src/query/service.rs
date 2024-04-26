@@ -1,8 +1,6 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
-use crate::metrics::{
-    increment_query_counter_metric, query_duration_metric, response_code_metric_label,
-};
+use crate::metrics::{query_duration_metric, response_code_metric_label};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
@@ -173,7 +171,12 @@ impl QueryService {
             Ok(_) => Code::Ok,
             Err(status) => status.code(),
         };
+
         let code_label = format!("{:?}", code).to_lowercase();
+
+        // Add code to response duration metric
+        let label = response_code_metric_label(code);
+        response_duration_metric.add_label(label);
 
         match code {
             // User errors
@@ -199,10 +202,6 @@ impl QueryService {
                     code,
                     elapsed_time
                 );
-
-                // Add code to response duration metric
-                let label = response_code_metric_label(code);
-                response_duration_metric.add_label(label);
             }
             // System errors
             Code::Cancelled
@@ -220,14 +219,8 @@ impl QueryService {
                     endpoint_name,
                     code
                 );
-
-                // Discard response duration metric in case of system error
-                response_duration_metric.cancel();
             }
         }
-
-        // Increment query counter metric
-        increment_query_counter_metric(endpoint_name, code);
 
         result
     }

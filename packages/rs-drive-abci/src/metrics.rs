@@ -17,7 +17,6 @@ const HISTOGRAM_FINALIZED_ROUND: &str = "abci_finalized_round";
 const HISTOGRAM_ABCI_REQUEST_DURATION: &str = "abci_request_duration_seconds";
 const LABEL_ENDPOINT: &str = "endpoint";
 const LABEL_RESPONSE_CODE: &str = "response_code";
-const COUNTER_QUERY_COUNTER: &str = "abci_query_counter";
 const HISTOGRAM_QUERY_DURATION: &str = "abci_query_duration";
 
 /// Error returned by metrics subsystem
@@ -206,11 +205,6 @@ impl Prometheus {
                 "Last finalized height of platform chain (eg. Tenderdash)"
             );
 
-            describe_counter!(
-                COUNTER_QUERY_COUNTER,
-                "Total number of query requests per endpoint"
-            );
-
             describe_histogram!(
                 HISTOGRAM_QUERY_DURATION,
                 metrics::Unit::Seconds,
@@ -267,26 +261,6 @@ pub fn abci_request_duration(endpoint: &str) -> HistogramTiming {
     HistogramTiming::new(
         metrics::Key::from_name(HISTOGRAM_ABCI_REQUEST_DURATION).with_extra_labels(labels),
     )
-}
-
-/// Increment total counter for a query endpoint.
-///
-/// # Examples
-///
-/// ```
-/// use dapi_grpc::tonic::Code;
-/// use drive_abci::metrics::increment_query_counter_metric;
-///
-/// increment_query_counter_metric("get_identity", Code::Ok);
-/// ```
-pub fn increment_query_counter_metric(endpoint: &str, response_code: Code) {
-    let endpoint_label = endpoint_metric_label(endpoint);
-    let response_code_label = response_code_metric_label(response_code);
-    counter!(
-        HISTOGRAM_QUERY_DURATION,
-        vec![endpoint_label, response_code_label]
-    )
-    .increment(1);
 }
 
 /// Returns a `[HistogramTiming]` instance for measuring query duration.
