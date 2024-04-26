@@ -173,6 +173,7 @@ impl QueryService {
             Ok(_) => Code::Ok,
             Err(status) => status.code(),
         };
+        let code_label = format!("{:?}", code).to_lowercase();
 
         match code {
             // User errors
@@ -192,7 +193,7 @@ impl QueryService {
                     request = request_debug,
                     elapsed_time,
                     endpoint_name,
-                    code = code.to_string().to_lowercase(),
+                    code = code_label,
                     "query '{}' executed with code {:?} in {} secs",
                     endpoint_name,
                     code,
@@ -214,7 +215,7 @@ impl QueryService {
                 tracing::error!(
                     request = request_debug,
                     endpoint_name,
-                    code = code.to_string().to_lowercase(),
+                    code = code_label,
                     "query '{}' execution failed with code {:?}",
                     endpoint_name,
                     code

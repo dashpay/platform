@@ -316,7 +316,7 @@ pub fn query_duration_metric(endpoint: &str) -> HistogramTiming {
 
 /// Create a label for the response code.
 pub fn response_code_metric_label(code: Code) -> Label {
-    Label::new(LABEL_RESPONSE_CODE, format!("{}", code).to_lowercase())
+    Label::new(LABEL_RESPONSE_CODE, format!("{:?}", code).to_lowercase())
 }
 
 /// Create a label for the endpoint.
