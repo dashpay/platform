@@ -1,25 +1,15 @@
-use crate::drive::balances::balance_path;
-use crate::drive::identity::{
-    identity_contract_info_group_path, identity_contract_info_group_path_key_purpose_vec,
-    identity_key_tree_path, identity_path_vec, IdentityRootStructure,
-};
 use crate::drive::Drive;
 
-use crate::error::proof::ProofError;
 use crate::error::Error;
 
-use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity, Purpose};
+use dpp::identity::{IdentityPublicKey, Purpose};
 
-use crate::drive::contract::paths::contract_storage_path_vec;
 use crate::error::drive::DriveError;
-use dpp::prelude::Revision;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
-use grovedb::{GroveDb, PathQuery};
+use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
 impl Drive {

@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::drive::{identity::key::fetch::IdentityKeysRequest, Drive};
+use crate::drive::Drive;
 use std::collections::BTreeMap;
 
 use crate::error::drive::DriveError;
@@ -9,7 +9,7 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-use dpp::identity::{IdentityPublicKey, PartialIdentity, Purpose};
+use dpp::identity::{IdentityPublicKey, Purpose};
 
 use dpp::version::PlatformVersion;
 

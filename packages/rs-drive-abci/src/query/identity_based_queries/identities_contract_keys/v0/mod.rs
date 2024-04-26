@@ -129,7 +129,7 @@ mod tests {
     use crate::query::tests::setup_platform;
     use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
     use dapi_grpc::platform::v0::get_identities_contract_keys_response::{
-        get_identities_contract_keys_response_v0, GetIdentitiesContractKeysResponseV0,
+        GetIdentitiesContractKeysResponseV0,
     };
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
@@ -137,29 +137,15 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
-    use dpp::prelude::{DataContract, IdentityPublicKey};
-    use dpp::serialization::{PlatformDeserializable, PlatformSerializableWithPlatformVersion};
+    use dpp::prelude::IdentityPublicKey;
+    use dpp::serialization::PlatformDeserializable;
     use drive::common::test_utils::identities::create_test_identity_with_rng;
-    use drive::drive::batch::{DataContractOperationType, DriveOperation};
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
-    use std::borrow::Cow;
-    use std::sync::Arc;
-    use arc_swap::Guard;
     use itertools::Itertools;
     use dapi_grpc::platform::v0::get_identities_contract_keys_response::get_identities_contract_keys_response_v0::{IdentitiesKeys, IdentityKeys, Result};
-    use dpp::data_contract::document_type::DocumentPropertyType::Identifier;
-    use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::KeyType::ECDSA_SECP256K1;
-    use dpp::identity::Purpose::ENCRYPTION;
-    use dpp::identity::SecurityLevel::MEDIUM;
-    use dpp::platform_value::{BinaryData, IdentifierBytes32};
     use drive::drive::Drive;
-    use platform_version::version::PlatformVersion;
-    use crate::rpc::core::MockCoreRPCLike;
-    use crate::test::helpers::setup::TempPlatform;
 
     #[test]
     fn test_identities_contract_keys_missing_identity() {
@@ -809,7 +795,7 @@ mod tests {
         )
         .expect("expected to create a test identity");
 
-        let mut carol = create_test_identity_with_rng(
+        let carol = create_test_identity_with_rng(
             &platform.drive,
             carol_id,
             &mut rng,
