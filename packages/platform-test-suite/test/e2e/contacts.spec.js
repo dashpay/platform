@@ -1,4 +1,12 @@
-const { Identifier, IdentityPublicKey, IdentityPublicKeyWithWitness } = require('@dashevo/wasm-dpp');
+const Dash = require('dash');
+
+const {
+  PlatformProtocol: {
+    Identifier,
+    IdentityPublicKey,
+    IdentityPublicKeyWithWitness,
+  },
+} = Dash;
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
