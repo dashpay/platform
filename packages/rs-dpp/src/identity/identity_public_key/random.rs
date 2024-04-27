@@ -4,6 +4,7 @@ use crate::identity::{IdentityPublicKey, KeyCount, KeyID, KeyType, Purpose, Secu
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+use crate::identity::contract_bounds::ContractBounds;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
@@ -269,6 +270,7 @@ impl IdentityPublicKey {
         purpose: Purpose,
         security_level: SecurityLevel,
         key_type: KeyType,
+        contract_bounds: Option<ContractBounds>,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, Vec<u8>), ProtocolError> {
         match platform_version
@@ -283,6 +285,7 @@ impl IdentityPublicKey {
                     purpose,
                     security_level,
                     key_type,
+                    contract_bounds,
                     platform_version,
                 )?;
                 Ok((key.into(), private_key))

@@ -4,6 +4,8 @@ const {
     GetDataContractResponse,
     GetDocumentsResponse,
     GetIdentityResponse,
+    GetIdentityByPublicKeyHashResponse,
+    GetIdentitiesContractKeysResponse,
     GetEpochsInfoResponse,
     GetProtocolVersionUpgradeVoteStatusResponse,
     GetProtocolVersionUpgradeStateResponse,
@@ -12,6 +14,7 @@ const {
     GetIdentityKeysResponse,
     BroadcastStateTransitionResponse,
     WaitForStateTransitionResultResponse,
+    KeyPurpose,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -24,6 +27,8 @@ const PlatformMethodsFacade = require('../../../../lib/methods/platform/Platform
 
 const { WaitForStateTransitionResultResponseV0 } = WaitForStateTransitionResultResponse;
 const { GetIdentityResponseV0 } = GetIdentityResponse;
+const { GetIdentityByPublicKeyHashResponseV0 } = GetIdentityByPublicKeyHashResponse;
+const { GetIdentitiesContractKeysResponseV0 } = GetIdentitiesContractKeysResponse;
 const { GetDocumentsResponseV0 } = GetDocumentsResponse;
 const { GetDataContractResponseV0 } = GetDataContractResponse;
 const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
@@ -109,6 +114,56 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getIdentity('41nthkqvHBLnqiMkSbsdTNANzYu9bgdv4etKoRUunY1M');
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getIdentityByPublicKeyHash', () => {
+    it('should get Identity', async () => {
+      const response = new GetIdentityByPublicKeyHashResponse();
+      response.setV0(
+        new GetIdentityByPublicKeyHashResponseV0()
+          .setMetadata(new ResponseMetadata())
+          .setIdentity((await getIdentityFixture()).toBuffer()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getIdentityByPublicKeyHash('41nthkqvHBLnqiMkSbsdTNANzYu9bgdv4etKoRUunY1M');
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getIdentitiesContractKeys', () => {
+    it('should get identities keys', async () => {
+      const identityFixture = await getIdentityFixture();
+
+      const { IdentitiesKeys, IdentityKeys, PurposeKeys } = GetIdentitiesContractKeysResponseV0;
+
+      const response = new GetIdentitiesContractKeysResponse();
+      response.setV0(
+        new GetIdentitiesContractKeysResponseV0()
+          .setIdentitiesKeys(new IdentitiesKeys()
+            .setEntriesList([
+              new IdentityKeys()
+                .setIdentityId(new Uint8Array(identityFixture.getId().toBuffer()))
+                .setKeysList([
+                  new PurposeKeys()
+                    .setPurpose(KeyPurpose.ENCRYPTION)
+                    .setKeysBytesList(identityFixture.getPublicKeys()
+                      .map((key) => new Uint8Array(key.toBuffer()))),
+                ]),
+            ]))
+          .setMetadata(new ResponseMetadata()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getIdentitiesContractKeys([
+        Buffer.alloc(32).fill(1),
+      ], Buffer.alloc(32).fill(2), [KeyPurpose.ENCRYPTION]);
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

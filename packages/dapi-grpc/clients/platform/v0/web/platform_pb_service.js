@@ -28,15 +28,6 @@ Platform.getIdentity = {
   responseType: platform_pb.GetIdentityResponse
 };
 
-Platform.getIdentities = {
-  methodName: "getIdentities",
-  service: Platform,
-  requestStream: false,
-  responseStream: false,
-  requestType: platform_pb.GetIdentitiesRequest,
-  responseType: platform_pb.GetIdentitiesResponse
-};
-
 Platform.getIdentityKeys = {
   methodName: "getIdentityKeys",
   service: Platform,
@@ -44,6 +35,15 @@ Platform.getIdentityKeys = {
   responseStream: false,
   requestType: platform_pb.GetIdentityKeysRequest,
   responseType: platform_pb.GetIdentityKeysResponse
+};
+
+Platform.getIdentitiesContractKeys = {
+  methodName: "getIdentitiesContractKeys",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetIdentitiesContractKeysRequest,
+  responseType: platform_pb.GetIdentitiesContractKeysResponse
 };
 
 Platform.getIdentityNonce = {
@@ -125,15 +125,6 @@ Platform.getDocuments = {
   responseStream: false,
   requestType: platform_pb.GetDocumentsRequest,
   responseType: platform_pb.GetDocumentsResponse
-};
-
-Platform.getIdentitiesByPublicKeyHashes = {
-  methodName: "getIdentitiesByPublicKeyHashes",
-  service: Platform,
-  requestStream: false,
-  responseStream: false,
-  requestType: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
-  responseType: platform_pb.GetIdentitiesByPublicKeyHashesResponse
 };
 
 Platform.getIdentityByPublicKeyHash = {
@@ -268,11 +259,11 @@ PlatformClient.prototype.getIdentity = function getIdentity(requestMessage, meta
   };
 };
 
-PlatformClient.prototype.getIdentities = function getIdentities(requestMessage, metadata, callback) {
+PlatformClient.prototype.getIdentityKeys = function getIdentityKeys(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getIdentities, {
+  var client = grpc.unary(Platform.getIdentityKeys, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -299,11 +290,11 @@ PlatformClient.prototype.getIdentities = function getIdentities(requestMessage, 
   };
 };
 
-PlatformClient.prototype.getIdentityKeys = function getIdentityKeys(requestMessage, metadata, callback) {
+PlatformClient.prototype.getIdentitiesContractKeys = function getIdentitiesContractKeys(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getIdentityKeys, {
+  var client = grpc.unary(Platform.getIdentitiesContractKeys, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -583,37 +574,6 @@ PlatformClient.prototype.getDocuments = function getDocuments(requestMessage, me
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getDocuments, {
-    request: requestMessage,
-    host: this.serviceHost,
-    metadata: metadata,
-    transport: this.options.transport,
-    debug: this.options.debug,
-    onEnd: function (response) {
-      if (callback) {
-        if (response.status !== grpc.Code.OK) {
-          var err = new Error(response.statusMessage);
-          err.code = response.status;
-          err.metadata = response.trailers;
-          callback(err, null);
-        } else {
-          callback(null, response.message);
-        }
-      }
-    }
-  });
-  return {
-    cancel: function () {
-      callback = null;
-      client.close();
-    }
-  };
-};
-
-PlatformClient.prototype.getIdentitiesByPublicKeyHashes = function getIdentitiesByPublicKeyHashes(requestMessage, metadata, callback) {
-  if (arguments.length === 2) {
-    callback = arguments[1];
-  }
-  var client = grpc.unary(Platform.getIdentitiesByPublicKeyHashes, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

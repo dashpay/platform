@@ -13,8 +13,7 @@ use dapi_grpc::platform::v0::{
     GetConsensusParamsResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
     GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetIdentitiesByPublicKeyHashesRequest,
-    GetIdentitiesByPublicKeyHashesResponse, GetIdentitiesRequest, GetIdentitiesResponse,
+    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
     GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
     GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
     GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
@@ -183,14 +182,14 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_identities(
+    async fn get_identities_contract_keys(
         &self,
-        request: Request<GetIdentitiesRequest>,
-    ) -> Result<Response<GetIdentitiesResponse>, Status> {
+        request: Request<GetIdentitiesContractKeysRequest>,
+    ) -> Result<Response<GetIdentitiesContractKeysResponse>, Status> {
         self.handle_blocking_query(
             request,
-            Platform::<DefaultCoreRPC>::query_identities,
-            "get_identities",
+            Platform::<DefaultCoreRPC>::query_identities_contract_keys,
+            "get_identities_contract_keys",
         )
         .await
     }
@@ -311,18 +310,6 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_documents,
             "get_documents",
-        )
-        .await
-    }
-
-    async fn get_identities_by_public_key_hashes(
-        &self,
-        request: Request<GetIdentitiesByPublicKeyHashesRequest>,
-    ) -> Result<Response<GetIdentitiesByPublicKeyHashesResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_identities_by_public_key_hashes,
-            "get_identities_by_public_key_hashes",
         )
         .await
     }
