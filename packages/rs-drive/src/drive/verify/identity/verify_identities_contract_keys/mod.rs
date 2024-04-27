@@ -1,7 +1,6 @@
 mod v0;
 
 use crate::drive::Drive;
-use std::collections::BTreeMap;
 
 use crate::error::drive::DriveError;
 
@@ -9,7 +8,8 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-use dpp::identity::{IdentityPublicKey, Purpose};
+use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
+use dpp::identity::Purpose;
 
 use dpp::version::PlatformVersion;
 
@@ -44,13 +44,7 @@ impl Drive {
         purposes: Vec<Purpose>,
         is_proof_subset: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<
-        (
-            RootHash,
-            BTreeMap<[u8; 32], BTreeMap<Purpose, Option<IdentityPublicKey>>>,
-        ),
-        Error,
-    > {
+    ) -> Result<(RootHash, IdentitiesContractKeys), Error> {
         match platform_version
             .drive
             .methods

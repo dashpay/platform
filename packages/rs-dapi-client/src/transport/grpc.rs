@@ -234,6 +234,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesContractKeysRequest,
+    platform_proto::GetIdentitiesContractKeysResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_contract_keys
+);
+
+impl_transport_request_grpc!(
     platform_proto::GetIdentityKeysRequest,
     platform_proto::GetIdentityKeysResponse,
     PlatformGrpcClient,

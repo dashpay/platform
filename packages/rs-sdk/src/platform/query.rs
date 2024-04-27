@@ -263,14 +263,14 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
     }
 }
 
-/// Conveniance method that allows direct use of a ProTxHash
+/// Convenience method that allows direct use of a ProTxHash
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         Some(self).query(prove)
     }
 }
 
-/// Conveniance method that allows direct use of a ProTxHash
+/// Convenience method that allows direct use of a ProTxHash
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash> {
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         LimitQuery {

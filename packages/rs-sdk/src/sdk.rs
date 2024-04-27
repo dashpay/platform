@@ -633,7 +633,7 @@ impl SdkBuilder {
 
     /// Use Dash Core as a wallet and context provider.
     ///
-    /// This is a conveniance method that configures the SDK to use Dash Core as a wallet and context provider.
+    /// This is a convenience method that configures the SDK to use Dash Core as a wallet and context provider.
     ///
     /// For more control over the configuration, use [SdkBuilder::with_wallet()] and [SdkBuilder::with_context_provider()].
     ///

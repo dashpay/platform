@@ -7,6 +7,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, Purpose};
 
 use crate::error::drive::DriveError;
+use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -44,13 +45,7 @@ impl Drive {
         purposes: Vec<Purpose>,
         is_proof_subset: bool,
         _platform_version: &PlatformVersion,
-    ) -> Result<
-        (
-            RootHash,
-            BTreeMap<[u8; 32], BTreeMap<Purpose, Option<IdentityPublicKey>>>,
-        ),
-        Error,
-    > {
+    ) -> Result<(RootHash, IdentitiesContractKeys), Error> {
         let path_query = Self::identities_contract_keys_query(
             identity_ids,
             contract_id,
@@ -100,9 +95,7 @@ impl Drive {
                     )))
                 })?;
 
-                let entry = values
-                    .entry(identity_id.to_buffer())
-                    .or_insert(BTreeMap::new());
+                let entry = values.entry(identity_id).or_insert(BTreeMap::new());
 
                 let maybe_item_bytes = maybe_element
                     .as_ref()

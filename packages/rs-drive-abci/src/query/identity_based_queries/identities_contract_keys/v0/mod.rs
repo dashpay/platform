@@ -137,7 +137,7 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
-    use dpp::prelude::IdentityPublicKey;
+    use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::PlatformDeserializable;
     use drive::common::test_utils::identities::create_test_identity_with_rng;
     use rand::prelude::StdRng;
@@ -219,7 +219,7 @@ mod tests {
 
         assert_eq!(
             results
-                .get(&[1u8; 32])
+                .get(&Identifier::from([1u8; 32]))
                 .expect("expected this identifier")
                 .values()
                 .cloned()
@@ -294,7 +294,7 @@ mod tests {
 
         assert_eq!(
             results
-                .get(&[1u8; 32])
+                .get(&Identifier::from([1u8; 32]))
                 .expect("expected this identifier")
                 .values()
                 .cloned()
@@ -397,7 +397,7 @@ mod tests {
 
         assert_eq!(
             results
-                .get(alice.id().as_slice())
+                .get(&alice.id())
                 .expect("expected this identifier")
                 .values()
                 .cloned()
@@ -504,7 +504,7 @@ mod tests {
 
         assert_eq!(
             results
-                .get(alice.id().as_slice())
+                .get(&alice.id())
                 .expect("expected this identifier")
                 .values()
                 .cloned()
@@ -757,7 +757,7 @@ mod tests {
 
         assert_eq!(
             results
-                .get(alice.id().as_slice())
+                .get(&alice.id())
                 .expect("expected this identifier")
                 .values()
                 .cloned()
@@ -1116,7 +1116,7 @@ mod tests {
 
         assert_eq!(
             results
-                .get(alice.id().as_slice())
+                .get(&alice.id())
                 .expect("expected this identifier")
                 .values()
                 .cloned()
@@ -1125,7 +1125,7 @@ mod tests {
         );
         assert_eq!(
             results
-                .get(bob.id().as_slice())
+                .get(&bob.id())
                 .expect("expected this identifier")
                 .values()
                 .cloned()
@@ -1134,7 +1134,7 @@ mod tests {
         );
         assert_eq!(
             results
-                .get(carol.id().as_slice())
+                .get(&carol.id())
                 .expect("expected this identifier")
                 .values()
                 .cloned()
