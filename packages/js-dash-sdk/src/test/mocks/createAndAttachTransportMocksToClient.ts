@@ -9,6 +9,7 @@ import { createDapiClientMock } from './createDapiClientMock';
 import { wait } from '../../utils/wait';
 
 const GetIdentityResponse = require('@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse');
+const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
 
 const TxStreamMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamMock');
 const TxStreamDataResponseMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamDataResponseMock');
@@ -103,7 +104,8 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
   await accountPromise;
 
   // Putting data in transport stubs
-  transportMock.getIdentitiesByPublicKeyHashes.resolves([]);
+  transportMock.getIdentityByPublicKeyHash
+    .rejects(new NotFoundError('Identity not found', {}, null));
   makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock);
   await makeGetIdentityRespondWithIdentity(client, dapiClientMock);
 

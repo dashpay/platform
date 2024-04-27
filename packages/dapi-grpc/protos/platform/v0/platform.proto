@@ -10,8 +10,8 @@ service Platform {
   rpc broadcastStateTransition(BroadcastStateTransitionRequest)
       returns (BroadcastStateTransitionResponse);
   rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
-  rpc getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse);
   rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
+  rpc getIdentitiesContractKeys(GetIdentitiesContractKeysRequest) returns (GetIdentitiesContractKeysResponse);
   rpc getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
@@ -25,8 +25,6 @@ service Platform {
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
-  rpc getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest)
-      returns (GetIdentitiesByPublicKeyHashesResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
   rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
@@ -61,6 +59,14 @@ message StateTransitionBroadcastError {
   uint32 code = 1;
   string message = 2;
   bytes data = 3;
+}
+
+enum KeyPurpose {
+  AUTHENTICATION = 0;
+  ENCRYPTION = 1;
+  DECRYPTION = 2;
+  TRANSFER = 3;
+  VOTING = 5;
 }
 
 message BroadcastStateTransitionRequest { bytes state_transition = 1; }
@@ -130,38 +136,6 @@ message GetIdentityResponse {
   }
 
   oneof version { GetIdentityResponseV0 v0 = 1; }
-}
-
-message GetIdentitiesRequest {
-
-  message GetIdentitiesRequestV0 {
-    repeated bytes ids = 1;
-    bool prove = 2;
-  }
-
-  oneof version { GetIdentitiesRequestV0 v0 = 1; }
-}
-
-message GetIdentitiesResponse {
-
-  message IdentityValue { bytes value = 1; }
-
-  message IdentityEntry {
-    bytes key = 1;
-    IdentityValue value = 2;
-  }
-
-  message Identities { repeated IdentityEntry identity_entries = 1; }
-
-  message GetIdentitiesResponseV0 {
-    oneof result {
-      Identities identities = 1;
-      Proof proof = 2;
-    }
-    ResponseMetadata metadata = 3;
-  }
-
-  oneof version { GetIdentitiesResponseV0 v0 = 1; }
 }
 
 message GetIdentityNonceResponse {
@@ -269,6 +243,46 @@ message GetIdentityKeysResponse {
   }
 
   oneof version { GetIdentityKeysResponseV0 v0 = 1; }
+}
+
+message GetIdentitiesContractKeysRequest {
+  message GetIdentitiesContractKeysRequestV0 {
+    repeated bytes identities_ids = 1;
+    bytes contract_id = 2;
+    optional string document_type_name = 3;
+    repeated KeyPurpose purposes = 4;
+    bool prove = 5;
+  }
+
+  oneof version {
+    GetIdentitiesContractKeysRequestV0 v0 = 1;
+  }
+}
+
+message GetIdentitiesContractKeysResponse {
+  message GetIdentitiesContractKeysResponseV0 {
+    message PurposeKeys {
+      KeyPurpose purpose = 1;
+      repeated bytes keys_bytes = 2;
+    }
+
+    message IdentityKeys {
+      bytes identity_id = 1;
+      repeated PurposeKeys keys = 2;
+    }
+
+    message IdentitiesKeys {
+      repeated IdentityKeys entries = 1;
+    };
+
+    oneof result {
+      IdentitiesKeys identities_keys = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentitiesContractKeysResponseV0 v0 = 1; }
 }
 
 message GetProofsRequest {
@@ -415,35 +429,6 @@ message GetDocumentsResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetDocumentsResponseV0 v0 = 1; }
-}
-
-message GetIdentitiesByPublicKeyHashesRequest {
-  message GetIdentitiesByPublicKeyHashesRequestV0 {
-    repeated bytes public_key_hashes = 1;
-    bool prove = 2;
-  }
-  oneof version { GetIdentitiesByPublicKeyHashesRequestV0 v0 = 1; }
-}
-
-message GetIdentitiesByPublicKeyHashesResponse {
-  message PublicKeyHashIdentityEntry {
-    bytes public_key_hash = 1;
-    google.protobuf.BytesValue value = 2;
-  }
-
-  message IdentitiesByPublicKeyHashes {
-    repeated PublicKeyHashIdentityEntry identity_entries = 1;
-  }
-
-  message GetIdentitiesByPublicKeyHashesResponseV0 {
-    oneof result {
-      IdentitiesByPublicKeyHashes identities = 1;
-      Proof proof = 2;
-    }
-
-    ResponseMetadata metadata = 3;
-  }
-  oneof version { GetIdentitiesByPublicKeyHashesResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {

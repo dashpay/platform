@@ -1,13 +1,18 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
+use crate::drive::{identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::Error;
 
+use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeNonce, IdentityTreeRevision};
-use crate::drive::identity::{identity_contract_info_group_path_vec, identity_path_vec};
+use crate::drive::identity::{
+    identity_contract_info_group_path_vec, identity_path_vec, IdentityRootStructure,
+};
 use crate::error::query::QuerySyntaxError;
+use dpp::identity::Purpose;
+use grovedb::query_result_type::Key;
 use grovedb::{PathQuery, Query, SizedQuery};
 
 /// An enumeration representing the types of identity prove requests.
@@ -169,6 +174,99 @@ impl Drive {
         query.insert_key(identity_id.to_vec());
         PathQuery {
             path: balance_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// The query for the identity contract bounded keys for multiple identities
+    pub fn identities_contract_keys_query(
+        identity_ids: &[[u8; 32]],
+        contract_id: &[u8; 32],
+        document_type_name: &Option<String>,
+        purposes: &[Purpose],
+        limit: Option<u16>,
+    ) -> PathQuery {
+        let identities_path = identity_tree_path_vec();
+        let mut query = Query::new();
+        query.insert_keys(
+            identity_ids
+                .iter()
+                .map(|identity_id| identity_id.to_vec())
+                .collect(),
+        );
+
+        let mut group_id = contract_id.to_vec();
+        if let Some(document_type_name) = document_type_name {
+            group_id.extend(document_type_name.as_bytes());
+        }
+
+        query.default_subquery_branch.subquery_path = Some(vec![
+            vec![IdentityRootStructure::IdentityContractInfo as u8],
+            group_id,
+            vec![ContractInfoStructure::ContractInfoKeysKey as u8],
+        ]);
+
+        let mut sub_query = Query::new();
+
+        sub_query.insert_keys(
+            purposes
+                .iter()
+                .map(|purpose| vec![*purpose as u8])
+                .collect(),
+        );
+
+        sub_query.set_subquery_key(Key::new());
+
+        query.default_subquery_branch.subquery = Some(sub_query.into());
+        PathQuery {
+            path: identities_path,
+            query: SizedQuery {
+                query,
+                limit,
+                offset: None,
+            },
+        }
+    }
+
+    /// The query for the identity contract document type bounded keys for multiple identities
+    pub fn identities_contract_document_type_keys_query(
+        identity_ids: &[[u8; 32]],
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        purposes: Vec<Purpose>,
+    ) -> PathQuery {
+        let identities_path = identity_tree_path_vec();
+        let mut query = Query::new();
+        query.insert_keys(
+            identity_ids
+                .iter()
+                .map(|identity_id| identity_id.to_vec())
+                .collect(),
+        );
+        let mut group_id = contract_id.to_vec();
+        group_id.extend(document_type_name.as_bytes());
+        query.default_subquery_branch.subquery_path = Some(vec![
+            vec![IdentityRootStructure::IdentityContractInfo as u8],
+            contract_id.to_vec(),
+            vec![ContractInfoStructure::ContractInfoKeysKey as u8],
+        ]);
+
+        let mut sub_query = Query::new();
+
+        sub_query.insert_keys(
+            purposes
+                .into_iter()
+                .map(|purpose| vec![purpose as u8])
+                .collect(),
+        );
+
+        query.default_subquery_branch.subquery = Some(sub_query.into());
+        PathQuery {
+            path: identities_path,
             query: SizedQuery {
                 query,
                 limit: None,
