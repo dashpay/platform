@@ -10,7 +10,7 @@ use crate::error::Error;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
-use dpp::voting::Vote;
+use dpp::voting::votes::Vote;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::block::block_info::BlockInfo;
 use crate::fee::op::LowLevelDriveOperation;

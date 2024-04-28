@@ -41,7 +41,7 @@ impl StateTransitionLike for MasternodeVoteTransitionV0 {
     }
 
     fn user_fee_increase(&self) -> UserFeeIncrease {
-        // The user fee increase for a masternode vote is always 0
+        // The user fee increase for a masternode votes is always 0
         0
     }
 

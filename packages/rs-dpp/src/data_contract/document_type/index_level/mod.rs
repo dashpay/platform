@@ -17,7 +17,7 @@ pub enum IndexType {
     /// As long as one of the values is not nil
     UniqueIndex,
     /// A contested resource: This is a unique index but that can be contested through a resolution
-    /// The simplest to understand resolution is a masternode vote, but could also be something
+    /// The simplest to understand resolution is a masternode votes, but could also be something
     /// like a bidding war.
     /// For example the path/name in the dpns contract must be unique but it is a contested potentially
     /// valuable resource.

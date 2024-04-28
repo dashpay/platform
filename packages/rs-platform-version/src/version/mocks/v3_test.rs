@@ -223,6 +223,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions {
                     register_contested_resource_identity_vote: 0,
                     register_identity_vote: 0,
+                    add_vote_poll_end_date_query: 0,
                 },
                 cleanup: DriveVoteCleanupMethodVersions {
                     remove_votes_for_identity: 0,

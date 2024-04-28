@@ -1,4 +1,4 @@
-use crate::voting::Vote;
+use crate::voting::votes::Vote;
 use platform_value::Identifier;
 
 pub trait MasternodeVoteTransitionAccessorsV0 {

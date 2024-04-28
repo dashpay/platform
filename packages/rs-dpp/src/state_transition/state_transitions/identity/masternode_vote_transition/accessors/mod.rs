@@ -1,7 +1,7 @@
 mod v0;
 
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use crate::voting::Vote;
+use crate::voting::votes::Vote;
 use platform_value::Identifier;
 pub use v0::*;
 

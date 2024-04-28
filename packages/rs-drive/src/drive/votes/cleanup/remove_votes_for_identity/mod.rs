@@ -10,7 +10,7 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// We remove votes for an identity when that identity is somehow disabled. Currently there is
+    /// We remove vote_choices for an identity when that identity is somehow disabled. Currently there is
     /// no way to "disable" identities except for masternodes being removed from the list
     pub fn remove_votes_for_identity(
         &self,

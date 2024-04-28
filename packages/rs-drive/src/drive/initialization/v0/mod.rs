@@ -195,7 +195,7 @@ impl Drive {
         // For Versioning via forks
         Drive::add_initial_fork_update_structure_operations(&mut batch);
 
-        // For the vote tree structure
+        // For the votes tree structure
         Drive::add_initial_vote_tree_main_structure_operations(&mut batch, platform_version)?;
 
 

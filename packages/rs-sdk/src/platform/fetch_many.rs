@@ -261,7 +261,7 @@ impl FetchMany<EpochIndex> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
 }
 
-/// Fetch information about number of votes for each protocol version upgrade.
+/// Fetch information about number of vote_choices for each protocol version upgrade.
 ///
 /// Returns [ProtocolVersionUpgrades](drive_proof_verifier::types::ProtocolVersionUpgrades)
 /// indexed by [ProtocolVersion](dpp::util::deserializer::ProtocolVersion).

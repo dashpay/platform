@@ -13,7 +13,7 @@ use crate::identity::KeyID;
 use crate::prelude::{Identifier, IdentityNonce};
 
 use crate::protocol_error::ProtocolError;
-use crate::voting::Vote;
+use crate::voting::votes::Vote;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::BinaryData;
@@ -54,12 +54,12 @@ mod test {
 
     use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
     use crate::voting::resource_vote::ResourceVote;
-    use crate::voting::{
-        ContestedDocumentResourceVotePoll, ContestedDocumentResourceVoteType, Vote,
-    };
+    use crate::voting::ContestedDocumentResourceVote;
     use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;
+    use crate::voting::votes::Vote;
+    use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
     fn test_masternode_vote_transition<
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
@@ -79,14 +79,14 @@ mod test {
         let mut rng = rand::thread_rng();
         let transition = MasternodeVoteTransitionV0 {
             pro_tx_hash: Identifier::random(),
-            vote: Vote::ContestedDocumentResourceVote(ContestedDocumentResourceVoteType {
+            vote: Vote::ContestedDocumentResourceVote(ContestedDocumentResourceVote {
                 vote_poll: ContestedDocumentResourceVotePoll {
                     contract_id: Default::default(),
                     document_type_name: "hello".to_string(),
                     index_name: "index_1".to_string(),
                     index_values: vec![],
                 },
-                resource_vote: ResourceVote::TowardsIdentity(Identifier::random()),
+                resource_vote_choice: ResourceVote::TowardsIdentity(Identifier::random()),
             }),
             nonce: 1,
             signature_public_key_id: rng.gen(),

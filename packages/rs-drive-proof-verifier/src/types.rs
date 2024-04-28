@@ -77,13 +77,13 @@ pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
 
 /// Results of protocol version upgrade voting.
 ///
-/// Information about the protocol version upgrade states and number of received votes, indexed by protocol version.
+/// Information about the protocol version upgrade states and number of received vote_choices, indexed by protocol version.
 /// Returned by [ProtocolVersionVoteCount::fetch_many()].
 ///
 /// ## Data Structure
 ///
 /// * [`ProtocolVersion`] - key determining protocol version
-/// * [`ProtocolVersionVoteCount`] - value, number of votes for the protocol version upgrade
+/// * [`ProtocolVersionVoteCount`] - value, number of vote_choices for the protocol version upgrade
 pub type ProtocolVersionUpgrades = RetrievedObjects<ProtocolVersion, ProtocolVersionVoteCount>;
 
 /// Vote of a masternode for a protocol version.

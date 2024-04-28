@@ -12,8 +12,8 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// We add vote poll references by end date in order to be able to check on every new block if
-    /// any vote poll should be closed.
+    /// We add votes poll references by end date in order to be able to check on every new block if
+    /// any votes poll should be closed.
     pub fn add_vote_poll_end_date_query(
         &self,
         identity_id: Identifier,
@@ -25,11 +25,11 @@ impl Drive {
             .methods
             .vote
             .contested_resource_insert
-            .register_identity_vote
+            .add_vote_poll_end_date_query
         {
             0 => self.add_vote_poll_end_date_query_v0(identity_id, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "register_identity_vote_for_identity_queries".to_string(),
+                method: "add_vote_poll_end_date_query".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

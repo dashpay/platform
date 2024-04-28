@@ -10,14 +10,14 @@ use crate::query::QueryItem;
 use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
-use dpp::voting::ContestedDocumentResourceVoteType;
+use dpp::voting::ContestedDocumentResourceVote;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use grovedb_path::SubtreePath;
 use crate::drive::votes::TreePath;
 
 impl Drive {
-    /// We remove votes for an identity when that identity is somehow disabled. Currently there is
+    /// We remove vote_choices for an identity when that identity is somehow disabled. Currently there is
     /// no way to "disable" identities except for masternodes being removed from the list
     pub(super) fn remove_votes_for_identity_v0(
         &self,
@@ -25,7 +25,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // We first query for all votes that the identity has
+        // We first query for all vote_choices that the identity has
 
         let vote_path = vote_contested_resource_identity_votes_tree_path_for_identity_vec(
             identity_id.as_bytes(),
@@ -51,19 +51,19 @@ impl Drive {
             .0
             .to_elements();
 
-        // Then we take each vote and go looking for it (to remove it)
+        // Then we take each votes and go looking for it (to remove it)
 
         let mut deletion_batch = vec![];
 
         for vote_to_remove in votes_to_remove_elements {
             let Element::Item(vote, ..) = vote_to_remove else {
                 return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                    "vote {:?} for identity {} is not an item",
+                    "votes {:?} for identity {} is not an item",
                     vote_to_remove, identity_id
                 ))));
             };
 
-            let vote = ContestedDocumentResourceVoteType::deserialize_from_bytes(vote.as_slice())?;
+            let vote = ContestedDocumentResourceVote::deserialize_from_bytes(vote.as_slice())?;
 
             // we then need to add to the batch the deletion
 

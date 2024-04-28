@@ -11,7 +11,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::voting::{ContestedDocumentResourceVoteType, Vote};
+use dpp::voting::votes::Vote;
 
 /// Operations on Identities
 #[derive(Clone, Debug)]
@@ -75,7 +75,7 @@ pub enum IdentityOperationType {
         /// The revision we are updating to
         revision: Revision,
     },
-    /// Casts a vote as a masternode.
+    /// Casts a votes as a masternode.
     MasternodeCastVote {
         /// The pro tx hash of the masternode doing the voting
         voter_pro_tx_hash: [u8; 32],

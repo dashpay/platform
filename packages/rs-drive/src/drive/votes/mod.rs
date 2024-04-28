@@ -3,14 +3,14 @@ use crate::drive::RootTree;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
-use dpp::voting::ContestedDocumentResourceVoteType;
+use dpp::voting::ContestedDocumentResourceVote;
 use dpp::ProtocolError;
 
 mod cleanup;
 mod insert;
 mod setup;
 
-/// The vote tree structure looks likes this
+/// The votes tree structure looks likes this
 ///
 ///     Votes
 ///
@@ -128,11 +128,11 @@ pub trait TreePath {
     fn tree_path(&self, contract: &DataContract) -> Result<Vec<&[u8]>, ProtocolError>;
 }
 
-impl TreePath for ContestedDocumentResourceVoteType {
+impl TreePath for ContestedDocumentResourceVote {
     fn tree_path(&self, contract: &DataContract) -> Result<Vec<&[u8]>, ProtocolError> {
         if contract.id() != self.vote_poll.contract_id {
             return Err(ProtocolError::VoteError(format!(
-                "contract id of vote {} does not match supplied contract {}",
+                "contract id of votes {} does not match supplied contract {}",
                 self.vote_poll.contract_id,
                 contract.id()
             )));
@@ -143,7 +143,7 @@ impl TreePath for ContestedDocumentResourceVoteType {
             .iter()
             .find(|index| &index.name == &self.vote_poll.index_name)
             .ok_or(ProtocolError::VoteError(format!(
-                "vote index name {} not found",
+                "votes index name {} not found",
                 &self.vote_poll.index_name
             )))?;
         let mut path = contract_document_type_path(
@@ -156,7 +156,7 @@ impl TreePath for ContestedDocumentResourceVoteType {
 
         let Some(contested_index) = &index.contested_index else {
             return Err(ProtocolError::VoteError(
-                "we expect the index in a contested document resource vote type to be contested"
+                "we expect the index in a contested document resource votes type to be contested"
                     .to_string(),
             ));
         };

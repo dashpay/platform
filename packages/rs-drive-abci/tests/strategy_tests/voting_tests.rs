@@ -20,6 +20,7 @@ mod tests {
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
     use tenderdash_abci::proto::types::CoreChainLock;
+    use strategy_tests::{IdentityInsertInfo, StartIdentities};
 
     #[test]
     fn run_chain_block_two_state_transitions_conflicting_unique_index() {
@@ -27,15 +28,16 @@ mod tests {
         // We use the dpns contract and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -74,9 +76,15 @@ mod tests {
             &mut rng,
             platform_version,
         );
+        
+        let dpns_contract = platform.drive.cache.system_data_contracts.load_dpns().as_ref().clone();
 
+        let document_type = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected a profile document type")
+            .to_owned_document_type();
         let document_op_1 = DocumentOp {
-            contract: platform.drive.system_contracts.dpns_contract.clone(),
+            contract: dpns_contract.clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "quantum".into()),
@@ -95,17 +103,11 @@ mod tests {
                 DocumentFieldFillType::FillIfNotRequired,
                 DocumentFieldFillSize::AnyDocumentFillSize,
             ),
-            document_type: platform
-                .drive
-                .system_contracts
-                .dpns_contract
-                .document_type_for_name("domain")
-                .expect("expected a profile document type")
-                .to_owned_document_type(),
+            document_type: document_type.clone(),
         };
 
         let document_op_2 = DocumentOp {
-            contract: platform.drive.system_contracts.dpns_contract.clone(),
+            contract: dpns_contract,
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "quantum".into()),
@@ -124,18 +126,12 @@ mod tests {
                 DocumentFieldFillType::FillIfNotRequired,
                 DocumentFieldFillSize::AnyDocumentFillSize,
             ),
-            document_type: platform
-                .drive
-                .system_contracts
-                .dpns_contract
-                .document_type_for_name("domain")
-                .expect("expected a profile document type")
-                .to_owned_document_type(),
+            document_type: document_type.clone(),
         };
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_op_1),
@@ -152,46 +148,32 @@ mod tests {
                         },
                     },
                 ],
-                start_identities,
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
-                signer: Some(simple_signer),
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
 
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
-        let mut core_block_heights = vec![10, 11];
-
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                let core_block_height = if core_block_heights.len() == 1 {
-                    *core_block_heights.first().unwrap()
-                } else {
-                    core_block_heights.remove(0)
-                };
-                Ok(CoreChainLock {
-                    core_block_height,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         // On the first block we only have identities and contracts
         let outcome =
             run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 15);

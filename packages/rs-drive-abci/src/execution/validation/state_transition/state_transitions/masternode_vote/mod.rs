@@ -39,7 +39,7 @@ impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
         {
             0 => self.transform_into_action_v0(),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "masternode vote state transition: transform_into_action".to_string(),
+                method: "masternode votes state transition: transform_into_action".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -64,7 +64,7 @@ impl StateTransitionStructureValidationV0 for MasternodeVoteTransition {
         {
             0 => self.validate_base_structure_v0(),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "masternode vote state transition: validate_structure".to_string(),
+                method: "masternode votes state transition: validate_structure".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -90,7 +90,7 @@ impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
         {
             0 => self.validate_state_v0(platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "masternode vote state transition: validate_state".to_string(),
+                method: "masternode votes state transition: validate_state".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

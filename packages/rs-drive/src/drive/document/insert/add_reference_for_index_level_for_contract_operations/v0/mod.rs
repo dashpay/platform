@@ -291,9 +291,13 @@ impl Drive {
 
                 if !inserted {
                     return Err(Error::Drive(DriveError::CorruptedContractIndexes(
-                        "contested vote tree already exists",
+                        "contested votes tree already exists",
                     )));
                 }
+                
+                // Now we need to add a reference to this votes, so we can keep track of it more easily
+                
+                self.add_new_masternode_vote_type()
             }
         } else {
             let key_element_info =

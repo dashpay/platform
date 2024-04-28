@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-pub enum CommonVote {
+pub enum YesNoAbstainVoteChoice {
     YES,
     NO,
     #[default]
