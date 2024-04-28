@@ -264,7 +264,7 @@ pub struct DriveVoteInsertMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteContestedResourceInsertMethodVersions {
     pub register_contested_resource_identity_vote: FeatureVersion,
-    pub register_identity_vote_for_identity_queries: FeatureVersion,
+    pub register_identity_vote: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::voting::{ContestedDocumentResourceVoteType, Vote};
+use dpp::voting::ContestedDocumentResourceVoteType;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::prelude::{Identifier, IdentityNonce};
 use platform_version::version::PlatformVersion;
@@ -14,10 +14,9 @@ use platform_version::version::PlatformVersion;
 impl Drive {
     pub fn register_contested_resource_identity_vote_v0(
         &self,
-        voter_pro_tx_hash: Identifier,
+        voter_pro_tx_hash: [u8;32],
         vote: ContestedDocumentResourceVoteType,
         block_info: &BlockInfo,
-        identity_nonce: IdentityNonce,
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -39,10 +38,9 @@ impl Drive {
 
     pub fn register_contested_resource_identity_vote_operations_v0(
         &self,
-        voter_pro_tx_hash: [u8; 32],
+        voter_pro_tx_hash: [u8;32],
         vote: ContestedDocumentResourceVoteType,
         block_info: &BlockInfo,
-        identity_nonce: IdentityNonce,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,

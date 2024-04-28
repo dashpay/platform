@@ -25,7 +25,7 @@ impl Drive {
             .methods
             .vote
             .contested_resource_insert
-            .register_identity_vote_for_identity_queries
+            .register_identity_vote
         {
             0 => self.add_vote_poll_end_date_query_v0(identity_id, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

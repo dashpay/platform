@@ -1,2 +1,1 @@
 mod register_contested_resource_identity_vote;
-mod register_identity_vote_for_identity_queries;

@@ -20,10 +20,9 @@ use crate::fee::op::LowLevelDriveOperation;
 impl Drive {
     pub fn register_contested_resource_identity_vote(
         &self,
-        voter_pro_tx_hash: Identifier,
+        voter_pro_tx_hash: [u8;32],
         vote: ContestedDocumentResourceVoteType,
         block_info: &BlockInfo,
-        identity_nonce: IdentityNonce,
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -39,7 +38,6 @@ impl Drive {
                 voter_pro_tx_hash,
                 vote,
                 block_info,
-                identity_nonce,
                 apply,
                 transaction,
                 platform_version,
@@ -54,10 +52,9 @@ impl Drive {
 
     pub fn register_contested_resource_identity_vote_operations(
         &self,
-        voter_pro_tx_hash: [u8; 32],
+        voter_pro_tx_hash: [u8;32],
         vote: ContestedDocumentResourceVoteType,
         block_info: &BlockInfo,
-        identity_nonce: IdentityNonce,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -75,7 +72,6 @@ impl Drive {
                 voter_pro_tx_hash,
                 vote,
                 block_info,
-                identity_nonce,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

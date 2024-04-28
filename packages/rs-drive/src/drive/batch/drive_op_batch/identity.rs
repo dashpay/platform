@@ -11,7 +11,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::voting::ContestedDocumentResourceVoteType;
+use dpp::voting::{ContestedDocumentResourceVoteType, Vote};
 
 /// Operations on Identities
 #[derive(Clone, Debug)]
@@ -75,14 +75,12 @@ pub enum IdentityOperationType {
         /// The revision we are updating to
         revision: Revision,
     },
-    /// Updates an identities revision.
-    MasternodeContestedResourceCastVote {
+    /// Casts a vote as a masternode.
+    MasternodeCastVote {
         /// The pro tx hash of the masternode doing the voting
         voter_pro_tx_hash: [u8; 32],
         /// Contested Vote type
-        contested_vote_type: ContestedDocumentResourceVoteType,
-        /// The nonce we are updating to
-        nonce: IdentityNonce,
+        vote: Vote,
     },
     /// Updates an identities nonce for a specific contract.
     UpdateIdentityNonce {
@@ -191,11 +189,11 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             )?]),
-            IdentityOperationType::MasternodeContestedResourceCastVote {
+            IdentityOperationType::MasternodeCastVote {
                 voter_pro_tx_hash,
-                contested_vote_type, nonce,
+                vote,
             } => {
-                drive.register_contested_resource_identity_vote_operations(voter_pro_tx_hash, contested_vote_type, block_info, nonce, estimated_costs_only_with_layer_info, transaction, platform_version)
+                drive.register_identity_vote_operations(voter_pro_tx_hash, vote, block_info, estimated_costs_only_with_layer_info, transaction, platform_version)
             },
             IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id,
