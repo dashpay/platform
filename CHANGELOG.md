@@ -3,10 +3,10 @@
 
 ### ⚠ BREAKING CHANGES
 
-* getIdentitiesContractKeys endpoint (#1766)
+* Removed `getIdentities` and `getIdentitiesByPublicKeyHashes` endpoints in favor of `getIdentitiesContractKeys` (#1766)
 * **platform:** basic nft support (#1829)
-* **dapi:** split getStatus into two endpoints (#1812)
-* **platform:** ability to transfer documents (#1826)
+* **dapi:** `getStatus` is removed in favor of `getMasternodeStatus` and `getBlockchainStatus` (#1812)
+* **platform:** documents serialization format is changed that makes previously created block chain data invalid (#1826)
 
 ### Features
 
