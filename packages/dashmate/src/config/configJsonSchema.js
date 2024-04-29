@@ -395,7 +395,7 @@ export default {
                       description: 'The maximum number of parallel requests',
                     },
                   },
-                  required: ['maxConnections', 'maxPendingRequests', 'maxRequests'],
+                  required: ['maxRequests'],
                   additionalProperties: false,
                 },
                 dapiApi: {
