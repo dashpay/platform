@@ -3,7 +3,7 @@ pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
 pub(crate) mod context;
-mod purchase_document;
+pub mod purchase_document;
 mod put_contract;
 pub mod put_document;
 pub mod put_identity;
