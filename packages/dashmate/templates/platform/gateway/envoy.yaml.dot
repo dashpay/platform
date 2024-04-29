@@ -289,11 +289,7 @@ static_resources:
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
-            # The maximum number of connections that Envoy will establish to all hosts in a cluster.
-            max_connections: {{= it.platform.gateway.upstreams.dapiApi.maxConnections }}
-            # The maximum number of requests that will be queued if `max_requests` is reached.
-            max_pending_requests: {{= it.platform.gateway.upstreams.dapiApi.maxPendingRequests }}
-            # The maximum number of parallel requests.
+            # The maximum number of parallel requests
             max_requests: {{= it.platform.gateway.upstreams.dapiApi.maxRequests }}
       load_assignment:
         cluster_name: dapi_api
@@ -317,11 +313,6 @@ static_resources:
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
-            # The maximum number of connections that Envoy will establish to all hosts in a cluster.
-            max_connections: {{= it.platform.gateway.upstreams.dapiCoreStreams.maxConnections }}
-            # The maximum number of requests that will be queued if `max_requests` is reached.
-            max_pending_requests: {{= it.platform.gateway.upstreams.dapiCoreStreams.maxPendingRequests }}
-            # The maximum number of parallel requests.
             max_requests: {{= it.platform.gateway.upstreams.dapiCoreStreams.maxRequests }}
       load_assignment:
         cluster_name: dapi_core_streams
@@ -342,6 +333,11 @@ static_resources:
             http2_protocol_options:
               initial_stream_window_size: 65536  # 64 KiB
               initial_connection_window_size: 1048576  # 1 MiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            # The maximum number of parallel requests
+            max_requests: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
       load_assignment:
         cluster_name: dapi_json_rpc
         endpoints:
@@ -364,10 +360,6 @@ static_resources:
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
-            # The maximum number of connections that Envoy will establish to all hosts in a cluster.
-            max_connections: {{= it.platform.gateway.upstreams.driveGrpc.maxConnections }}
-            # The maximum number of requests that will be queued if `max_requests` is reached.
-            max_pending_requests: {{= it.platform.gateway.upstreams.driveGrpc.maxPendingRequests }}
             # The maximum number of parallel requests.
             max_requests: {{= it.platform.gateway.upstreams.driveGrpc.maxRequests }}
       load_assignment:

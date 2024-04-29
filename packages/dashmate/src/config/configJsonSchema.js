@@ -389,16 +389,6 @@ export default {
                   $id: 'gatewayUpstream',
                   type: 'object',
                   properties: {
-                    maxConnections: {
-                      type: 'integer',
-                      minimum: 1,
-                      description: 'The maximum number of connections that Gateway will establish to all hosts in a cluster',
-                    },
-                    maxPendingRequests: {
-                      type: 'integer',
-                      minimum: 1,
-                      description: 'The maximum number of requests that will be queued if `maxRequests` is reached.',
-                    },
                     maxRequests: {
                       type: 'integer',
                       minimum: 1,
@@ -412,6 +402,9 @@ export default {
                   $ref: 'gatewayUpstream',
                 },
                 dapiCoreStreams: {
+                  $ref: 'gatewayUpstream',
+                },
+                dapiJsonRpc: {
                   $ref: 'gatewayUpstream',
                 },
               },
