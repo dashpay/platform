@@ -97,7 +97,7 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       ),
       DASHMATE_HELPER_DOCKER_IMAGE,
       PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH: tenderdashLogDirectoryPath,
-      PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DISABLED: config.get('platform.gateway.rateLimiter.metrics.enabled'),
+      PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DISABLED: !config.get('platform.gateway.rateLimiter.metrics.enabled'),
       PLATFORM_DRIVE_ABCI_METRICS_URL: driveAbciMetricsUrl,
       ...convertObjectToEnvs(config.getOptions()),
     };
