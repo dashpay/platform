@@ -12,7 +12,7 @@ impl DocumentTypeV0 {
     ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
-        for index in self.indices.iter() {
+        for (_, index) in self.indices.iter() {
             let difference_option = index.matches(index_names, in_field_name, order_by);
             if let Some(difference) = difference_option {
                 if difference == 0 {

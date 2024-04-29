@@ -9,7 +9,7 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
+use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -203,13 +203,30 @@ impl Drive {
                 // here we are the tree that will contain the ref
                 // We are inserting this at item name contested / Goblet of Fire / 0 with the key of
                 //    document_key_path_info
-                self.batch_insert_empty_tree(
-                    index_path_info,
-                    KeyRef(document_id.as_slice()),
+
+                let document_id_key_path_info = KeyRef(document_id.as_slice());
+
+                let path_key_info = document_id_key_path_info.add_path_info(index_path_info.clone());
+
+                index_path_info.push(Key(document_id.to_vec()))?;
+                
+                // We check to make sure we are not overridding the tree
+                let inserted = self.batch_insert_empty_tree_if_not_exists(
+                    path_key_info,
+                    false,
                     *storage_flags,
+                    apply_type,
+                    transaction,
+                    previous_batch_operations,
                     batch_operations,
                     drive_version,
                 )?;
+
+                if !inserted {
+                    return Err(Error::Drive(DriveError::CorruptedContractIndexes(
+                        "contested votes sub tree document already exists",
+                    )));
+                }
 
                 let mut document_path_info = index_path_info.clone();
 
@@ -297,7 +314,7 @@ impl Drive {
                 
                 // Now we need to add a reference to this votes, so we can keep track of it more easily
                 
-                self.add_new_masternode_vote_type()
+                // self.add_new_masternode_vote_type()
             }
         } else {
             let key_element_info =

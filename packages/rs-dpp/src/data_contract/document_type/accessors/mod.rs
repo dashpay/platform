@@ -13,7 +13,7 @@ use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use indexmap::IndexMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 
 impl DocumentTypeV0Getters for DocumentType {
@@ -157,7 +157,7 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn indices(&self) -> &Vec<Index> {
+    fn indices(&self) -> &BTreeMap<String, Index> {
         match self {
             DocumentTypeRef::V0(v0) => v0.indices(),
         }

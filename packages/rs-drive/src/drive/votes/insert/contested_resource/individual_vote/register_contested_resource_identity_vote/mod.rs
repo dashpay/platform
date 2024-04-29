@@ -15,6 +15,7 @@ use dpp::voting::ContestedDocumentResourceVote;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
+use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
 use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {

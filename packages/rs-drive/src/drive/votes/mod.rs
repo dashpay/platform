@@ -3,8 +3,8 @@ use crate::drive::RootTree;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
-use dpp::voting::ContestedDocumentResourceVote;
 use dpp::ProtocolError;
+use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
 
 mod cleanup;
 mod insert;
@@ -130,25 +130,26 @@ pub trait TreePath {
 
 impl TreePath for ContestedDocumentResourceVote {
     fn tree_path(&self, contract: &DataContract) -> Result<Vec<&[u8]>, ProtocolError> {
-        if contract.id() != self.vote_poll.contract_id {
+        let vote_poll = self.vote_poll();
+        if contract.id() != vote_poll.contract_id {
             return Err(ProtocolError::VoteError(format!(
                 "contract id of votes {} does not match supplied contract {}",
-                self.vote_poll.contract_id,
+                self.vote_poll().contract_id,
                 contract.id()
             )));
         }
-        let document_type = contract.document_type_for_name(&self.vote_poll.document_type_name)?;
+        let document_type = contract.document_type_for_name(&vote_poll.document_type_name)?;
         let index = document_type
             .indices()
             .iter()
-            .find(|index| &index.name == &self.vote_poll.index_name)
+            .find(|index| &index.name == &vote_poll.index_name)
             .ok_or(ProtocolError::VoteError(format!(
                 "votes index name {} not found",
-                &self.vote_poll.index_name
+                &vote_poll.index_name
             )))?;
         let mut path = contract_document_type_path(
-            &self.vote_poll.contract_id.as_bytes(),
-            &self.vote_poll.document_type_name,
+            &vote_poll.contract_id.as_bytes(),
+            &vote_poll.document_type_name,
         )
         .to_vec();
 

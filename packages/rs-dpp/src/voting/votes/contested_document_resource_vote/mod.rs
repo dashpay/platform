@@ -10,6 +10,7 @@ use crate::voting::votes::Vote;
 
 mod v0;
 mod accessors;
+mod methods;
 
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(

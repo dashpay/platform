@@ -49,7 +49,7 @@ impl Drive {
                     voter_pro_tx_hash,
                     contested_document_resource_vote_type,
                     block_info,
-                    estimated_costs_only_with_layer_info
+                    estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
                 ),

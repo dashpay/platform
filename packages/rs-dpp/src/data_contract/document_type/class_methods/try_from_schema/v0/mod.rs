@@ -334,7 +334,7 @@ impl DocumentTypeV0 {
         #[cfg(feature = "validation")]
         let mut unique_indices_count = 0;
 
-        let indices: Vec<Index> = index_values
+        let indices: BTreeMap<String, Index> = index_values
             .map(|index_values| {
                 index_values
                     .iter()
@@ -473,15 +473,15 @@ impl DocumentTypeV0 {
                             })?;
                         }
 
-                        Ok(index)
+                        Ok((index.name.clone(), index))
                     })
-                    .collect::<Result<Vec<Index>, ProtocolError>>()
+                    .collect::<Result<BTreeMap<String, Index>, ProtocolError>>()
             })
             .transpose()?
             .unwrap_or_default();
 
         let index_structure =
-            IndexLevel::try_from_indices(indices.as_slice(), name, platform_version)?;
+            IndexLevel::try_from_indices(indices.values(), name, platform_version)?;
 
         // Collect binary and identifier properties
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(

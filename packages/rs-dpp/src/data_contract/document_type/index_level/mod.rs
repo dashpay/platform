@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
@@ -102,11 +103,15 @@ impl IndexLevel {
         None
     }
 
-    pub fn try_from_indices(
-        indices: &[Index],
+    pub fn try_from_indices<I, T>(
+        indices: I,
         document_type_name: &str, // TODO: We shouldn't pass document type, it's only for errors
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, ProtocolError>
+        where
+            I: IntoIterator<Item = T>, // T is the type of elements in the collection
+            T: Borrow<Index>,          // Assuming Index is the type stored in the collection
+    {
         match platform_version
             .dpp
             .contract_versions
@@ -123,10 +128,14 @@ impl IndexLevel {
         }
     }
 
-    fn try_from_indices_v0(
-        indices: &[Index],
+    fn try_from_indices_v0<I, T>(
+        indices: I,
         document_type_name: &str,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, ProtocolError>
+        where
+            I: IntoIterator<Item = T>, // T is the type of elements in the collection
+            T: Borrow<Index>,          // Assuming Index is the type stored in the collection
+    {
         let mut index_level = IndexLevel {
             sub_index_levels: Default::default(),
             has_index_with_type: None,
@@ -135,7 +144,8 @@ impl IndexLevel {
 
         let mut counter: u64 = 0;
 
-        for index in indices {
+        for index_to_borrow in indices {
+            let index = index_to_borrow.borrow();
             let mut current_level = &mut index_level;
             let mut properties_iter = index.properties.iter().peekable();
 

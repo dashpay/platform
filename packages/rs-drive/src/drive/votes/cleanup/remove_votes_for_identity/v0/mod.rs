@@ -10,10 +10,10 @@ use crate::query::QueryItem;
 use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
-use dpp::voting::ContestedDocumentResourceVote;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use grovedb_path::SubtreePath;
+use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
 use crate::drive::votes::TreePath;
 
 impl Drive {
