@@ -5,10 +5,11 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
     get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
-    get_epochs_info_request, get_identity_balance_and_revision_request,
-    get_identity_balance_request, get_identity_by_public_key_hash_request,
-    get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request,
-    get_identity_request, get_path_elements_request, GetPathElementsRequest,
+    get_epochs_info_request, get_identities_contract_keys_request,
+    get_identity_balance_and_revision_request, get_identity_balance_request,
+    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
+    get_identity_keys_request, get_identity_nonce_request, get_identity_request,
+    get_path_elements_request, GetIdentitiesContractKeysRequest, GetPathElementsRequest,
     GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, ResponseMetadata,
@@ -31,8 +32,12 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
 
+use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dpp::block::block_info::BlockInfo;
+use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
+use dpp::identity::{IdentityPublicKey, Purpose};
+use dpp::platform_value;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::DriveQuery;
@@ -68,6 +73,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
+    /// * `platform_version`: The platform version that should be used.
     /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
     /// # Returns
@@ -95,6 +101,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
+    /// * `platform_version`: The platform version that should be used.
     /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
     /// # Returns
@@ -123,6 +130,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
+    /// * `platform_version`: The platform version that should be used.
     /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
     /// # Returns
@@ -141,6 +149,39 @@ pub trait FromProof<Req> {
     {
         Self::maybe_from_proof(request, response, platform_version, provider)?
             .ok_or(Error::NotFound)
+    }
+
+    /// Retrieve the requested object from the proof with metadata.
+    ///
+    /// Runs full verification of the proof and retrieves enclosed objects.
+    ///
+    /// This method uses [`FromProof::maybe_from_proof_with_metadata()`] internally and throws an error
+    /// if the requested object does not exist in the proof.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The request sent to the server.
+    /// * `response`: The response received from the server.
+    /// * `platform_version`: The platform version that should be used.
+    /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(object, metadata))` when the requested object was found in the proof.
+    /// * `Err(Error::DocumentMissingInProof)` when the requested object was not found in the proof.
+    /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
+    fn from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Self, ResponseMetadata), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let (main_item, response_metadata) =
+            Self::maybe_from_proof_with_metadata(request, response, platform_version, provider)?;
+        Ok((main_item.ok_or(Error::NotFound)?, response_metadata))
     }
 }
 
@@ -1142,6 +1183,85 @@ where
         } else {
             Ok((Some(documents), mtd.clone()))
         }
+    }
+}
+
+impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContractKeys {
+    type Request = platform::GetIdentitiesContractKeysRequest;
+    type Response = platform::GetIdentitiesContractKeysResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (identities_ids, contract_id, document_type_name, purposes) =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_identities_contract_keys_request::Version::V0(v0) => {
+                    let GetIdentitiesContractKeysRequestV0 {
+                        identities_ids,
+                        contract_id,
+                        document_type_name,
+                        purposes,
+                        prove,
+                    } = v0;
+                    let identifiers = identities_ids
+                        .into_iter()
+                        .map(|identity_id_vec| {
+                            let identifier = Identifier::from_vec(identity_id_vec)?;
+                            Ok(identifier.to_buffer())
+                        })
+                        .collect::<Result<Vec<[u8; 32]>, platform_value::Error>>()
+                        .map_err(|e| Error::ProtocolError {
+                            error: e.to_string(),
+                        })?;
+                    let contract_id = Identifier::from_vec(contract_id)
+                        .map_err(|e| Error::ProtocolError {
+                            error: e.to_string(),
+                        })?
+                        .into_buffer();
+                    let purposes = purposes
+                        .into_iter()
+                        .map(|purpose| {
+                            Purpose::try_from(purpose).map_err(|e| Error::ProtocolError {
+                                error: e.to_string(),
+                            })
+                        })
+                        .collect::<Result<Vec<Purpose>, Error>>()?;
+                    (identifiers, contract_id, document_type_name, purposes)
+                }
+            };
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, identities_contract_keys) = Drive::verify_identities_contract_keys(
+            &proof.grovedb_proof,
+            identities_ids.as_slice(),
+            &contract_id,
+            document_type_name,
+            purposes,
+            false,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(identities_contract_keys), mtd.clone()))
     }
 }
 

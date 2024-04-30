@@ -73,6 +73,21 @@ impl TryFrom<u8> for Purpose {
     }
 }
 
+impl TryFrom<i32> for Purpose {
+    type Error = anyhow::Error;
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(AUTHENTICATION),
+            1 => Ok(ENCRYPTION),
+            2 => Ok(DECRYPTION),
+            3 => Ok(TRANSFER),
+            4 => Ok(SYSTEM),
+            5 => Ok(VOTING),
+            value => bail!("unrecognized purpose: {}", value),
+        }
+    }
+}
+
 #[cfg(feature = "cbor")]
 impl Into<CborValue> for Purpose {
     fn into(self) -> CborValue {

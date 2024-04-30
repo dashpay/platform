@@ -659,6 +659,7 @@ pub fn create_identities_state_transitions(
                         *purpose,
                         *security_level,
                         *key_type,
+                        None,
                         platform_version,
                     )?;
                     identity.add_public_key(key.clone());

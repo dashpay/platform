@@ -126,6 +126,7 @@ impl Drive {
                 &PathQuery::new_unsized(pools_vec_path(), epochs_query),
                 transaction.is_some(),
                 true,
+                true,
                 QueryResultType::QueryElementResultType,
                 transaction,
             )
