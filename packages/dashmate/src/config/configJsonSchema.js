@@ -409,7 +409,7 @@ export default {
                 },
               },
               additionalProperties: false,
-              required: ['driveGrpc', 'dapiApi', 'dapiCoreStreams'],
+              required: ['driveGrpc', 'dapiApi', 'dapiCoreStreams', 'dapiJsonRpc'],
             },
             metrics: {
               $ref: '#/definitions/enabledHostPort',
