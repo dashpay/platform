@@ -133,10 +133,10 @@ export default function getBaseConfigFactory(homeDir) {
           maxHeapSizeInBytes: 125000000, // 1 Gb
           upstreams: {
             driveGrpc: {
-              maxRequests: 10000,
+              maxRequests: 5000,
             },
             dapiApi: {
-              maxRequests: 10000,
+              maxRequests: 100,
             },
             dapiCoreStreams: {
               maxRequests: 100,
@@ -158,7 +158,7 @@ export default function getBaseConfigFactory(homeDir) {
           listeners: {
             dapiAndDrive: {
               http2: {
-                maxConcurrentStreams: 100,
+                maxConcurrentStreams: 10,
               },
               host: '0.0.0.0',
               port: 443,
