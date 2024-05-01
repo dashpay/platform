@@ -9,6 +9,7 @@ use std::mem::take;
 use std::path::{Path, PathBuf};
 use tenderdash_abci::proto::abci;
 use tenderdash_abci::proto::abci::response_offer_snapshot;
+use drive::grovedb::replication::StateSyncInfo;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 
@@ -197,10 +198,11 @@ impl Manager {
         chunk_id: Vec<u8>,
         chunk: Vec<u8>,
         sender: String,
+        state_sync_info: StateSyncInfo,
     ) -> Result<Vec<Vec<u8>>, Error> {
-        let result: Result<Vec<Vec<u8>>, Error> = grove
-            .apply_chunk(chunk_id, chunk)
-            .map_err(|e| Error::Drive(GroveDB(e)));
+        let (next_chunk_ids, state_sync_info) = grove
+            .apply_chunk(state_sync_info, chunk_id, chunk)
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
         match result {
             Ok(next_chunk_ids) => {
                 self.update_sender_metric(sender, MetricType::Success);
@@ -238,7 +240,7 @@ impl Manager {
     }
   
     fn update_sender_metric(&mut self, sender: String, metric_type: MetricType) {
-        let ref mut metrics = match self.sender_metrics {
+        let ref mut metrics = match &self.sender_metrics {
             Some(ref mut metrics) => metrics, //metrics.get_mut(&sender),
             None => {
                 let mut metrics = HashMap::new();
@@ -258,7 +260,7 @@ impl Manager {
     pub(crate) fn load_snapshot_chunk(
         &self,
         grove: &GroveDb,
-        chunk_id: string,
+        chunk_id: String,
     ) -> Result<Vec<u8>, Error> {
         grove
             .get_chunk(chunk_id, Some(CHUNK_SIZE_16MB))
