@@ -53,6 +53,7 @@ use tenderdash_abci::proto::abci::{
     RequestInitChain, RequestOfferSnapshot, RequestPrepareProposal, RequestProcessProposal,
     RequestQuery, ResponseApplySnapshotChunk, ResponseCheckTx, ResponseException,
     ResponseFinalizeBlock, ResponseInitChain, ResponseOfferSnapshot, ResponsePrepareProposal,
+    ResponseLoadSnapshotChunk,
     ResponseProcessProposal, ResponseQuery, TxRecord,
 };
 use tenderdash_abci::proto::types::VoteExtensionType;
@@ -586,7 +587,7 @@ where
 
         self.commit_transaction()?;
 
-        /// Create a snapshot of the current state for the height
+        // Create a snapshot of the current state for the height
         match self.snapshot_manager.borrow().deref() {
             Some(snapshot_manager) => {
                 match snapshot_manager.create_snapshot(&self.platform.drive.grove, height) {
@@ -752,6 +753,26 @@ where
         Ok(response)
     }
 
+    fn load_snapshot_chunk(
+        &self,
+        request: RequestLoadSnapshotChunk,
+    ) -> Result<ResponseLoadSnapshotChunk, ResponseException> {
+        let mut manager = self.snapshot_manager.borrow_mut();
+        match manager.as_mut() {
+            Some(manager) => {
+                tracing::debug!("Loading snapshot chunk");
+                match manager.load_snapshot_chunk(&self.platform.drive.grove, request.chunk_id) {
+                    Ok(result) => Ok(ResponseLoadSnapshotChunk { chunk: result }),
+                    Err(e) => Err(ResponseException::from(e)),
+                }
+            }
+            None => {
+                tracing::warn!("Snapshot manager is not configured");
+                Ok(Default::default())
+            }
+        }
+    }
+  
     /// Called when bootstrapping the node using state sync.
     fn offer_snapshot(
         &self,
@@ -824,8 +845,27 @@ where
             },
         };
         Ok(resp)
+  }
+  
+    fn list_snapshots(
+        &self,
+        request: RequestListSnapshots,
+    ) -> Result<ResponseListSnapshots, ResponseException> {
+        match self.snapshot_manager.borrow().as_ref() {
+            Some(manager) => match manager.get_snapshots(&self.platform.drive.grove) {
+                Ok(snapshots) => Ok(ResponseListSnapshots {
+                    snapshots: snapshots
+                        .into_iter()
+                        .map(|snapshot| snapshot.into())
+                        .collect(),
+                }),
+                Err(e) => Err(ResponseException::from(e)),
+            },
+            None => Ok(ResponseListSnapshots { snapshots: vec![] }),
+        }
     }
 }
+
 //
 // #[cfg(test)]
 // mod tests {

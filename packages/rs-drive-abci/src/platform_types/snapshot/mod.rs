@@ -16,6 +16,8 @@ const DEFAULT_FREQ: i64 = 3;
 
 const DEFAULT_NUMBER_OF_SNAPSHOTS: usize = 10;
 
+const CHUNK_SIZE_16MB: usize = 16 * 1024 * 1024;
+
 const SNAPSHOT_VERSION: u16 = 1;
 
 /// Snapshot entity
@@ -37,6 +39,17 @@ pub struct Snapshot {
 struct OfferedSnapshot {
     pub snapshot: abci::Snapshot,
     pub app_hash: Vec<u8>,
+}
+
+impl From<Snapshot> for abci::Snapshot {
+    fn from(snapshot: Snapshot) -> Self {
+        abci::Snapshot {
+            height: snapshot.height as u64,
+            version: snapshot.version as u32,
+            hash: snapshot.hash.into(),
+            metadata: snapshot.metadata,
+        }
+    }
 }
 
 /// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
@@ -109,7 +122,7 @@ impl Manager {
         app_hash: Vec<u8>,
     ) -> Result<response_offer_snapshot::Result, Error> {
         match take(&mut self.offered_snapshot) {
-            Some(mut offered_snapshot) => {
+            Some(offered_snapshot) => {
                 self.sender_metrics = None;
                 if offered_snapshot.snapshot.height == snapshot.height {
                     return Ok(response_offer_snapshot::Result::Reject);
@@ -152,7 +165,7 @@ impl Manager {
         if height == 0 || height % self.freq != 0 {
             return Ok(());
         }
-        let mut checkpoint_path: PathBuf = [self.checkpoints_path.clone(), height.to_string()]
+        let checkpoint_path: PathBuf = [self.checkpoints_path.clone(), height.to_string()]
             .iter()
             .collect();
         grove
@@ -223,7 +236,7 @@ impl Manager {
             .map_err(|e| Error::Drive(GroveDB(e)))?;
         Ok(())
     }
-
+  
     fn update_sender_metric(&mut self, sender: String, metric_type: MetricType) {
         let ref mut metrics = match self.sender_metrics {
             Some(ref mut metrics) => metrics, //metrics.get_mut(&sender),
@@ -241,6 +254,15 @@ impl Manager {
             }
         };
         sender_metrics.incr(metric_type);
+  }
+    pub(crate) fn load_snapshot_chunk(
+        &self,
+        grove: &GroveDb,
+        chunk_id: string,
+    ) -> Result<Vec<u8>, Error> {
+        grove
+            .get_chunk(chunk_id, Some(CHUNK_SIZE_16MB))
+            .map_err(|e| Error::Drive(GroveDB(e)))
     }
 }
 
