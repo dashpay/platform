@@ -37,6 +37,17 @@ struct OfferedSnapshot {
     pub app_hash: Vec<u8>,
 }
 
+impl From<Snapshot> for abci::Snapshot {
+    fn from(snapshot: Snapshot) -> Self {
+        abci::Snapshot {
+            height: snapshot.height as u64,
+            version: snapshot.version as u32,
+            hash: snapshot.hash.into(),
+            metadata: snapshot.metadata,
+        }
+    }
+}
+
 /// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
 /// number of snapshots and remove the old ones
 pub struct Manager {
