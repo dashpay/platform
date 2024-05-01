@@ -1,21 +1,29 @@
-const generateEnvs = require('../util/generateEnvs');
-
-function getConnectionHostFactory(dockerCompose, isHelper, configFile) {
+/**
+ * @param {DockerCompose} dockerCompose
+ * @param {boolean} isHelper
+ * @return {getConnectionHost}
+ */
+export default function getConnectionHostFactory(dockerCompose, isHelper) {
   /**
    * Get proper service endpoint url
-   * @param config
-   * @param serviceName
+   * @typedef {function} getConnectionHost
+   * @param {Config} config
+   * @param {string} serviceName
+   * @param {string} hostConfigurationPath
    * @return {Promise<string>}
    */
-  async function getConnectionHost(config, serviceName) {
+  async function getConnectionHost(config, serviceName, hostConfigurationPath) {
     if (isHelper) {
-      return dockerCompose.getContainerIp(generateEnvs(configFile, config), serviceName);
+      const containerInfo = await dockerCompose.inspectService(config, serviceName);
+
+      const [firstNetwork] = Object.keys(containerInfo.NetworkSettings.Networks);
+      const { IPAddress: containerIP } = containerInfo.NetworkSettings.Networks[firstNetwork];
+
+      return containerIP;
     }
 
-    return '127.0.0.1';
+    return config.get(hostConfigurationPath);
   }
 
   return getConnectionHost;
 }
-
-module.exports = getConnectionHostFactory;

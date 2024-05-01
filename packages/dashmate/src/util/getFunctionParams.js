@@ -8,7 +8,7 @@ const ARGUMENT_NAMES = /([^\s,]+)/g;
  * @param {number} skip Skip params
  * @return {array}
  */
-function getFunctionParams(fn, skip = 0) {
+export default function getFunctionParams(fn, skip = 0) {
   const functionString = fn.toString().replace(STRIP_COMMENTS, '');
 
   let params = functionString.slice(
@@ -55,5 +55,3 @@ function getFunctionParams(fn, skip = 0) {
 
   return filteredParams;
 }
-
-module.exports = getFunctionParams;

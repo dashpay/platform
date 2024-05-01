@@ -1,12 +1,11 @@
-const fs = require('fs');
-const path = require('path');
-
-const { HOME_DIR_PATH } = require('../constants');
+import fs from 'fs';
+import path from 'path';
 
 /**
+ * @param {HomeDir} homeDir
  * @return {writeServiceConfigs}
  */
-function writeServiceConfigsFactory() {
+export default function writeServiceConfigsFactory(homeDir) {
   /**
    * Write service config files
    *
@@ -17,16 +16,13 @@ function writeServiceConfigsFactory() {
    * @return {void}
    */
   function writeServiceConfigs(configName, configFiles) {
-    // Drop all files from configs directory
-    const configDir = path.join(HOME_DIR_PATH, configName);
-
-    fs.rmSync(configDir, { recursive: true, force: true });
+    const configDir = homeDir.joinPath(configName);
 
     for (const filePath of Object.keys(configFiles)) {
       const absoluteFilePath = path.join(configDir, filePath);
       const absoluteFileDir = path.dirname(absoluteFilePath);
 
-      // Recreate it
+      // Ensure dir
       fs.mkdirSync(absoluteFileDir, { recursive: true });
 
       // Write specified config files
@@ -36,5 +32,3 @@ function writeServiceConfigsFactory() {
 
   return writeServiceConfigs;
 }
-
-module.exports = writeServiceConfigsFactory;

@@ -1,47 +1,40 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const chalk = require('chalk');
+import chalk from 'chalk';
 
-const {
+import {
   NODE_TYPE_MASTERNODE,
-  NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
   PRESET_MAINNET,
-} = require('../../../constants');
+} from '../../../constants.js';
 
-const systemConfigs = require('../../../../configs/system');
-
-const {
+import {
   NODE_TYPE_NAMES,
   getNodeTypeByName,
   getNodeTypeNameByType,
   isNodeTypeNameHighPerformance,
-} = require('./nodeTypes');
-
-const Config = require('../../../config/Config');
-const generateRandomString = require('../../../util/generateRandomString');
+} from './nodeTypes.js';
+import generateRandomString from '../../../util/generateRandomString.js';
 
 /**
  * @param {ConfigFile} configFile
  * @param {generateBlsKeys} generateBlsKeys
  * @param {registerMasternodeTask} registerMasternodeTask
- * @param {renderServiceTemplates} renderServiceTemplates
- * @param {writeServiceConfigs} writeServiceConfigs
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {registerMasternodeGuideTask} registerMasternodeGuideTask
  * @param {configureNodeTask} configureNodeTask
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
+ * @param {DefaultConfigs} defaultConfigs
  */
-function setupRegularPresetTaskFactory(
+export default function setupRegularPresetTaskFactory(
   configFile,
   generateBlsKeys,
   registerMasternodeTask,
-  renderServiceTemplates,
-  writeServiceConfigs,
   obtainZeroSSLCertificateTask,
   registerMasternodeGuideTask,
   configureNodeTask,
   configureSSLCertificateTask,
+  defaultConfigs,
 ) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -61,9 +54,9 @@ function setupRegularPresetTaskFactory(
                 // Keep this order, because each item references the text in the previous item
                 header: `  The Dash network consists of several different node types:
       Fullnode             - Host the full Dash blockchain (no collateral)
-      Masternode           - Fullnode features, plus Core services such as ChainLocks 
+      Masternode           - Fullnode features, plus Core services such as ChainLocks
                             and InstantSend (1000 DASH collateral)
-      Evolution fullnode   - Fullnode features, plus host a full copy of the Platform 
+      Evolution fullnode   - Fullnode features, plus host a full copy of the Platform
                             blockchain (no collateral)
       Evolution masternode - Masternode features, plus Platform services such as DAPI
                             and Drive (4000 DASH collateral)\n`,
@@ -84,10 +77,16 @@ function setupRegularPresetTaskFactory(
             nodeTypeName = getNodeTypeNameByType(ctx.nodeType);
           }
 
-          ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
+          ctx.config = defaultConfigs.get(ctx.preset);
 
           ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
+
+          if (ctx.config.get('core.masternode.enable')) {
+            ctx.config.set('platform.drive.tenderdash.mode', 'validator');
+          } else {
+            ctx.config.set('platform.drive.tenderdash.mode', 'full');
+          }
 
           ctx.config.set('core.rpc.user', generateRandomString(8));
           ctx.config.set('core.rpc.password', generateRandomString(12));
@@ -103,7 +102,7 @@ function setupRegularPresetTaskFactory(
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE,
         task: async (ctx, task) => {
           let header;
-          if (ctx.isHP === NODE_TYPE_HPMN) {
+          if (ctx.isHP) {
             header = `  If your HP masternode is already registered, we will import your masternode
   operator and platform node keys to configure an HP masternode. Please make
   sure your IP address has not changed, otherwise you will need to create a
@@ -166,5 +165,3 @@ function setupRegularPresetTaskFactory(
 
   return setupRegularPresetTask;
 }
-
-module.exports = setupRegularPresetTaskFactory;

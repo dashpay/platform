@@ -34,12 +34,10 @@ impl Drive {
             .epochs
             .get_storage_credits_for_distribution_for_epochs_in_range
         {
-            0 => Ok(
-                self.get_storage_credits_for_distribution_for_epochs_in_range_v0(
-                    epoch_range,
-                    transaction,
-                    platform_version,
-                ),
+            0 => self.get_storage_credits_for_distribution_for_epochs_in_range_v0(
+                epoch_range,
+                transaction,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_storage_credits_for_distribution_for_epochs_in_range".to_string(),

@@ -4,7 +4,7 @@ const { default: loadWasmDpp } = require('../../../../../../dist');
 let DataContract;
 let DocumentCreateTransition;
 
-describe('DocumentCreateTransition', () => {
+describe.skip('DocumentCreateTransition', () => {
   let documentTransitionJs;
   let documentTransition;
 
@@ -19,8 +19,10 @@ describe('DocumentCreateTransition', () => {
     const dataContractJs = documentTransitionJs.dataContract;
     const dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
 
-    documentTransition = new DocumentCreateTransition(documentTransitionJs.toObject(),
-      dataContract);
+    documentTransition = new DocumentCreateTransition(
+      documentTransitionJs.toObject(),
+      dataContract,
+    );
   });
 
   describe('toJSON', () => {

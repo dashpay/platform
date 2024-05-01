@@ -17,7 +17,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Tries to perform a stateless deletion of non-tree elements based on the specified platform version.
     ///
-    /// This function routes the deletion request to the appropriate version of the 
+    /// This function routes the deletion request to the appropriate version of the
     /// `stateless_delete_of_non_tree_for_costs` function based on the provided `platform_version`.
     ///
     /// The current implementation supports version `0` of the function and returns an error

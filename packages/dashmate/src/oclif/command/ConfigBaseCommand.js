@@ -1,19 +1,25 @@
-const { Flags } = require('@oclif/core');
-
-const { asValue } = require('awilix');
-
-const BaseCommand = require('./BaseCommand');
-const ConfigIsNotPresentError = require('../../config/errors/ConfigIsNotPresentError');
+import { asValue } from 'awilix';
+import { Flags } from '@oclif/core';
+import ConfigIsNotPresentError from '../../config/errors/ConfigIsNotPresentError.js';
+import BaseCommand from './BaseCommand.js';
 
 /**
  * @abstract
  */
-class ConfigBaseCommand extends BaseCommand {
+export default class ConfigBaseCommand extends BaseCommand {
+  static flags = {
+    config: Flags.string({
+      description: 'configuration name to use',
+      default: null,
+    }),
+    ...BaseCommand.flags,
+  };
+
   async run() {
     const configFile = this.container.resolve('configFile');
 
     let configName;
-    if (this.parsedFlags.config !== null) {
+    if (this.parsedFlags.config) {
       if (!configFile.isConfigExists(this.parsedFlags.config)) {
         throw new ConfigIsNotPresentError(this.parsedFlags.config);
       }
@@ -24,7 +30,7 @@ class ConfigBaseCommand extends BaseCommand {
 
       if (defaultConfigName === null) {
         throw new Error(`Default config is not set.
-        
+
 You probably need to set up a node with the 'dashmate setup' command first.
 
 You can also use the '--config' option, or set the default config with 'dashmate config default'`);
@@ -43,22 +49,6 @@ You can also use the '--config' option, or set the default config with 'dashmate
       config: asValue(config),
     });
 
-    const renderServiceTemplates = this.container.resolve('renderServiceTemplates');
-    const writeServiceConfigs = this.container.resolve('writeServiceConfigs');
-
-    const serviceConfigFiles = renderServiceTemplates(config);
-    writeServiceConfigs(config.getName(), serviceConfigFiles);
-
     return super.run();
   }
 }
-
-ConfigBaseCommand.flags = {
-  config: Flags.string({
-    description: 'configuration name to use',
-    default: null,
-  }),
-  ...BaseCommand.flags,
-};
-
-module.exports = ConfigBaseCommand;

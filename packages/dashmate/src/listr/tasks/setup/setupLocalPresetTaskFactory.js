@@ -1,15 +1,10 @@
-const { Listr } = require('listr2');
-
-const path = require('path');
-
-const {
+import { Listr } from 'listr2';
+import {
   PRESET_LOCAL,
-  HOME_DIR_PATH,
-  SSL_PROVIDERS,
-} = require('../../../constants');
-const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
-const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
-const generateRandomString = require('../../../util/generateRandomString');
+} from '../../../constants.js';
+import generateTenderdashNodeKey from '../../../tenderdash/generateTenderdashNodeKey.js';
+import deriveTenderdashNodeId from '../../../tenderdash/deriveTenderdashNodeId.js';
+import generateRandomString from '../../../util/generateRandomString.js';
 
 /**
  * @param {ConfigFile} configFile
@@ -17,17 +12,17 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configureTenderdashTask} configureTenderdashTask
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
  * @param {resolveDockerHostIp} resolveDockerHostIp
- * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
+ * @param {HomeDir} homeDir
  */
-function setupLocalPresetTaskFactory(
+export default function setupLocalPresetTaskFactory(
   configFile,
   configureCoreTask,
   obtainSelfSignedCertificateTask,
   configureTenderdashTask,
   resolveDockerHostIp,
-  configFileRepository,
   generateHDPrivateKeys,
+  homeDir,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -82,9 +77,10 @@ function setupLocalPresetTaskFactory(
           ctx.minerInterval = await task.prompt({
             type: 'input',
             message: 'Enter the interval between core blocks',
-            initial: configFile.getConfig('base').options.core.miner.interval,
+            initial: configFile.getConfig('base')
+              .get('core.miner.interval'),
             validate: (state) => {
-              if (state.match(/\d+(\.\d+)?(m|s)/)) {
+              if (state.match(/\d+(\.\d+)?([ms])/)) {
                 return true;
               }
 
@@ -106,6 +102,10 @@ function setupLocalPresetTaskFactory(
                 ? configFile.getConfig(configName)
                 : configFile.createConfig(configName, PRESET_LOCAL)
             ));
+
+          ctx.configGroup.forEach((config) => config.set('group', 'local'));
+
+          configFile.setDefaultGroupName(PRESET_LOCAL);
 
           const hostDockerInternalIp = await resolveDockerHostIp();
 
@@ -179,10 +179,14 @@ function setupLocalPresetTaskFactory(
                 config.set('core.rpc.password', generateRandomString(12));
                 config.set('externalIp', hostDockerInternalIp);
 
-                config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
+                const subnet = config.get('docker.network.subnet')
+                  .split('.');
+                subnet[2] = nodeIndex;
+
+                config.set('docker.network.subnet', subnet.join('.'));
 
                 // Setup Core debug logs
-                const coreLogFilePath = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'core.log');
+                const coreLogFilePath = homeDir.joinPath('logs', config.getName(), 'core.log');
                 config.set('core.log.file.path', coreLogFilePath);
 
                 if (ctx.debugLogs) {
@@ -192,6 +196,8 @@ function setupLocalPresetTaskFactory(
                 // Although not all nodes are miners, all nodes should be aware of
                 // the miner interval to be able to sync mocked time
                 config.set('core.miner.interval', ctx.minerInterval);
+
+                config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
 
                 if (config.getName() === 'local_seed') {
                   config.set('description', 'seed node for local network');
@@ -204,8 +210,11 @@ function setupLocalPresetTaskFactory(
 
                   // Disable platform for the seed node
                   config.set('platform.enable', false);
+                  config.set('platform.drive.tenderdash.mode', 'seed');
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
+
+                  config.set('platform.drive.tenderdash.mode', 'validator');
 
                   const key = generateTenderdashNodeKey();
                   const id = deriveTenderdashNodeId(key);
@@ -213,53 +222,58 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.node.id', id);
                   config.set('platform.drive.tenderdash.node.key', key);
 
+                  config.set('platform.drive.abci.tokioConsole.port', config.get('platform.drive.abci.tokioConsole.port') + (i * 100));
                   config.set('platform.dapi.envoy.http.port', config.get('platform.dapi.envoy.http.port') + (i * 100));
                   config.set('platform.drive.tenderdash.p2p.port', config.get('platform.drive.tenderdash.p2p.port') + (i * 100));
                   config.set('platform.drive.tenderdash.rpc.port', config.get('platform.drive.tenderdash.rpc.port') + (i * 100));
                   config.set('platform.drive.tenderdash.pprof.port', config.get('platform.drive.tenderdash.pprof.port') + (i * 100));
+                  config.set('platform.drive.tenderdash.metrics.port', config.get('platform.drive.tenderdash.metrics.port') + (i * 100));
                   config.set('platform.drive.tenderdash.moniker', config.name);
 
                   // Setup logs
                   if (ctx.debugLogs) {
-                    config.set('platform.drive.abci.log.stdout.level', 'trace');
-                    config.set('platform.drive.abci.log.prettyFile.level', 'trace');
+                    const stdoutLogger = config.get('platform.drive.abci.logs.stdout');
+                    if (stdoutLogger) {
+                      config.set('platform.drive.abci.logs.stdout.level', 'trace');
+                      config.set('platform.drive.abci.logs.stdout.format', 'full');
+                    }
 
+                    // TODO: Shall we use trace?
                     config.set('platform.drive.tenderdash.log.level', 'debug');
                   }
 
-                  if (!config.get('platform.drive.abci.log.prettyFile.path')) {
-                    const drivePrettyLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_pretty.log');
-                    config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
-                  }
+                  config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey()
+                    .toString());
+                  config.set('platform.dpns.secondPublicKey', dpnsDerivedSecondPrivateKey.privateKey.toPublicKey()
+                    .toString());
 
-                  if (!config.get('platform.drive.abci.log.jsonFile.path')) {
-                    const driveJsonLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_json.log');
-                    config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
-                  }
+                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedMasterPrivateKey.privateKey.toPublicKey()
+                    .toString());
+                  config.set('platform.featureFlags.secondPublicKey', featureFlagsDerivedSecondPrivateKey.privateKey.toPublicKey()
+                    .toString());
 
-                  config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.dpns.secondPublicKey', dpnsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedMasterPrivateKey.privateKey.toPublicKey()
+                    .toString());
+                  config.set('platform.dashpay.secondPublicKey', dashpayDerivedSecondPrivateKey.privateKey.toPublicKey()
+                    .toString());
 
-                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.featureFlags.secondPublicKey', featureFlagsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
-
-                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.dashpay.secondPublicKey', dashpayDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
-
-                  config.set('platform.withdrawals.masterPublicKey', withdrawalsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.withdrawals.secondPublicKey', withdrawalsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.withdrawals.masterPublicKey', withdrawalsDerivedMasterPrivateKey.privateKey.toPublicKey()
+                    .toString());
+                  config.set('platform.withdrawals.secondPublicKey', withdrawalsDerivedSecondPrivateKey.privateKey.toPublicKey()
+                    .toString());
 
                   config.set(
                     'platform.masternodeRewardShares.masterPublicKey',
                     masternodeRewardSharesDerivedMasterPrivateKey.privateKey
-                      .toPublicKey().toString(),
-                  ); config.set(
+                      .toPublicKey()
+                      .toString(),
+                  );
+                  config.set(
                     'platform.masternodeRewardShares.secondPublicKey',
                     masternodeRewardSharesDerivedSecondPrivateKey.privateKey
-                      .toPublicKey().toString(),
+                      .toPublicKey()
+                      .toString(),
                   );
-
-                  config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
                 }
               },
               options: {
@@ -267,16 +281,6 @@ function setupLocalPresetTaskFactory(
               },
             }
           ));
-
-          subTasks.push({
-            title: 'Save configs',
-            task: async () => {
-              configFile.setDefaultGroupName(PRESET_LOCAL);
-
-              // Persist configs
-              configFileRepository.write(configFile);
-            },
-          });
 
           return new Listr(subTasks);
         },
@@ -297,14 +301,10 @@ function setupLocalPresetTaskFactory(
         task: (ctx) => {
           const platformConfigs = ctx.configGroup.filter((config) => config.get('platform.enable'));
 
-          const subTasks = platformConfigs.map((config) => {
-            config.set('platform.dapi.envoy.ssl.provider', SSL_PROVIDERS.SELF_SIGNED);
-
-            return {
-              title: `Generate certificate for ${config.getName()}`,
-              task: async () => obtainSelfSignedCertificateTask(config),
-            };
-          });
+          const subTasks = platformConfigs.map((config) => ({
+            title: `Generate certificate for ${config.getName()}`,
+            task: async () => obtainSelfSignedCertificateTask(config),
+          }));
 
           return new Listr(subTasks);
         },
@@ -314,5 +314,3 @@ function setupLocalPresetTaskFactory(
 
   return setupLocalPresetTask;
 }
-
-module.exports = setupLocalPresetTaskFactory;

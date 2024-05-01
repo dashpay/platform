@@ -106,7 +106,7 @@ const {
     BlockHeader,
     // ...
   },
-  PlatformProtocol: { // @dashevo/dpp essentials
+  PlatformProtocol: { // @dashevo/wasm-dpp essentials
     Identity,
     Identifier,
   },
@@ -123,7 +123,7 @@ The Dash SDK works using multiple dependencies that might interest you:
 - [Wallet-Lib](https://github.com/dashpay/platform/tree/master/packages/wallet-lib) - Wallet management for handling, signing and broadcasting transactions (BIP-44 HD).
 - [Dashcore-Lib](https://github.com/dashpay/dashcore-lib) - Provides the main L1 blockchain primitives (Block, Transaction,...).
 - [DAPI-Client](https://github.com/dashpay/platform/tree/master/packages/js-dapi-client) - Client library for accessing DAPI endpoints.
-- [DPP](https://github.com/dashpay/platform/tree/master/packages/js-dpp) - Implementation (JS) of Dash Platform Protocol.
+- [Wasm-DPP](https://github.com/dashpay/platform/tree/master/packages/wasm-dpp) - Implementation  of Dash Platform Protocol.
 
 Some features might be more extensive in those libs, as Dash SDK only wraps around them to provide a single interface that is easy to use (and thus has less features).
 

@@ -1,3 +1,2 @@
-file:
-  - test/bootstrap.js
+require: test/bootstrap.js
 recursive: true

@@ -1,6 +1,6 @@
 class Metadata {
   /**
-   * @param {Object} properties
+   * @param {object} properties
    * @param {number} properties.height - block height
    * @param {number} properties.coreChainLockedHeight - core chain locked height
    * @param {number} properties.timeMs - block time
@@ -15,7 +15,6 @@ class Metadata {
 
   /**
    * Get height
-   *
    * @returns {number} - block height
    */
   getHeight() {
@@ -24,7 +23,6 @@ class Metadata {
 
   /**
    * Get core chain locked height
-   *
    * @returns {number} - core chain locked height
    */
   getCoreChainLockedHeight() {
@@ -33,7 +31,7 @@ class Metadata {
 
   /**
    * Get block time
-   * @return {number}
+   * @returns {number}
    */
   getTimeMs() {
     return this.timeMs;
@@ -41,7 +39,7 @@ class Metadata {
 
   /**
    * Get protocol version
-   * @return {number}
+   * @returns {number}
    */
   getProtocolVersion() {
     return this.protocolVersion;

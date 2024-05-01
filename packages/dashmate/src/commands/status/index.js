@@ -1,13 +1,23 @@
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+import { Flags } from '@oclif/core';
+import { OUTPUT_FORMATS } from '../../constants.js';
+import colors from '../../status/colors.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import { MasternodeStateEnum } from '../../status/enums/masternodeState.js';
+import { ServiceStatusEnum } from '../../status/enums/serviceStatus.js';
+import printObject from '../../printers/printObject.js';
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const printObject = require('../../printers/printObject');
-const MasternodeStateEnum = require('../../status/enums/masternodeState');
-const colors = require('../../status/colors');
-const ServiceStatusEnum = require('../../status/enums/serviceStatus');
+export default class StatusCommand extends ConfigBaseCommand {
+  static description = 'Show status overview';
 
-class StatusCommand extends ConfigBaseCommand {
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    format: Flags.string({
+      description: 'display output format',
+      default: OUTPUT_FORMATS.PLAIN,
+      options: Object.values(OUTPUT_FORMATS),
+    }),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -39,8 +49,6 @@ class StatusCommand extends ConfigBaseCommand {
       'Last paid time': 'n/a',
       'Payment queue position': 'n/a',
       'Next payment time': 'n/a',
-      'Sentinel Version': 'n/a',
-      'Sentinel Status': 'n/a',
       'Platform Enabled': 'n/a',
       'Platform Status': 'n/a',
       'Platform Version': 'n/a',
@@ -83,18 +91,18 @@ class StatusCommand extends ConfigBaseCommand {
             paymentQueuePosition,
             nextPaymentTime,
           } = masternode.nodeState;
+          const { evonodeEnabled, masternodeEnabled } = masternode;
 
           plain['Masternode ProTX'] = masternode.proTxHash || 'n/a';
-          plain['PoSe Penalty'] = poSePenalty || 'n/a';
+          plain['PoSe Penalty'] = colors.poSePenalty(
+            poSePenalty,
+            masternodeEnabled,
+            evonodeEnabled,
+          )(`${poSePenalty}`) || 'n/a';
           plain['Last paid block'] = lastPaidHeight || 'n/a';
-          plain['Last paid time'] = lastPaidTime || 'n/a';
+          plain['Last paid time'] = lastPaidHeight === 0 ? 'Never' : (lastPaidTime || 'n/a');
           plain['Payment queue position'] = paymentQueuePosition || 'n/a';
           plain['Next payment time'] = nextPaymentTime || 'n/a';
-        }
-
-        if (masternode.sentinel.version) {
-          plain['Sentinel Version'] = masternode.sentinel.version || 'n/a';
-          plain['Sentinel Status'] = colors.sentinel(masternode.sentinel.state)(masternode.sentinel.state) || 'n/a';
         }
       }
 
@@ -117,16 +125,3 @@ class StatusCommand extends ConfigBaseCommand {
     return printObject(scope, flags.format);
   }
 }
-
-StatusCommand.description = 'Show status overview';
-
-StatusCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  format: Flags.string({
-    description: 'display output format',
-    default: OUTPUT_FORMATS.PLAIN,
-    options: Object.values(OUTPUT_FORMATS),
-  }),
-};
-
-module.exports = StatusCommand;

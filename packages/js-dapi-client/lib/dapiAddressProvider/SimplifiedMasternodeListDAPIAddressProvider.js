@@ -14,7 +14,6 @@ class SimplifiedMasternodeListDAPIAddressProvider {
 
   /**
    * Get random live DAPI address from SML
-   *
    * @returns {Promise<DAPIAddress>}
    */
   async getLiveAddress() {
@@ -66,7 +65,6 @@ class SimplifiedMasternodeListDAPIAddressProvider {
 
   /**
    * Check if we have live addresses left
-   *
    * @returns {Promise<boolean>}
    */
   async hasLiveAddresses() {

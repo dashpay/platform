@@ -17,28 +17,34 @@ const {
   v0: {
     BroadcastTransactionRequest,
     GetTransactionRequest,
-    GetStatusRequest,
+    GetBlockchainStatusRequest,
+    GetMasternodeStatusRequest,
     GetBlockRequest,
     pbjs: {
       BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
       BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
       GetTransactionRequest: PBJSGetTransactionRequest,
       GetTransactionResponse: PBJSGetTransactionResponse,
-      GetStatusRequest: PBJSGetStatusRequest,
-      GetStatusResponse: PBJSGetStatusResponse,
+      GetBlockchainStatusRequest: PBJSGetBlockchainStatusRequest,
+      GetBlockchainStatusResponse: PBJSGetBlockchainStatusResponse,
+      GetMasternodeStatusRequest: PBJSGetMasternodeStatusRequest,
+      GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
       GetBlockRequest: PBJSGetBlockRequest,
       GetBlockResponse: PBJSGetBlockResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
 
-const log = require('../../../log');
+const logger = require('../../../logger');
 
 const getBlockHandlerFactory = require(
   './getBlockHandlerFactory',
 );
-const getStatusHandlerFactory = require(
-  './getStatusHandlerFactory',
+const getBlockchainStatusHandlerFactory = require(
+  './getBlockchainStatusHandlerFactory',
+);
+const getMasternodeStatusHandlerFactory = require(
+  './getMasternodeStatusHandlerFactory',
 );
 const getTransactionHandlerFactory = require(
   './getTransactionHandlerFactory',
@@ -53,7 +59,7 @@ const broadcastTransactionHandlerFactory = require(
  * @returns {Object<string, function>}
  */
 function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
-  const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
+  const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
   // getBlock
   const getBlockHandler = getBlockHandlerFactory(coreRPCClient);
@@ -68,17 +74,30 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
     wrapInErrorHandler(getBlockHandler),
   );
 
-  // getStatus
-  const getStatusHandler = getStatusHandlerFactory(coreRPCClient);
-  const wrappedGetStatus = jsonToProtobufHandlerWrapper(
+  // getBlockchainStatus
+  const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(coreRPCClient);
+  const wrappedGetBlockchainStatus = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetStatusRequest,
-      PBJSGetStatusRequest,
+      GetBlockchainStatusRequest,
+      PBJSGetBlockchainStatusRequest,
     ),
     protobufToJsonFactory(
-      PBJSGetStatusResponse,
+      PBJSGetBlockchainStatusResponse,
     ),
-    wrapInErrorHandler(getStatusHandler),
+    wrapInErrorHandler(getBlockchainStatusHandler),
+  );
+
+  // getMasternodeStatus
+  const getMasternodeStatusHandler = getMasternodeStatusHandlerFactory(coreRPCClient);
+  const wrappedGetMasternodeStatus = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetMasternodeStatusRequest,
+      PBJSGetMasternodeStatusRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetMasternodeStatusResponse,
+    ),
+    wrapInErrorHandler(getMasternodeStatusHandler),
   );
 
   // getTransaction
@@ -109,7 +128,8 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
 
   return {
     getBlock: wrappedGetBlock,
-    getStatus: wrappedGetStatus,
+    getBlockchainStatus: wrappedGetBlockchainStatus,
+    getMasternodeStatus: wrappedGetMasternodeStatus,
     getTransaction: wrappedGetTransaction,
     broadcastTransaction: wrappedBroadcastTransaction,
   };

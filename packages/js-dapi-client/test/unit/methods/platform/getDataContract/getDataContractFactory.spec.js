@@ -8,7 +8,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const getDataContractFactory = require('../../../../../lib/methods/platform/getDataContract/getDataContractFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
@@ -25,11 +25,11 @@ describe('getDataContractFactory', () => {
   let proofFixture;
   let proof;
 
-  beforeEach(function beforeEach() {
-    dataContractFixture = getDataContractFixture();
+  beforeEach(async function beforeEach() {
+    dataContractFixture = await getDataContractFixture();
 
+    const { GetDataContractResponseV0 } = GetDataContractResponse;
     response = new GetDataContractResponse();
-    response.setDataContract(dataContractFixture.toBuffer());
 
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();
@@ -40,7 +40,11 @@ describe('getDataContractFactory', () => {
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
-    response.setMetadata(metadata);
+    response.setV0(
+      new GetDataContractResponseV0()
+        .setMetadata(metadata)
+        .setDataContract(dataContractFixture.toBuffer()),
+    );
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -64,9 +68,13 @@ describe('getDataContractFactory', () => {
     const contractId = dataContractFixture.getId();
     const result = await getDataContract(contractId, options);
 
+    const { GetDataContractRequestV0 } = GetDataContractRequest;
     const request = new GetDataContractRequest();
-    request.setId(contractId);
-    request.setProve(false);
+    request.setV0(
+      new GetDataContractRequestV0()
+        .setId(contractId)
+        .setProve(false),
+    );
 
     expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
       PlatformPromiseClient,
@@ -85,15 +93,19 @@ describe('getDataContractFactory', () => {
 
   it('should return proof', async () => {
     options.prove = true;
-    response.setProof(proof);
-    response.setDataContract(undefined);
+    response.getV0().setProof(proof);
+    response.getV0().setDataContract(undefined);
 
     const contractId = dataContractFixture.getId();
     const result = await getDataContract(contractId, options);
 
+    const { GetDataContractRequestV0 } = GetDataContractRequest;
     const request = new GetDataContractRequest();
-    request.setId(contractId);
-    request.setProve(true);
+    request.setV0(
+      new GetDataContractRequestV0()
+        .setId(contractId)
+        .setProve(true),
+    );
 
     expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
       PlatformPromiseClient,
@@ -121,9 +133,13 @@ describe('getDataContractFactory', () => {
 
     grpcTransportMock.request.throws(error);
 
+    const { GetDataContractRequestV0 } = GetDataContractRequest;
     const request = new GetDataContractRequest();
-    request.setId(contractId.toBuffer());
-    request.setProve(false);
+    request.setV0(
+      new GetDataContractRequestV0()
+        .setId(contractId.toBuffer())
+        .setProve(false),
+    );
 
     try {
       await getDataContract(contractId, options);

@@ -7,7 +7,7 @@ const SATOSHI_MULTIPLIER = 10 ** 8;
  *
  * @returns {number}
  */
-function toDash(satoshi) {
+export function toDash(satoshi) {
   return satoshi / SATOSHI_MULTIPLIER;
 }
 
@@ -18,11 +18,6 @@ function toDash(satoshi) {
  *
  * @return {number}
  */
-function toSatoshi(dash) {
+export function toSatoshi(dash) {
   return dash * SATOSHI_MULTIPLIER;
 }
-
-module.exports = {
-  toDash,
-  toSatoshi,
-};

@@ -1,4 +1,6 @@
 exit: true
 timeout: 650000
-file:
+require:
   - ./lib/test/bootstrap.js
+parallel: true
+jobs: 2

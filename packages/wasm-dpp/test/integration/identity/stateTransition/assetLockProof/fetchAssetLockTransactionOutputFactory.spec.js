@@ -28,7 +28,7 @@ describe.skip('fetchAssetLockTransactionOutputFactory', () => {
   });
 
   beforeEach(function beforeEach() {
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -99,7 +99,7 @@ describe.skip('fetchAssetLockTransactionOutputFactory', () => {
 
       expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
         transactionHash,
-        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+        this.sinon.match.instanceOf(StateTransitionExecutionContext),
       );
     });
 
@@ -119,7 +119,7 @@ describe.skip('fetchAssetLockTransactionOutputFactory', () => {
       }
     });
 
-    it('should return mocked output on dry run', async function () {
+    it('should return mocked output on dry run', async function shouldReturn() {
       executionContext.enableDryRun();
 
       const result = await fetchAssetLockTransactionOutput(
@@ -136,7 +136,7 @@ describe.skip('fetchAssetLockTransactionOutputFactory', () => {
 
       expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
         transactionHash,
-        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+        this.sinon.match.instanceOf(StateTransitionExecutionContext),
       );
     });
   });

@@ -43,12 +43,14 @@
           "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
           "minLength": 3,
           "maxLength": 63,
+          "position": 0,
           "description": "Domain label. e.g. 'Bob'."
         },
         "normalizedLabel": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$",
           "maxLength": 63,
+          "position": 1,
           "description": "Domain label in lowercase for case-insensitive uniqueness validation. e.g. 'bob'",
           "$comment": "Must be equal to the label in lowercase. This property will be deprecated due to case insensitive indices"
         },
@@ -57,6 +59,7 @@
           "pattern": "^$|^[[a-z0-9][a-z0-9-\\.]{0,188}[a-z0-9]$",
           "minLength": 0,
           "maxLength": 190,
+          "position": 2,
           "description": "A full parent domain name in lowercase for case-insensitive uniqueness validation. e.g. 'dash'",
           "$comment": "Must either be equal to an existing domain or empty to create a top level domain. Only the data contract owner can create top level domains."
         },
@@ -65,6 +68,7 @@
           "byteArray": true,
           "minItems": 32,
           "maxItems": 32,
+          "position": 3,
           "description": "Salt used in the preorder document"
         },
         "records": {
@@ -75,6 +79,7 @@
               "byteArray": true,
               "minItems": 32,
               "maxItems": 32,
+              "position": 0,
               "contentMediaType": "application/x.dash.dpp.identifier",
               "description": "Identity ID to be used to create the primary name the Identity",
               "$comment": "Must be equal to the document owner"
@@ -84,6 +89,7 @@
               "byteArray": true,
               "minItems": 32,
               "maxItems": 32,
+              "position": 1,
               "contentMediaType": "application/x.dash.dpp.identifier",
               "description": "Identity ID to be used to create alias names for the Identity",
               "$comment": "Must be equal to the document owner"
@@ -92,6 +98,7 @@
           "$comment": "Constraint with max and min properties ensure that only one identity record is used - either a `dashUniqueIdentityId` or a `dashAliasIdentityId`",
           "minProperties": 1,
           "maxProperties": 1,
+          "position": 4,
           "additionalProperties": false
         },
         "subdomainRules": {
@@ -99,10 +106,12 @@
           "properties": {
             "allowSubdomains": {
               "type": "boolean",
+              "position": 0,
               "description": "This option defines who can create subdomains: true - anyone; false - only the domain owner",
               "$comment": "Only the domain owner is allowed to create subdomains for non top-level domains"
             }
           },
+          "position": 5,
           "description": "Subdomain rules allow domain owners to define rules for subdomains",
           "additionalProperties": false,
           "required": [
@@ -140,6 +149,7 @@
           "byteArray": true,
           "minItems": 32,
           "maxItems": 32,
+          "position": 0,
           "description": "Double sha-256 of the concatenation of a 32 byte random salt and a normalized domain name"
         }
       },

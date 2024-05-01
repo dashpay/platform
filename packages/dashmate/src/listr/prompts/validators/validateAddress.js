@@ -1,11 +1,12 @@
-const { Address } = require('@dashevo/dashcore-lib');
+import DashCoreLib from '@dashevo/dashcore-lib';
 
+const { Address } = DashCoreLib;
 /**
  * @param {string} value
  * @param {string} network
  * @returns {boolean}
  */
-function validateAddress(value, network) {
+export default function validateAddress(value, network) {
   try {
     Address(value, network);
   } catch (e) {
@@ -14,5 +15,3 @@ function validateAddress(value, network) {
 
   return true;
 }
-
-module.exports = validateAddress;

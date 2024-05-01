@@ -1,5 +1,3 @@
-use crate::identity::TimestampMillis;
-
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
 
@@ -30,26 +28,6 @@ pub trait DocumentCreateTransitionV0Methods {
     ///
     /// * `entropy` - An array of 32 bytes to set.
     fn set_entropy(&mut self, entropy: [u8; 32]);
-
-    /// Returns a reference to the `created_at` field of the `DocumentCreateTransitionV0`.
-    fn created_at(&self) -> Option<TimestampMillis>;
-
-    /// Sets the value of the `created_at` field in the `DocumentCreateTransitionV0`.
-    ///
-    /// # Arguments
-    ///
-    /// * `created_at` - An `Option` containing a `TimestampMillis` value to set.
-    fn set_created_at(&mut self, created_at: Option<TimestampMillis>);
-
-    /// Returns a reference to the `updated_at` field of the `DocumentCreateTransitionV0`.
-    fn updated_at(&self) -> Option<TimestampMillis>;
-
-    /// Sets the value of the `updated_at` field in the `DocumentCreateTransitionV0`.
-    ///
-    /// # Arguments
-    ///
-    /// * `updated_at` - An `Option` containing a `TimestampMillis` value to set.
-    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>);
 
     /// Returns an optional reference to the `data` field of the `DocumentCreateTransitionV0`.
     fn data(&self) -> &BTreeMap<String, Value>;
@@ -84,22 +62,6 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
 
     fn set_entropy(&mut self, entropy: [u8; 32]) {
         self.entropy = entropy;
-    }
-
-    fn created_at(&self) -> Option<TimestampMillis> {
-        self.created_at
-    }
-
-    fn set_created_at(&mut self, created_at: Option<TimestampMillis>) {
-        self.created_at = created_at;
-    }
-
-    fn updated_at(&self) -> Option<TimestampMillis> {
-        self.updated_at
-    }
-
-    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
-        self.updated_at = updated_at;
     }
 
     fn data(&self) -> &BTreeMap<String, Value> {

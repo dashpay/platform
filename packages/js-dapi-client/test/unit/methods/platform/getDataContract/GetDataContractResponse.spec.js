@@ -1,4 +1,4 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const {
   v0: {
     GetDataContractResponse,
@@ -20,9 +20,9 @@ describe('GetDataContractResponse', () => {
   let dataContractFixture;
   let proofFixture;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    dataContractFixture = getDataContractFixture();
+    dataContractFixture = await getDataContractFixture();
     proofFixture = getProofFixture();
 
     getDataContractResponse = new GetDataContractResponseClass(
@@ -57,14 +57,18 @@ describe('GetDataContractResponse', () => {
   });
 
   it('should create an instance from proto', () => {
+    const { GetDataContractResponseV0 } = GetDataContractResponse;
     const proto = new GetDataContractResponse();
-    proto.setDataContract(dataContractFixture.toBuffer());
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
-    proto.setMetadata(metadata);
+    proto.setV0(
+      new GetDataContractResponseV0()
+        .setDataContract(dataContractFixture.toBuffer())
+        .setMetadata(metadata),
+    );
 
     getDataContractResponse = GetDataContractResponseClass.createFromProto(proto);
     expect(getDataContractResponse).to.be.an.instanceOf(GetDataContractResponseClass);
@@ -87,16 +91,19 @@ describe('GetDataContractResponse', () => {
     proofProto.setSignature(proofFixture.signature);
     proofProto.setGrovedbProof(proofFixture.merkleProof);
 
+    const { GetDataContractResponseV0 } = GetDataContractResponse;
     const proto = new GetDataContractResponse();
-
-    proto.setDataContract(undefined);
-    proto.setProof(proofProto);
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
-    proto.setMetadata(metadata);
+    proto.setV0(
+      new GetDataContractResponseV0()
+        .setDataContract(undefined)
+        .setMetadata(metadata)
+        .setProof(proofProto),
+    );
 
     getDataContractResponse = GetDataContractResponseClass.createFromProto(proto);
     expect(getDataContractResponse).to.be.an.instanceOf(GetDataContractResponseClass);
@@ -118,8 +125,12 @@ describe('GetDataContractResponse', () => {
   });
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {
+    const { GetDataContractResponseV0 } = GetDataContractResponse;
     const proto = new GetDataContractResponse();
-    proto.setDataContract(dataContractFixture.toBuffer());
+    proto.setV0(
+      new GetDataContractResponseV0()
+        .setDataContract(dataContractFixture.toBuffer()),
+    );
 
     try {
       getDataContractResponse = GetDataContractResponseClass.createFromProto(proto);
@@ -131,12 +142,16 @@ describe('GetDataContractResponse', () => {
   });
 
   it('should throw InvalidResponseError if DataContract is not defined', () => {
+    const { GetDataContractResponseV0 } = GetDataContractResponse;
     const proto = new GetDataContractResponse();
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
-    proto.setMetadata(metadata);
+    proto.setV0(
+      new GetDataContractResponseV0()
+        .setMetadata(metadata),
+    );
 
     try {
       getDataContractResponse = GetDataContractResponseClass.createFromProto(proto);

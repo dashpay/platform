@@ -11,20 +11,23 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
+    fn serialize_to_bytes(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            ExtendedDocument::V0(document_v0) => document_v0.serialize(platform_version),
+            ExtendedDocument::V0(document_v0) => document_v0.serialize_to_bytes(platform_version),
         }
     }
 
-    fn serialize_specific_version(
+    fn serialize_specific_version_to_bytes(
         &self,
         feature_version: FeatureVersion,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
             ExtendedDocument::V0(document_v0) => {
-                document_v0.serialize_specific_version(feature_version, platform_version)
+                document_v0.serialize_specific_version_to_bytes(feature_version, platform_version)
             }
         }
     }
@@ -33,12 +36,14 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume(
+    fn serialize_consume_to_bytes(
         self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            ExtendedDocument::V0(document_v0) => document_v0.serialize_consume(platform_version),
+            ExtendedDocument::V0(document_v0) => {
+                document_v0.serialize_consume_to_bytes(platform_version)
+            }
         }
     }
 

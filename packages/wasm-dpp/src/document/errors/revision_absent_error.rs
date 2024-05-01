@@ -1,4 +1,4 @@
-use crate::ExtendedDocumentWasm;
+use crate::document::DocumentWasm;
 use thiserror::Error;
 
 use super::*;
@@ -7,18 +7,18 @@ use super::*;
 #[derive(Error, Debug)]
 #[error("The revision was absent, but was needed")]
 pub struct RevisionAbsentError {
-    extended_document: ExtendedDocumentWasm,
+    document: DocumentWasm,
 }
 
 #[wasm_bindgen]
 impl RevisionAbsentError {
     #[wasm_bindgen(constructor)]
-    pub fn new(extended_document: ExtendedDocumentWasm) -> RevisionAbsentError {
-        Self { extended_document }
+    pub fn new(document: DocumentWasm) -> RevisionAbsentError {
+        Self { document }
     }
 
     #[wasm_bindgen(js_name=getDocument)]
-    pub fn get_document_transition(&self) -> ExtendedDocumentWasm {
-        self.extended_document.clone()
+    pub fn get_document_transition(&self) -> DocumentWasm {
+        self.document.clone()
     }
 }

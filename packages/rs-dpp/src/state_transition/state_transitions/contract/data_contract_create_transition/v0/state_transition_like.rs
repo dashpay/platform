@@ -1,5 +1,6 @@
 use platform_value::BinaryData;
 
+use crate::prelude::UserFeeIncrease;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
@@ -39,5 +40,21 @@ impl StateTransitionLike for DataContractCreateTransitionV0 {
     /// Get owner ID
     fn owner_id(&self) -> Identifier {
         self.data_contract.owner_id()
+    }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        vec![format!(
+            "dcc-{}-{}",
+            self.data_contract.owner_id(),
+            self.data_contract.id()
+        )]
+    }
+
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        self.user_fee_increase
+    }
+
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        self.user_fee_increase = fee_multiplier
     }
 }

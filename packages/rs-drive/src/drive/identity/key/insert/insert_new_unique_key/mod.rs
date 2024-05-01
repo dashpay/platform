@@ -5,10 +5,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::IdentityPublicKey;
-use dpp::version::drive_versions::DriveVersion;
+
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use dpp::block::epoch::Epoch;
+use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 impl Drive {
@@ -19,6 +21,7 @@ impl Drive {
     /// * `identity_id` - An array of bytes representing the identity id.
     /// * `identity_key` - The `IdentityPublicKey` to be inserted.
     /// * `with_references` - A boolean value indicating whether to include references in the operations.
+    /// * `epoch` - The current epoch.
     /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` that may contain estimated layer information.
     /// * `transaction` - The transaction arguments.
     /// * `drive_operations` - A mutable reference to a vector of `LowLevelDriveOperation` objects.
@@ -35,15 +38,17 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
-        with_references: bool,
+        with_searchable_inner_references: bool,
+        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .keys
@@ -53,11 +58,12 @@ impl Drive {
             0 => self.insert_new_unique_key_operations_v0(
                 identity_id,
                 identity_key,
-                with_references,
+                with_searchable_inner_references,
+                epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_new_unique_key_operations".to_string(),

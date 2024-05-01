@@ -18,23 +18,28 @@
       ],
       "properties": {
         "age": {
-          "type": "integer"
+          "type": "integer",
+          "position": 0
         },
         "firstName": {
           "type": "string",
-          "maxLength": 50
+          "maxLength": 50,
+           "position": 1
         },
         "middleName": {
           "type": "string",
-          "maxLength": 50
+          "maxLength": 50,
+          "position": 2
         },
         "lastName": {
           "type": "string",
-          "maxLength": 50
+          "maxLength": 50,
+          "position": 3
         },
         "message": {
           "type": "string",
-          "maxLength": 63
+          "maxLength": 63,
+          "position": 4
         }
       },
       "required": [

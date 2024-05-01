@@ -1,6 +1,5 @@
 /**
  * Get MN List Diff fixture
- *
  * @returns {object} - MN List Diff object
  */
 function getMNListDiffsFixture() {

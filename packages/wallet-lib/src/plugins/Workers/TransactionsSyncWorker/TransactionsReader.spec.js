@@ -179,9 +179,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should restart stream in case new addresses were generated', async () => {
-            await subscribeToHistoricalBatch(
-              fromBlockHeight, count, DEFAULT_ADDRESSES,
-            );
+            await subscribeToHistoricalBatch(fromBlockHeight, count, DEFAULT_ADDRESSES);
 
             transactionsReader
               .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
@@ -208,9 +206,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should not restart stream in case no new addresses were generated', async () => {
-            await subscribeToHistoricalBatch(
-              fromBlockHeight, count, DEFAULT_ADDRESSES,
-            );
+            await subscribeToHistoricalBatch(fromBlockHeight, count, DEFAULT_ADDRESSES);
 
             transactionsReader
               .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
@@ -224,9 +220,7 @@ describe('TransactionsReader - unit', () => {
 
           it('should not restart stream for the last merkle block in range in case new addresses were generated', async () => {
             merkleBlockHeight = 1000;
-            await subscribeToHistoricalBatch(
-              fromBlockHeight, count, DEFAULT_ADDRESSES,
-            );
+            await subscribeToHistoricalBatch(fromBlockHeight, count, DEFAULT_ADDRESSES);
 
             transactionsReader
               .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
@@ -240,9 +234,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should handle stream restart error', async () => {
-            await subscribeToHistoricalBatch(
-              fromBlockHeight, count, DEFAULT_ADDRESSES,
-            );
+            await subscribeToHistoricalBatch(fromBlockHeight, count, DEFAULT_ADDRESSES);
 
             const restartError = new Error('Error restarting stream');
             transactionsReader.createHistoricalSyncStream.throws(restartError);
@@ -265,9 +257,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should throw an error if invalid Merkle Block height provided', async () => {
-            await subscribeToHistoricalBatch(
-              fromBlockHeight, count, DEFAULT_ADDRESSES,
-            );
+            await subscribeToHistoricalBatch(fromBlockHeight, count, DEFAULT_ADDRESSES);
 
             let errorThrown = null;
             transactionsReader
@@ -301,9 +291,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should cancel and restart stream if Merkle Block rejected', async () => {
-            await subscribeToHistoricalBatch(
-              fromBlockHeight, count, DEFAULT_ADDRESSES,
-            );
+            await subscribeToHistoricalBatch(fromBlockHeight, count, DEFAULT_ADDRESSES);
 
             transactionsReader
               .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ rejectMerkleBlock }) => {
@@ -451,9 +439,7 @@ describe('TransactionsReader - unit', () => {
       });
 
       it('should emit HISTORICAL_DATA_OBTAINED event', async () => {
-        await subscribeToHistoricalBatch(
-          fromBlockHeight, count, DEFAULT_ADDRESSES,
-        );
+        await subscribeToHistoricalBatch(fromBlockHeight, count, DEFAULT_ADDRESSES);
 
         historicalSyncStream.end();
 
@@ -462,9 +448,7 @@ describe('TransactionsReader - unit', () => {
       });
 
       it('should not emit HISTORICAL_DATA_OBTAINED event if stream ended, but needs to be restarted', async () => {
-        await subscribeToHistoricalBatch(
-          fromBlockHeight, count, DEFAULT_ADDRESSES,
-        );
+        await subscribeToHistoricalBatch(fromBlockHeight, count, DEFAULT_ADDRESSES);
 
         transactionsReader
           .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
@@ -497,12 +481,11 @@ describe('TransactionsReader - unit', () => {
         .startHistoricalSync(fromBlockHeight, toBlockHeight, DEFAULT_ADDRESSES);
 
       expect(transactionsReader.historicalSyncStream).to.exist();
-      expect(transactionsReader.createHistoricalSyncStream).to.have.been.calledOnceWith(
-        createBloomFilter(DEFAULT_ADDRESSES), {
+      expect(transactionsReader.createHistoricalSyncStream)
+        .to.have.been.calledOnceWith(createBloomFilter(DEFAULT_ADDRESSES), {
           fromBlockHeight,
           count,
-        },
-      );
+        });
     });
 
     it('should validate arguments', async () => {
@@ -618,9 +601,7 @@ describe('TransactionsReader - unit', () => {
           // If for some reason instant lock was delayed or missed, we expand bloom filter
           // when the next batch of transactions is received
           it('should trigger fail-safe mechanism to expand bloom filter in case it wasnt triggered by IS lock', async () => {
-            await transactionsReader.startContinuousSync(
-              fromBlockHeight, DEFAULT_ADDRESSES,
-            );
+            await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
             // Handle new transactions
             transactionsReader
@@ -666,9 +647,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should handle stream restart error in fail-safe mechanism', async () => {
-            await transactionsReader.startContinuousSync(
-              fromBlockHeight, DEFAULT_ADDRESSES,
-            );
+            await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
             const restartError = new Error('Error restarting stream');
             transactionsReader.createContinuousSyncStream.throws(restartError);
@@ -764,9 +743,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should accept merkle block', async () => {
-            await transactionsReader.startContinuousSync(
-              fromBlockHeight, DEFAULT_ADDRESSES,
-            );
+            await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
             transactionsReader
               .on(TransactionsReader.EVENTS.MERKLE_BLOCK, ({ acceptMerkleBlock }) => {
@@ -787,9 +764,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should throw an error if invalid Merkle Block height provided', async function () {
-            await transactionsReader.startContinuousSync(
-              fromBlockHeight, DEFAULT_ADDRESSES,
-            );
+            await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
             continuousSyncStream.retryOnError = this.sinon.stub()
               .callsFake((e) => {
@@ -824,9 +799,7 @@ describe('TransactionsReader - unit', () => {
           });
 
           it('should emit error if Merkle Block rejected', async function () {
-            await transactionsReader.startContinuousSync(
-              fromBlockHeight, DEFAULT_ADDRESSES,
-            );
+            await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
             continuousSyncStream.retryOnError = this.sinon.stub()
               .callsFake((e) => {
@@ -873,9 +846,7 @@ describe('TransactionsReader - unit', () => {
           ];
 
           it('should expand Bloom filter in case new addresses were generated by TX', async () => {
-            await transactionsReader.startContinuousSync(
-              fromBlockHeight, DEFAULT_ADDRESSES,
-            );
+            await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
             // Handle new transactions
             transactionsReader
@@ -944,9 +915,7 @@ describe('TransactionsReader - unit', () => {
 
     context('On "end"', () => {
       it('should end stream', async () => {
-        await transactionsReader.startContinuousSync(
-          fromBlockHeight, DEFAULT_ADDRESSES,
-        );
+        await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
         continuousSyncStream.end();
 
@@ -956,9 +925,7 @@ describe('TransactionsReader - unit', () => {
 
     context('On "beforeReconnect"', () => {
       it('should reconnect with the same args if no new merkle block was fetched', async () => {
-        await transactionsReader.startContinuousSync(
-          fromBlockHeight, DEFAULT_ADDRESSES,
-        );
+        await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
         let newArgs = null;
         continuousSyncStream.emit('beforeReconnect', (...updatedArgs) => {

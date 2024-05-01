@@ -27,7 +27,7 @@ describe.skip('createStateTransitionFactory', () => {
 
   beforeEach(async function beforeEach() {
     blsAdapter = await getBlsAdapterMock();
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     dpp = new DashPlatformProtocol(
       blsAdapter,
@@ -39,7 +39,8 @@ describe.skip('createStateTransitionFactory', () => {
     dataContract = await getDataContractFixture();
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
     createStateTransition = (st) => dpp.stateTransition.createFromObject(
-      st, { skipValidation: true },
+      st,
+      { skipValidation: true },
     );
   });
 

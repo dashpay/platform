@@ -3,7 +3,7 @@ mod tests {
 
     use dpp::prelude::*;
 
-    use crate::common::identities::create_test_identity;
+    use crate::common::test_utils::identities::create_test_identity;
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
@@ -34,7 +34,14 @@ mod tests {
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block_info, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let db_transaction = drive.grove.start_transaction();
@@ -55,7 +62,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 530020,
+                    processing_fee: 517620,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -150,7 +157,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 1201880,
+                    processing_fee: 1205880,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -232,7 +239,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 875150,
+                    processing_fee: 879150,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -295,7 +302,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 10175440,
+                    processing_fee: 9751440,
                     ..Default::default()
                 }
             );
@@ -342,7 +349,14 @@ mod tests {
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let db_transaction = drive.grove.start_transaction();
@@ -363,7 +377,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 530020,
+                    processing_fee: 517620,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -429,7 +443,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 5431170,
+                    processing_fee: 5418770,
                     ..Default::default()
                 }
             );

@@ -376,304 +376,404 @@
       ],
       "properties": {
         "abc0": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 0
         },
         "abc1": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 1
         },
         "abc2": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 2
         },
         "abc3": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 3
         },
         "abc4": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 4
         },
         "abc5": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 5
         },
         "abc6": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 6
         },
         "abc7": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 7
         },
         "abc8": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 8
         },
         "abc9": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 9
         },
         "abc10": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 10
         },
         "abc11": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 11
         },
         "abc12": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 12
         },
         "abc13": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 13
         },
         "abc14": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 14
         },
         "abc15": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 15
         },
         "abc16": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 16
         },
         "abc17": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 17
         },
         "abc18": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 18
         },
         "abc19": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 19
         },
         "abc20": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 20
         },
         "abc21": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 21
         },
         "abc22": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 22
         },
         "abc23": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 23
         },
         "abc24": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 24
         },
         "abc25": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 25
         },
         "abc26": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 26
         },
         "abc27": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 27
         },
         "abc28": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 28
         },
         "abc29": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 29
         },
         "abc30": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 30
         },
         "abc31": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 31
         },
         "abc32": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 32
         },
         "abc33": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 33
         },
         "abc34": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 34
         },
         "abc35": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 35
         },
         "abc36": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 36
         },
         "abc37": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 37
         },
         "abc38": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 38
         },
         "abc39": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 39
         },
         "abc40": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 40
         },
         "abc41": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 41
         },
         "abc42": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 42
         },
         "abc43": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 43
         },
         "abc44": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 44
         },
         "abc45": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 45
         },
         "abc46": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 46
         },
         "abc47": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 47
         },
         "abc48": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 48
         },
         "abc49": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 49
         },
         "abc50": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 50
         },
         "abc51": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 51
         },
         "abc52": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 52
         },
         "abc53": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 53
         },
         "abc54": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 54
         },
         "abc55": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 55
         },
         "abc56": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 56
         },
         "abc57": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 57
         },
         "abc58": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 58
         },
         "abc59": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 59
         },
         "abc60": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 60
         },
         "abc61": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 61
         },
         "abc62": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 62
         },
         "abc63": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 63
         },
         "abc64": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 64
         },
         "abc65": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 65
         },
         "abc66": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 66
         },
         "abc67": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 67
         },
         "abc68": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 68
         },
         "abc69": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 69
         },
         "abc70": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 70
         },
         "abc71": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 71
         },
         "abc72": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 72
         },
         "abc73": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 73
         },
         "abc74": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 74
         },
         "abc75": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 75
         },
         "abc76": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 76
         },
         "abc77": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 77
         },
         "abc78": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 78
         },
         "abc79": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 79
         },
         "abc80": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 80
         },
         "abc81": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 81
         },
         "abc82": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 82
         },
         "abc83": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 83
         },
         "abc84": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 84
         },
         "abc85": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 85
         },
         "abc86": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 86
         },
         "abc87": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 87
         },
         "abc88": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 88
         },
         "abc89": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 89
         },
         "abc90": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 90
         },
         "abc91": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 91
         },
         "abc92": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 92
         },
         "abc93": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 93
         },
         "abc94": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 94
         },
         "abc95": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 95
         },
         "abc96": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 96
         },
         "abc97": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 97
         },
         "abc98": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+           "position": 98
         },
         "abc99": {
-          "$ref": "#/$defs/regex"
+          "$ref": "#/$defs/regex",
+          "position": 99
         }
       },
       "additionalProperties": false

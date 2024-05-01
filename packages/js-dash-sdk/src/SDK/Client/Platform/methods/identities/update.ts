@@ -1,6 +1,4 @@
-// TODO(versioning): restore
-// @ts-ignore
-import { Identity, IdentityPublicKey, StateTransitionExecutionContext } from '@dashevo/wasm-dpp';
+import { Identity, IdentityPublicKey } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 
@@ -30,8 +28,11 @@ export async function update(
 
   const { dpp } = this;
 
+  const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
+
   const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,
+    BigInt(identityNonce),
     publicKeys,
   );
 
@@ -59,8 +60,6 @@ export async function update(
 
         identityUpdateTransition.setSignaturePublicKeyId(signerKey.getId());
 
-        // TODO(versioning): restore
-        // @ts-ignore
         await identityUpdateTransition.signByPrivateKey(privateKey.toBuffer(), publicKey.getType());
 
         publicKey.setSignature(identityUpdateTransition.getSignature());

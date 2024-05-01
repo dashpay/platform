@@ -18,7 +18,7 @@ pub type ConsensusValidationResult<TData> = ValidationResult<TData, ConsensusErr
 
 pub type SimpleConsensusValidationResult = ConsensusValidationResult<()>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValidationResult<TData: Clone, E: Debug> {
     pub errors: Vec<E>,
     pub data: Option<TData>,
@@ -235,6 +235,17 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
                 "trying to push validation result into data (errors are {:?})",
                 self.errors
             )))
+    }
+
+    pub fn into_data_and_errors(self) -> Result<(TData, Vec<E>), ProtocolError> {
+        Ok((
+            self.data
+                .ok_or(ProtocolError::CorruptedCodeExecution(format!(
+                    "trying to push validation result into data (errors are {:?})",
+                    self.errors
+                )))?,
+            self.errors,
+        ))
     }
 
     pub fn data_as_borrowed(&self) -> Result<&TData, ProtocolError> {

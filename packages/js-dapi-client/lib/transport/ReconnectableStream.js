@@ -36,7 +36,6 @@ const EVENTS = {
 class ReconnectableStream extends EventEmitter {
   /**
    * Helper that wraps stream creation function and performs auto connection
-   *
    * @param {Function} createStreamFunction - function returning grpc-js/grpc-web stream
    * @param {ReconnectableStreamOptions} options
    * @returns {function(...[*]): Promise<ReconnectableStream>}
@@ -61,7 +60,6 @@ class ReconnectableStream extends EventEmitter {
     /**
      * Auto-reconnect interval in millisecond
      * It is needed to automatically reconnect to another DAPI node
-     *
      * @type {number}
      */
     this.autoReconnectInterval = opts.autoReconnectInterval;
@@ -155,7 +153,6 @@ class ReconnectableStream extends EventEmitter {
    * Function that adds EventEmitter style listeners
    * to the stream and also rewires stream cancel function
    * in order to automatically unsubscribe from events
-   *
    * @private
    */
   addListeners() {
@@ -178,7 +175,6 @@ class ReconnectableStream extends EventEmitter {
 
   /**
    * stream.on('data') handler
-   *
    * @param data
    */
   dataHandler(data) {
@@ -187,7 +183,6 @@ class ReconnectableStream extends EventEmitter {
 
   /**
    * stream.on('end') handler
-   *
    * @private
    */
   endHandler() {
@@ -198,7 +193,6 @@ class ReconnectableStream extends EventEmitter {
 
   /**
    * stream.on('error') handler
-   *
    * @private
    * @param e
    */
@@ -215,7 +209,6 @@ class ReconnectableStream extends EventEmitter {
 
   /**
    * Manages retry logic
-   *
    * @param e
    */
   retryOnError(e) {
@@ -256,7 +249,6 @@ class ReconnectableStream extends EventEmitter {
 
   /**
    * Stops auto reconnect timeout
-   *
    * @private
    */
   stopAutoReconnect() {
@@ -270,7 +262,6 @@ class ReconnectableStream extends EventEmitter {
    * Cancels stream.
    * Returns `stream.cancel()` to handle it from parent if needed.
    * (grpc-js cancel() is asynchronous and grpc-web is synchronous)
-   *
    * @returns {*}
    */
   cancel() {

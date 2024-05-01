@@ -5,8 +5,6 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-pub use dpp::prelude::{Identity, Revision};
-
 use grovedb::GroveDb;
 
 impl Drive {
@@ -33,27 +31,32 @@ impl Drive {
     /// - The proved key value is not for the correct path or key in unique key hashes.
     /// - More than one identity ID is found.
     ///
+    #[inline(always)]
     pub(super) fn verify_identity_id_by_public_key_hash_v0(
         proof: &[u8],
         is_proof_subset: bool,
         public_key_hash: [u8; 20],
     ) -> Result<(RootHash, Option<[u8; 32]>), Error> {
-        let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
+        let mut path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
+        path_query.query.limit = Some(1);
         let (root_hash, mut proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
         };
+
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);
             if path != unique_key_hashes_tree_path_vec() {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path in unique key hashes",
+                    "we did not get back an element for the correct path in unique key hashes"
+                        .to_string(),
                 )));
             }
             if key != public_key_hash {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct key in unique key hashes",
+                    "we did not get back an element for the correct key in unique key hashes"
+                        .to_string(),
                 )));
             }
             let identity_id = maybe_element
@@ -70,7 +73,7 @@ impl Drive {
             Ok((root_hash, identity_id))
         } else {
             Err(Error::Proof(ProofError::TooManyElements(
-                "expected one identity id",
+                "expected maximum one identity id",
             )))
         }
     }

@@ -25,19 +25,23 @@ impl Drive {
             .map_err(Error::GroveDB)?;
 
         let Element::Item(encoded_start_time, _) = element else {
-            return Err(Error::Drive(DriveError::UnexpectedElementType("start time must be an item")))
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
+                "start time must be an item",
+            )));
         };
 
         let start_time =
             u64::from_be_bytes(encoded_start_time.as_slice().try_into().map_err(|_| {
-                Error::Drive(DriveError::CorruptedSerialization("start time must be u64"))
+                Error::Drive(DriveError::CorruptedSerialization(String::from(
+                    "start time must be u64",
+                )))
             })?);
 
         Ok(start_time)
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;

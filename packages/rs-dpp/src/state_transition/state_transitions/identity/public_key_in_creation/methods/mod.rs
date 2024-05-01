@@ -6,6 +6,7 @@ pub mod from_public_key_signed_external;
 pub mod from_public_key_signed_with_private_key;
 pub mod hash;
 mod v0;
+pub mod validate_identity_public_keys_structure;
 
 use crate::identity::IdentityPublicKey;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;

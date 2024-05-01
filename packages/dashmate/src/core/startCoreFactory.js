@@ -1,5 +1,4 @@
-const CoreService = require('./CoreService');
-const generateEnvs = require('../util/generateEnvs');
+import CoreService from './CoreService.js';
 
 /**
  * @param {createRpcClient} createRpcClient
@@ -8,17 +7,15 @@ const generateEnvs = require('../util/generateEnvs');
  * @param {DockerCompose} dockerCompose
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
- * @param {ConfigFile} configFile
  * @return {startCore}
  */
-function startCoreFactory(
+export default function startCoreFactory(
   createRpcClient,
   waitForCoreStart,
   waitForCoreSync,
   dockerCompose,
   getConnectionHost,
   ensureFileMountExists,
-  configFile,
 ) {
   /**
    * @typedef startCore
@@ -66,7 +63,7 @@ function startCoreFactory(
     ensureFileMountExists(logFilePath, 0o666);
 
     const coreContainer = await dockerCompose.runService(
-      generateEnvs(configFile, config),
+      config,
       'core',
       coreCommand,
       [
@@ -80,7 +77,7 @@ function startCoreFactory(
         port: config.get('core.rpc.port'),
         user: config.get('core.rpc.user'),
         pass: config.get('core.rpc.password'),
-        host: await getConnectionHost(config, 'core'),
+        host: await getConnectionHost(config, 'core', 'core.rpc.host'),
       },
     );
 
@@ -98,5 +95,3 @@ function startCoreFactory(
 
   return startCore;
 }
-
-module.exports = startCoreFactory;

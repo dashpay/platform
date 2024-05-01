@@ -1,6 +1,23 @@
-const BaseCommand = require('../../oclif/command/BaseCommand');
+import { Args } from '@oclif/core';
+import BaseCommand from '../../oclif/command/BaseCommand.js';
 
-class GroupDefaultCommand extends BaseCommand {
+export default class GroupDefaultCommand extends BaseCommand {
+  static description = `Manage default group
+
+Shows default group name or sets another group as default
+`;
+
+  static args = {
+    group: Args.string(
+      {
+        name: 'group',
+        required: false,
+        description: 'group name',
+        default: null, // only allow input to be from a discrete set
+      },
+    ),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -25,17 +42,3 @@ class GroupDefaultCommand extends BaseCommand {
     }
   }
 }
-
-GroupDefaultCommand.description = `Manage default group
-
-Shows default group name or sets another group as default
-`;
-
-GroupDefaultCommand.args = [{
-  name: 'group',
-  required: false,
-  description: 'group name',
-  default: null,
-}];
-
-module.exports = GroupDefaultCommand;

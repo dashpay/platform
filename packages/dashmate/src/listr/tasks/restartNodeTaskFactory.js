@@ -1,4 +1,5 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
+import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
 /**
  * @param {startNodeTask} startNodeTask
@@ -6,7 +7,7 @@ const { Listr } = require('listr2');
  * @param {buildServicesTask} buildServicesTask
  * @return {restartNodeTask}
  */
-function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) {
+export default function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) {
   /**
    * Restart node
    * @typedef {restartNodeTask}
@@ -18,7 +19,7 @@ function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) 
   function restartNodeTask(config) {
     return new Listr([
       {
-        enabled: () => config.get('platform.enable') && config.get('platform.sourcePath') !== null,
+        enabled: () => isServiceBuildRequired(config),
         task: (ctx) => {
           ctx.skipBuildServices = true;
 
@@ -36,5 +37,3 @@ function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) 
 
   return restartNodeTask;
 }
-
-module.exports = restartNodeTaskFactory;

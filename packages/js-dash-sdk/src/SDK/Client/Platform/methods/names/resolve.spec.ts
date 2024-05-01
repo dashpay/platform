@@ -52,7 +52,7 @@ describe('Platform', () => {
             {
               where: [
                 ['normalizedParentDomainName', '==', 'parent'],
-                ['normalizedLabel', '==', 'othername'],
+                ['normalizedLabel', '==', '0thername'],
               ],
             },
           ],

@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import AbstractError from '../../errors/AbstractError.js';
 
-class ConfigIsNotPresentError extends AbstractError {
+export default class ConfigIsNotPresentError extends AbstractError {
   /**
    * @param {string} configName
    */
@@ -17,5 +17,3 @@ class ConfigIsNotPresentError extends AbstractError {
     return this.configName;
   }
 }
-
-module.exports = ConfigIsNotPresentError;

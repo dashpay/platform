@@ -29,12 +29,43 @@ pub struct DriveMethodVersions {
     pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,
+    pub fetch: DriveFetchMethodVersions,
     pub prove: DriveProveMethodVersions,
+    pub state_transitions: DriveStateTransitionMethodVersions,
+    pub platform_state: DrivePlatformStateMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DrivePlatformStateMethodVersions {
+    pub fetch_platform_state_bytes: FeatureVersion,
+    pub store_platform_state_bytes: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveStateTransitionMethodVersions {
+    pub operations: DriveStateTransitionOperationMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveStateTransitionOperationMethodVersions {
+    pub finalization_tasks: FeatureVersion,
+    pub contracts: DriveDataContractOperationMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveDataContractOperationMethodVersions {
+    pub finalization_tasks: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveFetchMethodVersions {
+    pub fetch_elements: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveProveMethodVersions {
-    pub prove_multiple: FeatureVersion,
+    pub prove_elements: FeatureVersion,
+    pub prove_multiple_state_transition_results: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -43,6 +74,8 @@ pub struct DriveVerifyMethodVersions {
     pub document: DriveVerifyDocumentMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
     pub single_document: DriveVerifySingleDocumentMethodVersions,
+    pub system: DriveVerifySystemMethodVersions,
+    pub state_transition: DriveVerifyStateTransitionMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -68,12 +101,28 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_id_by_public_key_hash: FeatureVersion,
     pub verify_identity_ids_by_public_key_hashes: FeatureVersion,
     pub verify_identity_keys_by_identity_id: FeatureVersion,
+    pub verify_identity_nonce: FeatureVersion,
+    pub verify_identity_contract_nonce: FeatureVersion,
+    pub verify_identities_contract_keys: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifySystemMethodVersions {
+    pub verify_epoch_infos: FeatureVersion,
+    pub verify_elements: FeatureVersion,
+    pub verify_upgrade_state: FeatureVersion,
+    pub verify_upgrade_vote_status: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifySingleDocumentMethodVersions {
     pub verify_proof: FeatureVersion,
     pub verify_proof_keep_serialized: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyStateTransitionMethodVersions {
+    pub verify_state_transition_was_executed_with_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -97,7 +146,7 @@ pub struct DriveBalancesMethodVersions {
 pub struct DriveAssetLockMethodVersions {
     pub add_asset_lock_outpoint: FeatureVersion,
     pub add_estimation_costs_for_adding_asset_lock: FeatureVersion,
-    pub has_asset_lock_outpoint: FeatureVersion,
+    pub fetch_asset_lock_outpoint_info: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -163,7 +212,6 @@ pub struct DriveContractCostsMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DrivePlatformSystemMethodVersions {
-    pub protocol_version: DriveSystemProtocolVersionMethodVersions,
     pub estimation_costs: DriveSystemEstimationCostsMethodVersions,
 }
 
@@ -182,14 +230,6 @@ pub struct DriveOperationsMethodVersion {
 pub struct DriveBatchOperationsMethodVersion {
     pub convert_drive_operations_to_grove_operations: FeatureVersion,
     pub apply_drive_operations: FeatureVersion,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DriveSystemProtocolVersionMethodVersions {
-    pub fetch_current_protocol_version: FeatureVersion,
-    pub set_current_protocol_version_operations: FeatureVersion,
-    pub fetch_next_protocol_version: FeatureVersion,
-    pub set_next_protocol_version_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -261,6 +301,9 @@ pub struct DriveDocumentIndexUniquenessMethodVersions {
     pub validate_document_uniqueness: FeatureVersion,
     pub validate_document_create_transition_action_uniqueness: FeatureVersion,
     pub validate_document_replace_transition_action_uniqueness: FeatureVersion,
+    pub validate_document_transfer_transition_action_uniqueness: FeatureVersion,
+    pub validate_document_purchase_transition_action_uniqueness: FeatureVersion,
+    pub validate_document_update_price_transition_action_uniqueness: FeatureVersion,
     pub validate_uniqueness_of_data: FeatureVersion,
 }
 
@@ -270,6 +313,7 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_insert_empty_tree: FeatureVersion,
     pub grove_insert_empty_sum_tree: FeatureVersion,
     pub grove_insert_if_not_exists: FeatureVersion,
+    pub grove_clear: FeatureVersion,
     pub grove_delete: FeatureVersion,
     pub grove_get_raw: FeatureVersion,
     pub grove_get_raw_optional: FeatureVersion,
@@ -281,6 +325,7 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_get_raw_path_query_with_optional: FeatureVersion,
     pub grove_get_raw_path_query: FeatureVersion,
     pub grove_get_proved_path_query: FeatureVersion,
+    pub grove_get_proved_path_query_with_conditional: FeatureVersion,
     pub grove_get_sum_tree_total_value: FeatureVersion,
     pub grove_has_raw: FeatureVersion,
 }
@@ -303,9 +348,7 @@ pub struct DriveGroveBatchMethodVersions {
 pub struct DriveGroveApplyMethodVersions {
     pub grove_apply_operation: FeatureVersion,
     pub grove_apply_batch: FeatureVersion,
-    pub grove_apply_batch_with_add_costs: FeatureVersion,
     pub grove_apply_partial_batch: FeatureVersion,
-    pub grove_apply_partial_batch_with_add_costs: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -323,10 +366,13 @@ pub struct DriveCreditPoolMethodVersions {
     pub epochs: DriveCreditPoolEpochsMethodVersions,
     pub pending_epoch_refunds: DriveCreditPoolPendingEpochRefundsMethodVersions,
     pub storage_fee_distribution_pool: DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
+    pub unpaid_epoch: DriveCreditPoolUnpaidEpochMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveCreditPoolEpochsMethodVersions {
+    pub get_epochs_infos: FeatureVersion,
+    pub prove_epochs_infos: FeatureVersion,
     pub get_epoch_fee_multiplier: FeatureVersion,
     pub get_epoch_processing_credits_for_distribution: FeatureVersion,
     pub get_epoch_storage_credits_for_distribution: FeatureVersion,
@@ -340,6 +386,11 @@ pub struct DriveCreditPoolEpochsMethodVersions {
     pub get_epochs_proposer_block_count: FeatureVersion,
     pub add_update_pending_epoch_refunds_operations: FeatureVersion,
     pub is_epochs_proposers_tree_empty: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveCreditPoolUnpaidEpochMethodVersions {
+    pub get_unpaid_epoch_index: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -358,8 +409,10 @@ pub struct DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveProtocolUpgradeVersions {
     pub clear_version_information: FeatureVersion,
-    pub change_to_new_version_and_clear_version_information: FeatureVersion,
     pub fetch_versions_with_counter: FeatureVersion,
+    pub fetch_proved_versions_with_counter: FeatureVersion,
+    pub fetch_validator_version_votes: FeatureVersion,
+    pub fetch_proved_validator_version_votes: FeatureVersion,
     pub remove_validators_proposed_app_versions: FeatureVersion,
     pub update_validator_proposed_app_version: FeatureVersion,
 }
@@ -378,13 +431,55 @@ pub struct DriveIdentityMethodVersions {
     pub keys: DriveIdentityKeysMethodVersions,
     pub update: DriveIdentityUpdateMethodVersions,
     pub insert: DriveIdentityInsertMethodVersions,
+    pub contract_info: DriveIdentityContractInfoMethodVersions,
     pub cost_estimation: DriveIdentityCostEstimationMethodVersions,
+    pub withdrawals: DriveIdentityWithdrawalMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalMethodVersions {
+    pub document: DriveIdentityWithdrawalDocumentMethodVersions,
+    pub transaction: DriveIdentityWithdrawalTransactionMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalDocumentMethodVersions {
+    pub fetch_oldest_withdrawal_documents_by_status: FeatureVersion,
+    pub find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalTransactionMethodVersions {
+    pub index: DriveIdentityWithdrawalTransactionIndexMethodVersions,
+    pub queue: DriveIdentityWithdrawalTransactionQueueMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalTransactionIndexMethodVersions {
+    pub fetch_next_withdrawal_transaction_index: FeatureVersion,
+    pub add_update_next_withdrawal_transaction_index_operation: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
+    pub add_enqueue_untied_withdrawal_transaction_operations: FeatureVersion,
+    pub dequeue_untied_withdrawal_transactions: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityContractInfoMethodVersions {
+    pub add_potential_contract_info_for_contract_bounded_key: FeatureVersion,
+    pub merge_identity_contract_nonce: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_authentication_keys_security_level_in_key_reference_tree: FeatureVersion,
     pub for_balances: FeatureVersion,
+    pub for_contract_info: FeatureVersion,
+    pub for_contract_info_group: FeatureVersion,
+    pub for_contract_info_group_keys: FeatureVersion,
+    pub for_contract_info_group_key_purpose: FeatureVersion,
     pub for_keys_for_identity_id: FeatureVersion,
     pub for_negative_credit: FeatureVersion,
     pub for_purpose_in_key_reference_tree: FeatureVersion,
@@ -417,6 +512,8 @@ pub struct DriveIdentityFetchPublicKeyHashesMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityFetchAttributesMethodVersions {
     pub revision: FeatureVersion,
+    pub nonce: FeatureVersion,
+    pub identity_contract_nonce: FeatureVersion,
     pub balance: FeatureVersion,
     pub balance_include_debt: FeatureVersion,
     pub negative_balance: FeatureVersion,
@@ -439,6 +536,9 @@ pub struct DriveIdentityFetchPartialIdentityMethodVersions {
 pub struct DriveIdentityProveMethodVersions {
     pub full_identity: FeatureVersion,
     pub full_identities: FeatureVersion,
+    pub identity_nonce: FeatureVersion,
+    pub identity_contract_nonce: FeatureVersion,
+    pub identities_contract_keys: FeatureVersion,
     pub prove_full_identities_by_unique_public_key_hashes: FeatureVersion,
     pub prove_full_identity_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_id_by_unique_public_key_hash: FeatureVersion,
@@ -459,6 +559,7 @@ pub struct DriveIdentityKeysFetchMethodVersions {
     pub fetch_all_identity_keys: FeatureVersion,
     pub fetch_identities_all_keys: FeatureVersion,
     pub fetch_identity_keys: FeatureVersion,
+    pub fetch_identities_contract_keys: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -496,6 +597,7 @@ pub struct DriveIdentityInsertMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityUpdateMethodVersions {
     pub update_identity_revision: FeatureVersion,
+    pub merge_identity_nonce: FeatureVersion,
     pub update_identity_negative_credit_operation: FeatureVersion,
     pub initialize_identity_revision: FeatureVersion,
     pub disable_identity_keys: FeatureVersion,

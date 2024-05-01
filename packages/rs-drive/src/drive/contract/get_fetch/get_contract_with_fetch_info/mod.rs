@@ -148,7 +148,6 @@ impl Drive {
     ///
     /// This function returns an error if the contract fetching fails or if the
     /// drive version does not match any of the implemented method versions.
-
     pub(crate) fn get_contract_with_fetch_info_and_add_to_operations(
         &self,
         contract_id: [u8; 32],
@@ -182,7 +181,7 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::drive::contract::tests::setup_reference_contract;
@@ -363,9 +362,7 @@ mod tests {
         // Commit transaction and merge block (transactional) cache to global cache
         transaction.commit().expect("expected to commit");
 
-        let mut drive_cache = drive.cache.write().unwrap();
-        drive_cache.cached_contracts.merge_block_cache();
-        drop(drive_cache);
+        drive.cache.data_contracts.merge_and_clear_block_cache();
 
         /*
          *DataContracts fetched with user query and during block execution must have equal costs

@@ -3,6 +3,7 @@ pub mod fields;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;
+pub mod proved;
 mod state_transition_like;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -21,6 +22,7 @@ use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(

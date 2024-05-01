@@ -25,6 +25,8 @@ use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 #[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub(crate) fn fetch_documents_for_transitions(
     platform: &PlatformStateRef,
     document_transitions: &[&DocumentTransition],
@@ -82,20 +84,30 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     let add_to_cache_if_pulled = transaction.is_some();
     let (_, contract_fetch_info) = drive.get_contract_with_fetch_info_and_fee(
         contract_id.to_buffer(),
-        Some(&platform.state.epoch()),
+        Some(platform.state.last_committed_block_epoch_ref()),
         add_to_cache_if_pulled,
         transaction,
         platform_version,
     )?;
 
     let Some(contract_fetch_info) = contract_fetch_info else {
-        return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*contract_id)).into()));
+        return Ok(ConsensusValidationResult::new_with_error(
+            BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*contract_id))
+                .into(),
+        ));
     };
 
-    let contract_fetch_info = contract_fetch_info;
-
-    let Some(document_type) = contract_fetch_info.contract.document_type_optional_for_name(document_type_name) else {
-        return Ok(ConsensusValidationResult::new_with_error(BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(document_type_name.to_string(), *contract_id)).into()));
+    let Some(document_type) = contract_fetch_info
+        .contract
+        .document_type_optional_for_name(document_type_name)
+    else {
+        return Ok(ConsensusValidationResult::new_with_error(
+            BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                document_type_name.to_string(),
+                *contract_id,
+            ))
+            .into(),
+        ));
     };
     fetch_documents_for_transitions_knowing_contract_and_document_type(
         drive,

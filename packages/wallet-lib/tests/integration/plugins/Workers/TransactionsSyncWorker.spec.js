@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 const { Transaction } = require('@dashevo/dashcore-lib');
 const { expect } = require('chai');
 const TransactionsSyncWorker = require('../../../../src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker');

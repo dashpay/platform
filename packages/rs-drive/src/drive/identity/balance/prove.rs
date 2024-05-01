@@ -33,7 +33,7 @@ impl Drive {
         let balance_query = Self::balance_and_revision_for_identity_id_query(identity_id);
         self.grove_get_proved_path_query(
             &balance_query,
-            false,
+            true,
             transaction,
             &mut vec![],
             drive_version,
@@ -83,6 +83,7 @@ mod tests {
             drive
                 .add_new_identity(
                     identity.clone(),
+                    false,
                     &BlockInfo::default(),
                     true,
                     None,
@@ -127,6 +128,7 @@ mod tests {
                 drive
                     .add_new_identity(
                         identity.clone(),
+                        false,
                         &BlockInfo::default(),
                         true,
                         None,

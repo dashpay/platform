@@ -63,8 +63,8 @@ function waitForStateTransitionResultHandlerFactory(
   async function waitForStateTransitionResultHandler(call) {
     const { request } = call;
 
-    const stateTransitionHash = request.getStateTransitionHash();
-    const prove = request.getProve();
+    const stateTransitionHash = request.getV0().getStateTransitionHash();
+    const prove = request.getV0().getProve();
 
     if (!stateTransitionHash) {
       throw new InvalidArgumentGrpcError('state transition hash is not specified');
@@ -94,14 +94,16 @@ function waitForStateTransitionResultHandlerFactory(
     }
 
     const response = new WaitForStateTransitionResultResponse();
+    const v0 = new WaitForStateTransitionResultResponse
+      .WaitForStateTransitionResultResponseV0();
 
     if (result instanceof TransactionErrorResult) {
       const error = await createStateTransitionDeliverError(
         result.getResult(),
       );
 
-      response.setError(error);
-
+      v0.setError(error);
+      response.setV0(v0);
       return response;
     }
 
@@ -112,9 +114,10 @@ function waitForStateTransitionResultHandlerFactory(
       );
 
       const stateTransitionProof = await fetchProofForStateTransition(stateTransition);
-      response.setMetadata(stateTransitionProof.getMetadata());
-      response.setProof(stateTransitionProof.getProof());
+      v0.setMetadata(stateTransitionProof.getV0().getMetadata());
+      v0.setProof(stateTransitionProof.getV0().getProof());
     }
+    response.setV0(v0);
 
     return response;
   }

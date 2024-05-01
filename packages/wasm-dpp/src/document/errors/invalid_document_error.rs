@@ -30,4 +30,9 @@ impl InvalidDocumentError {
     pub fn get_document(&self) -> JsValue {
         self.raw_document.clone()
     }
+
+    #[wasm_bindgen(js_name=getMessage)]
+    pub fn get_message(&self) -> String {
+        self.to_string()
+    }
 }

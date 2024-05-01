@@ -41,6 +41,7 @@ const baseConfig = {
       string_decoder: require.resolve('string_decoder/'),
       tls: require.resolve('tls/'),
       net: require.resolve('net/'),
+      process: require.resolve('process/browser'),
       // Browser build have to use native WebSocket
       ws: require.resolve('./build-utils/ws'),
     },

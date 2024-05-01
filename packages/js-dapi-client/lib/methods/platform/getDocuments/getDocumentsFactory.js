@@ -17,7 +17,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getDocumentsFactory(grpcTransport) {
   /**
    * Fetch Documents from Drive
-   *
    * @typedef {getDocuments}
    * @param {Buffer} contractId - Data Contract ID
    * @param {string} type - Document type
@@ -43,6 +42,7 @@ function getDocumentsFactory(grpcTransport) {
       orderBySerialized = cbor.encode(orderBy);
     }
 
+    const { GetDocumentsRequestV0 } = GetDocumentsRequest;
     const getDocumentsRequest = new GetDocumentsRequest();
     // need to convert Identifier to pure buffer as google protobuf doesn't support extended buffers
     // https://github.com/protocolbuffers/protobuf/blob/master/js/binary/utils.js#L1049
@@ -55,14 +55,17 @@ function getDocumentsFactory(grpcTransport) {
       contractId = Buffer.from(contractId);
     }
 
-    getDocumentsRequest.setDataContractId(contractId);
-    getDocumentsRequest.setDocumentType(type);
-    getDocumentsRequest.setWhere(whereSerialized);
-    getDocumentsRequest.setOrderBy(orderBySerialized);
-    getDocumentsRequest.setLimit(limit);
-    getDocumentsRequest.setStartAfter(startAfter);
-    getDocumentsRequest.setStartAt(startAt);
-    getDocumentsRequest.setProve(!!options.prove);
+    getDocumentsRequest.setV0(
+      new GetDocumentsRequestV0()
+        .setDataContractId(contractId)
+        .setDocumentType(type)
+        .setWhere(whereSerialized)
+        .setOrderBy(orderBySerialized)
+        .setLimit(limit)
+        .setStartAfter(startAfter)
+        .setStartAt(startAt)
+        .setProve(!!options.prove),
+    );
 
     let lastError;
 

@@ -6,7 +6,7 @@ This document describes some tips and optimizations needed to speed up build of 
 As Docker images are intensively used as part of the Dashmate workflow, these tips will be mainly
 useful to:
 
-* developers, building Platfrom directly from git sources,
+* developers, building Platform directly from git sources,
 * Github Actions developers, trying to optimize caching of Docker caching.
 
 When building Dash Platform's Docker images, you can encounter the following issues:
@@ -15,7 +15,7 @@ When building Dash Platform's Docker images, you can encounter the following iss
 2. Building for other architectures using emulation (eg. running ARM64 VM on a x86-64 host) is very slow
 3. Cross-compiling Platform can be tricky due to some dependency issues (for example, cross-compilation of
    librocksdb-sys is hard)
-4. With intensive caching, cache can grow very fast and usemore than 10 GB, which is above default cache size limit in
+4. With intensive caching, cache can grow very fast and use more than 10 GB, which is above default cache size limit in
    Docker buildx and Github Actions.
 
 ## Caches

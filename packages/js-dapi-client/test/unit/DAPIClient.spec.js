@@ -24,6 +24,10 @@ describe('DAPIClient', () => {
         newOption: true,
         timeout: 10000,
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
+        loggerOptions: {
+          identifier: '',
+          level: undefined,
+        },
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(
@@ -46,6 +50,10 @@ describe('DAPIClient', () => {
         timeout: 10000,
         network: 'testnet',
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
+        loggerOptions: {
+          identifier: '',
+          level: undefined,
+        },
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(
@@ -74,6 +82,10 @@ describe('DAPIClient', () => {
         network: 'testnet',
         timeout: 10000,
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
+        loggerOptions: {
+          identifier: '',
+          level: undefined,
+        },
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);
@@ -98,6 +110,10 @@ describe('DAPIClient', () => {
         network: 'local',
         timeout: 10000,
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
+        loggerOptions: {
+          identifier: '',
+          level: undefined,
+        },
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);

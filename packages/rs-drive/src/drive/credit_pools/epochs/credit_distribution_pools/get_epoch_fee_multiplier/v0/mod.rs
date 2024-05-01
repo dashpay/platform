@@ -29,14 +29,14 @@ impl Drive {
         let Element::Item(encoded_multiplier, _) = element else {
             return Err(Error::Drive(DriveError::UnexpectedElementType(
                 "epochs multiplier must be an item",
-            )))
+            )));
         };
 
         Ok(f64::from_be_bytes(
             encoded_multiplier.as_slice().try_into().map_err(|_| {
-                Error::Drive(DriveError::CorruptedSerialization(
+                Error::Drive(DriveError::CorruptedSerialization(String::from(
                     "epochs multiplier must be f64",
-                ))
+                )))
             })?,
         ))
     }

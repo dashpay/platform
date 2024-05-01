@@ -105,7 +105,10 @@ macro_rules! impl_platform_versioned_borrow_decode {
                 decoder: &mut D,
                 platform_version: &PlatformVersion,
             ) -> core::result::Result<Self, bincode::error::DecodeError> {
-                $crate::PlatformVersionedBorrowDecode::platform_versioned_borrow_decode(
+                // Here we directly call the platform_versioned_decode method from
+                // PlatformVersionedDecode, assuming it correctly handles decoding based
+                // on the platform version.
+                <$ty as $crate::PlatformVersionedDecode>::platform_versioned_decode(
                     decoder,
                     platform_version,
                 )

@@ -48,12 +48,10 @@ function buildEnvs(envs, value, key = '') {
  * @param {Object} object
  * @returns {Object}
  */
-function convertObjectToEnvs(object) {
+export default function convertObjectToEnvs(object) {
   const envs = {};
 
   buildEnvs(envs, object);
 
   return envs;
 }
-
-module.exports = convertObjectToEnvs;

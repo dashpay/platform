@@ -1,0 +1,115 @@
+on:
+  workflow_call:
+    inputs:
+      name:
+        type: string
+        description: Name
+        required: true
+      test-pattern:
+        type: string
+        description: Test pattern. i.e. test/e2e/*.spec.js
+        required: true
+      restore_local_network_data:
+        type: boolean
+        description: Load local network data from cache
+        default: false
+
+jobs:
+  dashmate-test:
+    name: Run ${{ inputs.name }} tests
+    # TODO: Try with Github Runner, probably it will be the same time
+    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    timeout-minutes: 15
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+
+      - name: Restore JS build artifacts
+        uses: strophy/actions-cache@opendal-update
+        with:
+          bucket: multi-runner-cache-x1xibo9c
+          root: actions-cache
+          path: build-js-artifacts-${{ github.sha }}.tar
+          key: build-js-artifacts/${{ github.sha }}
+
+      - name: Unpack JS build artifacts archive
+        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
+
+      - name: Replace with pre-built images
+        run: |
+          # Login to ECR
+          DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
+          aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
+
+          SHA_TAG=sha-${{ github.sha }}
+
+          # Drive
+          DRIVE_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.drive.abci.docker.image)
+          docker pull $DOCKER_HUB_ORG/drive:$SHA_TAG
+          docker tag $DOCKER_HUB_ORG/drive:$SHA_TAG $DRIVE_IMAGE_AND_VERSION
+
+          # DAPI
+          DAPI_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.dapi.api.docker.image)
+          docker pull $DOCKER_HUB_ORG/dapi:$SHA_TAG
+          docker tag $DOCKER_HUB_ORG/dapi:$SHA_TAG $DAPI_IMAGE_AND_VERSION
+
+          # Dashmate helper image is hardcoded so we replace it with the built one
+          VERSION=$(cat package.json | jq -r '.version')
+          docker pull $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG
+          docker tag $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:${VERSION}
+        shell: bash
+
+      - name: Get dashmate fingerprint
+        id: dashmate-fingerprint
+        run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
+        if: inputs.restore_local_network_data == true
+
+      - name: Use test suite local network data to speed up dashmate local network tests
+        id: local-network-data
+        uses: strophy/actions-cache/restore@opendal-update
+        with:
+          bucket: multi-runner-cache-x1xibo9c
+          root: local-network-data
+          path: |
+            /home/ubuntu/.dashmate
+            dashmate_volumes_dump
+          key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
+        if: inputs.restore_local_network_data == true
+
+      - name: Restore dashmate volumes
+        run: ./scripts/dashmate/volumes/restore.sh
+        if: steps.local-network-data.outputs.cache-hit == 'true'
+
+      - name: Run tests with cache
+        run: yarn workspace dashmate run mocha ${{ inputs.test-pattern }}
+        env:
+          DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
+          DASHMATE_E2E_TESTS_LOCAL_HOMEDIR: /home/ubuntu/.dashmate
+        if: steps.local-network-data.outputs.cache-hit == 'true'
+
+      - name: Run tests without cache
+        run: yarn workspace dashmate run mocha ${{ inputs.test-pattern }}
+        env:
+          DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
+        if: steps.local-network-data.outputs.cache-hit != 'true'
+
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v2
+

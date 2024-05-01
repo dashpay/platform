@@ -1,5 +1,7 @@
 use crate::value_map::ValueMap;
 use crate::{Error, Value};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use serde_json::{Map, Number, Value as JsonValue};
 use std::collections::BTreeMap;
 
@@ -90,8 +92,16 @@ impl Value {
                     .map(|byte| JsonValue::Number(byte.into()))
                     .collect(),
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 
@@ -178,8 +188,16 @@ impl Value {
                     .map(|byte| JsonValue::Number((*byte).into()))
                     .collect(),
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 }
@@ -207,8 +225,8 @@ impl From<JsonValue> for Value {
                 if len >= 10
                     && array.iter().all(|v| {
                         let Some(int) = v.as_u64() else {
-                        return false;
-                    };
+                            return false;
+                        };
                         int.le(&u8_max)
                     })
                 {
@@ -253,8 +271,8 @@ impl From<&JsonValue> for Value {
                 if len >= 10
                     && array.iter().all(|v| {
                         let Some(int) = v.as_u64() else {
-                        return false;
-                    };
+                            return false;
+                        };
                         int.le(&u8_max)
                     })
                 {
@@ -294,10 +312,10 @@ impl TryInto<JsonValue> for Value {
             Value::I16(i) => JsonValue::Number(i.into()),
             Value::U8(i) => JsonValue::Number(i.into()),
             Value::I8(i) => JsonValue::Number(i.into()),
-            Value::Bytes(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
-            Value::Bytes20(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
-            Value::Bytes32(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
-            Value::Bytes36(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
+            Value::Bytes(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
+            Value::Bytes20(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
+            Value::Bytes32(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
+            Value::Bytes36(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
             Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),
             Value::Text(string) => JsonValue::String(string),
             Value::Bool(value) => JsonValue::Bool(value),
@@ -319,8 +337,16 @@ impl TryInto<JsonValue> for Value {
             Value::Identifier(bytes) => {
                 JsonValue::String(bs58::encode(bytes.as_slice()).into_string())
             }
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 }
@@ -374,29 +400,6 @@ impl BTreeValueJsonConverter for BTreeMap<String, Value> {
     }
 }
 
-pub trait BTreeValueRefJsonConverter {
-    fn to_json_value(self) -> Result<JsonValue, Error>;
-    fn to_validating_json_value(&self) -> Result<JsonValue, Error>;
-}
-
-impl BTreeValueRefJsonConverter for BTreeMap<String, &Value> {
-    fn to_json_value(self) -> Result<JsonValue, Error> {
-        Ok(JsonValue::Object(
-            self.into_iter()
-                .map(|(key, value)| Ok((key, value.clone().try_into()?)))
-                .collect::<Result<Map<String, JsonValue>, Error>>()?,
-        ))
-    }
-
-    fn to_validating_json_value(&self) -> Result<JsonValue, Error> {
-        Ok(JsonValue::Object(
-            self.iter()
-                .map(|(key, value)| Ok((key.to_owned(), value.try_to_validating_json()?)))
-                .collect::<Result<Map<String, JsonValue>, Error>>()?,
-        ))
-    }
-}
-
 impl From<BTreeMap<String, JsonValue>> for Value {
     fn from(value: BTreeMap<String, JsonValue>) -> Self {
         let map: ValueMap = value
@@ -436,7 +439,6 @@ mod tests {
           "revision": 0,
           "signature": "HxtcTSpRdACokorvpx/f4ezM40e0WtgW2GUvjiwNkHPwKDppkIoS2cirhqpZURlhDuYdu+E0KllbHNlYghcK9Bg=",
           "signaturePublicKeyId": 1,
-          "publicKeysDisabledAt": 1234567,
           "addPublicKeys": [
             {
               "id": 0,
@@ -458,7 +460,7 @@ mod tests {
             .expect("expected to get array slice")
             .unwrap();
         assert_eq!(array.len(), 1);
-        assert!(array.get(0).unwrap().is_map());
+        assert!(array.first().unwrap().is_map());
         let array = value
             .get_optional_array_slice("disablePublicKeys")
             .expect("expected to get array slice")

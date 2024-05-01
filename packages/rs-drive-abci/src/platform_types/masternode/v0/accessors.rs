@@ -14,5 +14,5 @@ pub trait MasternodeAccessorsV0 {
     /// The address where the collateral is stored.
     fn collateral_address(&self) -> [u8; 20];
     /// The amount of the operator's reward for running the masternode.
-    fn operator_reward(&self) -> u32;
+    fn operator_reward(&self) -> f32;
 }

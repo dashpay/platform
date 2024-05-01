@@ -1,8 +1,9 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
+import DashCoreLib from '@dashevo/dashcore-lib';
+import { NETWORK_LOCAL } from '../../constants.js';
+import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
-const { PrivateKey } = require('@dashevo/dashcore-lib');
-const { NETWORK_LOCAL } = require('../../constants');
-const generateEnvs = require('../../util/generateEnvs');
+const { PrivateKey } = DashCoreLib;
 
 /**
  *
@@ -15,10 +16,9 @@ const generateEnvs = require('../../util/generateEnvs');
  * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
  * @param {buildServicesTask} buildServicesTask
  * @param {getConnectionHost} getConnectionHost
- * @param {ConfigFile} configFile
  * @return {startGroupNodesTask}
  */
-function startGroupNodesTaskFactory(
+export default function startGroupNodesTaskFactory(
   dockerCompose,
   waitForCorePeersConnected,
   waitForMasternodesSync,
@@ -28,7 +28,6 @@ function startGroupNodesTaskFactory(
   waitForNodeToBeReadyTask,
   buildServicesTask,
   getConnectionHost,
-  configFile,
 ) {
   /**
    * @typedef {startGroupNodesTask}
@@ -41,7 +40,7 @@ function startGroupNodesTaskFactory(
     ));
 
     const platformBuildConfig = configGroup.find((config) => (
-      config.get('platform.enable') && config.get('platform.sourcePath') !== null
+      isServiceBuildRequired(config)
     ));
 
     return new Listr([
@@ -73,7 +72,7 @@ function startGroupNodesTaskFactory(
                 port: config.get('core.rpc.port'),
                 user: config.get('core.rpc.user'),
                 pass: config.get('core.rpc.password'),
-                host: await getConnectionHost(config, 'core'),
+                host: await getConnectionHost(config, 'core', 'core.rpc.host'),
               });
 
               await waitForCorePeersConnected(rpcClient);
@@ -99,7 +98,7 @@ function startGroupNodesTaskFactory(
             task: async () => {
               /* eslint-disable no-useless-escape */
               await dockerCompose.execCommand(
-                generateEnvs(configFile, config),
+                config,
                 'core',
                 [
                   'bash',
@@ -139,7 +138,7 @@ function startGroupNodesTaskFactory(
           const minerInterval = minerConfig.get('core.miner.interval');
 
           await dockerCompose.execCommand(
-            generateEnvs(configFile, minerConfig),
+            minerConfig,
             'core',
             [
               'bash',
@@ -172,5 +171,3 @@ function startGroupNodesTaskFactory(
 
   return startGroupNodesTask;
 }
-
-module.exports = startGroupNodesTaskFactory;

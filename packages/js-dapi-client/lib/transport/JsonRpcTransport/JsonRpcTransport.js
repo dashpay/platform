@@ -1,3 +1,5 @@
+const logger = require('../../logger');
+
 const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
 const NoAvailableAddressesForRetryError = require('../errors/response/NoAvailableAddressesForRetryError');
 const NoAvailableAddressesError = require('../errors/NoAvailableAddressesError');
@@ -29,16 +31,16 @@ class JsonRpcTransport {
 
     this.createJsonTransportError = createJsonTransportError;
 
+    this.logger = logger.getForId(globalOptions.loggerOptions.identifier);
+
     this.lastUsedAddress = null;
   }
 
   /**
    * Make request to DAPI node
-   *
    * @param {string} method
    * @param {object} [params]
    * @param {DAPIClientOptions} [options]
-   *
    * @returns {Promise<object>}
    */
   async request(method, params = {}, options = {}) {
@@ -62,6 +64,8 @@ class JsonRpcTransport {
     if (options.timeout !== undefined) {
       requestOptions.timeout = options.timeout;
     }
+
+    this.logger.debug(`JSON-RPC Request ${method} to ${address.toString()}`, { options });
 
     try {
       const result = await this.requestJsonRpc(
@@ -116,7 +120,6 @@ class JsonRpcTransport {
 
   /**
    * Get last used address
-   *
    * @returns {DAPIAddress|null}
    */
   getLastUsedAddress() {

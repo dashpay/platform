@@ -42,21 +42,22 @@ impl TryFrom<RequestFinalizeBlock> for FinalizeBlockCleanedRequest {
         } = value;
 
         let Some(commit) = commit else {
-            return Err(AbciError::BadRequest(
-                "finalize block is missing commit".to_string(),
-            ).into());
+            return Err(
+                AbciError::BadRequest("finalize block is missing commit".to_string()).into(),
+            );
         };
 
         let Some(block) = block else {
             return Err(AbciError::BadRequest(
                 "finalize block is missing actual block".to_string(),
-            ).into());
+            )
+            .into());
         };
 
         let Some(block_id) = block_id else {
-            return Err(AbciError::BadRequest(
-                "finalize block is missing block_id".to_string(),
-            ).into());
+            return Err(
+                AbciError::BadRequest("finalize block is missing block_id".to_string()).into(),
+            );
         };
 
         let hash = hash.try_into().map_err(|_| {

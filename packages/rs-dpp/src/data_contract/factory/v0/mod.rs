@@ -1,4 +1,4 @@
-use platform_value::{Bytes32, Value};
+use platform_value::Value;
 use platform_version::TryFromPlatformVersioned;
 
 use crate::consensus::basic::decode::SerializedObjectParsingError;
@@ -9,6 +9,7 @@ use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
+#[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -19,7 +20,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
-use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
+use crate::prelude::IdentityNonce;
 use crate::version::PlatformVersion;
 use crate::{errors::ProtocolError, prelude::Identifier};
 
@@ -30,48 +31,49 @@ use crate::{errors::ProtocolError, prelude::Identifier};
 pub struct DataContractFactoryV0 {
     /// The feature version used by this factory.
     protocol_version: u32,
-
-    /// An EntropyGenerator for generating entropy during data contract creation.
-    entropy_generator: Box<dyn EntropyGenerator>,
 }
 
 impl DataContractFactoryV0 {
-    pub fn new(
-        protocol_version: u32,
-        entropy_generator: Option<Box<dyn EntropyGenerator>>,
-    ) -> Self {
-        Self {
-            protocol_version,
-            entropy_generator: entropy_generator.unwrap_or(Box::new(DefaultEntropyGenerator)),
-        }
+    pub fn new(protocol_version: u32) -> Self {
+        Self { protocol_version }
+    }
+
+    /// Create Data Contract
+    pub fn create_with_value_config(
+        &self,
+        owner_id: Identifier,
+        identity_nonce: IdentityNonce,
+        documents: Value,
+        config: Option<Value>,
+        definitions: Option<Value>,
+    ) -> Result<CreatedDataContract, ProtocolError> {
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+
+        // We need to transform the value into a data contract config
+        let config = config
+            .map(|config_value| DataContractConfig::from_value(config_value, platform_version))
+            .transpose()?;
+        self.create(owner_id, identity_nonce, documents, config, definitions)
     }
 
     /// Create Data Contract
     pub fn create(
         &self,
         owner_id: Identifier,
+        identity_nonce: IdentityNonce,
         documents: Value,
-        config: Option<Value>,
+        config: Option<DataContractConfig>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
-        let entropy = Bytes32::new(self.entropy_generator.generate()?);
-
         let platform_version = PlatformVersion::get(self.protocol_version)?;
 
         let data_contract_id =
-            DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), entropy.to_buffer());
+            DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), identity_nonce);
 
         let defs = definitions
             .map(|defs| defs.into_btree_string_map())
             .transpose()
             .map_err(ProtocolError::ValueError)?;
-
-        // We need to transform the value into a data contract config
-        let config = if let Some(config_value) = config {
-            DataContractConfig::from_value(config_value, platform_version)?
-        } else {
-            DataContractConfig::default_for_version(platform_version)?
-        };
 
         let documents_map = documents
             .into_btree_string_map()
@@ -79,7 +81,7 @@ impl DataContractFactoryV0 {
 
         let format = DataContractInSerializationFormat::V0(DataContractInSerializationFormatV0 {
             id: data_contract_id,
-            config,
+            config: config.unwrap_or(DataContractConfig::default_for_version(platform_version)?),
             version: 1,
             owner_id,
             document_schemas: documents_map,
@@ -87,9 +89,13 @@ impl DataContractFactoryV0 {
         });
 
         let data_contract =
-            DataContract::try_from_platform_versioned(format, true, platform_version)?;
+            DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)?;
 
-        CreatedDataContract::from_contract_and_entropy(data_contract, entropy, platform_version)
+        CreatedDataContract::from_contract_and_identity_nonce(
+            data_contract,
+            identity_nonce,
+            platform_version,
+        )
     }
 
     #[cfg(feature = "data-contract-value-conversion")]
@@ -182,9 +188,10 @@ impl DataContractFactoryV0 {
     pub fn create_unsigned_data_contract_update_transition(
         &self,
         data_contract: DataContract,
+        identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         DataContractUpdateTransition::try_from_platform_versioned(
-            data_contract,
+            (data_contract, identity_contract_nonce),
             PlatformVersion::get(self.protocol_version)?,
         )
     }
@@ -210,14 +217,14 @@ mod tests {
     fn get_test_data() -> TestData {
         let platform_version = PlatformVersion::latest();
         let created_data_contract =
-            get_data_contract_fixture(None, platform_version.protocol_version);
+            get_data_contract_fixture(None, 0, platform_version.protocol_version);
 
         let raw_data_contract = created_data_contract
             .data_contract()
             .to_value(platform_version)
             .unwrap();
 
-        let factory = DataContractFactoryV0::new(platform_version.protocol_version, None);
+        let factory = DataContractFactoryV0::new(platform_version.protocol_version);
         TestData {
             created_data_contract,
             raw_data_contract,
@@ -246,8 +253,9 @@ mod tests {
             .clone();
 
         let result = factory
-            .create(
+            .create_with_value_config(
                 data_contract.owner_id(),
+                1,
                 raw_documents,
                 None,
                 Some(raw_defs),
@@ -329,11 +337,15 @@ mod tests {
             .expect("Data Contract Transition should be created");
 
         assert_eq!(0, result.state_transition_protocol_version());
-        assert_eq!(&created_data_contract.entropy_used(), &result.entropy());
+        assert_eq!(
+            created_data_contract.identity_nonce(),
+            result.identity_nonce()
+        );
 
         let contract_value = DataContract::try_from_platform_versioned(
             result.data_contract().to_owned(),
             false,
+            &mut vec![],
             platform_version,
         )
         .unwrap()

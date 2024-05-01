@@ -1,7 +1,6 @@
 import { Transaction } from '@dashevo/dashcore-lib';
 import DAPIClient from '@dashevo/dapi-client';
-import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
-import { Identity } from '@dashevo/wasm-dpp';
+import { StateTransitionTypes } from '@dashevo/wasm-dpp';
 
 import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
 import getResponseMetadataFixture from '../fixtures/getResponseMetadataFixture';
@@ -10,6 +9,7 @@ import { createDapiClientMock } from './createDapiClientMock';
 import { wait } from '../../utils/wait';
 
 const GetIdentityResponse = require('@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse');
+const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
 
 const TxStreamMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamMock');
 const TxStreamDataResponseMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamDataResponseMock');
@@ -52,7 +52,7 @@ async function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
     const interceptedIdentityStateTransition = await client
       .platform.dpp.stateTransition.createFromBuffer(stBuffer);
 
-    if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
+    if (interceptedIdentityStateTransition.getType() === StateTransitionTypes.IdentityCreate) {
       const identityToResolve = await client
         .platform.dpp.identity.create(
           interceptedIdentityStateTransition.getIdentityId(),
@@ -60,7 +60,9 @@ async function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
             .getPublicKeys(),
         );
 
-      identityToResolve.setBalance(interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis);
+      identityToResolve.setBalance(
+        interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
+      );
 
       dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId())
         .resolves(new GetIdentityResponse(
@@ -83,6 +85,7 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
   // Mock dapi client for platform endpoints
   client.dapiClient = dapiClientMock;
   client.platform.fetcher.dapiClient = dapiClientMock;
+  client.platform.nonceManager.dapiClient = dapiClientMock;
 
   // Starting account sync
   const accountPromise = client.wallet.getAccount();
@@ -101,7 +104,8 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
   await accountPromise;
 
   // Putting data in transport stubs
-  transportMock.getIdentitiesByPublicKeyHashes.resolves([]);
+  transportMock.getIdentityByPublicKeyHash
+    .rejects(new NotFoundError('Identity not found', {}, null));
   makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock);
   await makeGetIdentityRespondWithIdentity(client, dapiClientMock);
 

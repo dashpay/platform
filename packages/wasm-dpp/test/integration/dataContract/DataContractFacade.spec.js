@@ -25,10 +25,8 @@ describe('DataContractFacade', () => {
   });
 
   beforeEach(async function beforeEach() {
-    stateTransitionMock = createStateRepositoryMock(this.sinonSandbox);
-    dpp = new DashPlatformProtocol(
-      { generate: () => crypto.randomBytes(32) }, 1,
-    );
+    stateTransitionMock = createStateRepositoryMock(this.sinon);
+    dpp = new DashPlatformProtocol({ generate: () => crypto.randomBytes(32) }, 1);
 
     dataContract = await getDataContractFixture();
     rawDataContract = dataContract.toObject();
@@ -43,6 +41,8 @@ describe('DataContractFacade', () => {
     it('should create DataContract', () => {
       const result = dpp.dataContract.create(
         dataContract.getOwnerId(),
+        // eslint-disable-next-line
+        BigInt(1),
         dataContract.getDocumentSchemas(),
       );
 
@@ -67,6 +67,8 @@ describe('DataContractFacade', () => {
     it('should create DataContract from string', async () => {
       const contract = dpp.dataContract.create(
         dataContract.getOwnerId(),
+        // eslint-disable-next-line
+        BigInt(1),
         dataContract.getDocumentSchemas(),
       );
 
@@ -103,7 +105,8 @@ describe('DataContractFacade', () => {
       updatedDataContract.incrementVersion();
 
       const dataContractUpdateTransition = dpp.dataContract
-        .createDataContractUpdateTransition(updatedDataContract);
+        // eslint-disable-next-line
+        .createDataContractUpdateTransition(updatedDataContract, BigInt(1));
 
       const { identityPublicKey, privateKey } = await getPrivateAndPublicKeyForSigningFixture();
 

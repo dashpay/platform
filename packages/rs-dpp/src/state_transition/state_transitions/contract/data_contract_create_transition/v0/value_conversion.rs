@@ -11,6 +11,7 @@ use crate::data_contract::conversion::value::v0::DataContractValueConversionMeth
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransitionV0};
 use crate::state_transition::data_contract_create_transition::fields::*;
+use crate::state_transition::state_transitions::common_fields::property_names::USER_FEE_INCREASE;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
 
 impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
@@ -27,8 +28,8 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            entropy: raw_object
-                .remove_optional_bytes_32(ENTROPY)
+            identity_nonce: raw_object
+                .get_optional_integer(IDENTITY_NONCE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_value(
@@ -41,6 +42,10 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
+            user_fee_increase: raw_object
+                .get_optional_integer(USER_FEE_INCREASE)
+                .map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
         })
     }
 
@@ -57,8 +62,8 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            entropy: raw_value_map
-                .remove_optional_bytes_32(ENTROPY)
+            identity_nonce: raw_value_map
+                .remove_optional_integer(IDENTITY_NONCE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_value(
@@ -71,6 +76,10 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
+            user_fee_increase: raw_value_map
+                .remove_optional_integer(USER_FEE_INCREASE)
+                .map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
         })
     }
 

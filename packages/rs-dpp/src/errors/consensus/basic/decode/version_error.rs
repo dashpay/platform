@@ -1,12 +1,14 @@
 use crate::consensus::basic::BasicError;
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[error("Can't read protocol version from serialized object: {error}")]
+#[platform_serialize(unversioned)]
 pub struct VersionError {
     /*
 

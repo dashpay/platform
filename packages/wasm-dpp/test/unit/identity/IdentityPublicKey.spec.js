@@ -12,8 +12,9 @@ describe('IdentityPublicKey', () => {
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: keyData,
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
       readOnly: false,
+      contractBounds: null,
     };
 
     publicKey = new IdentityPublicKey(1);
@@ -193,9 +194,10 @@ describe('IdentityPublicKey', () => {
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
         readOnly: false,
         disabledAt: now.getTime(),
+        contractBounds: null,
       });
     });
   });
@@ -213,9 +215,10 @@ describe('IdentityPublicKey', () => {
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
         readOnly: false,
         disabledAt: now.getTime(),
+        contractBounds: null,
       });
     });
   });

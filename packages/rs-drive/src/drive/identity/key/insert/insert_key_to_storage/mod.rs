@@ -5,8 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::IdentityPublicKey;
-
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Generates a vector of operations for inserting key to storage.
@@ -32,9 +31,10 @@ impl Drive {
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .keys
@@ -46,7 +46,7 @@ impl Drive {
                 identity_key,
                 key_id_bytes,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_key_to_storage_operations".to_string(),

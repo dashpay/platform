@@ -31,13 +31,15 @@ impl Drive {
             &mut vec![],
             drive_version,
         )?;
-        for (version_bytes, _count_element) in results.to_key_elements() {
+        for (version_bytes, count_element) in results.to_key_elements() {
             let version = ProtocolVersion::decode_var(version_bytes.as_slice())
                 .ok_or(Error::Drive(DriveError::CorruptedElementType(
                     "encoded value could not be decoded",
                 )))
                 .map(|(value, _)| value)?;
-            let count = u64::decode_var(version_bytes.as_slice())
+
+            let count_bytes = count_element.as_item_bytes()?;
+            let count = u64::decode_var(count_bytes)
                 .ok_or(Error::Drive(DriveError::CorruptedElementType(
                     "encoded value could not be decoded",
                 )))

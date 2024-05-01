@@ -1,11 +1,11 @@
-const MasternodeSyncAssetEnum = require('../../../../src/status/enums/masternodeSyncAsset');
-const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
-const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
-const getCoreScopeFactory = require('../../../../src/status/scopes/core');
-const determineStatus = require('../../../../src/status/determineStatus');
-const providers = require('../../../../src/status/providers');
-const PortStateEnum = require('../../../../src/status/enums/portState');
-const getConfigMock = require('../../../../src/test/mock/getConfigMock');
+import providers from '../../../../src/status/providers.js';
+import determineStatus from '../../../../src/status/determineStatus.js';
+import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
+import getCoreScopeFactory from '../../../../src/status/scopes/core.js';
+import { DockerStatusEnum } from '../../../../src/status/enums/dockerStatus.js';
+import { MasternodeSyncAssetEnum } from '../../../../src/status/enums/masternodeSyncAsset.js';
+import { ServiceStatusEnum } from '../../../../src/status/enums/serviceStatus.js';
+import { PortStateEnum } from '../../../../src/status/enums/portState.js';
 
 describe('getCoreScopeFactory', () => {
   describe('#getCoreScope', () => {
@@ -23,7 +23,6 @@ describe('getCoreScopeFactory', () => {
     let rpcService;
 
     let config;
-    let configFile;
     let getCoreScope;
 
     beforeEach(async function it() {
@@ -40,8 +39,6 @@ describe('getCoreScopeFactory', () => {
       mockInsightProvider = this.sinon.stub(providers, 'insight');
       mockGetConnectionHost = this.sinon.stub();
 
-      configFile = { getProjectId: this.sinon.stub() };
-
       config = getConfigMock(this.sinon);
 
       config.get.withArgs('network').returns('testnet');
@@ -57,7 +54,6 @@ describe('getCoreScopeFactory', () => {
         mockDockerCompose,
         mockCreateRpcClient,
         mockGetConnectionHost,
-        configFile,
       );
     });
 

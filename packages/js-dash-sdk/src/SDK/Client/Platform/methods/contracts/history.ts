@@ -32,9 +32,8 @@ export async function history(
 
   let dataContractHistoryResponse: GetDataContractHistoryResponse;
   try {
-    dataContractHistoryResponse = await this.fetcher.fetchDataContractHistory(
-      contractId, startAtMs, limit, offset,
-    );
+    dataContractHistoryResponse = await this.fetcher
+      .fetchDataContractHistory(contractId, startAtMs, limit, offset);
     this.logger.silly(`[Contracts#history] Fetched Data Contract History for "${identifier}"`);
   } catch (e) {
     if (e instanceof NotFoundError) {
@@ -49,8 +48,6 @@ export async function history(
 
   // eslint-disable-next-line no-restricted-syntax
   for (const [date, contractBytes] of Object.entries(rawContractHistory)) {
-    // TODO(versioning): restore
-    // @ts-ignore
     contractHistory[date] = await this.dpp.dataContract
       .createFromBuffer(contractBytes as Uint8Array);
   }

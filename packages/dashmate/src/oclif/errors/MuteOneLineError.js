@@ -1,8 +1,7 @@
-const { settings } = require('@oclif/core');
+import { settings } from '@oclif/core';
+import AbstractError from '../../errors/AbstractError.js';
 
-const AbstractError = require('../../errors/AbstractError');
-
-class MuteOneLineError extends AbstractError {
+export default class MuteOneLineError extends AbstractError {
   /**
    * @param {Error} error
    */
@@ -26,5 +25,3 @@ class MuteOneLineError extends AbstractError {
     return this.error;
   }
 }
-
-module.exports = MuteOneLineError;

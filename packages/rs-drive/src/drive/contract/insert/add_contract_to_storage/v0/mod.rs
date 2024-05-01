@@ -24,6 +24,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds a contract to storage.
+    #[inline(always)]
     pub(super) fn add_contract_to_storage_v0(
         &self,
         contract_element: Element,
@@ -89,7 +90,7 @@ impl Drive {
 
             let encoded_time = encode_u64(block_info.time_ms);
             let contract_keeping_history_storage_path =
-                paths::contract_keeping_history_storage_path(contract.id_ref().as_bytes());
+                paths::contract_keeping_history_root_path(contract.id_ref().as_bytes());
 
             if !is_first_insert {
                 // we can use a DirectQueryType::StatefulDirectQuery because if we were stateless we would always think

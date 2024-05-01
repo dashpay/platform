@@ -6,8 +6,6 @@ use dpp::fee::Credits;
 
 use crate::drive::verify::RootHash;
 
-pub use dpp::prelude::{Identity, Revision};
-
 use grovedb::GroveDb;
 
 impl Drive {
@@ -46,11 +44,12 @@ impl Drive {
         is_proof_subset: bool,
         identity_ids: &[[u8; 32]],
     ) -> Result<(RootHash, T), Error> {
-        let path_query = Self::balances_for_identity_ids_query(identity_ids)?;
+        let mut path_query = Self::balances_for_identity_ids_query(identity_ids)?;
+        path_query.query.limit = Some(identity_ids.len() as u16);
         let (root_hash, proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
         };
         if proved_key_values.len() == identity_ids.len() {
             let values = proved_key_values
@@ -80,9 +79,10 @@ impl Drive {
                 .collect::<Result<T, Error>>()?;
             Ok((root_hash, values))
         } else {
-            Err(Error::Proof(ProofError::WrongElementCount(
-                "expected same count as elements requested",
-            )))
+            Err(Error::Proof(ProofError::WrongElementCount {
+                expected: identity_ids.len(),
+                got: proved_key_values.len(),
+            }))
         }
     }
 }

@@ -3,12 +3,15 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use std::collections::BTreeMap;
 
 use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 
-use std::cmp::Ordering;
+use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::dashcore::QuorumHash;
+use tracing::Level;
 
 impl<C> Platform<C>
 where
@@ -27,65 +30,88 @@ where
     ///   on success, or an `Error` on failure.
     pub(super) fn update_quorum_info_v0(
         &self,
+        platform_state: Option<&PlatformState>,
         block_platform_state: &mut PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
     ) -> Result<(), Error> {
-        if !start_from_scratch && core_block_height == block_platform_state.core_height() {
+        let _span = tracing::span!(Level::TRACE, "update_quorum_info", core_block_height).entered();
+
+        if start_from_scratch {
+            tracing::debug!("update quorum info from scratch up to {core_block_height}");
+        } else if core_block_height != block_platform_state.last_committed_core_height() {
             tracing::debug!(
-                method = "update_quorum_info_v0",
-                "no update quorum at height {}",
+                previous_core_block_height = block_platform_state.last_committed_core_height(),
+                "update quorum info from {} to {}",
+                block_platform_state.last_committed_core_height(),
                 core_block_height
             );
+        } else {
+            tracing::debug!("quorum info at height {core_block_height} already updated");
+
             return Ok(()); // no need to do anything
         }
-        tracing::debug!(
-            method = "update_quorum_info_v0",
-            "update of quorums for height {}",
-            core_block_height
-        );
-        let quorum_list = self
+
+        // We request the quorum list from the current core block height, this is because we also keep
+        // the previous chain lock validating quorum. Core will sign from 8 blocks before the current
+        // core block height, so often we will use the previous chain lock validating quorums instead.
+
+        let mut extended_quorum_list = self
             .core_rpc
             .get_quorum_listextended(Some(core_block_height))?;
-        let quorum_info = quorum_list
+
+        let validator_set_quorum_type = self.config.validator_set_quorum_type();
+        let chain_lock_quorum_type = self.config.chain_lock_quorum_type();
+
+        let validator_quorums_list: BTreeMap<_, _> = extended_quorum_list
             .quorums_by_type
-            .get(&self.config.quorum_type())
+            .remove(&validator_set_quorum_type)
             .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
                 format!(
                     "expected quorums of type {}, but did not receive any from Dash Core",
-                    self.config.quorum_type
+                    self.config.validator_set_quorum_type
                 ),
-            )))?;
+            )))?
+            .into_iter()
+            .collect();
 
-        tracing::debug!(
-            method = "update_quorum_info_v0",
-            "old {:?}",
-            block_platform_state.validator_sets()
-        );
-
-        tracing::debug!(
-            method = "update_quorum_info_v0",
-            "new quorum_info {:?}",
-            quorum_info
-        );
+        let mut removed_a_validator_set = false;
 
         // Remove validator_sets entries that are no longer valid for the core block height
         block_platform_state
             .validator_sets_mut()
-            .retain(|key, _| quorum_info.contains_key(key));
+            .retain(|quorum_hash, _| {
+                let retain = validator_quorums_list.contains_key::<QuorumHash>(quorum_hash);
+                removed_a_validator_set |= !retain;
 
-        // Fetch quorum info results and their keys from the RPC
-        let mut quorum_infos = quorum_info
+                if !retain {
+                    tracing::trace!(
+                        ?quorum_hash,
+                        quorum_type = ?self.config.validator_set_quorum_type(),
+                        "removed validator set {} with quorum type {}",
+                        quorum_hash,
+                        self.config.validator_set_quorum_type()
+                    )
+                }
+
+                retain
+            });
+
+        // Fetch quorum info and their keys from the RPC for new quorums
+        let mut quorum_infos = validator_quorums_list
             .iter()
             .filter(|(key, _)| {
                 !block_platform_state
                     .validator_sets()
-                    .contains_key(key.as_ref())
+                    .contains_key::<QuorumHash>(key)
             })
             .map(|(key, _)| {
-                let quorum_info_result =
-                    self.core_rpc
-                        .get_quorum_info(self.config.quorum_type(), key, None)?;
+                let quorum_info_result = self.core_rpc.get_quorum_info(
+                    self.config.validator_set_quorum_type(),
+                    key,
+                    None,
+                )?;
+
                 Ok((*key, quorum_info_result))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -100,27 +126,41 @@ where
             }
         });
 
-        // Map to quorums
-        let new_quorums = quorum_infos
+        // Map to validator sets
+        let new_validator_sets = quorum_infos
             .into_iter()
-            .map(|(key, info_result)| {
+            .map(|(quorum_hash, info_result)| {
                 let validator_set = ValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
                     info_result,
                     block_platform_state,
                 )?);
-                Ok((key, validator_set))
+
+                tracing::trace!(
+                    ?validator_set,
+                    ?quorum_hash,
+                    quorum_type = ?self.config.validator_set_quorum_type(),
+                    "add new validator set {} with quorum type {}",
+                    quorum_hash,
+                    self.config.validator_set_quorum_type()
+                );
+
+                Ok((quorum_hash, validator_set))
             })
             .collect::<Result<Vec<_>, Error>>()?;
+
+        let added_a_validator_set = !new_validator_sets.is_empty();
+
         // Add new validator_sets entries
         block_platform_state
             .validator_sets_mut()
-            .extend(new_quorums.into_iter());
+            .extend(new_validator_sets);
 
+        // Sort all validator sets into deterministic order by core block height of creation
         block_platform_state
             .validator_sets_mut()
             .sort_by(|_, quorum_a, _, quorum_b| {
                 let primary_comparison = quorum_b.core_height().cmp(&quorum_a.core_height());
-                if primary_comparison == Ordering::Equal {
+                if primary_comparison == std::cmp::Ordering::Equal {
                     quorum_b
                         .quorum_hash()
                         .cmp(quorum_a.quorum_hash())
@@ -130,13 +170,135 @@ where
                 }
             });
 
-        tracing::debug!(
-            method = "update_quorum_info_v0",
-            "new {:?}",
-            block_platform_state.validator_sets()
-        );
+        if validator_set_quorum_type == chain_lock_quorum_type {
+            // Remove validator_sets entries that are no longer valid for the core block height
+            if removed_a_validator_set || added_a_validator_set {
+                let chain_lock_validating_quorums = block_platform_state
+                    .validator_sets()
+                    .iter()
+                    .map(|(quorum_hash, validator_set)| {
+                        (*quorum_hash, validator_set.threshold_public_key().clone())
+                    })
+                    .collect();
+                let previous_quorums = block_platform_state
+                    .replace_chain_lock_validating_quorums(chain_lock_validating_quorums);
+                tracing::trace!("updated chain lock validating quorums to current validator set",);
+                // the only case where there will be no platform_state is init chain where we
+                if platform_state.is_some() {
+                    block_platform_state.set_previous_chain_lock_validating_quorums(
+                        block_platform_state.last_committed_core_height(),
+                        core_block_height,
+                        block_platform_state
+                            .previous_height_chain_lock_validating_quorums()
+                            .map(|(_, previous_change_height, _, _)| *previous_change_height),
+                        previous_quorums,
+                    );
+                }
+            }
+        } else {
+            let chain_lock_quorums_list: BTreeMap<_, _> = extended_quorum_list
+                .quorums_by_type
+                .remove(&chain_lock_quorum_type)
+                .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
+                    format!(
+                        "expected quorums of type {}, but did not receive any from Dash Core",
+                        self.config.chain_lock_quorum_type
+                    ),
+                )))?
+                .into_iter()
+                .map(|(quorum_hash, extended_quorum_details)| {
+                    (quorum_hash, extended_quorum_details.quorum_index)
+                })
+                .collect();
 
-        block_platform_state.set_quorums_extended_info(quorum_list.quorums_by_type);
+            let mut removed_a_chain_lock_validating_quorum = false;
+
+            // Remove chain_lock_validating_quorums entries that are no longer valid for the core block height
+            block_platform_state
+                .chain_lock_validating_quorums_mut()
+                .retain(|quorum_hash, _| {
+                    let retain = chain_lock_quorums_list.contains_key::<QuorumHash>(quorum_hash);
+                    if !retain {
+                        tracing::trace!(
+                            ?quorum_hash,
+                            quorum_type = ?chain_lock_quorum_type,
+                            "removed old chain lock quorum {} with quorum type {}",
+                            quorum_hash,
+                            chain_lock_quorum_type
+                        );
+                    }
+                    removed_a_chain_lock_validating_quorum |= !retain;
+                    retain
+                });
+
+            // Fetch quorum info and their keys from the RPC for new quorums
+            let quorum_infos = chain_lock_quorums_list
+                .iter()
+                .filter(|(key, _)| {
+                    !block_platform_state
+                        .chain_lock_validating_quorums()
+                        .contains_key::<QuorumHash>(key)
+                })
+                .map(|(key, _)| {
+                    let quorum_info_result =
+                        self.core_rpc
+                            .get_quorum_info(chain_lock_quorum_type, key, None)?;
+
+                    Ok((*key, quorum_info_result))
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+
+            let added_a_chain_lock_validating_quorum = !quorum_infos.is_empty();
+
+            if added_a_chain_lock_validating_quorum {
+                // Map to chain lock validating quorums
+                let new_chain_lock_quorums = quorum_infos
+                    .into_iter()
+                    .map(|(quorum_hash, info_result)| {
+                        let public_key = match BlsPublicKey::from_bytes(
+                            info_result.quorum_public_key.as_slice(),
+                        )
+                        .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
+                        {
+                            Ok(public_key) => public_key,
+                            Err(e) => return Err(e.into()),
+                        };
+
+                        tracing::trace!(
+                            ?public_key,
+                            ?quorum_hash,
+                            quorum_type = ?chain_lock_quorum_type,
+                            "add new chain lock quorum {} with quorum type {}",
+                            quorum_hash,
+                            chain_lock_quorum_type
+                        );
+
+                        Ok((quorum_hash, public_key))
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+
+                // Add new validator_sets entries
+                block_platform_state
+                    .chain_lock_validating_quorums_mut()
+                    .extend(new_chain_lock_quorums);
+            }
+
+            if added_a_chain_lock_validating_quorum || removed_a_chain_lock_validating_quorum {
+                if let Some(old_state) = platform_state {
+                    let previous_chain_lock_validating_quorums =
+                        old_state.chain_lock_validating_quorums().clone();
+                    block_platform_state.set_previous_chain_lock_validating_quorums(
+                        block_platform_state.last_committed_core_height(),
+                        core_block_height,
+                        block_platform_state
+                            .previous_height_chain_lock_validating_quorums()
+                            .map(|(_, previous_change_height, _, _)| *previous_change_height),
+                        previous_chain_lock_validating_quorums,
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 }

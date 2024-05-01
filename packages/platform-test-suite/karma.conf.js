@@ -1,16 +1,52 @@
 const webpack = require('webpack');
 const dotenvResult = require('dotenv-safe').config();
+const glob = require('glob');
 
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
+const karmaFirefoxLauncher = require('karma-firefox-launcher');
 const karmaSourcemapLoader = require('karma-sourcemap-loader');
 const karmaWebpack = require('karma-webpack');
 
 if (dotenvResult.error) {
   throw dotenvResult.error;
 }
+
+// TODO: Fix test to be running in Browser
+const testFilesPattern = './test/**/!(proofs|waitForStateTransitionResult).spec.js';
+const processors = ['webpack', 'sourcemap'];
+let testFiles = [
+  testFilesPattern,
+];
+let testPreprocessors = {
+  [testFilesPattern]: processors,
+};
+
+const batchTotal = parseInt(process.env.BROWSER_TEST_BATCH_TOTAL, 10);
+const batchIndex = parseInt(process.env.BROWSER_TEST_BATCH_INDEX, 10);
+
+if (batchTotal !== 0) {
+  const files = glob.sync(testFilesPattern);
+  const batchSize = Math.ceil(files.length / batchTotal);
+
+  const batches = [];
+  for (let i = 0; i < files.length; i += batchSize) {
+    batches.push(files.slice(i, i + batchSize));
+  }
+
+  testFiles = batches[batchIndex] || [];
+
+  testPreprocessors = testFiles.reduce((acc, path) => {
+    acc[path] = processors;
+
+    return acc;
+  }, {});
+}
+
+process.env.FAUCET_ADDRESS = process.env[`FAUCET_${batchIndex + 1}_ADDRESS`];
+process.env.FAUCET_PRIVATE_KEY = process.env[`FAUCET_${batchIndex + 1}_PRIVATE_KEY`];
 
 module.exports = (config) => {
   config.set({
@@ -24,12 +60,12 @@ module.exports = (config) => {
     browserDisconnectTimeout: 900000,
     frameworks: ['mocha', 'chai', 'webpack'],
     files: [
-      'lib/test/karma/loader.js',
-      './test/**/!(proofs|waitForStateTransitionResult).spec.js',
+      'lib/test/karma/bootstrap.js',
+      ...testFiles,
     ],
     preprocessors: {
-      'lib/test/karma/loader.js': ['webpack', 'sourcemap'],
-      './test/**/!(proofs|waitForStateTransitionResult).spec.js': ['webpack', 'sourcemap'],
+      'lib/test/karma/bootstrap.js': ['webpack', 'sourcemap'],
+      ...testPreprocessors,
     },
     webpack: {
       mode: 'development',
@@ -40,7 +76,11 @@ module.exports = (config) => {
           process: require.resolve('process/browser'),
         }),
         new webpack.EnvironmentPlugin(
-          dotenvResult.parsed,
+          {
+            ...dotenvResult.parsed,
+            FAUCET_ADDRESS: process.env.FAUCET_ADDRESS,
+            FAUCET_PRIVATE_KEY: process.env.FAUCET_PRIVATE_KEY,
+          },
         ),
       ],
       resolve: {
@@ -59,6 +99,7 @@ module.exports = (config) => {
           crypto: require.resolve('crypto-browserify'),
           events: require.resolve('events/'),
           util: require.resolve('util/'),
+          process: require.resolve('process/browser'),
         },
         extensions: ['.ts', '.js', '.json'],
       },
@@ -67,7 +108,7 @@ module.exports = (config) => {
     port: 9876,
     colors: true,
     logLevel: config.LOG_INFO,
-    browsers: ['chromeWithoutSecurity'],
+    browsers: ['ChromeHeadlessInsecure'],
     singleRun: true,
     concurrency: Infinity,
     plugins: [
@@ -75,11 +116,12 @@ module.exports = (config) => {
       karmaMochaReporter,
       karmaChai,
       karmaChromeLauncher,
+      karmaFirefoxLauncher,
       karmaSourcemapLoader,
       karmaWebpack,
     ],
     customLaunchers: {
-      chromeWithoutSecurity: {
+      ChromeHeadlessInsecure: {
         base: 'ChromeHeadless',
         flags: ['--allow-insecure-localhost'],
         displayName: 'Chrome w/o security',

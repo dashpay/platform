@@ -31,64 +31,62 @@
 //!
 
 use ciborium::cbor;
-#[cfg(feature = "full")]
-use grovedb::TransactionArg;
-#[cfg(feature = "full")]
-use std::borrow::Cow;
-#[cfg(feature = "full")]
-use std::collections::HashMap;
-#[cfg(feature = "full")]
-use std::fs::File;
-#[cfg(feature = "full")]
-use std::io::{self, BufRead};
-#[cfg(feature = "full")]
-use std::option::Option::None;
-#[cfg(feature = "full")]
-use std::sync::Arc;
-
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::data_contract::DataContractFactory;
-use rand::random;
-#[cfg(feature = "full")]
-use rand::seq::SliceRandom;
-#[cfg(feature = "full")]
-use rand::{Rng, SeedableRng};
-#[cfg(feature = "full")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "full")]
-use serde_json::json;
-#[cfg(feature = "full")]
-use tempfile::TempDir;
-
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::common;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::common::setup_contract;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::batch::GroveDbOpBatch;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::config::DriveConfig;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::flags::StorageFlags;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::Drive;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::error::{query::QuerySyntaxError, Error};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::query::DriveQuery;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 use drive::tests::helpers::setup::setup_drive;
+#[cfg(feature = "server")]
+use grovedb::TransactionArg;
+use rand::random;
+#[cfg(feature = "server")]
+use rand::seq::SliceRandom;
+#[cfg(feature = "server")]
+use rand::{Rng, SeedableRng};
+#[cfg(feature = "server")]
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "server")]
+use serde_json::json;
+#[cfg(feature = "server")]
+use std::borrow::Cow;
+#[cfg(feature = "server")]
+use std::collections::HashMap;
+#[cfg(feature = "server")]
+use std::fs::File;
+#[cfg(feature = "server")]
+use std::io::{self, BufRead};
+#[cfg(feature = "server")]
+use std::option::Option::None;
+#[cfg(feature = "server")]
+use std::sync::Arc;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::document::Document;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::platform_value::Value;
 use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
+use base64::Engine;
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -100,21 +98,21 @@ use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::prelude::DataContract;
 
 use dpp::tests::json_document::json_document_to_contract;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
 
 use dpp::version::PlatformVersion;
 
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
 
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::document::query::QuerySerializedDocumentsOutcome;
 use drive::drive::object_size_info::DocumentInfo;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -122,7 +120,7 @@ use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::query::{WhereClause, WhereOperator};
 use drive::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Person {
@@ -136,7 +134,7 @@ struct Person {
     age: u8,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl Person {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
         let first_names =
@@ -163,7 +161,7 @@ impl Person {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PersonWithOptionalValues {
@@ -177,7 +175,7 @@ struct PersonWithOptionalValues {
     age: u8,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl PersonWithOptionalValues {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
         let first_names =
@@ -217,7 +215,7 @@ impl PersonWithOptionalValues {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
 pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
@@ -286,7 +284,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
     (drive, contract)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Same as `setup_family_tests` but with null values in the documents.
 pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
@@ -354,7 +352,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
     (drive, contract)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
 pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
@@ -423,21 +421,21 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
     (drive, contract)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Records {
     dash_unique_identity_id: Identifier,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SubdomainRules {
     allow_subdomains: bool,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// DPNS domain info
 // In the real dpns, label is required. We make it optional here for a test.
 #[derive(Serialize, Deserialize)]
@@ -455,7 +453,7 @@ struct Domain {
     subdomain_rules: SubdomainRules,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_serialization_and_deserialization() {
     let platform_version = PlatformVersion::latest();
@@ -488,7 +486,7 @@ fn test_serialization_and_deserialization() {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_serialization_and_deserialization_with_null_values_should_fail_if_required() {
     let platform_version = PlatformVersion::latest();
@@ -534,7 +532,7 @@ fn test_serialization_and_deserialization_with_null_values_should_fail_if_requir
     .expect_err("expected to not be able to serialize domain document");
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_serialization_and_deserialization_with_null_values() {
     let platform_version = PlatformVersion::latest();
@@ -584,7 +582,7 @@ fn test_serialization_and_deserialization_with_null_values() {
         .expect("expected to deserialize domain document");
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl Domain {
     /// Creates `count` random names as domain names for the given parent domain
     fn random_domains_in_parent(
@@ -619,7 +617,7 @@ impl Domain {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Adds `count` random domain names to the given contract
 pub fn add_domains_to_contract(
     drive: &Drive,
@@ -660,7 +658,7 @@ pub fn add_domains_to_contract(
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
 pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive = setup_drive(Some(DriveConfig::default()));
@@ -696,7 +694,7 @@ pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, DataContr
     (drive, contract)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Sets up the References contract to test queries on.
 pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, DataContract) {
     let drive = setup_drive(Some(DriveConfig::default()));
@@ -731,7 +729,7 @@ pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, DataContract) 
     (drive, contract)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
 pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive = setup_drive(Some(DriveConfig::default()));
@@ -767,7 +765,7 @@ pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, Dat
     (drive, contract)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Sets up the DPNS contract and inserts data from the given path to test queries on.
 pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
     let drive = setup_drive(None);
@@ -794,7 +792,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
 
     let file = File::open(path).expect("should read domains from file");
 
-    for domain_json in io::BufReader::new(file).lines().flatten() {
+    for domain_json in io::BufReader::new(file).lines().map_while(Result::ok) {
         let domain_json: serde_json::Value =
             serde_json::from_str(&domain_json).expect("should parse json");
 
@@ -837,7 +835,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
     (drive, contract)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 #[ignore]
 fn test_query_many() {
@@ -884,7 +882,7 @@ fn test_query_many() {
         .expect("transaction should be committed");
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_reference_proof_single_index() {
     let (drive, contract) = setup_family_tests_only_first_name_index(1, 73509);
@@ -932,7 +930,7 @@ fn test_reference_proof_single_index() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_non_existence_reference_proof_single_index() {
     let (drive, contract) = setup_family_tests_only_first_name_index(0, 73509);
@@ -980,7 +978,7 @@ fn test_non_existence_reference_proof_single_index() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_family_basic_queries() {
     let (drive, contract) = setup_family_tests(10, 73509);
@@ -995,8 +993,8 @@ fn test_family_basic_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 94, 64, 189, 203, 253, 162, 192, 210, 252, 11, 126, 194, 22, 120, 66, 57, 88, 66, 42,
-        85, 168, 217, 167, 183, 106, 73, 231, 21, 208, 27, 143,
+        32, 210, 24, 196, 148, 43, 20, 34, 0, 116, 183, 136, 32, 210, 163, 183, 214, 6, 152, 86,
+        46, 45, 88, 13, 23, 41, 37, 70, 129, 119, 211, 12,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2307,13 +2305,13 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            86, 130, 130, 251, 123, 90, 47, 36, 70, 105, 104, 74, 161, 62, 42, 154, 57, 106, 39, 2,
-            65, 111, 215, 164, 243, 224, 132, 63, 164, 124, 251, 39
+            251, 69, 177, 93, 128, 236, 106, 87, 205, 123, 80, 61, 44, 107, 186, 193, 22, 192, 239,
+            7, 107, 110, 97, 197, 59, 245, 26, 12, 63, 91, 248, 231,
         ],
     );
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_family_person_update() {
     let (drive, contract) = setup_family_tests(10, 73509);
@@ -2438,7 +2436,7 @@ fn test_family_person_update() {
     assert_eq!(documents.len(), 1);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_family_starts_at_queries() {
     let (drive, contract) = setup_family_tests(10, 73509);
@@ -2454,8 +2452,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 94, 64, 189, 203, 253, 162, 192, 210, 252, 11, 126, 194, 22, 120, 66, 57, 88, 66, 42,
-        85, 168, 217, 167, 183, 106, 73, 231, 21, 208, 27, 143,
+        32, 210, 24, 196, 148, 43, 20, 34, 0, 116, 183, 136, 32, 210, 163, 183, 214, 6, 152, 86,
+        46, 45, 88, 13, 23, 41, 37, 70, 129, 119, 211, 12,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2701,7 +2699,7 @@ fn test_family_starts_at_queries() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_family_sql_query() {
     // These helpers confirm that sql statements produce the same drive query
@@ -2733,7 +2731,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2757,7 +2755,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName = 'Chris'";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2786,7 +2784,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName < 'Chris' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2815,7 +2813,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName like 'C%' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2844,7 +2842,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName > 'Chris' and firstName <= 'Noellyn' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2874,13 +2872,13 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName in ('a', 'b') order by firstName limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_family_with_nulls_query() {
     let (drive, contract) = setup_family_tests_with_nulls(10, 30004);
@@ -2896,8 +2894,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        219, 116, 111, 145, 18, 129, 110, 72, 107, 162, 143, 84, 75, 73, 222, 200, 6, 207, 196, 15,
-        30, 65, 188, 201, 111, 92, 216, 211, 65, 126, 103, 164,
+        92, 186, 224, 49, 242, 195, 32, 14, 46, 55, 244, 57, 55, 191, 10, 119, 228, 132, 91, 235,
+        170, 114, 36, 41, 126, 136, 180, 51, 132, 17, 26, 182,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2947,17 +2945,15 @@ fn test_family_with_nulls_query() {
             let document =
                 Document::from_bytes(result.as_slice(), person_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            let first_name_value = document
+            document
                 .get("firstName")
-                .expect("we should be able to get the first name");
-            if first_name_value.is_null() {
-                String::from("")
-            } else {
-                let first_name = first_name_value
-                    .as_text()
-                    .expect("the first name should be a string");
-                String::from(first_name)
-            }
+                .map(|value| {
+                    let first_name_value = value
+                        .as_text()
+                        .expect("the normalized label should be a string");
+                    String::from(first_name_value)
+                })
+                .unwrap_or_default()
         })
         .collect();
 
@@ -2975,14 +2971,15 @@ fn test_family_with_nulls_query() {
             let document =
                 Document::from_bytes(result.as_slice(), person_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            base64::encode(document.id().as_slice())
+            base64::engine::general_purpose::STANDARD.encode(document.id().as_slice())
         })
         .collect();
 
     for i in 0..10 {
         drive
             .delete_document_for_contract(
-                base64::decode(ids.get(i).unwrap())
+                base64::engine::general_purpose::STANDARD
+                    .decode(ids.get(i).unwrap())
                     .expect("expected to decode from base64")
                     .try_into()
                     .expect("expected to get 32 bytes"),
@@ -3003,7 +3000,7 @@ fn test_family_with_nulls_query() {
         .expect("unable to commit transaction");
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_query_with_cached_contract() {
     let (drive, contract) = setup_family_tests(10, 73509);
@@ -3020,8 +3017,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        67, 94, 64, 189, 203, 253, 162, 192, 210, 252, 11, 126, 194, 22, 120, 66, 57, 88, 66, 42,
-        85, 168, 217, 167, 183, 106, 73, 231, 21, 208, 27, 143,
+        32, 210, 24, 196, 148, 43, 20, 34, 0, 116, 183, 136, 32, 210, 163, 183, 214, 6, 152, 86,
+        46, 45, 88, 13, 23, 41, 37, 70, 129, 119, 211, 12,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3076,7 +3073,7 @@ fn test_query_with_cached_contract() {
     assert_eq!(Arc::strong_count(&contract_ref), 2);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_contract_verification() {
     let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
@@ -3095,6 +3092,7 @@ fn test_dpns_query_contract_verification() {
     let (proof_root_hash, proof_returned_contract) = Drive::verify_contract(
         contract_proof.as_slice(),
         None,
+        false,
         false,
         contract.id().into_buffer(),
         platform_version,
@@ -3139,6 +3137,7 @@ fn test_contract_keeps_history_fetch_and_verification() {
         contract_proof.as_slice(),
         None,
         false,
+        false,
         contract.id().into_buffer(),
         platform_version,
     )
@@ -3151,7 +3150,7 @@ fn test_contract_keeps_history_fetch_and_verification() {
     );
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_query() {
     let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
@@ -3167,8 +3166,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
+        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3590,7 +3589,7 @@ fn test_dpns_query() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_insertion_no_aliases() {
     // using ascending order with rangeTo operators
@@ -3646,7 +3645,7 @@ fn test_dpns_insertion_no_aliases() {
     assert_eq!(result.0, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_insertion_with_aliases() {
     // using ascending order with rangeTo operators
@@ -3702,7 +3701,7 @@ fn test_dpns_insertion_with_aliases() {
     assert_eq!(result.0, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_start_at() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
@@ -3719,8 +3718,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
+        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3796,7 +3795,7 @@ fn test_dpns_query_start_at() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_start_after() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
@@ -3813,8 +3812,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
+        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3890,7 +3889,7 @@ fn test_dpns_query_start_after() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_start_at_desc() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
@@ -3907,8 +3906,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
+        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3984,7 +3983,7 @@ fn test_dpns_query_start_at_desc() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_start_after_desc() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
@@ -4001,8 +4000,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
+        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4078,7 +4077,7 @@ fn test_dpns_query_start_after_desc() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_start_at_with_null_id() {
     // The point of this test is to test the situation where we have a start at inside an index with a null value
@@ -4193,8 +4192,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
-        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
+        217, 196, 25, 2, 88, 47, 16, 244, 117, 34, 65, 18, 208, 158, 14, 207, 158, 105, 191, 62,
+        108, 124, 189, 159, 196, 137, 212, 243, 65, 230, 231, 95,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4249,17 +4248,15 @@ fn test_dpns_query_start_at_with_null_id() {
             let document =
                 Document::from_bytes(result.as_slice(), domain_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            let normalized_label_value = document
+            document
                 .get("normalizedLabel")
-                .expect("we should be able to get the first name");
-            if normalized_label_value.is_null() {
-                String::from("")
-            } else {
-                let normalized_label = normalized_label_value
-                    .as_text()
-                    .expect("the normalized label should be a string");
-                String::from(normalized_label)
-            }
+                .map(|value| {
+                    let normalized_label = value
+                        .as_text()
+                        .expect("the normalized label should be a string");
+                    String::from(normalized_label)
+                })
+                .unwrap_or_default()
         })
         .collect();
 
@@ -4278,7 +4275,7 @@ fn test_dpns_query_start_at_with_null_id() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_start_after_with_null_id() {
     // The point of this test is to test the situation where we have a start at inside an index with a null value
@@ -4396,8 +4393,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
-        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
+        217, 196, 25, 2, 88, 47, 16, 244, 117, 34, 65, 18, 208, 158, 14, 207, 158, 105, 191, 62,
+        108, 124, 189, 159, 196, 137, 212, 243, 65, 230, 231, 95,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4483,7 +4480,7 @@ fn test_dpns_query_start_after_with_null_id() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_start_after_with_null_id_desc() {
     // The point of this test is to test the situation where we have a start at inside an index with a null value
@@ -4601,8 +4598,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
-        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
+        217, 196, 25, 2, 88, 47, 16, 244, 117, 34, 65, 18, 208, 158, 14, 207, 158, 105, 191, 62,
+        108, 124, 189, 159, 196, 137, 212, 243, 65, 230, 231, 95,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -4774,17 +4771,15 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             let document =
                 Document::from_bytes(result.as_slice(), domain_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            let normalized_label_value = document
+            document
                 .get("normalizedLabel")
-                .expect("we should be able to get the first name");
-            if normalized_label_value.is_null() {
-                String::from("")
-            } else {
-                let normalized_label = normalized_label_value
-                    .as_text()
-                    .expect("the normalized label should be a string");
-                String::from(normalized_label)
-            }
+                .map(|value| {
+                    let normalized_label = value
+                        .as_text()
+                        .expect("the normalized label should be a string");
+                    String::from(normalized_label)
+                })
+                .unwrap_or_default()
         })
         .collect();
 
@@ -4799,18 +4794,12 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     assert_eq!(results, proof_results);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_query_a_b_c_d_e_contract() {
-    let tmp_dir = TempDir::new().unwrap();
-
-    let drive: Drive = Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+    let drive: Drive = setup_drive_with_initial_state_structure();
 
     let platform_version = PlatformVersion::latest();
-
-    drive
-        .create_initial_state_structure(None, platform_version)
-        .expect("expected to create root tree successfully");
 
     // Create a contract
 
@@ -4822,19 +4811,24 @@ fn test_query_a_b_c_d_e_contract() {
         "type": "object",
         "properties": {
           "a": {
-            "type": "integer"
+            "type": "integer",
+            "position": 0
           },
           "b": {
-            "type": "integer"
+            "type": "integer",
+            "position": 1
           },
           "c": {
-            "type": "integer"
+            "type": "integer",
+            "position": 2
           },
           "d": {
-            "type": "integer"
+            "type": "integer",
+            "position": 3
           },
           "e": {
-            "type": "integer"
+            "type": "integer",
+            "position": 4
           }
         },
         "additionalProperties": false,
@@ -4863,11 +4857,11 @@ fn test_query_a_b_c_d_e_contract() {
       }
     });
 
-    let factory = DataContractFactory::new(platform_version.protocol_version, None)
-        .expect("should create factory");
+    let factory =
+        DataContractFactory::new(platform_version.protocol_version).expect("should create factory");
 
     let contract = factory
-        .create(owner_id, documents, None, None)
+        .create_with_value_config(owner_id, 0, documents, None, None)
         .expect("data in fixture should be correct")
         .data_contract_owned();
 
@@ -4915,7 +4909,7 @@ fn test_query_a_b_c_d_e_contract() {
         .expect("should perform query");
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_query_documents_by_created_at() {
     let drive = setup_drive_with_initial_state_structure();
@@ -4942,10 +4936,12 @@ fn test_query_documents_by_created_at() {
                     "firstName": {
                         "type": "string",
                         "maxLength": 63,
+                        "position": 0
                     },
                     "lastName": {
                         "type": "string",
                         "maxLength": 63,
+                        "position": 1
                     }
                 },
                 "required": ["firstName", "$createdAt", "$updatedAt", "lastName"],
@@ -4985,6 +4981,8 @@ fn test_query_documents_by_created_at() {
         .create_document_from_data(
             document_value,
             Identifier::random(),
+            random(),
+            random(),
             random(),
             platform_version,
         )
@@ -5058,7 +5056,7 @@ fn test_query_documents_by_created_at() {
     assert_eq!(query_result.documents().len(), 1);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 #[ignore]
 fn pwd() {

@@ -17,12 +17,14 @@ use crate::state_transition::identity_update_transition::v0::IdentityUpdateTrans
 use crate::state_transition::StateTransitionFieldTypes;
 use fields::*;
 
+use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -69,6 +71,8 @@ impl IdentityUpdateTransition {
         }
     }
 }
+
+impl OptionallyAssetLockProved for IdentityUpdateTransition {}
 
 impl StateTransitionFieldTypes for IdentityUpdateTransition {
     fn binary_property_paths() -> Vec<&'static str> {

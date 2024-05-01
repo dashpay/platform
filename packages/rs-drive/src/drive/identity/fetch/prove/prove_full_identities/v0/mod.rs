@@ -58,6 +58,7 @@ mod tests {
             drive
                 .add_new_identity(
                     identity.as_ref().unwrap().clone(),
+                    false,
                     &BlockInfo::default(),
                     true,
                     None,
@@ -79,6 +80,8 @@ mod tests {
             .grove
             .query_raw(
                 &path_query,
+                true,
+                true,
                 true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,
@@ -122,6 +125,7 @@ mod tests {
             drive
                 .add_new_identity(
                     identity.as_ref().unwrap().clone(),
+                    false,
                     &BlockInfo::default(),
                     true,
                     None,
@@ -245,6 +249,8 @@ mod tests {
             .grove
             .query_raw(
                 &path_query,
+                true,
+                true,
                 true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,

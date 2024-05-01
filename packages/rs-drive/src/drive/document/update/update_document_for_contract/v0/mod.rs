@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Updates a document and returns the associated fee.
+    #[inline(always)]
     pub(super) fn update_document_for_contract_v0(
         &self,
         document: &Document,
@@ -57,6 +58,7 @@ impl Drive {
             None,
             Some(drive_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok(fees)

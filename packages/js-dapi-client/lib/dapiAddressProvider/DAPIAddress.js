@@ -6,6 +6,7 @@ class DAPIAddress {
    */
   constructor(address) {
     if (address instanceof DAPIAddress) {
+      // eslint-disable-next-line no-constructor-return
       return new DAPIAddress(address.toJSON());
     }
 
@@ -37,7 +38,6 @@ class DAPIAddress {
 
   /**
    * Get protocol
-   *
    * @returns {string}
    */
   getProtocol() {
@@ -46,7 +46,6 @@ class DAPIAddress {
 
   /**
    * Get host
-   *
    * @returns {string}
    */
   getHost() {
@@ -55,7 +54,6 @@ class DAPIAddress {
 
   /**
    * Set host
-   *
    * @param {string} host
    * @returns {DAPIAddress}
    */
@@ -67,7 +65,6 @@ class DAPIAddress {
 
   /**
    * Get port
-   *
    * @returns {number}
    */
   getPort() {
@@ -76,7 +73,6 @@ class DAPIAddress {
 
   /**
    * Set port
-   *
    * @param {number} port
    * @returns {DAPIAddress}
    */
@@ -88,7 +84,6 @@ class DAPIAddress {
 
   /**
    * Get ProRegTx hash
-   *
    * @returns {string}
    */
   getProRegTxHash() {
@@ -111,7 +106,6 @@ class DAPIAddress {
 
   /**
    * Mark address as banned
-   *
    * @returns {DAPIAddress}
    */
   markAsBanned() {
@@ -123,7 +117,6 @@ class DAPIAddress {
 
   /**
    * Mark address as live
-   *
    * @returns {DAPIAddress}
    */
   markAsLive() {
@@ -149,7 +142,6 @@ class DAPIAddress {
 
   /**
    * Return DAPIAddress as plain object
-   *
    * @returns {RawDAPIAddress}
    */
   toJSON() {

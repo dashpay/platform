@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2022 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! GroveDB Operations Batch.
 //!
 //! This module defines the GroveDbOpBatch struct and implements its functions.
@@ -274,7 +245,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         );
 
         self.operations.iter().find_map(|op| {
-            if &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()) {
+            if op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()) {
                 Some(&op.op)
             } else {
                 None
@@ -306,7 +277,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         if let Some(index) = self
             .operations
             .iter()
-            .position(|op| &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()))
+            .position(|op| op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()))
         {
             Some(self.operations.remove(index).op)
         } else {
@@ -336,7 +307,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         if let Some(index) = self
             .operations
             .iter()
-            .position(|op| &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()))
+            .position(|op| op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()))
         {
             let op = &self.operations[index].op;
             let op = if matches!(

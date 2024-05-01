@@ -15,13 +15,13 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getIdentityFactory(grpcTransport) {
   /**
    * Fetch the identity by id
-   *
    * @typedef {getIdentity}
    * @param {Buffer} id
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentityResponse>}
    */
   async function getIdentity(id, options = {}) {
+    const { GetIdentityRequestV0 } = GetIdentityRequest;
     const getIdentityRequest = new GetIdentityRequest();
     // need to convert objects inherited from Buffer to pure buffer as google protobuf
     // doesn't support extended buffers
@@ -31,8 +31,11 @@ function getIdentityFactory(grpcTransport) {
       id = Buffer.from(id);
     }
 
-    getIdentityRequest.setId(id);
-    getIdentityRequest.setProve(!!options.prove);
+    getIdentityRequest.setV0(
+      new GetIdentityRequestV0()
+        .setId(id)
+        .setProve(!!options.prove),
+    );
 
     let lastError;
 

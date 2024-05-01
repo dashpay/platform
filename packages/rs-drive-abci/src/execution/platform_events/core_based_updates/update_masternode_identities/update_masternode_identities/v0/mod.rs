@@ -15,6 +15,7 @@ use drive::drive::batch::IdentityOperationType::AddNewIdentity;
 
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
+use tracing::Level;
 
 impl<C> Platform<C>
 where
@@ -36,6 +37,9 @@ where
             ..
         } = masternode_diff;
 
+        let span = tracing::span!(Level::TRACE, "update_masternode_identities");
+        let _enter = span.enter();
+
         // We should don't trust the order of added mns or updated mns
 
         // Sort added_mns based on pro_tx_hash
@@ -48,22 +52,45 @@ where
 
         for masternode in added_mns {
             let owner_identity = Self::create_owner_identity(&masternode, platform_version)?;
+
+            tracing::trace!(
+                identity = ?owner_identity,
+                method = "update_masternode_identities_v0",
+                "create owner identity"
+            );
+
             let voter_identity = Self::create_voter_identity_from_masternode_list_item(
                 &masternode,
                 platform_version,
             )?;
+
+            tracing::trace!(
+                identity = ?voter_identity,
+                method = "update_masternode_identities_v0",
+                "create voter identity"
+            );
+
             let operator_identity = Self::create_operator_identity(&masternode, platform_version)?;
+
+            tracing::trace!(
+                identity = ?operator_identity,
+                method = "update_masternode_identities_v0",
+                "create operator identity"
+            );
 
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: owner_identity,
+                is_masternode_identity: true,
             }));
 
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: voter_identity,
+                is_masternode_identity: true,
             }));
 
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: operator_identity,
+                is_masternode_identity: true,
             }));
         }
 

@@ -1,18 +1,31 @@
-use anyhow::anyhow;
-use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
-
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
+use anyhow::anyhow;
+use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
 
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::state_transition::StateTransitionLike;
 
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
+use crate::identity::IdentityPublicKey;
+use crate::identity::Purpose;
 use crate::{
-    identity::{IdentityPublicKey, KeyID, Purpose, SecurityLevel},
+    identity::{KeyID, SecurityLevel},
     prelude::*,
 };
 
@@ -45,9 +58,9 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
             ));
         }
 
-        if public_key.purpose() != Purpose::AUTHENTICATION {
+        if public_key.purpose() != self.purpose_requirement() {
             return Err(ProtocolError::WrongPublicKeyPurposeError(
-                WrongPublicKeyPurposeError::new(public_key.purpose(), Purpose::AUTHENTICATION),
+                WrongPublicKeyPurposeError::new(public_key.purpose(), self.purpose_requirement()),
             ));
         }
         Ok(())
@@ -73,6 +86,13 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
     /// Returns minimal key security level that can be used to sign this ST.
     /// Override this method if the ST requires a different security level.
     fn security_level_requirement(&self) -> Vec<SecurityLevel>;
+
+    /// The purpose requirement for the signing key
+    /// The default is authentication
+    /// However for Withdrawals and Fund Transfers the requirement is TRANSFER
+    fn purpose_requirement(&self) -> Purpose {
+        Purpose::AUTHENTICATION
+    }
 }
 
 pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], ProtocolError> {

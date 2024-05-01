@@ -18,20 +18,20 @@ use(chaiExclude);
 // TODO this should be loaded with library - not with tests.
 globalThis.crypto = crypto.webcrypto;
 
-before(async function before() {
-  await loadDpp();
-});
+exports.mochaHooks = {
+  beforeAll: loadDpp,
 
-beforeEach(function beforeEach() {
-  if (!this.sinonSandbox) {
-    this.sinonSandbox = sinon.createSandbox();
-  } else {
-    this.sinonSandbox.restore();
-  }
-});
+  beforeEach() {
+    if (!this.sinon) {
+      this.sinon = sinon.createSandbox();
+    } else {
+      this.sinon.restore();
+    }
+  },
 
-afterEach(function afterEach() {
-  this.sinonSandbox.restore();
-});
+  afterEach() {
+    this.sinon.restore();
+  },
+};
 
 global.expect = expect;

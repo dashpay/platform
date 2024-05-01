@@ -45,14 +45,15 @@ use crate::fee::{Credits, SignedCredits};
 //todo move to dpp
 pub const GENESIS_EPOCH_INDEX: EpochIndex = 0;
 
-/// Epochs per year
-pub const EPOCHS_PER_YEAR: u16 = 20;
+/// Eras of fees charged for perpetual storage
+/// An Era is set to 1 year on Mainnet
+pub const PERPETUAL_STORAGE_ERAS: u16 = 50;
 
-/// Years of fees charged for perpetual storage
-pub const PERPETUAL_STORAGE_YEARS: u16 = 50;
+pub const DEFAULT_EPOCHS_PER_ERA: u16 = 40;
 
-/// Perpetual storage epochs
-pub const PERPETUAL_STORAGE_EPOCHS: u16 = PERPETUAL_STORAGE_YEARS * EPOCHS_PER_YEAR;
+pub const fn perpetual_storage_epochs(epochs_per_era: u16) -> u16 {
+    epochs_per_era * PERPETUAL_STORAGE_ERAS
+}
 
 /// Credits per epoch map
 pub type CreditsPerEpoch = IntMap<EpochIndex, Credits>;

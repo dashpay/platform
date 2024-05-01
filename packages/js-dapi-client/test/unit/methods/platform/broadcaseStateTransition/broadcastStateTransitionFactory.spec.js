@@ -5,9 +5,9 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
+const { DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const broadcastStateTransitionFactory = require('../../../../../lib/methods/platform/broadcastStateTransition/broadcastStateTransitionFactory');
 const BroadcastStateTransitionResponse = require('../../../../../lib/methods/platform/broadcastStateTransition/BroadcastStateTransitionResponse');
@@ -26,9 +26,8 @@ describe('broadcastStateTransitionFactory', () => {
       request: this.sinon.stub().resolves(response),
     };
 
-    const dataContractFixture = getDataContractFixture();
-    const dpp = new DashPlatformProtocol();
-    await dpp.initialize();
+    const dataContractFixture = await getDataContractFixture();
+    const dpp = new DashPlatformProtocol(null, 1);
 
     stateTransitionFixture = dpp.dataContract.createDataContractCreateTransition(
       dataContractFixture,

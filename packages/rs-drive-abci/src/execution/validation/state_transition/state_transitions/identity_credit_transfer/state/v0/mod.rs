@@ -42,7 +42,9 @@ impl IdentityCreditTransferStateTransitionStateValidationV0 for IdentityCreditTr
         )?;
 
         let Some(existing_identity_balance) = maybe_existing_identity_balance else {
-            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id()).into()));
+            return Ok(ConsensusValidationResult::new_with_error(
+                IdentityNotFoundError::new(self.identity_id()).into(),
+            ));
         };
 
         if existing_identity_balance < self.amount() {

@@ -1,6 +1,5 @@
 use crate::utils::WithJsError;
-use dpp::platform_value::{ReplacementType, Value};
-use serde_json::Value as JsonValue;
+
 use std::convert::TryInto;
 use std::default::Default;
 
@@ -11,14 +10,14 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::identity::IdentityPublicKeyWasm;
-use crate::{buffer::Buffer, utils, with_js_error};
+use crate::{buffer::Buffer, with_js_error};
 use dpp::identifier::Identifier;
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
-use dpp::serialization::{PlatformSerializable, ValueConvertible};
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_transfer_transition::fields::IDENTIFIER_FIELDS;
+
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
@@ -45,7 +44,7 @@ impl IdentityCreditTransferTransitionWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityCreditTransferTransition::default_versioned(&platform_version)
+        IdentityCreditTransferTransition::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -311,7 +310,7 @@ impl IdentityCreditTransferTransitionWasm {
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0
-            .set_signature(BinaryData::new(signature.unwrap_or(vec![])))
+            .set_signature(BinaryData::new(signature.unwrap_or_default()))
     }
 
     #[wasm_bindgen]

@@ -47,9 +47,10 @@ where
             .full_masternode_list()
             .get(pro_tx_hash)
             .ok_or_else(|| {
-                Error::Execution(ExecutionError::CorruptedCachedState(
-                    "expected masternode to be in state",
-                ))
+                Error::Execution(ExecutionError::CorruptedCachedState(format!(
+                    "expected masternode {} to be in state",
+                    pro_tx_hash
+                )))
             })?;
 
         let old_voter_identifier =
@@ -74,15 +75,22 @@ where
             )));
         }
 
+        tracing::trace!(
+            identity_id = ?old_voter_identifier,
+            keys_ids = ?old_voter_identity_key_ids,
+            disable_at = ?block_info.time_ms,
+            method = "update_voter_identity_v0",
+            "disable all voter identity keys"
+        );
+
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
             identity_id: old_voter_identifier,
             keys_ids: old_voter_identity_key_ids,
-            disable_at: block_info.time_ms,
         }));
 
         // Part 2 : Create or Update Voting identity based on new key
         let new_voter_identity = Self::create_voter_identity(
-            pro_tx_hash.as_inner(),
+            &(pro_tx_hash.to_byte_array()),
             &new_voting_address,
             platform_version,
         )?;
@@ -111,14 +119,28 @@ where
                 )));
             }
 
+            tracing::trace!(
+                identity_id = ?old_voter_identifier,
+                keys_ids = ?new_voter_identity_key_ids,
+                method = "update_voter_identity_v0",
+                "re-enable voter identity keys if they already exists and disabled"
+            );
+
             drive_operations.push(IdentityOperation(ReEnableIdentityKeys {
                 identity_id: old_voter_identifier,
                 keys_ids: new_voter_identity_key_ids,
             }));
         } else {
+            tracing::trace!(
+                identity = ?new_voter_identity,
+                method = "update_voter_identity_v0",
+                "create a new voter identity"
+            );
+
             // other is that the
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: new_voter_identity,
+                is_masternode_identity: true,
             }));
         }
         Ok(())

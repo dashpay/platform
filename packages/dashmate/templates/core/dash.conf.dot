@@ -1,14 +1,14 @@
 # general
 daemon=0  # leave this set to 0 for Docker
-reindex={{?it.core.reindex.enable}}1{{??}}0{{?}}
 logtimestamps=1
 maxconnections=256
+reindex={{?it.reindex}}1{{??}}0{{?}}
 {{~it.core.log.file.categories :category}}
 {{? category === 'all'}}
 debug=1
 {{??}}
 debug={{=category}}{{?}}{{~}}
-debuglogfile=/var/log/dash/core.log
+debuglogfile=/var/log/dash/{{= it.core.log.file.path.split('/').pop() }}
 logips={{=it.core.logIps }}
 fallbackfee=0.00001
 
@@ -17,6 +17,7 @@ server=1
 rpcuser={{=it.core.rpc.user}}
 rpcpassword={{=it.core.rpc.password}}
 rpcwallet=main
+deprecatedrpc=hpmn
 
 {{~it.core.rpc.allowIps :host}}
 rpcallowip={{=host}}{{~}}
@@ -68,8 +69,7 @@ regtest=1
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
-llmqinstantsend=llmq_test
-llmqinstantsenddip0024=llmq_test_instantsend
+llmqtestinstantsenddip0024=llmq_test_instantsend
 
 {{?? it.network === 'devnet'}}
 devnet={{=it.core.devnet.name}}

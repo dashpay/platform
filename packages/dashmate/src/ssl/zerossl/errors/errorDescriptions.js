@@ -1,4 +1,4 @@
-module.exports = {
+export default {
   101: 'ZeroSSL API key is invalid',
   102: 'Your ZeroSSL account is not active',
   103: 'API function invalid',

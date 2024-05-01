@@ -1,8 +1,7 @@
-use crate::buffer::Buffer;
+use crate::identifier::IdentifierWrapper;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityInsufficientBalanceError)]
@@ -19,8 +18,8 @@ impl From<&IdentityInsufficientBalanceError> for IdentityInsufficientBalanceErro
 #[wasm_bindgen(js_class=IdentityInsufficientBalanceError)]
 impl IdentityInsufficientBalanceErrorWasm {
     #[wasm_bindgen(js_name=getIdentityId)]
-    pub fn identity_id(&self) -> Buffer {
-        Buffer::from_bytes(self.inner.identity_id.as_bytes())
+    pub fn identity_id(&self) -> IdentifierWrapper {
+        (*self.inner.identity_id()).into()
     }
 
     #[wasm_bindgen(js_name=getBalance)]

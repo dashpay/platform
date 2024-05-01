@@ -2,7 +2,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
-use dpp::dashcore::hashes::Hash;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
@@ -23,7 +22,7 @@ where
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
     ) -> Result<[u8; 32], Error> {
-        let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
+        let pro_tx_hash = &masternode.pro_tx_hash.into();
         Self::get_operator_identifier_v0(
             pro_tx_hash,
             masternode.state.pub_key_operator.as_slice(),

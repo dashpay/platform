@@ -1,12 +1,26 @@
-const BaseCommand = require('../../oclif/command/BaseCommand');
+import fs from 'fs';
+import { Args } from '@oclif/core';
+import BaseCommand from '../../oclif/command/BaseCommand.js';
 
-const systemConfigs = require('../../../configs/system');
+export default class ConfigRemoveCommand extends BaseCommand {
+  static description = 'Remove config';
 
-class ConfigRemoveCommand extends BaseCommand {
+  static args = {
+    config: Args.string(
+      {
+        name: 'config',
+        required: true,
+        description: 'config name', // only allow input to be from a discrete set
+      },
+    ),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {ConfigFile} configFile
+   * @param {DefaultConfigs} defaultConfigs
+   * @param {HomeDir} homeDir
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -15,24 +29,23 @@ class ConfigRemoveCommand extends BaseCommand {
     },
     flags,
     configFile,
+    defaultConfigs,
+    homeDir,
   ) {
-    if (Object.keys(systemConfigs).includes(configName)) {
-      throw new Error(`system config ${configName} can't be removed`);
+    if (defaultConfigs.has(configName)) {
+      throw new Error(`system config ${configName} can't be removed.\nPlease use 'dashmate reset --hard --config=${configName}' command to reset the configuration`);
     }
 
     configFile.removeConfig(configName);
+
+    const serviceConfigsPath = homeDir.joinPath(configName);
+
+    fs.rmSync(serviceConfigsPath, {
+      recursive: true,
+      force: true,
+    });
 
     // eslint-disable-next-line no-console
     console.log(`${configName} removed`);
   }
 }
-
-ConfigRemoveCommand.description = 'Remove config';
-
-ConfigRemoveCommand.args = [{
-  name: 'config',
-  required: true,
-  description: 'config name',
-}];
-
-module.exports = ConfigRemoveCommand;

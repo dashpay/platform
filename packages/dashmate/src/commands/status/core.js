@@ -1,13 +1,22 @@
 /* eslint-disable quote-props */
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+import { Flags } from '@oclif/core';
+import { OUTPUT_FORMATS } from '../../constants.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import printObject from '../../printers/printObject.js';
+import colors from '../../status/colors.js';
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const printObject = require('../../printers/printObject');
+export default class CoreStatusCommand extends ConfigBaseCommand {
+  static description = 'Show Core status details';
 
-const colors = require('../../status/colors');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    format: Flags.string({
+      description: 'display output format',
+      default: OUTPUT_FORMATS.PLAIN,
+      options: Object.values(OUTPUT_FORMATS),
+    }),
+  };
 
-class CoreStatusCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -66,8 +75,10 @@ class CoreStatusCommand extends ConfigBaseCommand {
         verificationProgress,
       } = scope;
 
+      const versionString = `${colors.version(version, latestVersion)(version) || 'n/a'} ${version && version !== latestVersion ? `(latest ${latestVersion})` : ''}`;
+
       plain.Network = network || 'n/a';
-      plain.Version = colors.status(version, latestVersion)(version) || 'n/a';
+      plain.Version = versionString;
       plain.Chain = chain || 'n/a';
       plain['Docker Status'] = dockerStatus || 'n/a';
       plain['Service Status'] = serviceStatus || 'n/a';
@@ -76,7 +87,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
       plain['Sync asset'] = syncAsset || 'n/a';
       plain['Peer count'] = peersCount || 'n/a';
       plain['P2P service'] = p2pService || 'n/a';
-      plain['P2P port'] = p2pPortState || 'n/a';
+      plain['P2P port'] = colors.portState(p2pPortState)(p2pPortState) || 'n/a';
       plain['RPC service'] = rpcService || 'n/a';
       plain['Block height'] = colors.blockHeight(blockHeight, headerHeight, remoteBlockHeight)(blockHeight) || 'n/a';
       plain['Header height'] = headerHeight || 'n/a';
@@ -90,16 +101,3 @@ class CoreStatusCommand extends ConfigBaseCommand {
     return printObject(scope, flags.format);
   }
 }
-
-CoreStatusCommand.description = 'Show Core status details';
-
-CoreStatusCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  format: Flags.string({
-    description: 'display output format',
-    default: OUTPUT_FORMATS.PLAIN,
-    options: Object.values(OUTPUT_FORMATS),
-  }),
-};
-
-module.exports = CoreStatusCommand;

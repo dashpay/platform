@@ -12,7 +12,8 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Add new keys to an identity
-    pub fn add_new_unique_keys_to_identity_v0(
+    #[inline(always)]
+    pub(super) fn add_new_unique_keys_to_identity_v0(
         &self,
         identity_id: [u8; 32],
         keys_to_add: Vec<IdentityPublicKey>,
@@ -31,6 +32,7 @@ impl Drive {
             keys_to_add,
             vec![],
             true,
+            &block_info.epoch,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -47,6 +49,7 @@ impl Drive {
             None,
             Some(drive_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok(fees)

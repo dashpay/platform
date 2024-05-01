@@ -37,7 +37,9 @@ use dpp::block::epoch::Epoch;
 use grovedb::TransactionArg;
 
 pub mod credit_distribution_pools;
+mod get_epochs_infos;
 pub mod proposers;
+mod prove_epochs_infos;
 pub mod start_block;
 pub mod start_time;
 
@@ -56,7 +58,7 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -66,7 +68,7 @@ mod tests {
     mod has_epoch_tree_exists {
         use super::*;
 
-        use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+        use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 
         #[test]
         fn test_return_true_if_tree_exists() {
@@ -84,10 +86,13 @@ mod tests {
 
         #[test]
         fn test_return_false_if_tree_doesnt_exist() {
+            // default will be 40 epochs per era
+            // 50 eras
+            // = 2000
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree = Epoch::new(PERPETUAL_STORAGE_EPOCHS + 1).unwrap();
+            let epoch_tree = Epoch::new(2000 + 1).unwrap();
 
             let is_exist = drive
                 .has_epoch_tree_exists(&epoch_tree, Some(&transaction))

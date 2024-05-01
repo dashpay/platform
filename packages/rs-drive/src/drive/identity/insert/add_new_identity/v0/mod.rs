@@ -10,16 +10,25 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 
+use crate::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
+};
+use crate::error::drive::DriveError;
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use itertools::Itertools;
+use std::collections::{BTreeSet, HashMap};
 
 impl Drive {
     /// Adds a identity by inserting a new identity subtree structure to the `Identities` subtree.
     pub(super) fn add_new_identity_v0(
         &self,
         identity: Identity,
+        is_masternode_identity: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -28,6 +37,7 @@ impl Drive {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_new_identity_add_to_operations_v0(
             identity,
+            is_masternode_identity,
             block_info,
             apply,
             &mut None,
@@ -39,6 +49,7 @@ impl Drive {
             None,
             Some(drive_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok(fees)
@@ -48,6 +59,7 @@ impl Drive {
     pub(super) fn add_new_identity_add_to_operations_v0(
         &self,
         identity: Identity,
+        is_masternode_identity: bool,
         block_info: &BlockInfo,
         apply: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
@@ -63,6 +75,7 @@ impl Drive {
 
         let batch_operations = self.add_new_identity_operations(
             identity,
+            is_masternode_identity,
             block_info,
             previous_batch_operations,
             &mut estimated_costs_only_with_layer_info,
@@ -83,6 +96,7 @@ impl Drive {
     pub(super) fn add_new_identity_operations_v0(
         &self,
         identity: Identity,
+        is_masternode_identity: bool,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -125,9 +139,95 @@ impl Drive {
         )?;
 
         if !inserted {
-            return Err(Error::Identity(IdentityError::IdentityAlreadyExists(
-                "trying to insert an identity that already exists",
-            )));
+            return if is_masternode_identity {
+                // there could be a situation where we are trying to reenable a masternode identity that already existed
+                // In this case we should reenable it's keys
+
+                //we need to know what keys existed before
+                let key_request = IdentityKeysRequest {
+                    identity_id: id.to_buffer(),
+                    request_type: KeyRequestType::AllKeys,
+                    limit: None,
+                    offset: None,
+                };
+
+                let old_masternode_identity_keys = self
+                    .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+                        key_request,
+                        transaction,
+                        platform_version,
+                    )?;
+
+                let mut last_key_id = *old_masternode_identity_keys.keys().max().unwrap();
+
+                if old_masternode_identity_keys.is_empty() {
+                    return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                        "expected old keys to exist if the masternode identity {} used to exist",
+                        id
+                    ))));
+                }
+
+                // we need the old key ids, this is why we do things like this
+
+                let mut old_masternode_identity_keys_to_reenable =
+                    old_masternode_identity_keys.values().collect::<Vec<_>>();
+
+                old_masternode_identity_keys_to_reenable.retain(|old_public_key| {
+                    public_keys
+                        .values()
+                        .map(|key| key.data())
+                        .contains(old_public_key.data())
+                });
+
+                // we should find what keys should be re-enabled first
+                batch_operations.append(
+                    &mut self.re_enable_identity_keys_operations(
+                        id.to_buffer(),
+                        old_masternode_identity_keys_to_reenable
+                            .iter()
+                            .map(|identity_public_key| identity_public_key.id())
+                            .collect(),
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        platform_version,
+                    )?,
+                );
+
+                let old_masternode_identity_keys_to_reenable_data =
+                    old_masternode_identity_keys_to_reenable
+                        .iter()
+                        .map(|key| key.data())
+                        .collect::<BTreeSet<_>>();
+
+                //we might also need to add new keys (in the case of an operator)
+
+                for mut identity_public_key in public_keys.into_values() {
+                    if old_masternode_identity_keys_to_reenable_data
+                        .contains(identity_public_key.data())
+                    {
+                        // this was reenabled
+                        continue;
+                    }
+                    last_key_id += 1;
+                    identity_public_key.set_id(last_key_id);
+                    self.insert_new_non_unique_key_operations(
+                        id.to_buffer(),
+                        identity_public_key,
+                        false,
+                        true,
+                        &block_info.epoch,
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        &mut batch_operations,
+                        platform_version,
+                    )?;
+                }
+                Ok(batch_operations)
+            } else {
+                Err(Error::Identity(IdentityError::IdentityAlreadyExists(
+                    "trying to insert an identity that already exists",
+                )))
+            };
         }
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
@@ -144,13 +244,19 @@ impl Drive {
             .push(self.initialize_negative_identity_balance_operation_v0(id.to_buffer()));
 
         // We insert the revision
-        // todo: we might not need the revision
         batch_operations
             .push(self.initialize_identity_revision_operation_v0(id.to_buffer(), revision));
+
+        // We insert a nonce of 0, nonces are used to prevent replay attacks, and should not be confused
+        // revisions
+        batch_operations.push(self.initialize_identity_nonce_operation_v0(id.to_buffer(), 0));
 
         let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
             id.to_buffer(),
             public_keys.into_values().collect(),
+            // if we are a masternode identity, we want to register all keys as non unique
+            is_masternode_identity,
+            &block_info.epoch,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -164,16 +270,13 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::identity::Identity;
 
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
 
     use dpp::version::PlatformVersion;
-    use tempfile::TempDir;
-
-    use crate::drive::Drive;
 
     #[test]
     fn test_insert_and_fetch_identity_v0() {
@@ -192,6 +295,7 @@ mod tests {
         drive
             .add_new_identity_v0(
                 identity.clone(),
+                false,
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
@@ -213,21 +317,19 @@ mod tests {
 
     #[test]
     fn test_insert_identity_v0() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let platform_version = &PlatformVersion::first();
+        let drive = setup_drive_with_initial_state_structure();
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
 
         let identity = Identity::random_identity(5, Some(12345), platform_version)
             .expect("expected a random identity");
-        let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         drive
             .add_new_identity_v0(
                 identity,
+                false,
                 &BlockInfo::default(),
                 true,
                 Some(&db_transaction),

@@ -2,7 +2,7 @@ use crate::prelude::IdentityPublicKey;
 use crate::ProtocolError;
 use platform_value::BinaryData;
 
-pub trait Signer {
+pub trait Signer: Sync {
     /// the public key bytes are only used to look up the private key
     fn sign(
         &self,

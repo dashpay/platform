@@ -1,4 +1,7 @@
 use dpp::bls_signatures::BlsError;
+use dpp::consensus::ConsensusError;
+use tenderdash_abci::proto::abci::ExtendVoteExtension;
+use tenderdash_abci::proto::types::VoteExtension;
 
 // @append_only
 /// Error returned within ABCI server
@@ -10,13 +13,19 @@ pub enum AbciError {
     /// Request does not match currently processed block
     #[error("request does not match current block: {0}")]
     RequestForWrongBlockReceived(String),
-    /// Withdrawal transactions mismatch
+    /// Withdrawal vote extensions mismatch
     #[error("vote extensions mismatch: got {got:?}, expected {expected:?}")]
     #[allow(missing_docs)]
-    VoteExtensionMismatchReceived { got: String, expected: String },
+    VoteExtensionMismatchReceived {
+        got: Vec<VoteExtension>,
+        expected: Vec<ExtendVoteExtension>,
+    },
     /// Vote extensions signature is invalid
     #[error("one of vote extension signatures is invalid")]
     VoteExtensionsSignatureInvalid,
+    /// Invalid vote extensions verification
+    #[error("invalid vote extensions verification")]
+    InvalidVoteExtensionsVerification,
     /// Cannot load withdrawal transactions
     #[error("cannot load withdrawal transactions: {0}")]
     WithdrawalTransactionsDBLoadError(String),
@@ -45,6 +54,14 @@ pub enum AbciError {
     #[error("bad commit signature: {0}")]
     BadCommitSignature(String),
 
+    /// The chain lock received was invalid
+    #[error("invalid chain lock: {0}")]
+    InvalidChainLock(String),
+
+    /// The chain lock received was invalid
+    #[error("chain lock is for a block not known by core: {0}")]
+    ChainLockedBlockNotKnownByCore(String),
+
     /// Error returned by Tenderdash-abci library
     #[error("tenderdash: {0}")]
     Tenderdash(#[from] tenderdash_abci::Error),
@@ -61,14 +78,16 @@ pub enum AbciError {
     #[error("bls error from Tenderdash for threshold mechanisms: {1}: {0}")]
     BlsErrorOfTenderdashThresholdMechanism(BlsError, String),
 
-    /// Generic with code should only be used in tests
-    #[error("generic with code: {0}")]
-    GenericWithCode(u32),
-}
+    /// Incompatibility version Error on info handshake between Drive ABCI and Tenderdash
+    #[error("ABCI version mismatch. Tenderdash requires ABCI protobuf definitions version {tenderdash}, our version is {drive}")]
+    AbciVersionMismatch {
+        /// ABCI version in Tenderdash
+        tenderdash: String,
+        /// ABCI version in Drive ABCI
+        drive: String,
+    },
 
-// used by `?` operator
-impl From<AbciError> for String {
-    fn from(value: AbciError) -> Self {
-        value.to_string()
-    }
+    /// Generic with code should only be used in tests
+    #[error("invalid state transition error: {0}")]
+    InvalidStateTransition(#[from] ConsensusError),
 }

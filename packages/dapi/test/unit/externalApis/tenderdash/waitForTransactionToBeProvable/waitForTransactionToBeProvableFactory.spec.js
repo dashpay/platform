@@ -65,7 +65,7 @@ describe('waitForTransactionToBeProvableFactory', () => {
       hashString,
     );
 
-    expect(waitForTransactionResultMock).to.be.calledOnceWithExactly(
+    expect(waitForTransactionResultMock).to.be.calledOnceWith(
       blockchainListenerMock,
       hashString,
     );
@@ -90,7 +90,7 @@ describe('waitForTransactionToBeProvableFactory', () => {
       hashString,
     );
 
-    expect(waitForTransactionResultMock).to.be.calledOnceWithExactly(
+    expect(waitForTransactionResultMock).to.be.calledOnceWith(
       blockchainListenerMock,
       hashString,
     );
@@ -115,7 +115,7 @@ describe('waitForTransactionToBeProvableFactory', () => {
       hashString,
     );
 
-    expect(waitForTransactionResultMock).to.be.calledOnceWithExactly(
+    expect(waitForTransactionResultMock).to.be.calledOnceWith(
       blockchainListenerMock,
       hashString,
     );
@@ -140,7 +140,7 @@ describe('waitForTransactionToBeProvableFactory', () => {
       hashString,
     );
 
-    expect(waitForTransactionResultMock).to.be.calledOnceWithExactly(
+    expect(waitForTransactionResultMock).to.be.calledOnceWith(
       blockchainListenerMock,
       hashString,
     );
@@ -172,7 +172,7 @@ describe('waitForTransactionToBeProvableFactory', () => {
         hashString,
       );
 
-      expect(waitForTransactionResultMock).to.be.calledOnceWithExactly(
+      expect(waitForTransactionResultMock).to.be.calledOnceWith(
         blockchainListenerMock,
         hashString,
       );

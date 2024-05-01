@@ -12,7 +12,7 @@
  * @param {boolean} [hp=false]
  * @return {Promise<string>}
  */
-async function registerMasternode(
+export default async function registerMasternode(
   coreService,
   collateralHash,
   ownerAddress,
@@ -32,7 +32,7 @@ async function registerMasternode(
   const ipAndPort = `${config.get('externalIp', true)}:${config.get('core.p2p.port')}`;
 
   const proTxArgs = [
-    hp ? 'register_hpmn' : 'register',
+    hp ? 'register_evo' : 'register',
     collateralHash, // The txid of the 1000 Dash collateral funding transaction
     parseInt(collateralOutputIndex, 10), // The output index of the 1000 Dash funding transaction
     ipAndPort, // Masternode IP address and port, in the format x.x.x.x:yyyy
@@ -60,5 +60,3 @@ async function registerMasternode(
 
   return proRegTxId;
 }
-
-module.exports = registerMasternode;

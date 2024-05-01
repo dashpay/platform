@@ -1,4 +1,4 @@
-const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
+const BlsSignatures = require('../../bls/bls');
 
 module.exports = async function getBlsAdapterMock() {
   const bls = await BlsSignatures.getInstance();

@@ -1,8 +1,9 @@
 import { Identifier } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
+import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars';
 
-const { hash } = require('@dashevo/dpp/lib/util/hash');
 const crypto = require('crypto');
+const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
 
 /**
  * Register names to the platform
@@ -16,7 +17,8 @@ const crypto = require('crypto');
  *
  * @returns registered domain document
  */
-export async function register(this: Platform,
+export async function register(
+  this: Platform,
   name: string,
   records: {
     dashUniqueIdentityId?: Identifier | string,
@@ -25,7 +27,8 @@ export async function register(this: Platform,
   identity: {
     getId(): Identifier;
     getPublicKeyById(number: number):any;
-  }): Promise<any> {
+  },
+): Promise<any> {
   await this.initialize();
 
   if (records.dashUniqueIdentityId) {
@@ -38,13 +41,14 @@ export async function register(this: Platform,
 
   const nameLabels = name.split('.');
 
-  const normalizedParentDomainName = nameLabels
+  const parentDomainName = nameLabels
     .slice(1)
-    .join('.')
-    .toLowerCase();
+    .join('.');
+
+  const normalizedParentDomainName = convertToHomographSafeChars(parentDomainName);
 
   const [label] = nameLabels;
-  const normalizedLabel = label.toLowerCase();
+  const normalizedLabel = convertToHomographSafeChars(label);
 
   const preorderSalt = crypto.randomBytes(32);
 
@@ -88,6 +92,7 @@ export async function register(this: Platform,
     {
       label,
       normalizedLabel,
+      parentDomainName,
       normalizedParentDomainName,
       preorderSalt,
       records,

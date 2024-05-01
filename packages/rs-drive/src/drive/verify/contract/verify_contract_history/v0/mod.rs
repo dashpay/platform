@@ -36,6 +36,7 @@ impl Drive {
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
     /// - The contract serialization fails.
+    #[inline(always)]
     pub(super) fn verify_contract_history_v0(
         proof: &[u8],
         contract_id: [u8; 32],
@@ -53,7 +54,7 @@ impl Drive {
         for (path, key, maybe_element) in proved_key_values.drain(..) {
             if path != contract_storage_path_vec(&contract_id) {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path for the historical contract",
+                    "we did not get back an element for the correct path for the historical contract".to_string(),
                 )));
             }
 

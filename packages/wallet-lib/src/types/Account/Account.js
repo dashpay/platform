@@ -56,6 +56,7 @@ class Account extends EventEmitter {
     if (!wallet || wallet.constructor.name !== Wallet.name) throw new Error('Expected wallet to be passed as param');
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
+    this.wallet = wallet;
     this.logger = logger.getForWallet(this.walletId);
 
     this.logger.debug(`Loading up wallet ${this.walletId}`);
@@ -112,14 +113,22 @@ class Account extends EventEmitter {
     });
     this.storage.on(EVENTS.BLOCKHEADER, (ev) => this.emit(ev.type, ev));
 
-    this.on(EVENTS.HEADERS_SYNC_PROGRESS,
-      (data) => wallet.emit(EVENTS.HEADERS_SYNC_PROGRESS, data));
-    this.on(EVENTS.TRANSACTIONS_SYNC_PROGRESS,
-      (data) => wallet.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, data));
-    this.on(EVENTS.CONFIRMED_TRANSACTION,
-      (data) => wallet.emit(EVENTS.CONFIRMED_TRANSACTION, data));
-    this.on(EVENTS.BLOCKHEIGHT_CHANGED,
-      (data) => wallet.emit(EVENTS.BLOCKHEIGHT_CHANGED, data));
+    this.on(
+      EVENTS.HEADERS_SYNC_PROGRESS,
+      (data) => wallet.emit(EVENTS.HEADERS_SYNC_PROGRESS, data),
+    );
+    this.on(
+      EVENTS.TRANSACTIONS_SYNC_PROGRESS,
+      (data) => wallet.emit(EVENTS.TRANSACTIONS_SYNC_PROGRESS, data),
+    );
+    this.on(
+      EVENTS.CONFIRMED_TRANSACTION,
+      (data) => wallet.emit(EVENTS.CONFIRMED_TRANSACTION, data),
+    );
+    this.on(
+      EVENTS.BLOCKHEIGHT_CHANGED,
+      (data) => wallet.emit(EVENTS.BLOCKHEIGHT_CHANGED, data),
+    );
 
     if (this.debug) {
       this.emit = (...args) => {
@@ -215,32 +224,38 @@ class Account extends EventEmitter {
     return `${EVENTS.INSTANT_LOCK}:${transactionHash}`;
   }
 
-  // It's actually Account that mutates wallet.accounts to add itself.
-  // We might want to get rid of that as it can be really confusing.
-  // It would gives that responsability to createAccount to create
-  // (and therefore push to accounts).
   async init(wallet) {
     if (this.state.isInitialized) {
       return true;
     }
     await _addAccountToWallet(this, wallet);
-    await _initializeAccount(this, wallet.plugins);
+    await _initializeAccount(this, wallet ? wallet.plugins : this.wallet.plugins);
     return true;
   }
 
   async isInitialized() {
     // eslint-disable-next-line consistent-return
     return new Promise(((resolve) => {
-      if (this.state.isInitialized) return resolve(true);
-      this.on(EVENTS.INITIALIZED, () => resolve(true));
+      if (this.state.isInitialized) {
+        resolve(true);
+      } else {
+        this.on(EVENTS.INITIALIZED, () => {
+          resolve(true);
+        });
+      }
     }));
   }
 
   async isReady() {
     // eslint-disable-next-line consistent-return
     return new Promise(((resolve) => {
-      if (this.state.isReady) return resolve(true);
-      this.on(EVENTS.READY, () => resolve(true));
+      if (this.state.isReady) {
+        resolve(true);
+      } else {
+        this.on(EVENTS.READY, () => {
+          resolve(true);
+        });
+      }
     }));
   }
 
@@ -296,7 +311,8 @@ class Account extends EventEmitter {
     if (instantLock != null) {
       return {
         promise: Promise.resolve(instantLock),
-        cancel: () => {},
+        cancel: () => {
+        },
       };
     }
 
@@ -348,7 +364,8 @@ class Account extends EventEmitter {
     if (txWithMetadata && txWithMetadata.metadata && txWithMetadata.metadata.height) {
       return {
         promise: Promise.resolve(txWithMetadata.metadata),
-        cancel: () => {},
+        cancel: () => {
+        },
       };
     }
 

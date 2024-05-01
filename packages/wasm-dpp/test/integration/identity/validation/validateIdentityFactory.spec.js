@@ -18,7 +18,7 @@ describe.skip('validateIdentityFactory', () => {
     ({ IdentityValidator, Identity, UnsupportedProtocolVersionError } = await loadWasmDpp());
   });
 
-  beforeEach(async function () {
+  beforeEach(async function beforeEach() {
     this.timeout(20000);
     const blsAdapter = await getBlsAdapterMock();
 

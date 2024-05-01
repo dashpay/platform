@@ -40,6 +40,7 @@ impl Drive {
     /// - The identity ID does not correspond to a valid full identity.
     /// - The balance, revision, or keys information is missing or incorrect.
     ///
+    #[inline(always)]
     pub(super) fn verify_full_identity_by_identity_id_v0(
         proof: &[u8],
         is_proof_subset: bool,
@@ -79,7 +80,7 @@ impl Drive {
                     }
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "balance wasn't for the identity requested",
+                        "balance wasn't for the identity requested".to_string(),
                     )));
                 }
             } else if path == identity_path && key == vec![IdentityTreeRevision as u8] {
@@ -106,7 +107,7 @@ impl Drive {
                     keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we received an absence proof for a key but didn't request one",
+                        "we received an absence proof for a key but didn't request one".to_string(),
                     )));
                 }
             } else {

@@ -12,93 +12,103 @@ use crate::{prelude::*, tests::utils::generate_random_identifier_struct as gen_o
 
 #[cfg(feature = "extended-document")]
 pub fn get_extended_documents_fixture_with_owner_id_from_contract(
-    data_contract: DataContract,
+    data_contract: &DataContract,
     protocol_version: u32,
 ) -> Result<Vec<ExtendedDocument>, ProtocolError> {
     let owner_id = data_contract.owner_id();
-    let factory = DocumentFactory::new(protocol_version, data_contract)?;
+    let factory = DocumentFactory::new(protocol_version)?;
 
-    get_extended_documents(factory, owner_id)
+    get_extended_documents(factory, data_contract, owner_id)
 }
 
 pub fn get_documents_fixture_with_owner_id_from_contract(
-    data_contract: DataContract,
+    data_contract: &DataContract,
     protocol_version: u32,
 ) -> Result<Vec<Document>, ProtocolError> {
     let owner_id = data_contract.owner_id();
-    let factory = DocumentFactory::new(protocol_version, data_contract)?;
+    let factory = DocumentFactory::new(protocol_version)?;
 
-    get_documents(factory, owner_id)
+    get_documents(factory, data_contract, owner_id)
 }
 
 pub fn get_documents_fixture(
-    data_contract: DataContract,
+    data_contract: &DataContract,
     protocol_version: u32,
 ) -> Result<Vec<Document>, ProtocolError> {
-    let factory = DocumentFactory::new(protocol_version, data_contract)?;
+    let factory = DocumentFactory::new(protocol_version)?;
     let owner_id = gen_owner_id();
 
-    get_documents(factory, owner_id)
+    get_documents(factory, data_contract, owner_id)
 }
 
 #[cfg(feature = "extended-document")]
 pub fn get_extended_documents_fixture(
-    data_contract: DataContract,
+    data_contract: &DataContract,
     protocol_version: u32,
 ) -> Result<Vec<ExtendedDocument>, ProtocolError> {
-    let factory = DocumentFactory::new(protocol_version, data_contract)?;
+    let factory = DocumentFactory::new(protocol_version)?;
     let owner_id = gen_owner_id();
 
-    get_extended_documents(factory, owner_id)
+    get_extended_documents(factory, data_contract, owner_id)
 }
 
 fn get_documents(
     factory: DocumentFactory,
+    data_contract: &DataContract,
     owner_id: Identifier,
 ) -> Result<Vec<Document>, ProtocolError> {
     let documents = vec![
         factory.create_document(
+            data_contract,
             owner_id,
             "niceDocument".to_string(),
             platform_value!({ "name": "Cutie" }),
         )?,
         factory.create_document(
+            data_contract,
             owner_id,
             "prettyDocument".to_string(),
             platform_value!({ "lastName": "Shiny" }),
         )?,
         factory.create_document(
+            data_contract,
             owner_id,
             "prettyDocument".to_string(),
             platform_value!({ "lastName": "Sweety" }),
         )?,
         factory.create_document(
+            data_contract,
             owner_id,
             "indexedDocument".to_string(),
             platform_value!( { "firstName": "William", "lastName": "Birkin" }),
         )?,
         factory.create_document(
+            data_contract,
             owner_id,
             "indexedDocument".to_string(),
             platform_value!( { "firstName": "Leon", "lastName": "Kennedy" }),
         )?,
         factory.create_document(
+            data_contract,
             owner_id,
             "noTimeDocument".to_string(),
             platform_value!({ "name": "ImOutOfTime" }),
         )?,
         factory.create_document(
+            data_contract,
             owner_id,
             "uniqueDates".to_string(),
             platform_value!({ "firstName": "John" }),
         )?,
         factory.create_document(
+            data_contract,
             owner_id,
             "indexedDocument".to_string(),
             platform_value!( { "firstName": "Bill", "lastName": "Gates" }),
         )?,
-        factory.create_document(owner_id, "withByteArrays".to_string(), platform_value!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }))?,
+        factory.create_document(data_contract, owner_id, "withByteArrays".to_string(), platform_value!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }))?,
         factory.create_document(
+            data_contract,
             owner_id,
             "optionalUniqueIndexedDocument".to_string(),
             platform_value!({ "firstName": "Jacques-Yves", "lastName": "Cousteau" })
@@ -111,51 +121,61 @@ fn get_documents(
 #[cfg(feature = "extended-document")]
 fn get_extended_documents(
     factory: DocumentFactory,
+    data_contract: &DataContract,
     owner_id: Identifier,
 ) -> Result<Vec<ExtendedDocument>, ProtocolError> {
     let documents = vec![
         factory.create_extended_document(
+            data_contract,
             owner_id,
             "niceDocument".to_string(),
             platform_value!({ "name": "Cutie" }),
         )?,
         factory.create_extended_document(
+            data_contract,
             owner_id,
             "prettyDocument".to_string(),
             platform_value!({ "lastName": "Shiny" }),
         )?,
         factory.create_extended_document(
+            data_contract,
             owner_id,
             "prettyDocument".to_string(),
             platform_value!({ "lastName": "Sweety" }),
         )?,
         factory.create_extended_document(
+            data_contract,
             owner_id,
             "indexedDocument".to_string(),
             platform_value!( { "firstName": "William", "lastName": "Birkin" }),
         )?,
         factory.create_extended_document(
+            data_contract,
             owner_id,
             "indexedDocument".to_string(),
             platform_value!( { "firstName": "Leon", "lastName": "Kennedy" }),
         )?,
         factory.create_extended_document(
+            data_contract,
             owner_id,
             "noTimeDocument".to_string(),
             platform_value!({ "name": "ImOutOfTime" }),
         )?,
         factory.create_extended_document(
+            data_contract,
             owner_id,
             "uniqueDates".to_string(),
             platform_value!({ "firstName": "John" }),
         )?,
         factory.create_extended_document(
+            data_contract,
             owner_id,
             "indexedDocument".to_string(),
             platform_value!( { "firstName": "Bill", "lastName": "Gates" }),
         )?,
-        factory.create_extended_document(owner_id, "withByteArrays".to_string(), platform_value!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }))?,
+        factory.create_extended_document(data_contract, owner_id, "withByteArrays".to_string(), platform_value!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }))?,
         factory.create_extended_document(
+            data_contract,
             owner_id,
             "optionalUniqueIndexedDocument".to_string(),
             platform_value!({ "firstName": "Jacques-Yves", "lastName": "Cousteau" })
@@ -178,7 +198,7 @@ pub fn get_withdrawal_document_fixture(
     };
 
     let document_type = data_contract.document_type_for_name(
-        data_contracts::withdrawals_contract::document_types::withdrawal::NAME,
+        data_contracts::withdrawals_contract::v1::document_types::withdrawal::NAME,
     )?;
 
     let properties = data
@@ -191,6 +211,8 @@ pub fn get_withdrawal_document_fixture(
     document_type.create_document_with_prevalidated_properties(
         id,
         owner_id,
+        0,
+        0,
         properties,
         platform_version,
     )

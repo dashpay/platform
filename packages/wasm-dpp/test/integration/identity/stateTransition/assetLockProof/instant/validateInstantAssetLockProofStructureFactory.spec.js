@@ -1,7 +1,7 @@
 const DashCoreLib = require('@dashevo/dashcore-lib');
 const { expect } = require('chai');
 
-const getInstantAssetLockFixture = require('../../../../../../lib/test/fixtures/js/getInstantAssetLockProofFixture');
+const getInstantAssetLockFixture = require('../../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 const createStateRepositoryMock = require('../../../../../../lib/test/mocks/createStateRepositoryMock');
 const { expectJsonSchemaError, expectValidationError } = require('../../../../../../lib/test/expect/expectError');
 
@@ -36,12 +36,12 @@ describe.skip('validateInstantAssetLockProofStructureFactory', () => {
   });
 
   beforeEach(async function beforeEach() {
-    const assetLock = getInstantAssetLockFixture();
+    const assetLock = await getInstantAssetLockFixture();
     transaction = assetLock.getTransaction();
 
     rawProof = assetLock.toObject();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.verifyInstantLock.resolves(true);
     stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
 

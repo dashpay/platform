@@ -1,5 +1,6 @@
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
@@ -16,7 +17,6 @@ use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUn
 use crate::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use crate::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
 use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
-use crate::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
 use crate::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
 use crate::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
 use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
@@ -27,10 +27,15 @@ use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
 use crate::consensus::ConsensusError;
+use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
+use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
+use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
-#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
 pub enum StateError {
     /*
 
@@ -53,6 +58,12 @@ pub enum StateError {
     DocumentNotFoundError(DocumentNotFoundError),
 
     #[error(transparent)]
+    DocumentNotForSaleError(DocumentNotForSaleError),
+
+    #[error(transparent)]
+    DocumentIncorrectPurchasePriceError(DocumentIncorrectPurchasePriceError),
+
+    #[error(transparent)]
     DocumentOwnerIdMismatchError(DocumentOwnerIdMismatchError),
 
     #[error(transparent)]
@@ -71,8 +82,8 @@ pub enum StateError {
     IdentityAlreadyExistsError(IdentityAlreadyExistsError),
 
     #[error(transparent)]
-    IdentityPublicKeyDisabledAtWindowViolationError(
-        IdentityPublicKeyDisabledAtWindowViolationError,
+    IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(
+        IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError,
     ),
 
     #[error(transparent)]
@@ -86,6 +97,9 @@ pub enum StateError {
 
     #[error(transparent)]
     InvalidIdentityRevisionError(InvalidIdentityRevisionError),
+
+    #[error(transparent)]
+    InvalidIdentityNonceError(InvalidIdentityNonceError),
 
     #[error(transparent)]
     MaxIdentityPublicKeyLimitReachedError(MaxIdentityPublicKeyLimitReachedError),
@@ -110,6 +124,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DataContractConfigUpdateError(DataContractConfigUpdateError),
+
+    #[error(transparent)]
+    DocumentTypeUpdateError(DocumentTypeUpdateError),
 }
 
 impl From<StateError> for ConsensusError {

@@ -20,9 +20,9 @@ pub struct QueryDocumentsOutcomeV0 {
 
 /// Trait defining methods associated with `QueryDocumentsOutcomeV0`.
 ///
-/// This trait provides a set of methods to interact with and retrieve 
-/// details from an instance of `QueryDocumentsOutcomeV0`. These methods 
-/// include retrieving the documents, skipped count, and the associated cost 
+/// This trait provides a set of methods to interact with and retrieve
+/// details from an instance of `QueryDocumentsOutcomeV0`. These methods
+/// include retrieving the documents, skipped count, and the associated cost
 /// of the query.
 pub trait QueryDocumentsOutcomeV0Methods {
     /// Returns a reference to the documents found from the query.
@@ -77,6 +77,7 @@ impl Drive {
     ///
     /// * `Result<QueryDocumentsOutcome, Error>` - Returns `QueryDocumentsOutcome` on success with the list of documents,
     ///    number of skipped items, and cost. If the operation fails, it returns an `Error`.
+    #[inline(always)]
     pub(super) fn query_documents_v0(
         &self,
         query: DriveQuery,
@@ -102,8 +103,13 @@ impl Drive {
             })
             .collect::<Result<Vec<Document>, ProtocolError>>()?;
         let cost = if let Some(epoch) = epoch {
-            let fee_result =
-                Drive::calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                epoch,
+                self.config.epochs_per_era,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0

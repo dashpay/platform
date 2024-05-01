@@ -4,7 +4,7 @@ use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::Purpose::WITHDRAW;
+use dpp::identity::Purpose::TRANSFER;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
@@ -26,6 +26,12 @@ where
         drive_operations: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        tracing::trace!(
+            pro_tx_hash = old_masternode.pro_tx_hash.to_hex(),
+            method = "disable_identity_keys_v0",
+            "masternode is removed. operator and voter keys should be disabled"
+        );
+
         let operator_identifier = Self::get_operator_identifier_from_masternode_list_item(
             old_masternode,
             platform_version,
@@ -56,7 +62,7 @@ where
             )?
             .into_iter()
             .filter_map(|(key_id, key)| {
-                if key.is_disabled() || key.purpose() == WITHDRAW {
+                if key.is_disabled() || key.purpose() == TRANSFER {
                     None // Don't disable withdrawal keys
                 } else {
                     Some(key_id)
@@ -80,16 +86,30 @@ where
             })
             .collect();
 
-        drive_operations.push(IdentityOperation(DisableIdentityKeys {
-            identity_id: operator_identifier,
-            keys_ids: operator_identity_keys,
-            disable_at: block_info.time_ms,
-        }));
+        tracing::trace!(
+            identity_id = ?operator_identifier,
+            keys_ids = ?operator_identity_keys,
+            disable_at = ?block_info.time_ms,
+            method = "disable_identity_keys_v0",
+            "disable all operator identity keys for removed masternode"
+        );
 
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
             identity_id: operator_identifier,
+            keys_ids: operator_identity_keys,
+        }));
+
+        tracing::trace!(
+            identity_id = ?voter_identifier,
+            keys_ids = ?voter_identity_keys,
+            disable_at = ?block_info.time_ms,
+            method = "disable_identity_keys_v0",
+            "disable all voter identity key for removed masternode"
+        );
+
+        drive_operations.push(IdentityOperation(DisableIdentityKeys {
+            identity_id: voter_identifier,
             keys_ids: voter_identity_keys,
-            disable_at: block_info.time_ms,
         }));
 
         Ok(())

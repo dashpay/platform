@@ -29,7 +29,7 @@ impl Drive {
         let Element::SumItem(item, _) = element else {
             return Err(Error::Drive(DriveError::UnexpectedElementType(
                 "epochs storage fee must be an item",
-            )))
+            )));
         };
 
         Ok(item.to_unsigned())

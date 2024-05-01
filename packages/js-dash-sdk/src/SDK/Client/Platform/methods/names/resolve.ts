@@ -1,3 +1,4 @@
+import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars';
 import { Platform } from '../../Platform';
 
 /**
@@ -15,10 +16,10 @@ export async function resolve(this: Platform, name: string): Promise<any> {
   // in case of subdomain registration
   // we should split label and parent domain name
   if (name.includes('.')) {
-    const segments = name.toLowerCase().split('.');
+    const normalizedSegments = convertToHomographSafeChars(name).split('.');
 
-    [normalizedLabel] = segments;
-    normalizedParentDomainName = segments.slice(1).join('.');
+    [normalizedLabel] = normalizedSegments;
+    normalizedParentDomainName = normalizedSegments.slice(1).join('.');
   }
 
   const [document] = await this.documents.get('dpns.domain', {

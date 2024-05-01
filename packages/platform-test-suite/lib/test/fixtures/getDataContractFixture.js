@@ -1,7 +1,6 @@
 const Dash = require('dash');
 
 const crypto = require('crypto');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
 const {
@@ -11,14 +10,15 @@ const {
 let randomOwnerId = null;
 
 /**
- *
+ * @param {number} identityNonce
  * @param {Identifier} [ownerId]
  * @return {Promise<DataContract>}
  */
 module.exports = async function getDataContractFixture(
+  identityNonce,
   ownerId = randomOwnerId,
 ) {
-  const { DataContractFactory, Identifier } = await Platform
+  const { DataContractFactory, Identifier, getLatestProtocolVersion } = await Platform
     .initializeDppModule();
 
   if (!randomOwnerId) {
@@ -36,6 +36,7 @@ module.exports = async function getDataContractFixture(
       properties: {
         name: {
           type: 'string',
+          position: 0,
         },
       },
       required: ['$createdAt'],
@@ -56,6 +57,7 @@ module.exports = async function getDataContractFixture(
           type: 'array',
           byteArray: true,
           maxItems: 16,
+          position: 0,
         },
         identifierField: {
           type: 'array',
@@ -63,6 +65,7 @@ module.exports = async function getDataContractFixture(
           contentMediaType: Identifier.MEDIA_TYPE,
           minItems: 32,
           maxItems: 32,
+          position: 1,
         },
       },
       required: ['byteArrayField'],
@@ -117,10 +120,12 @@ module.exports = async function getDataContractFixture(
         firstName: {
           type: 'string',
           maxLength: 63,
+          position: 0,
         },
         lastName: {
           type: 'string',
           maxLength: 63,
+          position: 1,
         },
       },
       required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
@@ -134,7 +139,7 @@ module.exports = async function getDataContractFixture(
     },
   };
   const factory = new DataContractFactory(
-    protocolVersion.latestVersion,
+    getLatestProtocolVersion(),
     entropyGenerator,
   );
 
@@ -146,5 +151,5 @@ module.exports = async function getDataContractFixture(
     documentsMutableContractDefault: true,
   };
 
-  return factory.create(ownerId, documents, config);
+  return factory.create(ownerId, BigInt(identityNonce), documents, config);
 };

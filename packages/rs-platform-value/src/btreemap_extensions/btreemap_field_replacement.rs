@@ -2,6 +2,8 @@ use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
 use std::collections::BTreeMap;
 
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
@@ -56,7 +58,7 @@ impl ReplacementType {
             }
             ReplacementType::BinaryBytes => Ok(Value::Bytes(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
-            ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
+            ReplacementType::TextBase64 => Ok(Value::Text(BASE64_STANDARD.encode(bytes))),
         }
     }
 
@@ -64,7 +66,7 @@ impl ReplacementType {
         match self {
             ReplacementType::BinaryBytes => Ok(Value::Bytes20(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
-            ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
+            ReplacementType::TextBase64 => Ok(Value::Text(BASE64_STANDARD.encode(bytes))),
             _ => Err(Error::ByteLengthNot36BytesError(
                 "trying to replace 36 bytes into an identifier".to_string(),
             )),
@@ -76,7 +78,7 @@ impl ReplacementType {
             ReplacementType::Identifier => Ok(Value::Identifier(bytes)),
             ReplacementType::BinaryBytes => Ok(Value::Bytes32(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
-            ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
+            ReplacementType::TextBase64 => Ok(Value::Text(BASE64_STANDARD.encode(bytes))),
         }
     }
 
@@ -84,7 +86,7 @@ impl ReplacementType {
         match self {
             ReplacementType::BinaryBytes => Ok(Value::Bytes36(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
-            ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
+            ReplacementType::TextBase64 => Ok(Value::Text(BASE64_STANDARD.encode(bytes))),
             _ => Err(Error::ByteLengthNot36BytesError(
                 "trying to replace 36 bytes into an identifier".to_string(),
             )),
@@ -128,8 +130,8 @@ fn replace_down(
                 if current_value.is_map() {
                     let map = current_value.as_map_mut_ref()?;
                     let Some(new_value) = map.get_optional_key_mut(path_component) else {
-                    return Ok(None);
-                };
+                        return Ok(None);
+                    };
                     if split.peek().is_none() {
                         match new_value {
                             Value::Bytes20(bytes) => {

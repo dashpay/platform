@@ -1,5 +1,5 @@
 const cbor = require('cbor');
-const Identifier = require('@dashevo/dpp/lib/Identifier');
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 const {
   v0: {
@@ -11,9 +11,9 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getDocumentsFactory = require('../../../../../lib/methods/platform/getDocuments/getDocumentsFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
@@ -33,7 +33,7 @@ describe('getDocumentsFactory', () => {
   let proofResponse;
   let response;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     type = 'niceDocument';
     contractIdBuffer = Buffer.from('11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c', 'hex');
     contractIdIdentifier = Identifier.from(contractIdBuffer);
@@ -46,12 +46,12 @@ describe('getDocumentsFactory', () => {
       orderBy: [
         ['order', 'asc'],
       ],
-      startAt: generateRandomIdentifier(),
+      startAt: await generateRandomIdentifier(),
       where: [['lastName', '==', 'unknown']],
-      startAfter: generateRandomIdentifier(),
+      startAfter: await generateRandomIdentifier(),
     };
 
-    documentsFixture = getDocumentsFixture();
+    documentsFixture = await getDocumentsFixture();
     serializedDocuments = documentsFixture
       .map((document) => Buffer.from(JSON.stringify(document)));
 
@@ -61,11 +61,15 @@ describe('getDocumentsFactory', () => {
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
+    const { GetDocumentsResponseV0 } = GetDocumentsResponse;
     response = new GetDocumentsResponse();
-    const documentsList = new GetDocumentsResponse.Documents();
-    documentsList.setDocumentsList(serializedDocuments);
-    response.setDocuments(documentsList);
-    response.setMetadata(metadata);
+    response.setV0(
+      new GetDocumentsResponseV0()
+        .setDocuments(
+          new GetDocumentsResponseV0.Documents()
+            .setDocumentsList(serializedDocuments),
+        ).setMetadata(metadata),
+    );
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -83,15 +87,20 @@ describe('getDocumentsFactory', () => {
   it('should return documents when contract id is buffer', async () => {
     const result = await getDocuments(contractIdBuffer, type, options);
 
+    const { GetDocumentsRequestV0 } = GetDocumentsRequest;
     const request = new GetDocumentsRequest();
-    request.setDataContractId(contractIdBuffer);
-    request.setDocumentType(type);
-    request.setLimit(options.limit);
-    request.setWhere(cbor.encode(options.where));
-    request.setOrderBy(cbor.encode(options.orderBy));
-    request.setStartAfter(options.startAfter);
-    request.setStartAt(options.startAt);
-    request.setProve(false);
+    request.setV0(
+      new GetDocumentsRequestV0()
+        .setDataContractId(contractIdBuffer)
+        .setDocumentType(type)
+        .setLimit(options.limit)
+        .setWhere(cbor.encode(options.where))
+        .setOrderBy(cbor.encode(options.orderBy))
+        .setStartAfter(options.startAfter)
+        .setStartAt(options.startAt)
+        .setProve(false),
+
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -106,19 +115,23 @@ describe('getDocumentsFactory', () => {
 
   it('should return proof', async () => {
     options.prove = true;
-    response.setProof(proofResponse);
+    response.getV0().setProof(proofResponse);
 
     const result = await getDocuments(contractIdBuffer, type, options);
 
+    const { GetDocumentsRequestV0 } = GetDocumentsRequest;
     const request = new GetDocumentsRequest();
-    request.setDataContractId(contractIdBuffer);
-    request.setDocumentType(type);
-    request.setLimit(options.limit);
-    request.setWhere(cbor.encode(options.where));
-    request.setOrderBy(cbor.encode(options.orderBy));
-    request.setStartAfter(options.startAfter);
-    request.setStartAt(options.startAt);
-    request.setProve(true);
+    request.setV0(
+      new GetDocumentsRequestV0()
+        .setDataContractId(contractIdBuffer)
+        .setDocumentType(type)
+        .setLimit(options.limit)
+        .setWhere(cbor.encode(options.where))
+        .setOrderBy(cbor.encode(options.orderBy))
+        .setStartAfter(options.startAfter)
+        .setStartAt(options.startAt)
+        .setProve(true),
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -146,15 +159,19 @@ describe('getDocumentsFactory', () => {
   it('should return documents when contract id is identifier', async () => {
     const result = await getDocuments(contractIdIdentifier, type, options);
 
+    const { GetDocumentsRequestV0 } = GetDocumentsRequest;
     const request = new GetDocumentsRequest();
-    request.setDataContractId(contractIdBuffer);
-    request.setDocumentType(type);
-    request.setLimit(options.limit);
-    request.setWhere(cbor.encode(options.where));
-    request.setOrderBy(cbor.encode(options.orderBy));
-    request.setStartAfter(options.startAfter);
-    request.setStartAt(options.startAt);
-    request.setProve(false);
+    request.setV0(
+      new GetDocumentsRequestV0()
+        .setDataContractId(contractIdBuffer)
+        .setDocumentType(type)
+        .setLimit(options.limit)
+        .setWhere(cbor.encode(options.where))
+        .setOrderBy(cbor.encode(options.orderBy))
+        .setStartAfter(options.startAfter)
+        .setStartAt(options.startAt)
+        .setProve(false),
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,

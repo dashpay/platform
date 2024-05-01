@@ -1,22 +1,23 @@
-const { Listr } = require('listr2');
-
-const BlsSignatures = require('@dashevo/bls');
-
-const {
+import { Listr } from 'listr2';
+import BlsSignatures from '@dashevo/bls';
+import {
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
   NODE_TYPE_FULLNODE,
-} = require('../../../../constants');
+} from '../../../../constants.js';
+import validateBLSPrivateKeyFactory from '../../../prompts/validators/validateBLSPrivateKeyFactory.js';
+import createPlatformNodeKeyInput from '../../../prompts/createPlatformNodeKeyInput.js';
+import deriveTenderdashNodeId from '../../../../tenderdash/deriveTenderdashNodeId.js';
+import getConfigurationOutputFromContext from './getConfigurationOutputFromContext.js';
 
-const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
-const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
-const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
-const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
-const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
-
-function configureNodeTaskFactory() {
+/**
+ *
+ * @param {createIpAndPortsForm} createIpAndPortsForm
+ * @return {configureNodeTask}
+ */
+export default function configureNodeTaskFactory(createIpAndPortsForm) {
   /**
-   * @typedef configureNodeTask
+   * @typedef {function} configureNodeTask
    * @returns {Listr}
    */
   async function configureNodeTask() {
@@ -74,7 +75,7 @@ function configureNodeTaskFactory() {
             } else {
               form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
                 isHPMN: ctx.isHP,
-                initialIp: '',
+                initialIp: ctx.nodeType === NODE_TYPE_MASTERNODE ? '' : undefined,
                 initialCoreP2PPort: showEmptyPort ? '' : undefined,
                 initialPlatformHTTPPort: showEmptyPort ? '' : undefined,
                 initialPlatformP2PPort: showEmptyPort ? '' : undefined,
@@ -102,5 +103,3 @@ function configureNodeTaskFactory() {
 
   return configureNodeTask;
 }
-
-module.exports = configureNodeTaskFactory;

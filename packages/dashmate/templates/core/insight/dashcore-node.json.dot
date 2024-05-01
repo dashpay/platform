@@ -1,0 +1,25 @@
+{
+  "network": "{{= it.network }}",
+  "port": {{= it.core.insight.port }},
+  "services": [
+    "dashd",
+    "@dashevo/insight-api",
+    {{? it.core.insight.ui.enabled }}"@dashevo/insight-ui",{{?}}
+    "web"
+  ],
+  "servicesConfig": {
+    "dashd": {
+      "connect": [{
+        "rpchost": "core",
+        "rpcport": {{= it.core.rpc.port }},
+        "rpcuser": "{{= it.core.rpc.user }}",
+        "rpcpassword": "{{= it.core.rpc.password }}",
+        "zmqpubrawtx": "tcp://core:29998",
+        "zmqpubhashblock": "tcp://core:29998"
+      }]
+    },
+    "@dashevo/insight-api": {
+      "disableRateLimiter": true
+    }
+  }
+}

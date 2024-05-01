@@ -18,6 +18,7 @@ impl Drive {
     pub fn add_new_identity(
         &self,
         identity: Identity,
+        is_masternode_identity: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -30,9 +31,14 @@ impl Drive {
             .insert
             .add_new_identity
         {
-            0 => {
-                self.add_new_identity_v0(identity, block_info, apply, transaction, platform_version)
-            }
+            0 => self.add_new_identity_v0(
+                identity,
+                is_masternode_identity,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_identity".to_string(),
                 known_versions: vec![0],
@@ -45,6 +51,7 @@ impl Drive {
     pub fn add_new_identity_add_to_operations(
         &self,
         identity: Identity,
+        is_masternode_identity: bool,
         block_info: &BlockInfo,
         apply: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
@@ -61,6 +68,7 @@ impl Drive {
         {
             0 => self.add_new_identity_add_to_operations_v0(
                 identity,
+                is_masternode_identity,
                 block_info,
                 apply,
                 previous_batch_operations,
@@ -80,6 +88,7 @@ impl Drive {
     pub fn add_new_identity_operations(
         &self,
         identity: Identity,
+        is_masternode_identity: bool,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -97,6 +106,7 @@ impl Drive {
         {
             0 => self.add_new_identity_operations_v0(
                 identity,
+                is_masternode_identity,
                 block_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

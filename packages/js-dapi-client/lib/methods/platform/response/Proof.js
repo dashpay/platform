@@ -44,7 +44,6 @@ class Proof {
 
   /**
    * @param {object} proofProto
-   *
    * @returns {Proof}
    */
   static createFromProto(proofProto) {

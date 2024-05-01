@@ -9,7 +9,7 @@ describe('DataContract', () => {
   let documentSchema;
   let documentSchemas;
   let ownerId;
-  let entropy;
+  let identityNonce;
   let contractId;
   let dataContract;
   let schemaDefs;
@@ -32,10 +32,12 @@ describe('DataContract', () => {
       properties: {
         nice: {
           type: 'boolean',
+          position: 0,
         },
         aBinaryProperty: {
           type: 'array',
           byteArray: true,
+          position: 1,
         },
       },
       additionalProperties: false,
@@ -46,7 +48,8 @@ describe('DataContract', () => {
     };
 
     ownerId = (await generateRandomIdentifier()).toBuffer();
-    entropy = Buffer.alloc(32, 420);
+    // eslint-disable-next-line
+    identityNonce = BigInt(1);
     contractId = (await generateRandomIdentifier()).toBuffer();
 
     schemaDefs = { something: { type: 'string' } };
@@ -93,7 +96,10 @@ describe('DataContract', () => {
         anotherDocument: {
           type: 'object',
           properties: {
-            name: { type: 'string' },
+            name: {
+              type: 'string',
+              position: 0,
+            },
           },
           additionalProperties: false,
         },
@@ -110,7 +116,10 @@ describe('DataContract', () => {
         anotherDocument: {
           type: 'object',
           properties: {
-            name: { type: 'string' },
+            name: {
+              type: 'string',
+              position: 0,
+            },
           },
           additionalProperties: false,
         },
@@ -143,7 +152,8 @@ describe('DataContract', () => {
         properties: {
           test: {
             type: 'string',
-          }
+            position: 0,
+          },
         },
         additionalProperties: false,
       };
@@ -183,6 +193,7 @@ describe('DataContract', () => {
           properties: {
             test: {
               type: 'string',
+              position: 0,
             },
           },
           additionalProperties: false,
@@ -212,10 +223,13 @@ describe('DataContract', () => {
         config: {
           $format_version: '0',
           canBeDeleted: false,
+          documentsCanBeDeletedContractDefault: true,
           documentsKeepHistoryContractDefault: false,
           documentsMutableContractDefault: true,
           keepsHistory: false,
           readonly: false,
+          requiresIdentityDecryptionBoundedKey: null,
+          requiresIdentityEncryptionBoundedKey: null,
         },
         id: bs58.encode(contractId),
         version: 1,
@@ -239,10 +253,13 @@ describe('DataContract', () => {
         config: {
           $format_version: '0',
           canBeDeleted: false,
+          documentsCanBeDeletedContractDefault: true,
           documentsKeepHistoryContractDefault: false,
           documentsMutableContractDefault: true,
           keepsHistory: false,
           readonly: false,
+          requiresIdentityDecryptionBoundedKey: null,
+          requiresIdentityEncryptionBoundedKey: null,
         },
         id: bs58.encode(contractId),
         version: 1,
@@ -257,7 +274,7 @@ describe('DataContract', () => {
     it('should return DataContract as a Buffer', () => {
       const result = dataContract.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(209);
+      expect(result).to.have.lengthOf(236);
     });
   });
 
@@ -273,11 +290,11 @@ describe('DataContract', () => {
     });
   });
 
-  describe('#setEntropy', () => {
+  describe('#setIdentityNonce', () => {
     it('should set entropy', () => {
-      dataContract.setEntropy(entropy);
+      dataContract.setIdentityNonce(identityNonce);
 
-      expect(dataContract.getEntropy()).to.deep.equal(entropy);
+      expect(dataContract.getIdentityNonce()).to.deep.equal(identityNonce);
     });
   });
 

@@ -31,6 +31,7 @@ impl SingleDocumentDriveQuery {
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
     /// - The document serialization fails.
+    #[inline(always)]
     pub(super) fn verify_proof_v0(
         &self,
         is_subset: bool,

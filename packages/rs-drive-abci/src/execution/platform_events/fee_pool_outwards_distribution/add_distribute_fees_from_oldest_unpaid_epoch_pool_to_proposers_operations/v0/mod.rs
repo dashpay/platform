@@ -92,7 +92,7 @@ mod tests {
     use super::*;
     use dpp::block::block_info::BlockInfo;
 
-    use drive::common::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+    use drive::common::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 
@@ -216,7 +216,7 @@ mod tests {
 
         let next_unpaid_epoch_index = platform
             .drive
-            .get_unpaid_epoch_index_v0(Some(&transaction))
+            .get_unpaid_epoch_index(Some(&transaction), platform_version)
             .expect("should get unpaid epoch index");
 
         assert_eq!(next_unpaid_epoch_index, current_epoch.index);

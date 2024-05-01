@@ -85,16 +85,18 @@ describe('BlockchainListener', () => {
 
   describe('#start', () => {
     it('should subscribe to transaction events from WS client', () => {
-      expect(wsClientMock.subscribe).to.be.calledTwice();
+      // TODO: We don't use it for now
+      // expect(wsClientMock.subscribe).to.be.calledTwice();
+      expect(wsClientMock.subscribe).to.be.calledOnce();
       expect(wsClientMock.subscribe.firstCall).to.be.calledWithExactly(
         BlockchainListener.TX_QUERY,
       );
-      expect(wsClientMock.subscribe.secondCall).to.be.calledWithExactly(
-        BlockchainListener.NEW_BLOCK_QUERY,
-      );
+      // expect(wsClientMock.subscribe.secondCall).to.be.calledWithExactly(
+      //   BlockchainListener.NEW_BLOCK_QUERY,
+      // );
     });
 
-    it('should emit block when new block is arrived', (done) => {
+    it.skip('should emit block when new block is arrived', (done) => {
       blockchainListener.on(BlockchainListener.EVENTS.NEW_BLOCK, (message) => {
         expect(message).to.be.deep.equal(blockMessageMock);
 

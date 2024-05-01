@@ -1,14 +1,18 @@
-const { Listr } = require('listr2');
-
-const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
-const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
-const registerMasternodeWithCoreWallet = require('../../../prompts/registerMasternode/registerMasternodeWithCoreWallet');
-const registerMasternodeWithDMT = require('../../../prompts/registerMasternode/registerMasternodeWithDMT');
+import { Listr } from 'listr2';
+import deriveTenderdashNodeId from '../../../../tenderdash/deriveTenderdashNodeId.js';
+import getConfigurationOutputFromContext from './getConfigurationOutputFromContext.js';
 
 /**
+ * @param {DefaultConfigs} defaultConfigs
+ * @param {registerMasternodeWithCoreWallet} registerMasternodeWithCoreWallet
+ * @param {registerMasternodeWithDMT} registerMasternodeWithDMT
  * @return {registerMasternodeGuideTask}
  */
-function registerMasternodeGuideTaskFactory() {
+export default function registerMasternodeGuideTaskFactory(
+  defaultConfigs,
+  registerMasternodeWithCoreWallet,
+  registerMasternodeWithDMT,
+) {
   /**
    * @typedef {registerMasternodeGuideTask}
    * @return {Listr}
@@ -36,11 +40,11 @@ function registerMasternodeGuideTaskFactory() {
   or other external tools where keys are handled securely. During this process,
   dashmate can optionally generate configuration elements as necessary, such as
   the BLS operator key and the node id.
-  
+
   Dash Masternode Tool (DMT) - Recommended for mainnet masternodes
                                so the collateral can be stored
                                on a hardware wallet for maximum security.
-  
+
   Dash Core Wallet           - Recommended for testnet and devnet masternodes
                                where more flexibility is required.\n`,
               message: 'Which wallet will you use to store keys for your masternode?',
@@ -52,9 +56,10 @@ function registerMasternodeGuideTaskFactory() {
             },
           ]);
 
+          // TODO: Refactor. It should be done as a separate tasks
           let state;
           if (registrar === REGISTRARS.CORE) {
-            state = await registerMasternodeWithCoreWallet(ctx, task);
+            state = await registerMasternodeWithCoreWallet(ctx, task, defaultConfigs);
           } else if (registrar === REGISTRARS.DMT) {
             state = await registerMasternodeWithDMT(ctx, task);
           }
@@ -84,5 +89,3 @@ function registerMasternodeGuideTaskFactory() {
 
   return registerMasternodeGuideTask;
 }
-
-module.exports = registerMasternodeGuideTaskFactory;

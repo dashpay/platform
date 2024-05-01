@@ -1,4 +1,4 @@
-import fibonacci from '../../../../utils/fibonacci';
+import { fibonacci } from '../../../../utils/fibonacci';
 import { wait } from '../../../../utils/wait';
 
 /**

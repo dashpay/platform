@@ -30,7 +30,7 @@ describe.skip('fetchAndValidateDataContractFactory', () => {
     const [document] = await getDocumentsFixture(dataContract);
     rawDocument = document.toObject();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
   });
 

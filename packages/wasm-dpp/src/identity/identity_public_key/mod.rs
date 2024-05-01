@@ -1,20 +1,19 @@
-use dpp::dashcore::anyhow;
-use js_sys::Reflect::delete_property;
-pub use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+pub use serde::Serialize;
+
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::utils::WithJsError;
-use crate::{buffer::Buffer, utils, with_js_error};
+use crate::{buffer::Buffer, with_js_error};
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
 use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::platform_value::{BinaryData, ReplacementType, Value};
-use dpp::serialization::ValueConvertible;
-use dpp::state_transition::public_key_in_creation::v0::BINARY_DATA_FIELDS;
+use dpp::platform_value::{BinaryData, ReplacementType};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
+use dpp::ProtocolError;
+
 use dpp::version::PlatformVersion;
 mod purpose;
 pub use purpose::*;
@@ -38,7 +37,7 @@ impl IdentityPublicKeyWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityPublicKey::default_versioned(&platform_version)
+        IdentityPublicKey::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -99,7 +98,7 @@ impl IdentityPublicKeyWasm {
         self.0.set_security_level(
             security_level
                 .try_into()
-                .map_err(|e: anyhow::Error| e.to_string())?,
+                .map_err(|e: ProtocolError| e.to_string())?,
         );
         Ok(())
     }
@@ -183,6 +182,19 @@ impl IdentityPublicKeyWasm {
         )?;
 
         Ok(js_object)
+    }
+
+    #[wasm_bindgen(js_name=toBuffer)]
+    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
+        let bytes = PlatformSerializable::serialize_to_bytes(&self.0.clone()).with_js_error()?;
+        Ok(Buffer::from_bytes(&bytes))
+    }
+
+    #[wasm_bindgen(js_name=fromBuffer)]
+    pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityPublicKeyWasm, JsValue> {
+        let key: IdentityPublicKey =
+            PlatformDeserializable::deserialize_from_bytes(buffer.as_slice()).with_js_error()?;
+        Ok(key.into())
     }
 }
 

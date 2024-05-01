@@ -4,13 +4,14 @@ pub mod accessors;
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
 use dashcore_rpc::json::MasternodeListItem;
 use dpp::bincode::{Decode, Encode};
+use std::fmt::{Debug, Formatter};
 
 use dpp::dashcore::{ProTxHash, Txid};
 
 use std::net::SocketAddr;
 
 /// `Masternode` represents a masternode on the network.
-#[derive(Clone, PartialEq, Eq, Debug, Encode, Decode)]
+#[derive(Clone, PartialEq, Encode, Decode)]
 pub struct MasternodeV0 {
     /// The type of masternode (e.g., full, partial).
     pub node_type: MasternodeType,
@@ -25,9 +26,23 @@ pub struct MasternodeV0 {
     /// The address where the collateral is stored.
     pub collateral_address: [u8; 20],
     /// The amount of the operator's reward for running the masternode.
-    pub operator_reward: u32,
+    pub operator_reward: f32,
     /// The current state of the masternode (e.g., enabled, pre-enabled, banned).
     pub state: MasternodeStateV0,
+}
+
+impl Debug for MasternodeV0 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MasternodeV0")
+            .field("node_type", &self.node_type)
+            .field("pro_tx_hash", &self.pro_tx_hash.to_string())
+            .field("collateral_hash", &self.collateral_hash)
+            .field("collateral_index", &self.collateral_index)
+            .field("collateral_address", &self.collateral_address)
+            .field("operator_reward", &self.operator_reward)
+            .field("state", &self.state)
+            .finish()
+    }
 }
 
 impl From<MasternodeListItem> for MasternodeV0 {

@@ -1,5 +1,3 @@
-// TODO(versioning): restore
-// @ts-ignore
 import { Identifier, ExtendedDocument, Metadata } from '@dashevo/wasm-dpp';
 import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse';
 import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
@@ -106,9 +104,7 @@ export async function get(this: Platform, typeLocator: string, opts: QueryOption
     const binaryProperties = appDefinition.contract.getBinaryProperties(fieldType);
 
     opts.where = opts.where
-      .map((whereCondition) => convertIdentifierProperties(
-        whereCondition, binaryProperties,
-      ));
+      .map((whereCondition) => convertIdentifierProperties(whereCondition, binaryProperties));
   }
 
   if (opts.startAt instanceof ExtendedDocument) {
@@ -146,11 +142,12 @@ export async function get(this: Platform, typeLocator: string, opts: QueryOption
 
   const result = await Promise.all(
     rawDocuments.map(async (rawDocument) => {
-      // TODO(versioning): restore
-      // @ts-ignore
-      const document = await this.dpp.document.createExtendedDocumentFromDocumentBuffer(
-        rawDocument as Uint8Array, fieldType, appDefinition.contract,
-      );
+      const document = await this.dpp.document
+        .createExtendedDocumentFromDocumentBuffer(
+          rawDocument as Uint8Array,
+          fieldType,
+          appDefinition.contract,
+        );
 
       let metadata;
       const responseMetadata = documentsResponse.getMetadata();

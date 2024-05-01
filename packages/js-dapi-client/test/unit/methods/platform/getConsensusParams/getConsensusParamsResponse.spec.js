@@ -1,14 +1,18 @@
 const {
   v0: {
     GetConsensusParamsResponse: GetConsensusParamsResponseProto,
-    ConsensusParamsBlock: ConsensusParamsBlockProto,
-    ConsensusParamsEvidence: ConsensusParamsEvidenceProto,
   },
 } = require('@dashevo/dapi-grpc');
 const GetConsensusParamsResponse = require('../../../../../lib/methods/platform/getConsensusParams/getConsensusParamsResponse');
 const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
 const ConsensusParamsBlock = require('../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsBlock');
 const ConsensusParamsEvidence = require('../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsEvidence');
+
+const {
+  ConsensusParamsBlock: ConsensusParamsBlockProto,
+  ConsensusParamsEvidence: ConsensusParamsEvidenceProto,
+  GetConsensusParamsResponseV0,
+} = GetConsensusParamsResponseProto;
 
 describe('getConsensusParamsResponse', () => {
   let getConsensusParamsResponse;
@@ -79,8 +83,11 @@ describe('getConsensusParamsResponse', () => {
     evidence.setMaxBytes(consensusParamsFixture.evidence.maxBytes);
 
     const proto = new GetConsensusParamsResponseProto();
-    proto.setBlock(block);
-    proto.setEvidence(evidence);
+    proto.setV0(
+      new GetConsensusParamsResponseV0()
+        .setBlock(block)
+        .setEvidence(evidence),
+    );
 
     getConsensusParamsResponse = GetConsensusParamsResponse.createFromProto(proto);
 
@@ -103,6 +110,7 @@ describe('getConsensusParamsResponse', () => {
 
   it('should return InvalidResponseError if consensus params are not defined', () => {
     const proto = new GetConsensusParamsResponseProto();
+    proto.setV0(new GetConsensusParamsResponseV0());
 
     try {
       getConsensusParamsResponse = GetConsensusParamsResponse.createFromProto(proto);

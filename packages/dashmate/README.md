@@ -18,6 +18,7 @@ Distribution package for Dash node installation
   - [Stop node](#stop-node)
   - [Restart node](#restart-node)
   - [Show node status](#show-node-status)
+  - [Execute Core CLI command](#execute-core-cli-command)
   - [Reset node data](#reset-node-data)
   - [Full node](#full-node)
   - [Node groups](#node-groups)
@@ -31,7 +32,7 @@ Distribution package for Dash node installation
 ### Dependencies
 
 * [Docker](https://docs.docker.com/engine/installation/) (v20.10+)
-* [Node.js](https://nodejs.org/en/download/) (v18, NPM v8.0+)
+* [Node.js](https://nodejs.org/en/download/) (v20, NPM v8.0+)
 
 For Linux installations you may optionally wish to follow the Docker [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
 
@@ -61,7 +62,7 @@ Example usage:
 
 ```bash
 $ dashmate stop
-$ npm update -g dashmate
+$ npm install -g dashmate
 $ dashmate update
 ╔══════════════════╤══════════════════════════════╤════════════╗
 ║ Service          │ Image                        │ Updated    ║
@@ -86,7 +87,7 @@ In some cases, you must also additionally reset platform data:
 
 ```bash
 $ dashmate stop
-$ npm update -g dashmate
+$ npm install -g dashmate
 $ dashmate reset --platform-only --hard
 $ dashmate update
 $ dashmate setup
@@ -157,12 +158,13 @@ DESCRIPTION
   Show default config
 
 COMMANDS
-  config create   Create config
+  config create   Create new config
   config default  Manage default config
   config envs     Export config to envs
   config get      Get config option
   config list     List available configs
   config remove   Remove config
+  config render   Render config's service configs
   config set      Set config option
 ```
 
@@ -244,6 +246,30 @@ To show the host status:
 $ dashmate status host
 ```
 
+### Execute Core CLI command
+
+The `core cli` command executes an `dash-cli` command to the core container on the current config.
+
+```
+USAGE
+  $ dashmate core cli [COMMAND] [--config <value>]
+
+ARGUMENTS
+  COMMAND dash-cli command written in the double quotes 
+
+FLAGS
+  --config=<value>  configuration name to use
+
+DESCRIPTION
+  Dash Core CLI
+```
+
+Example:
+```bash
+$ dashmate core cli "getblockcount"
+1337
+```
+
 ### Reset node data
 
 The `reset` command removes all data corresponding to the specified config and allows you to start a node from scratch.
@@ -281,21 +307,26 @@ rm -rf ~/.dashmate/
 ```
 
 
-### Reindex dashcore chain data
+### Reindex core chain data
 
-The `core reindex` command rebuilds the blockchain index using the downloaded block data. It modifies the configuration to start the core container in `reindex=1` mode, waits until it completes a full resync, and returns it to normal mode.
+The `core reindex` command helps you to reindex your Core instance in the node.
 
-The process displays interactive progress and can be interrupted at any time, but you cannot start your configuration until the resync is fully complete.
+The process displays interactive progress and may be interrupted at any time. After reindex is finished core and other services will become online without any interactions from the user.
 
 The `core reindex` command works for regular and local configurations.
 
 ```
 USAGE
-  $ dashmate core reindex [-v] [--config <value>]
+  $ dashmate core reindex [-v] [--config <value>] [-d] [-f]
 
 FLAGS
+  -d, --detach      run the reindex process in the background
+  -f, --force       reindex already running node without confirmation
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
+
+DESCRIPTION
+  Reindex Core data
 ```
 
 ### Full node
@@ -411,6 +442,26 @@ FLAGS
 
 With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#node-setup) again from scratch to start a new local node group.
 
+#### Reindex group nodes
+
+The `group core reindex` reindexes all your local dash core containers
+
+```
+USAGE
+  $ dashmate group core reindex [-v] [--group <value>] [-d] [-f]
+
+FLAGS
+  -d, --detach     run the reindex process in the background
+  -f, --force      reindex already running node without confirmation
+  -v, --verbose    use verbose mode for output
+  --group=<value>  group name to use
+
+DESCRIPTION
+  Reindex group Core data
+```
+
+With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#node-setup) again from scratch to start a new local node group.
+
 #### Mint tDash
 
 The `wallet mint` command can be used to generate an arbitrary amount of tDash to a new or specified recipient address on a local network. The network must be stopped before running this command.
@@ -445,7 +496,15 @@ dashmate config set --config=testnet_2 group testnet
 dashmate group default testnet
 ```
 
-Ports and other required options need to be updated to avoid port collisions before starting the group of nodes.
+#### Render config's service configs
+
+If you changed your config manually and you'd like to dashmate to render
+again all your service configs (dashd.conf, config.toml, etc.), you can issue that command.
+
+```bash
+dashmate config render
+Config "testnet" service configs rendered
+```
 
 ### Development
 

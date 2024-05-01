@@ -36,10 +36,10 @@ pub fn get_identity_update_transition_fixture(
                 .unwrap(),
                 security_level: SecurityLevel::MASTER,
                 signature: BinaryData::new(vec![0; 65]),
+                contract_bounds: None,
             }
             .into()],
             disable_public_keys: vec![0],
-            public_keys_disabled_at: Some(1234567),
             ..Default::default()
         }
         .into(),

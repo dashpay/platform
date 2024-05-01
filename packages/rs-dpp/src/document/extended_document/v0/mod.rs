@@ -6,18 +6,25 @@ mod serialize;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
+#[cfg(any(
+    feature = "document-value-conversion",
+    feature = "document-json-conversion"
+))]
 use crate::document::extended_document::fields::property_names;
 use crate::document::{Document, DocumentV0Getters, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
-use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 
-use crate::util::hash::hash_to_vec;
+use crate::util::hash::hash_double_to_vec;
 use crate::ProtocolError;
 
 use platform_value::btreemap_extensions::{
-    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
-    BTreeValueRemoveFromMapHelper,
+    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
+};
+#[cfg(feature = "document-value-conversion")]
+use platform_value::btreemap_extensions::{
+    BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -25,6 +32,7 @@ use std::collections::BTreeMap;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(feature = "validation")]
 use crate::data_contract::validation::DataContractValidationMethodsV0;
 #[cfg(feature = "document-json-conversion")]
@@ -34,6 +42,7 @@ use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
+#[cfg(feature = "document-json-conversion")]
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]
@@ -145,6 +154,7 @@ impl ExtendedDocumentV0 {
         // We can unwrap because the Document can not be created without a valid Document Type
         self.data_contract
             .document_type_for_name(self.document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
     }
 
     pub fn can_be_modified(&self) -> Result<bool, ProtocolError> {
@@ -152,21 +162,49 @@ impl ExtendedDocumentV0 {
             .map(|document_type| document_type.documents_mutable())
     }
 
-    pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
+    pub fn requires_revision(&self) -> Result<bool, ProtocolError> {
         self.document_type()
-            .map(|document_type| document_type.documents_mutable())
+            .map(|document_type| document_type.requires_revision())
     }
 
     pub fn revision(&self) -> Option<Revision> {
         self.document.revision()
     }
 
+    /// Returns an optional block timestamp at which the document was created.
+    /// It will be None if it is not required by the schema.
     pub fn created_at(&self) -> Option<TimestampMillis> {
         self.document.created_at()
     }
 
+    /// Returns an optional block timestamp at which the document was updated.
+    /// It will be None if it is not required by the schema.
     pub fn updated_at(&self) -> Option<TimestampMillis> {
         self.document.updated_at()
+    }
+
+    /// Returns an optional block height at which the document was created.
+    /// It will be None if it is not required by the schema.
+    pub fn created_at_block_height(&self) -> Option<BlockHeight> {
+        self.document.created_at_block_height()
+    }
+
+    /// Returns an optional block height at which the document was last updated.
+    /// It will be None if it is not required by the schema.
+    pub fn updated_at_block_height(&self) -> Option<BlockHeight> {
+        self.document.updated_at_block_height()
+    }
+
+    /// Returns an optional core block height at which the document was created.
+    /// It will be None if it is not required by the schema.
+    pub fn created_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        self.document.created_at_core_block_height()
+    }
+
+    /// Returns an optional core block height at which the document was last updated.
+    /// It will be None if it is not required by the schema.
+    pub fn updated_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        self.document.updated_at_core_block_height()
     }
 
     /// Create an extended document with additional information.
@@ -232,7 +270,7 @@ impl ExtendedDocumentV0 {
         Self::from_untrusted_platform_value(raw_document.into(), data_contract, platform_version)
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "document-value-conversion")]
     /// Create an extended document from a trusted platform value object where fields are already in
     /// the proper format for the contract.
     ///
@@ -277,7 +315,7 @@ impl ExtendedDocumentV0 {
         Ok(extended_document)
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "document-value-conversion")]
     /// Create an extended document from an untrusted platform value object where fields might not
     /// be in the proper format for the contract.
     ///
@@ -415,8 +453,11 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(
-            ExtendedDocumentPlatformConversionMethodsV0::serialize(self, platform_version)?,
+        Ok(hash_double_to_vec(
+            ExtendedDocumentPlatformConversionMethodsV0::serialize_to_bytes(
+                self,
+                platform_version,
+            )?,
         ))
     }
 
@@ -425,6 +466,28 @@ impl ExtendedDocumentV0 {
     /// If parents are not present they will be automatically created
     pub fn set(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
         Ok(self.document.properties_mut().insert_at_path(path, value)?)
+    }
+
+    /// Set the value under given path.
+    /// The path supports syntax from `lodash` JS lib. Example: "root.people[0].name".
+    /// If parents are not present they will be automatically created
+    pub fn set_untrusted(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
+        let document_type = self.document_type()?;
+
+        let identifiers = document_type.identifier_paths();
+        let binary_paths = document_type.binary_paths();
+
+        if identifiers.contains(path) {
+            let value =
+                ReplacementType::Identifier.replace_for_bytes(value.to_identifier_bytes()?)?;
+            self.set(path, value)
+        } else if binary_paths.contains(path) {
+            let value =
+                ReplacementType::BinaryBytes.replace_for_bytes(value.to_identifier_bytes()?)?;
+            self.set(path, value)
+        } else {
+            self.set(path, value)
+        }
     }
 
     /// Retrieves field specified by path

@@ -1,7 +1,7 @@
 const { use } = require('chai');
 const { expect } = require('chai');
-const path = require('path');
 const dotenvSafe = require('dotenv-safe');
+const path = require('path');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
@@ -11,28 +11,24 @@ use(sinonChai);
 use(dirtyChai);
 use(chaiAsPromised);
 
-dotenvSafe.config({
-  path: path.resolve(__dirname, '..', '..', '.env'),
-});
+if (process.env.LOAD_ENV === 'true') {
+  dotenvSafe.config({
+    path: path.resolve(__dirname, '..', '..', '.env'),
+  });
+}
 
-beforeEach(function beforeEach() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
-    // Legacy
-    this.sinonSanbox = this.sinon;
-  } else {
+exports.mochaHooks = {
+  beforeEach() {
+    if (!this.sinon) {
+      this.sinon = sinon.createSandbox();
+    } else {
+      this.sinon.restore();
+    }
+  },
+
+  afterEach() {
     this.sinon.restore();
-  }
-});
-
-before(function before() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
-  }
-});
-
-afterEach(function afterEach() {
-  this.sinon.restore();
-});
+  },
+};
 
 global.expect = expect;

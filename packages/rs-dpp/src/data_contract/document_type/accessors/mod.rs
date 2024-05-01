@@ -7,8 +7,13 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, Docu
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
-use std::collections::{BTreeMap, BTreeSet};
+use crate::nft::TradeMode;
+use indexmap::IndexMap;
+use std::collections::BTreeSet;
 pub use v0::*;
 
 impl DocumentTypeV0Getters for DocumentType {
@@ -42,13 +47,13 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn flattened_properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentType::V0(v0) => v0.flattened_properties(),
         }
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentType::V0(v0) => v0.properties(),
         }
@@ -84,9 +89,45 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
+    fn documents_can_be_deleted(&self) -> bool {
+        match self {
+            DocumentType::V0(v0) => v0.documents_can_be_deleted(),
+        }
+    }
+
+    fn trade_mode(&self) -> TradeMode {
+        match self {
+            DocumentType::V0(v0) => v0.trade_mode(),
+        }
+    }
+
+    fn creation_restriction_mode(&self) -> CreationRestrictionMode {
+        match self {
+            DocumentType::V0(v0) => v0.creation_restriction_mode(),
+        }
+    }
+
+    fn documents_transferable(&self) -> Transferable {
+        match self {
+            DocumentType::V0(v0) => v0.documents_transferable(),
+        }
+    }
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentType::V0(v0) => v0.data_contract_id(),
+        }
+    }
+
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DocumentType::V0(v0) => v0.requires_identity_encryption_bounded_key(),
+        }
+    }
+
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DocumentType::V0(v0) => v0.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -128,13 +169,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn flattened_properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.flattened_properties(),
         }
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.properties(),
         }
@@ -170,9 +211,45 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
+    fn documents_can_be_deleted(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.documents_can_be_deleted(),
+        }
+    }
+
+    fn documents_transferable(&self) -> Transferable {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.documents_transferable(),
+        }
+    }
+
+    fn trade_mode(&self) -> TradeMode {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.trade_mode(),
+        }
+    }
+
+    fn creation_restriction_mode(&self) -> CreationRestrictionMode {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.creation_restriction_mode(),
+        }
+    }
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentTypeRef::V0(v0) => v0.data_contract_id(),
+        }
+    }
+
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.requires_identity_encryption_bounded_key(),
+        }
+    }
+
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -214,13 +291,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn flattened_properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.flattened_properties(),
         }
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.properties(),
         }
@@ -256,9 +333,45 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
+    fn documents_can_be_deleted(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.documents_can_be_deleted(),
+        }
+    }
+
+    fn documents_transferable(&self) -> Transferable {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.documents_transferable(),
+        }
+    }
+
+    fn trade_mode(&self) -> TradeMode {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.trade_mode(),
+        }
+    }
+
+    fn creation_restriction_mode(&self) -> CreationRestrictionMode {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.creation_restriction_mode(),
+        }
+    }
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.data_contract_id(),
+        }
+    }
+
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.requires_identity_encryption_bounded_key(),
+        }
+    }
+
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.requires_identity_decryption_bounded_key(),
         }
     }
 

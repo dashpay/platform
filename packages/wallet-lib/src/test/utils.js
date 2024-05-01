@@ -6,7 +6,7 @@ const waitOneTick = () => new Promise((resolve) => {
   }
 });
 
-const wait = (timeout) => new Promise(((resolve) => setTimeout(resolve, timeout)));
+const wait = (timeout) => new Promise(((resolve) => { setTimeout(resolve, timeout); }));
 
 module.exports = {
   waitOneTick,

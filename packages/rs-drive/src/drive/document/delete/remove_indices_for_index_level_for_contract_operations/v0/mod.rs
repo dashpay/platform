@@ -26,6 +26,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes indices for an index level and recurses.
+    #[inline]
     pub(super) fn remove_indices_for_index_level_for_contract_operations_v0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -133,7 +134,7 @@ impl Drive {
             sub_level_index_path_info.push(document_index_field)?;
             // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
             // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            self.remove_indices_for_index_level_for_contract_operations(
+            self.remove_indices_for_index_level_for_contract_operations_v0(
                 document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,

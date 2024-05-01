@@ -34,7 +34,7 @@ impl MasternodeAccessorsV0 for Masternode {
         }
     }
 
-    fn operator_reward(&self) -> u32 {
+    fn operator_reward(&self) -> f32 {
         match self {
             Masternode::V0(v0) => v0.operator_reward,
         }

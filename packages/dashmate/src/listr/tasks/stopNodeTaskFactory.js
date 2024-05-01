@@ -1,18 +1,15 @@
-const { Listr } = require('listr2');
-const generateEnvs = require('../../util/generateEnvs');
+import { Listr } from 'listr2';
 
 /**
  * @param {DockerCompose} dockerCompose
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
- * @param {ConfigFile} configFile
  * @return {stopNodeTask}
  */
-function stopNodeTaskFactory(
+export default function stopNodeTaskFactory(
   dockerCompose,
   createRpcClient,
   getConnectionHost,
-  configFile,
 ) {
   /**
    * Stop node
@@ -27,9 +24,12 @@ function stopNodeTaskFactory(
         title: 'Check node is running',
         skip: (ctx) => ctx.isForce,
         task: async (ctx) => {
-          if (!await dockerCompose.isNodeRunning(
-            generateEnvs(configFile, config, { platformOnly: ctx.platformOnly }),
-          )) {
+          const profiles = [];
+          if (ctx.platformOnly) {
+            profiles.push('platform');
+          }
+
+          if (!await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Node is not running');
           }
         },
@@ -43,7 +43,7 @@ function stopNodeTaskFactory(
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
             pass: config.get('core.rpc.password'),
-            host: await getConnectionHost(config, 'core'),
+            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
           const { result: { mediantime } } = await rpcClient.getBlockchainInfo();
@@ -53,14 +53,17 @@ function stopNodeTaskFactory(
       },
       {
         title: `Stopping ${config.getName()} node`,
-        task: async (ctx) => dockerCompose.stop(
-          generateEnvs(configFile, config, { platformOnly: ctx.platformOnly }),
-        ),
+        task: async (ctx) => {
+          const profiles = [];
+          if (ctx.platformOnly) {
+            profiles.push('platform');
+          }
+
+          await dockerCompose.stop(config, { profiles });
+        },
       },
     ]);
   }
 
   return stopNodeTask;
 }
-
-module.exports = stopNodeTaskFactory;

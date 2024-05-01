@@ -1,4 +1,4 @@
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 const {
   v0: {
     GetDocumentsResponse,
@@ -22,26 +22,28 @@ describe('GetDocumentsResponse', () => {
   let serializedDocuments;
   let proofFixture;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    documentsFixture = getDocumentsFixture();
+    documentsFixture = await getDocumentsFixture();
     proofFixture = getProofFixture();
-
-    proto = new GetDocumentsResponse();
 
     serializedDocuments = documentsFixture
       .map((document) => Buffer.from(JSON.stringify(document)));
 
-    const documentsList = new GetDocumentsResponse.Documents();
-    documentsList.setDocumentsList(serializedDocuments);
-
-    proto.setDocuments(documentsList);
+    const { GetDocumentsResponseV0 } = GetDocumentsResponse;
+    proto = new GetDocumentsResponse();
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
-    proto.setMetadata(metadata);
+    proto.setV0(
+      new GetDocumentsResponseV0()
+        .setDocuments(
+          new GetDocumentsResponseV0.Documents()
+            .setDocumentsList(serializedDocuments),
+        ).setMetadata(metadata),
+    );
 
     getDocumentsResponse = new GetDocumentsResponseClass(
       serializedDocuments,
@@ -97,7 +99,7 @@ describe('GetDocumentsResponse', () => {
     proofProto.setSignature(proofFixture.signature);
     proofProto.setGrovedbProof(proofFixture.merkleProof);
 
-    proto.setProof(proofProto);
+    proto.getV0().setProof(proofProto);
 
     getDocumentsResponse = GetDocumentsResponseClass.createFromProto(proto);
 
@@ -119,7 +121,7 @@ describe('GetDocumentsResponse', () => {
   });
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {
-    proto.setMetadata(undefined);
+    proto.getV0().setMetadata(undefined);
 
     try {
       getDocumentsResponse = GetDocumentsResponseClass.createFromProto(proto);

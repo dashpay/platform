@@ -1,6 +1,7 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
-const { toSatoshi } = require('../../util/satoshiConverter');
+import DashCoreLib from '@dashevo/dashcore-lib';
+import { toSatoshi } from '../../util/satoshiConverter.js';
 
+const { Transaction } = DashCoreLib;
 /**
  * Send Dash to address
  *
@@ -12,7 +13,7 @@ const { toSatoshi } = require('../../util/satoshiConverter');
  * @param {number} amount Amount in dash
  * @return {Promise<string>}
  */
-async function sendToAddress(
+export default async function sendToAddress(
   coreService,
   fundSourcePrivateKey,
   fundSourceAddress,
@@ -58,5 +59,3 @@ async function sendToAddress(
 
   return hash;
 }
-
-module.exports = sendToAddress;

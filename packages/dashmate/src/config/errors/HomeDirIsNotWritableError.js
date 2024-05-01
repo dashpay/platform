@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import AbstractError from '../../errors/AbstractError.js';
 
-class HomeDirIsNotWritableError extends AbstractError {
+export default class HomeDirIsNotWritableError extends AbstractError {
   /**
    * @param {string} homeDirPath
    */
@@ -17,5 +17,3 @@ class HomeDirIsNotWritableError extends AbstractError {
     return this.homeDirPath;
   }
 }
-
-module.exports = HomeDirIsNotWritableError;

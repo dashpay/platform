@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use platform_value::BinaryData;
 
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, UserFeeIncrease};
 use crate::version::FeatureVersion;
 
 use crate::state_transition::StateTransitionType;
@@ -11,11 +11,12 @@ use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] =
     [StateTransitionType::DocumentsBatch];
 
-pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 4] = [
+pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 5] = [
     StateTransitionType::IdentityCreate,
     StateTransitionType::IdentityTopUp,
     StateTransitionType::IdentityUpdate,
     StateTransitionType::IdentityCreditTransfer,
+    StateTransitionType::IdentityCreditWithdrawal,
 ];
 
 pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
@@ -36,6 +37,10 @@ pub trait StateTransitionLike:
     fn signature(&self) -> &BinaryData;
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData);
+    /// returns the fee multiplier
+    fn user_fee_increase(&self) -> UserFeeIncrease;
+    /// set a fee multiplier
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease);
     /// get modified ids list
     fn modified_data_ids(&self) -> Vec<Identifier>;
 
@@ -56,4 +61,8 @@ pub trait StateTransitionLike:
 
     /// Get owner ID
     fn owner_id(&self) -> Identifier;
+
+    /// unique identifiers for the state transition
+    /// This is often only one String except in the case of a documents batch state transition
+    fn unique_identifiers(&self) -> Vec<String>;
 }

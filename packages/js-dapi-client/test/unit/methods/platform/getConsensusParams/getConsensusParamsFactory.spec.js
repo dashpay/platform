@@ -3,13 +3,20 @@ const {
     PlatformPromiseClient,
     GetConsensusParamsResponse,
     GetConsensusParamsRequest,
-    ConsensusParamsBlock,
-    ConsensusParamsEvidence,
   },
 } = require('@dashevo/dapi-grpc');
 const getConsensusParamsFactory = require('../../../../../lib/methods/platform/getConsensusParams/getConsensusParamsFactory');
 const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
 
+const {
+  GetConsensusParamsRequestV0,
+} = GetConsensusParamsRequest;
+
+const {
+  ConsensusParamsBlock,
+  ConsensusParamsEvidence,
+  GetConsensusParamsResponseV0,
+} = GetConsensusParamsResponse;
 describe('getConsensusParams', () => {
   let getConsensusParams;
   let grpcTransportMock;
@@ -41,8 +48,11 @@ describe('getConsensusParams', () => {
     evidence.setMaxBytes(consensusParamsFixture.evidence.maxBytes);
 
     response = new GetConsensusParamsResponse();
-    response.setBlock(block);
-    response.setEvidence(evidence);
+    response.setV0(
+      new GetConsensusParamsResponseV0()
+        .setBlock(block)
+        .setEvidence(evidence),
+    );
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -56,7 +66,10 @@ describe('getConsensusParams', () => {
     const options = {};
 
     const request = new GetConsensusParamsRequest();
-    request.setProve(!!options.prove);
+    request.setV0(
+      new GetConsensusParamsRequestV0()
+        .setProve(!!options.prove),
+    );
 
     expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
       PlatformPromiseClient,
@@ -76,8 +89,11 @@ describe('getConsensusParams', () => {
     const options = { };
 
     const request = new GetConsensusParamsRequest();
-    request.setProve(!!options.prove);
-    request.setHeight(height);
+    request.setV0(
+      new GetConsensusParamsRequestV0()
+        .setProve(!!options.prove)
+        .setHeight(height),
+    );
 
     expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
       PlatformPromiseClient,
@@ -96,7 +112,10 @@ describe('getConsensusParams', () => {
     const result = await getConsensusParams(undefined, options);
 
     const request = new GetConsensusParamsRequest();
-    request.setProve(!!options.prove);
+    request.setV0(
+      new GetConsensusParamsRequestV0()
+        .setProve(!!options.prove),
+    );
 
     expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
       PlatformPromiseClient,
@@ -116,7 +135,10 @@ describe('getConsensusParams', () => {
     grpcTransportMock.request.throws(error);
 
     const request = new GetConsensusParamsRequest();
-    request.setProve(!!options.prove);
+    request.setV0(
+      new GetConsensusParamsRequestV0()
+        .setProve(!!options.prove),
+    );
 
     try {
       await getConsensusParams();
@@ -135,7 +157,10 @@ describe('getConsensusParams', () => {
     grpcTransportMock.request.throws(error);
 
     const request = new GetConsensusParamsRequest();
-    request.setProve(!!options.prove);
+    request.setV0(
+      new GetConsensusParamsRequestV0()
+        .setProve(!!options.prove),
+    );
 
     try {
       await getConsensusParams();

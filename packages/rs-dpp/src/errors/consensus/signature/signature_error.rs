@@ -8,9 +8,11 @@ use crate::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 use thiserror::Error;
 
-use serde::{Deserialize, Serialize};
+use crate::consensus::signature::invalid_signature_public_key_purpose_error::InvalidSignaturePublicKeyPurposeError;
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
 pub enum SignatureError {
     /*
 
@@ -28,6 +30,9 @@ pub enum SignatureError {
 
     #[error(transparent)]
     MissingPublicKeyError(MissingPublicKeyError),
+
+    #[error(transparent)]
+    InvalidSignaturePublicKeyPurposeError(InvalidSignaturePublicKeyPurposeError),
 
     #[error(transparent)]
     InvalidSignaturePublicKeySecurityLevelError(InvalidSignaturePublicKeySecurityLevelError),

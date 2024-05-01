@@ -35,7 +35,7 @@ const start = ({
   port,
   networkType,
   dashcoreAPI,
-  log,
+  logger,
 }) => {
   const commands = createCommands(
     dashcoreAPI,
@@ -52,7 +52,7 @@ const start = ({
   them before passing to user.
   */
   Object.keys(allCommands).forEach((commandName) => {
-    allCommands[commandName] = errorHandlerDecorator(allCommands[commandName], log);
+    allCommands[commandName] = errorHandlerDecorator(allCommands[commandName], logger);
   });
 
   const server = jayson.server(allCommands);

@@ -1,11 +1,11 @@
-const _ = require('lodash');
+import lodash from 'lodash';
 
 /**
  * @param {getServiceList} getServiceList
  * @param {docker} docker
  * @return {updateNode}
  */
-function updateNodeFactory(getServiceList, docker) {
+export default function updateNodeFactory(getServiceList, docker) {
   /**
    * Pulls all recent images by given config
    * @typedef {updateNode}
@@ -14,11 +14,11 @@ function updateNodeFactory(getServiceList, docker) {
    *
    * @return {object[]}
    */
-  function updateNode(config) {
+  async function updateNode(config) {
     const services = getServiceList(config);
 
     return Promise.all(
-      _.uniqBy(services, 'image')
+      lodash.uniqBy(services, 'image')
         .map(async ({ name, image, title }) => new Promise((resolve, reject) => {
           docker.pull(image, (err, stream) => {
             if (err) {
@@ -53,5 +53,3 @@ function updateNodeFactory(getServiceList, docker) {
 
   return updateNode;
 }
-
-module.exports = updateNodeFactory;

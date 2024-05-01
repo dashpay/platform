@@ -55,6 +55,7 @@ impl Drive {
             None,
             Some(drive_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok((value, fees))
@@ -82,7 +83,7 @@ impl Drive {
 
         let balance_path = balance_path();
 
-        match self.grove_get_raw(
+        match self.grove_get_raw_optional(
             (&balance_path).into(),
             identity_id.as_slice(),
             direct_query_type,

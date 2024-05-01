@@ -26,26 +26,55 @@ export async function createIdentityCreateTransition(
 
   const identityIndex = await account.getUnusedIdentityIndex();
 
+  // Authentication master key
+
   const { privateKey: identityMasterPrivateKey } = account.identities
     .getIdentityHDKeyByIndex(identityIndex, 0);
   const identityMasterPublicKey = identityMasterPrivateKey.toPublicKey();
 
-  const { privateKey: identitySecondPrivateKey } = account.identities
+  const masterKey = new IdentityPublicKey(1);
+  masterKey.setId(0);
+  masterKey.setData(identityMasterPublicKey.toBuffer());
+  masterKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+
+  // Authentication high level key
+
+  const { privateKey: identityHighAuthPrivateKey } = account.identities
     .getIdentityHDKeyByIndex(identityIndex, 1);
-  const identitySecondPublicKey = identitySecondPrivateKey.toPublicKey();
+  const identityHighAuthPublicKey = identityHighAuthPrivateKey.toPublicKey();
 
-  const keyOne = new IdentityPublicKey(1);
-  keyOne.setData(identityMasterPublicKey.toBuffer());
+  const highAuthKey = new IdentityPublicKey(1);
+  highAuthKey.setId(1);
+  highAuthKey.setData(identityHighAuthPublicKey.toBuffer());
+  highAuthKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
 
-  const keyTwo = new IdentityPublicKey(1);
-  keyTwo.setId(1);
-  keyTwo.setData(identitySecondPublicKey.toBuffer());
-  keyTwo.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
+  // Authentication critical level key
+
+  const { privateKey: identityCriticalAuthPrivateKey } = account.identities
+    .getIdentityHDKeyByIndex(identityIndex, 2);
+  const identityCriticalAuthPublicKey = identityCriticalAuthPrivateKey.toPublicKey();
+
+  const criticalAuthKey = new IdentityPublicKey(1);
+  criticalAuthKey.setId(2);
+  criticalAuthKey.setData(identityCriticalAuthPublicKey.toBuffer());
+  criticalAuthKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
+
+  // Transfer key
+
+  const { privateKey: identityTransferPrivateKey } = account.identities
+    .getIdentityHDKeyByIndex(identityIndex, 3);
+  const identityTransferPublicKey = identityTransferPrivateKey.toPublicKey();
+
+  const transferKey = new IdentityPublicKey(1);
+  transferKey.setId(3);
+  transferKey.setPurpose(IdentityPublicKey.PURPOSES.TRANSFER);
+  transferKey.setData(identityTransferPublicKey.toBuffer());
+  transferKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
 
   // Create Identity
   const identity = dpp.identity.create(
     assetLockProof.createIdentifier(),
-    [keyOne, keyTwo],
+    [masterKey, highAuthKey, criticalAuthKey, transferKey],
   );
 
   // Create ST
@@ -55,28 +84,62 @@ export async function createIdentityCreateTransition(
   );
 
   // Create key proofs
-  const [masterKey, secondKey] = identityCreateTransition.getPublicKeys();
+  const [
+    stMasterKey, stHighAuthKey, stCriticalAuthKey, stTransferKey,
+  ] = identityCreateTransition.getPublicKeys();
 
-  await identityCreateTransition
-    .signByPrivateKey(identityMasterPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+  // Sign master key
 
-  masterKey.setSignature(identityCreateTransition.getSignature());
+  identityCreateTransition.signByPrivateKey(
+    identityMasterPrivateKey.toBuffer(),
+    IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+  );
+
+  stMasterKey.setSignature(identityCreateTransition.getSignature());
 
   identityCreateTransition.setSignature(undefined);
 
-  await identityCreateTransition
-    .signByPrivateKey(identitySecondPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+  // Sign high auth key
 
-  secondKey.setSignature(identityCreateTransition.getSignature());
+  identityCreateTransition.signByPrivateKey(
+    identityHighAuthPrivateKey.toBuffer(),
+    IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+  );
+
+  stHighAuthKey.setSignature(identityCreateTransition.getSignature());
+
+  identityCreateTransition.setSignature(undefined);
+
+  // Sign critical auth key
+
+  identityCreateTransition.signByPrivateKey(
+    identityCriticalAuthPrivateKey.toBuffer(),
+    IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+  );
+
+  stCriticalAuthKey.setSignature(identityCreateTransition.getSignature());
+
+  identityCreateTransition.setSignature(undefined);
+
+  // Sign transfer key
+
+  identityCreateTransition.signByPrivateKey(
+    identityTransferPrivateKey.toBuffer(),
+    IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+  );
+
+  stTransferKey.setSignature(identityCreateTransition.getSignature());
 
   identityCreateTransition.setSignature(undefined);
 
   // Set public keys back after updating their signatures
-  identityCreateTransition.setPublicKeys([masterKey, secondKey]);
+  identityCreateTransition.setPublicKeys([
+    stMasterKey, stHighAuthKey, stCriticalAuthKey, stTransferKey,
+  ]);
 
   // Sign and validate state transition
 
-  await identityCreateTransition
+  identityCreateTransition
     .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   // TODO(versioning): restore

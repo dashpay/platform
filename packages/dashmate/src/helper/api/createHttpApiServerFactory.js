@@ -1,7 +1,6 @@
-const jayson = require('jayson/promise');
-const oclif = require('@oclif/core');
+import jayson from 'jayson/promise/index.js';
 
-function createHttpApiServerFactory() {
+export default function createHttpApiServerFactory() {
   /**
    * @return {HttpServer}
    */
@@ -21,7 +20,8 @@ function createHttpApiServerFactory() {
 
         return new jayson.Method(async () => {
           try {
-            return await oclif.run([...argv]);
+            const { execute } = await import('@oclif/core');
+            return await execute({ dir: import.meta.url, args: argv });
           } catch (e) {
             throw server.error(501, e.message);
           }
@@ -34,5 +34,3 @@ function createHttpApiServerFactory() {
 
   return createHttpApiServer;
 }
-
-module.exports = createHttpApiServerFactory;

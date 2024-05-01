@@ -1,8 +1,7 @@
-const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
-
-const { NETWORK_LOCAL } = require('../../constants');
-const generateEnvs = require('../../util/generateEnvs');
+import { Listr } from 'listr2';
+import { Observable } from 'rxjs';
+import { NETWORK_LOCAL } from '../../constants.js';
+import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
 /**
  *
@@ -13,10 +12,9 @@ const generateEnvs = require('../../util/generateEnvs');
  * @param {buildServicesTask} buildServicesTask
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
- * @param {ConfigFile} configFile
  * @return {startNodeTask}
  */
-function startNodeTaskFactory(
+export default function startNodeTaskFactory(
   dockerCompose,
   waitForCorePeersConnected,
   waitForMasternodesSync,
@@ -24,7 +22,6 @@ function startNodeTaskFactory(
   buildServicesTask,
   getConnectionHost,
   ensureFileMountExists,
-  configFile,
 ) {
   /**
    * @typedef {startNodeTask}
@@ -32,11 +29,6 @@ function startNodeTaskFactory(
    * @return {Object}
    */
   function startNodeTask(config) {
-    // check core is not reindexing
-    if (config.get('core.reindex.enable', true)) {
-      throw new Error(`Your dashcore node in config [${config.name}] is reindexing, please allow the process to complete first`);
-    }
-
     // Check external IP is set
     if (config.get('core.masternode.enable')) {
       config.get('externalIp', true);
@@ -53,11 +45,20 @@ function startNodeTaskFactory(
 
     // Check Drive log files are created
     if (config.get('platform.enable')) {
-      const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
-      ensureFileMountExists(prettyFilePath);
+      const loggers = config.get('platform.drive.abci.logs');
 
-      const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
-      ensureFileMountExists(jsonFilePath);
+      for (const logger of Object.values(loggers)) {
+        if (['stdout', 'stderr'].includes(logger.destination)) {
+          continue;
+        }
+
+        ensureFileMountExists(logger.destination, 0o666);
+      }
+
+      const tenderdashLogFilePath = config.get('platform.drive.tenderdash.log.path');
+      if (tenderdashLogFilePath !== null) {
+        ensureFileMountExists(tenderdashLogFilePath, 0o666);
+      }
     }
 
     return new Listr([
@@ -65,9 +66,12 @@ function startNodeTaskFactory(
         title: 'Check node is not started',
         enabled: (ctx) => !ctx.isForce,
         task: async (ctx) => {
-          if (await dockerCompose.isNodeRunning(
-            generateEnvs(configFile, config, { platformOnly: ctx.platformOnly }),
-          )) {
+          const profiles = [];
+          if (ctx.platformOnly) {
+            profiles.push('platform');
+          }
+
+          if (await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
@@ -76,15 +80,14 @@ function startNodeTaskFactory(
         title: 'Check core is started',
         enabled: (ctx) => ctx.platformOnly === true,
         task: async () => {
-          if (!await dockerCompose.isServiceRunning(generateEnvs(configFile, config), 'core')) {
+          if (!await dockerCompose.isServiceRunning(config, 'core')) {
             throw new Error('Platform services depend on Core and can\'t be started without it. Please run "dashmate start" without "--platform" flag');
           }
         },
       },
       {
         enabled: (ctx) => !ctx.skipBuildServices
-          && config.get('platform.enable')
-          && config.get('platform.sourcePath') !== null,
+          && isServiceBuildRequired(config),
         task: () => buildServicesTask(config),
       },
       {
@@ -96,9 +99,12 @@ function startNodeTaskFactory(
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const envs = generateEnvs(configFile, config, { platformOnly: ctx.platformOnly });
+          const profiles = [];
+          if (ctx.platformOnly) {
+            profiles.push('platform');
+          }
 
-          await dockerCompose.up(envs);
+          await dockerCompose.up(config, { profiles });
         },
       },
       {
@@ -109,7 +115,7 @@ function startNodeTaskFactory(
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
             pass: config.get('core.rpc.password'),
-            host: await getConnectionHost(config, 'core'),
+            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
           return new Observable(async (observer) => {
@@ -131,5 +137,3 @@ function startNodeTaskFactory(
 
   return startNodeTask;
 }
-
-module.exports = startNodeTaskFactory;

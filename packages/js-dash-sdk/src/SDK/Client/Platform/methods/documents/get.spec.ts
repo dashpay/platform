@@ -190,6 +190,7 @@ describe('Client - Platform - Documents - .get()', () => {
               contentMediaType: 'application/x.dash.dpp.identifier',
               minItems: 32,
               maxItems: 32,
+              position: 0,
             },
             anotherNested: {
               type: 'object',
@@ -200,12 +201,18 @@ describe('Client - Platform - Documents - .get()', () => {
                   contentMediaType: 'application/x.dash.dpp.identifier',
                   minItems: 32,
                   maxItems: 32,
+                  position: 0,
                 },
               },
+              additionalProperties: false,
+              position: 1,
             },
           },
+          additionalProperties: false,
+          position: 0,
         },
       },
+      additionalProperties: false,
     });
 
     appDefinition = {

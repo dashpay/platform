@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const getDataContractFixture = require('./getDataContractFixture');
 
 const { default: loadWasmDpp } = require('../../..');
-let { DocumentFactory, DocumentValidator, ProtocolVersionValidator } = require('../../..');
+let { DocumentFactory } = require('../../..');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 
 let ownerId;
@@ -20,15 +20,15 @@ module.exports = async function getDocumentsFixture(
     dataContract = await getDataContractFixture();
   }
 
-  ({ DocumentFactory, DocumentValidator, ProtocolVersionValidator } = await loadWasmDpp());
+  ({ DocumentFactory } = await loadWasmDpp());
 
-  const documentValidator = new DocumentValidator(new ProtocolVersionValidator());
+  // const documentValidator = new DocumentValidator(new ProtocolVersionValidator());
   const entropyGenerator = {
     generate() {
       return crypto.randomBytes(32);
     },
   };
-  const factory = new DocumentFactory(1, documentValidator, {}, entropyGenerator);
+  const factory = new DocumentFactory(1, entropyGenerator);
 
   if (!ownerId) {
     ownerId = await generateRandomIdentifierAsync();

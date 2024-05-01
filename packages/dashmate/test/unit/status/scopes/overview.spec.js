@@ -1,7 +1,7 @@
-const getOverviewScopeFactory = require('../../../../src/status/scopes/overview');
-const MasternodeStateEnum = require('../../../../src/status/enums/masternodeState');
-const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
-const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
+import getOverviewScopeFactory from '../../../../src/status/scopes/overview.js';
+import { DockerStatusEnum } from '../../../../src/status/enums/dockerStatus.js';
+import { ServiceStatusEnum } from '../../../../src/status/enums/serviceStatus.js';
+import { MasternodeStateEnum } from '../../../../src/status/enums/masternodeState.js';
 
 describe('getOverviewScopeFactory', () => {
   describe('#getOverviewScope', () => {
@@ -22,8 +22,11 @@ describe('getOverviewScopeFactory', () => {
         toEnvs: this.sinon.stub(),
       };
 
-      getOverviewScope = getOverviewScopeFactory(mockGetCoreScope,
-        mockGetMasternodeScope, mockGetPlatformScope);
+      getOverviewScope = getOverviewScopeFactory(
+        mockGetCoreScope,
+        mockGetMasternodeScope,
+        mockGetPlatformScope,
+      );
     });
 
     it('should just work', async () => {
@@ -43,8 +46,6 @@ describe('getOverviewScopeFactory', () => {
         lastPaidTime: '23 days ago',
         paymentQueuePosition: null,
         nextPaymentTime: 'in 1 day',
-        sentinelState: '',
-        sentinelVersion: 'v1.2',
       };
 
       const mockPlatformScope = {
@@ -94,8 +95,6 @@ describe('getOverviewScopeFactory', () => {
       expect(mockGetMasternodeScope.notCalled).to.be.true();
       expect(scope.masternode.state).to.be.equal(null);
       expect(scope.masternode.proTxHash).to.be.equal(null);
-      expect(scope.masternode.sentinel.version).to.be.equal(null);
-      expect(scope.masternode.sentinel.state).to.be.equal(null);
       expect(scope.masternode.nodeState).to.be.equal(null);
 
       expect(mockGetPlatformScope.notCalled).to.be.true();

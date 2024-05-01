@@ -1,3 +1,4 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType::ECDSA_SECP256K1;
 use crate::identity::Purpose::AUTHENTICATION;
@@ -58,6 +59,7 @@ impl IdentityPublicKeyV0 {
             read_only,
             disabled_at: None,
             data,
+            contract_bounds: None,
         })
     }
 
@@ -108,9 +110,36 @@ impl IdentityPublicKeyV0 {
                 read_only,
                 disabled_at: None,
                 data,
+                contract_bounds: None,
             },
             private_data,
         ))
+    }
+
+    pub fn random_key_with_known_attributes(
+        id: KeyID,
+        rng: &mut StdRng,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+        key_type: KeyType,
+        contract_bounds: Option<ContractBounds>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let read_only = false;
+        let (public_data, private_data) =
+            key_type.random_public_and_private_key_data(rng, platform_version)?;
+        let data = BinaryData::new(public_data);
+        let identity_public_key = IdentityPublicKeyV0 {
+            id,
+            key_type,
+            purpose,
+            security_level,
+            read_only,
+            disabled_at: None,
+            data,
+            contract_bounds,
+        };
+        Ok((identity_public_key, private_data))
     }
 
     pub fn random_key_with_rng(
@@ -160,6 +189,7 @@ impl IdentityPublicKeyV0 {
             read_only,
             disabled_at: None,
             data,
+            contract_bounds: None,
         })
     }
 
@@ -183,6 +213,7 @@ impl IdentityPublicKeyV0 {
                 read_only,
                 disabled_at: None,
                 data: data.into(),
+                contract_bounds: None,
             },
             private_data,
         ))
@@ -208,6 +239,7 @@ impl IdentityPublicKeyV0 {
                 read_only,
                 disabled_at: None,
                 data: data.into(),
+                contract_bounds: None,
             },
             private_data,
         ))
@@ -233,6 +265,7 @@ impl IdentityPublicKeyV0 {
                 read_only,
                 disabled_at: None,
                 data: data.into(),
+                contract_bounds: None,
             },
             private_data,
         ))

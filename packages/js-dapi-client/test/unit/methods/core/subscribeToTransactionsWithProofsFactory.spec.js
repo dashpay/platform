@@ -108,9 +108,7 @@ describe('subscribeToTransactionsWithProofsFactory', () => {
     const bloomFilter = BloomFilter.create(1, 0.001);
 
     try {
-      await subscribeToTransactionsWithProofs(
-        bloomFilter, options,
-      );
+      await subscribeToTransactionsWithProofs(bloomFilter, options);
     } catch (e) {
       expect(e).to.be.an.instanceOf(DAPIClientError);
       expect(e.message).to.equal('Invalid argument: minimum value for `fromBlockHeight` is 1');

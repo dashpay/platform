@@ -1,51 +1,51 @@
-const fs = require('fs');
+import fs from 'fs';
+import Ajv from 'ajv';
+import path from 'path';
+import Config from '../Config.js';
+import { PACKAGE_ROOT_DIR } from '../../constants.js';
+import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
+import InvalidConfigFileFormatError from '../errors/InvalidConfigFileFormatError.js';
+import configFileJsonSchema from './configFileJsonSchema.js';
+import ConfigFile from './ConfigFile.js';
 
-const Ajv = require('ajv');
-
-const Config = require('../Config');
-const ConfigFile = require('./ConfigFile');
-
-const { CONFIG_FILE_PATH } = require('../../constants');
-
-const configFileJsonSchema = require('../../../configs/schema/configFileJsonSchema');
-
-const ConfigFileNotFoundError = require('../errors/ConfigFileNotFoundError');
-const InvalidConfigFileFormatError = require('../errors/InvalidConfigFileFormatError');
-
-const packageJson = require('../../../package.json');
-
-class ConfigFileJsonRepository {
+export default class ConfigFileJsonRepository {
   /**
    * @param {migrateConfigFile} migrateConfigFile
+   * @param {HomeDir} homeDir
    */
-  constructor(migrateConfigFile) {
+  constructor(migrateConfigFile, homeDir) {
     this.migrateConfigFile = migrateConfigFile;
     this.ajv = new Ajv();
+    this.configFilePath = homeDir.joinPath('config.json');
   }
 
   /**
    * Load configs from file
    *
-   * @returns {Promise<ConfigFile>}
+   * @returns {ConfigFile}
    */
-  async read() {
-    if (!fs.existsSync(CONFIG_FILE_PATH)) {
-      throw new ConfigFileNotFoundError(CONFIG_FILE_PATH);
+  read() {
+    if (!fs.existsSync(this.configFilePath)) {
+      throw new ConfigFileNotFoundError(this.configFilePath);
     }
 
-    const configFileJSON = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
+    const configFileJSON = fs.readFileSync(this.configFilePath, 'utf8');
 
     let configFileData;
     try {
       configFileData = JSON.parse(configFileJSON);
     } catch (e) {
-      throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, e);
+      throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
+
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const originConfigVersion = configFileData.configFormatVersion;
 
     const migratedConfigFileData = this.migrateConfigFile(
       configFileData,
       configFileData.configFormatVersion,
-      packageJson.version,
+      version,
     );
 
     const isValid = this.ajv.validate(configFileJsonSchema, migratedConfigFileData);
@@ -53,7 +53,7 @@ class ConfigFileJsonRepository {
     if (!isValid) {
       const error = new Error(this.ajv.errorsText(undefined, { dataVar: 'configFile' }));
 
-      throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, error);
+      throw new InvalidConfigFileFormatError(this.configFilePath, error);
     }
 
     let configs;
@@ -61,16 +61,24 @@ class ConfigFileJsonRepository {
       configs = Object.entries(migratedConfigFileData.configs)
         .map(([name, options]) => new Config(name, options));
     } catch (e) {
-      throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, e);
+      throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
-    return new ConfigFile(
+    const configFile = new ConfigFile(
       configs,
-      packageJson.version,
+      migratedConfigFileData.configFormatVersion,
       migratedConfigFileData.projectId,
       migratedConfigFileData.defaultConfigName,
       migratedConfigFileData.defaultGroupName,
     );
+
+    // Mark configs as changed if they were migrated
+    if (migratedConfigFileData.configFormatVersion !== originConfigVersion) {
+      configFile.markAsChanged();
+      configFile.getAllConfigs().forEach((config) => config.markAsChanged());
+    }
+
+    return configFile;
   }
 
   /**
@@ -82,8 +90,8 @@ class ConfigFileJsonRepository {
   write(configFile) {
     const configFileJSON = JSON.stringify(configFile.toObject(), undefined, 2);
 
-    fs.writeFileSync(CONFIG_FILE_PATH, configFileJSON, 'utf8');
+    configFile.markAsSaved();
+
+    fs.writeFileSync(this.configFilePath, `${configFileJSON}\n`, 'utf8');
   }
 }
-
-module.exports = ConfigFileJsonRepository;

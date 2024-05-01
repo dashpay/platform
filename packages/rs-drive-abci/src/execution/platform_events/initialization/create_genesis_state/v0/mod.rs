@@ -44,7 +44,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::IdentityV0;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
-use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::drive::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
@@ -65,7 +65,8 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
-    pub fn create_genesis_state_v0(
+    #[inline(always)]
+    pub(super) fn create_genesis_state_v0(
         &self,
         genesis_time: TimestampMillis,
         system_identity_public_keys: SystemIdentityPublicKeys,
@@ -81,60 +82,53 @@ impl<C> Platform<C> {
 
         // Create system identities and contracts
 
-        let dpns_contract =
-            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
+        let system_data_contracts = &self.drive.cache.system_data_contracts;
+
+        let dpns_data_contract = system_data_contracts.load_dpns();
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
                 SystemDataContract::DPNS,
                 (
-                    dpns_contract.clone(),
+                    system_data_contracts.load_dpns(),
                     system_identity_public_keys.dpns_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Withdrawals,
                 (
-                    load_system_data_contract(
-                        SystemDataContract::Withdrawals,
-                        platform_version.protocol_version,
-                    )?,
+                    system_data_contracts.load_withdrawals(),
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
-            (
-                SystemDataContract::FeatureFlags,
-                (
-                    load_system_data_contract(
-                        SystemDataContract::FeatureFlags,
-                        platform_version.protocol_version,
-                    )?,
-                    system_identity_public_keys.feature_flags_contract_owner(),
-                ),
-            ),
+            // TODO: Do we still need feature flags to change consensus params like timeouts and so on?
+            // (
+            //     SystemDataContract::FeatureFlags,
+            //     (
+            //         load_system_data_contract(
+            //             SystemDataContract::FeatureFlags,
+            //             platform_version.protocol_version,
+            //         )?,
+            //         system_identity_public_keys.feature_flags_contract_owner(),
+            //     ),
+            // ),
             (
                 SystemDataContract::Dashpay,
                 (
-                    load_system_data_contract(
-                        SystemDataContract::Dashpay,
-                        platform_version.protocol_version,
-                    )?,
+                    system_data_contracts.load_dashpay(),
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    load_system_data_contract(
-                        SystemDataContract::MasternodeRewards,
-                        platform_version.protocol_version,
-                    )?,
+                    system_data_contracts.load_masternode_reward_shares(),
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),
         ]);
 
-        for (_, (data_contract, identity_public_keys_set)) in system_data_contract_types {
+        for (data_contract, identity_public_keys_set) in system_data_contract_types.values() {
             let public_keys = [
                 (
                     0,
@@ -142,6 +136,7 @@ impl<C> Platform<C> {
                         id: 0,
                         purpose: Purpose::AUTHENTICATION,
                         security_level: SecurityLevel::MASTER,
+                        contract_bounds: None,
                         key_type: KeyType::ECDSA_SECP256K1,
                         read_only: false,
                         data: identity_public_keys_set.master.clone().into(),
@@ -155,6 +150,7 @@ impl<C> Platform<C> {
                         id: 1,
                         purpose: Purpose::AUTHENTICATION,
                         security_level: SecurityLevel::HIGH,
+                        contract_bounds: None,
                         key_type: KeyType::ECDSA_SECP256K1,
                         read_only: false,
                         data: identity_public_keys_set.high.clone().into(),
@@ -181,7 +177,7 @@ impl<C> Platform<C> {
             self.register_system_identity_operations(identity, &mut operations);
         }
 
-        self.register_dpns_top_level_domain_operations(&dpns_contract, &mut operations)?;
+        self.register_dpns_top_level_domain_operations(&dpns_data_contract, &mut operations)?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
@@ -196,18 +192,17 @@ impl<C> Platform<C> {
         Ok(())
     }
 
-    fn register_system_data_contract_operations(
+    fn register_system_data_contract_operations<'a>(
         &self,
-        data_contract: DataContract,
-        operations: &mut Vec<DriveOperation>,
+        data_contract: &'a DataContract,
+        operations: &mut Vec<DriveOperation<'a>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let serialization =
             data_contract.serialize_to_bytes_with_platform_version(platform_version)?;
         operations.push(DriveOperation::DataContractOperation(
-            //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
-                contract: Cow::Owned(data_contract),
+                contract: Cow::Borrowed(data_contract),
                 serialized_contract: serialization,
                 storage_flags: None,
             },
@@ -221,7 +216,10 @@ impl<C> Platform<C> {
         operations: &mut Vec<DriveOperation>,
     ) {
         operations.push(DriveOperation::IdentityOperation(
-            IdentityOperationType::AddNewIdentity { identity },
+            IdentityOperationType::AddNewIdentity {
+                identity,
+                is_masternode_identity: false,
+            },
         ))
     }
 
@@ -235,6 +233,7 @@ impl<C> Platform<C> {
         let document_stub_properties_value = platform_value!({
             "label" : domain,
             "normalizedLabel" : domain,
+            "parentDomainName" : "",
             "normalizedParentDomainName" : "",
             "preorderSalt" : BinaryData::new(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
             "records" : {
@@ -256,6 +255,13 @@ impl<C> Platform<C> {
             revision: None,
             created_at: None,
             updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
         }
         .into();
 
@@ -283,11 +289,20 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     mod create_genesis_state {
+        use crate::config::PlatformConfig;
         use crate::test::helpers::setup::TestPlatformBuilder;
+        use drive::drive::config::DriveConfig;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
             let platform = TestPlatformBuilder::new()
+                .with_config(PlatformConfig {
+                    drive: DriveConfig {
+                        epochs_per_era: 20,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -301,8 +316,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    44, 248, 65, 88, 33, 68, 26, 12, 33, 190, 23, 22, 203, 42, 28, 213, 25, 197,
-                    240, 163, 65, 101, 101, 190, 226, 164, 97, 107, 89, 11, 15, 234
+                    162, 81, 50, 217, 246, 11, 77, 233, 231, 192, 228, 176, 197, 102, 24, 18, 160,
+                    5, 182, 75, 119, 174, 75, 155, 86, 92, 88, 197, 201, 60, 60, 157
                 ]
             )
         }

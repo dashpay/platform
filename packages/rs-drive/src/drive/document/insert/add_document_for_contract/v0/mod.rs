@@ -11,6 +11,7 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds a document to a contract.
+    #[inline(always)]
     pub(super) fn add_document_for_contract_v0(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
@@ -35,6 +36,7 @@ impl Drive {
             None,
             Some(drive_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok(fees)

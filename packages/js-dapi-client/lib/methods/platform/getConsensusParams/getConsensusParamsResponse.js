@@ -32,8 +32,8 @@ class GetConsensusParamsResponse {
    * @returns {GetConsensusParamsResponse}
    */
   static createFromProto(proto) {
-    const protoBlock = proto.getBlock();
-    const protoEvidence = proto.getEvidence();
+    const protoBlock = proto.getV0().getBlock();
+    const protoEvidence = proto.getV0().getEvidence();
 
     if (!protoBlock && !protoEvidence) {
       throw new InvalidResponseError('Consensus params are not defined');

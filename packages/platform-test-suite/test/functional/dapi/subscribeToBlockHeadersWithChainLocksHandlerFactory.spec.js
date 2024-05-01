@@ -93,7 +93,9 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   });
 
   after(async () => {
-    await sdkClient.disconnect();
+    if (sdkClient) {
+      await sdkClient.disconnect();
+    }
   });
 
   it('should respond with only historical data', async () => {

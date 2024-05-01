@@ -1,5 +1,3 @@
-// TODO(versioning): restore
-// @ts-ignore
 import { ExtendedDocument } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
@@ -33,9 +31,25 @@ export default async function broadcast(
 
   const { dpp } = this;
 
-  // TODO(versioning): restore
-  // @ts-ignore
-  const documentsBatchTransition = dpp.document.createStateTransition(documents);
+  const identityId = identity.getId();
+  const dataContractId = [
+    ...(documents.create || []),
+    ...(documents.replace || []),
+    ...(documents.delete || []),
+  ][0]?.getDataContractId();
+
+  if (!dataContractId) {
+    throw new Error('Data contract ID is not found');
+  }
+
+  const identityContractNonce = await this.nonceManager
+    .bumpIdentityContractNonce(identityId, dataContractId);
+
+  const documentsBatchTransition = dpp.document.createStateTransition(documents, {
+    [identityId.toString()]: {
+      [dataContractId.toString()]: identityContractNonce,
+    },
+  });
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 

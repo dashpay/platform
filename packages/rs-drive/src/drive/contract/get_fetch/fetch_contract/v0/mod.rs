@@ -42,6 +42,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract fetching or fee calculation fails.
+    #[inline(always)]
     pub(super) fn fetch_contract_v0(
         &self,
         contract_id: [u8; 32],
@@ -55,7 +56,7 @@ impl Drive {
         // We need to pass allow cache to false
         let (value, mut cost) = if known_keeps_history.unwrap_or_default() {
             let CostContext { value, cost } = self.grove.get_caching_optional(
-                (&paths::contract_keeping_history_storage_path(&contract_id)).into(),
+                (&paths::contract_keeping_history_root_path(&contract_id)).into(),
                 &[0],
                 false,
                 transaction,
@@ -90,6 +91,7 @@ impl Drive {
                             None,
                             Some(vec![drive_operation]),
                             epoch,
+                            self.config.epochs_per_era,
                             platform_version
                         )
                     ))
@@ -116,7 +118,7 @@ impl Drive {
                     value,
                     cost: secondary_cost,
                 } = self.grove.get_caching_optional(
-                    (&paths::contract_keeping_history_storage_path(&contract_id)).into(),
+                    (&paths::contract_keeping_history_root_path(&contract_id)).into(),
                     &[0],
                     false,
                     transaction,
@@ -143,6 +145,7 @@ impl Drive {
                                     None,
                                     Some(vec![drive_operation]),
                                     epoch,
+                                    self.config.epochs_per_era,
                                     platform_version
                                 )
                             ))
@@ -190,6 +193,7 @@ impl Drive {
     }
 
     /// Fetch contract from database and add operations
+    #[inline(always)]
     pub(super) fn fetch_contract_and_add_operations_v0(
         &self,
         contract_id: [u8; 32],

@@ -1,10 +1,9 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const chalk = require('chalk');
-const path = require('path');
-const fs = require('fs');
-const { HOME_DIR_PATH } = require('../../../../constants');
-const wait = require('../../../../util/wait');
+import chalk from 'chalk';
+import path from 'path';
+import fs from 'fs';
+import wait from '../../../../util/wait.js';
 
 /**
  * @param {generateCsr} generateCsr
@@ -16,9 +15,10 @@ const wait = require('../../../../util/wait');
  * @param {listCertificates} listCertificates
  * @param {saveCertificateTask} saveCertificateTask
  * @param {VerificationServer} verificationServer
+ * @param {HomeDir} homeDir
  * @return {obtainZeroSSLCertificateTask}
  */
-function obtainZeroSSLCertificateTaskFactory(
+export default function obtainZeroSSLCertificateTaskFactory(
   generateCsr,
   generateKeyPair,
   createZeroSSLCertificate,
@@ -28,6 +28,7 @@ function obtainZeroSSLCertificateTaskFactory(
   listCertificates,
   saveCertificateTask,
   verificationServer,
+  homeDir,
 ) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
@@ -39,7 +40,7 @@ function obtainZeroSSLCertificateTaskFactory(
     const apiKey = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', true);
     const externalIp = config.get('externalIp', true);
 
-    const sslConfigDir = path.join(HOME_DIR_PATH, 'ssl', config.getName());
+    const sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'dapi', 'envoy', 'ssl');
     const csrFilePath = path.join(sslConfigDir, 'csr.pem');
     const privateKeyFilePath = path.join(sslConfigDir, 'private.key');
     const bundleFilePath = path.join(sslConfigDir, 'bundle.crt');
@@ -188,10 +189,12 @@ function obtainZeroSSLCertificateTaskFactory(
         skip: (ctx) => ctx.certificate && !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async (ctx) => {
           const validationResponse = ctx.certificate.validation.other_methods[externalIp];
-          const route = validationResponse.file_validation_url_http.replace(`http://${externalIp}`, '');
-          const body = validationResponse.file_validation_content.join('\\n');
 
-          await verificationServer.setup(config, route, body);
+          await verificationServer.setup(
+            config,
+            validationResponse.file_validation_url_http,
+            validationResponse.file_validation_content,
+          );
         },
       },
       {
@@ -212,7 +215,7 @@ function obtainZeroSSLCertificateTaskFactory(
                 retry = await task.prompt({
                   type: 'toggle',
                   header: chalk`  An error occurred during verification: {red ${e.message}}
-  
+
     Please ensure that port 80 on your public IP address ${externalIp} is open
     for incoming HTTP connections. You may need to configure your firewall to
     ensure this port is accessible from the public internet. If you are using
@@ -311,5 +314,3 @@ function obtainZeroSSLCertificateTaskFactory(
 
   return obtainZeroSSLCertificateTask;
 }
-
-module.exports = obtainZeroSSLCertificateTaskFactory;

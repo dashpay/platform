@@ -225,8 +225,10 @@ where
                             .iter()
                             .map(|v| {
                                 let Some(str) = v.as_text() else {
-                        return Err(ProtocolError::DecodingError(format!("{key} must be an string")))
-                    };
+                                    return Err(ProtocolError::DecodingError(format!(
+                                        "{key} must be an string"
+                                    )));
+                                };
                                 Ok(str.to_string())
                             })
                             .collect::<Result<I, ProtocolError>>()
@@ -262,8 +264,10 @@ where
                             .iter()
                             .map(|(k, v)| {
                                 let Some(str) = k.as_text() else {
-                        return Err(ProtocolError::DecodingError(format!("{key} must be an string")))
-                    };
+                                    return Err(ProtocolError::DecodingError(format!(
+                                        "{key} must be an string"
+                                    )));
+                                };
                                 Ok((str.to_string(), v))
                             })
                             .collect::<Result<I, ProtocolError>>()

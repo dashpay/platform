@@ -1,3 +1,6 @@
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const logger = require('../../logger');
+
 const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
 const NoAvailableAddressesForRetryError = require('../errors/response/NoAvailableAddressesForRetryError');
 const NoAvailableAddressesError = require('../errors/NoAvailableAddressesError');
@@ -27,16 +30,15 @@ class GrpcTransport {
     this.globalOptions = globalOptions;
 
     this.lastUsedAddress = null;
+    this.logger = logger.getForId(globalOptions.loggerOptions.identifier);
   }
 
   /**
    * Make request to DAPI node
-   *
    * @param {Function} ClientClass
    * @param {string} method
    * @param {object} requestMessage
    * @param {DAPIClientOptions} [options]
-   *
    * @returns {Promise<object>}
    */
   async request(ClientClass, method, requestMessage, options = { }) {
@@ -67,6 +69,8 @@ class GrpcTransport {
       );
     }
 
+    this.logger.debug(`GRPC Request ${method} to ${address.toString()}`, { options });
+
     try {
       const result = await client[method](requestMessage, {}, requestOptions);
 
@@ -77,6 +81,13 @@ class GrpcTransport {
       return result;
     } catch (error) {
       this.lastUsedAddress = address;
+
+      // Show NOT_FOUND errors only in debug mode
+      if (error.code !== GrpcErrorCodes.NOT_FOUND) {
+        this.logger.error(`GRPC Request ${method} to ${address.toString()} failed with error: ${error.message}`);
+      } else {
+        this.logger.debug(`GRPC Request ${method} to ${address.toString()} failed with error: ${error.message}`);
+      }
 
       // for unknown errors
       if (error.code === undefined) {
@@ -92,6 +103,8 @@ class GrpcTransport {
       if (options.throwDeadlineExceeded && responseError instanceof TimeoutError) {
         throw responseError;
       }
+
+      // TODO: Shouldn't we call address.markAsBanned() here?
 
       if (options.retries === 0) {
         throw new MaxRetriesReachedError(responseError);
@@ -116,7 +129,6 @@ class GrpcTransport {
 
   /**
    * Get last used address
-   *
    * @returns {DAPIAddress|null}
    */
   getLastUsedAddress() {
@@ -125,8 +137,7 @@ class GrpcTransport {
 
   /**
    *
-   * Get gRPC url string
-   *
+   *Get gRPC url string
    * @private
    * @param {DAPIAddress} address
    * @returns {string}

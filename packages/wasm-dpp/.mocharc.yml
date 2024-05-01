@@ -1,4 +1,3 @@
-file:
-  - lib/test/bootstrap.js
+require: lib/test/bootstrap.js
 recursive: true
 timeout: 5000

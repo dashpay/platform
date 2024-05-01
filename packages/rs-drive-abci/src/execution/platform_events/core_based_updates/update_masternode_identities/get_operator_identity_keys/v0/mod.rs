@@ -22,6 +22,7 @@ where
             read_only: true,
             data: BinaryData::new(pub_key_operator),
             disabled_at: None,
+            contract_bounds: None,
         }
         .into()];
         if let Some(operator_payout_address) = operator_payout_address {
@@ -29,11 +30,12 @@ where
                 IdentityPublicKeyV0 {
                     id: 1,
                     key_type: KeyType::ECDSA_HASH160,
-                    purpose: Purpose::WITHDRAW,
+                    purpose: Purpose::TRANSFER,
                     security_level: SecurityLevel::CRITICAL,
                     read_only: true,
                     data: BinaryData::new(operator_payout_address.to_vec()),
                     disabled_at: None,
+                    contract_bounds: None,
                 }
                 .into(),
             );
@@ -48,6 +50,7 @@ where
                     read_only: true,
                     data: BinaryData::new(node_id.to_vec()),
                     disabled_at: None,
+                    contract_bounds: None,
                 }
                 .into(),
             );

@@ -1,4 +1,4 @@
-const { toDash } = require('../../util/satoshiConverter');
+import { toDash } from '../../util/satoshiConverter.js';
 
 /**
  *
@@ -9,7 +9,8 @@ const { toDash } = require('../../util/satoshiConverter');
  * @param {function(balance: number)} [progressCallback]
  * @returns {Promise<void>}
  */
-async function generateToAddress(
+
+export default async function generateToAddress(
   coreService,
   amount,
   address,
@@ -29,5 +30,3 @@ async function generateToAddress(
     await progressCallback(addressBalance);
   } while (addressBalance < amount);
 }
-
-module.exports = generateToAddress;

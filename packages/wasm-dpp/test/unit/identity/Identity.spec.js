@@ -1,5 +1,5 @@
-const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
+const { hash: hashFunction } = require('../../../lib/utils/hash');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const {
   Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
@@ -80,9 +80,10 @@ describe('Identity', () => {
         type: KeyType.ECDSA_SECP256K1,
         data: Buffer.alloc(36).fill('a'),
         purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
+        securityLevel: KeySecurityLevel.HIGH,
         readOnly: false,
         disabledAt: null,
+        contractBounds: null,
       };
 
       const ipk = new IdentityPublicKey(1);
@@ -116,7 +117,7 @@ describe('Identity', () => {
     it('should return buffer', () => {
       const result = identity.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.length(81);
+      expect(result).to.have.length(82);
     });
   });
 
@@ -130,7 +131,7 @@ describe('Identity', () => {
   });
 
   describe('#hash', () => {
-    it('should return the same has as JS Identity', () => {
+    it('should has identity', () => {
       const expectedHash = hashFunction(identity.toBuffer());
       const result = identity.hash();
       expect(result).to.deep.equal(expectedHash);
@@ -158,9 +159,10 @@ describe('Identity', () => {
             type: KeyType.ECDSA_SECP256K1,
             data: rawIdentity.publicKeys[0].data.toString('base64'),
             purpose: KeyPurpose.AUTHENTICATION,
-            securityLevel: KeySecurityLevel.MASTER,
+            securityLevel: KeySecurityLevel.HIGH,
             readOnly: false,
             disabledAt: null,
+            contractBounds: null,
           },
         ],
         balance: 0,

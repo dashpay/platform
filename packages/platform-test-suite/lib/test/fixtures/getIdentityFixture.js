@@ -15,30 +15,19 @@ module.exports = async function getIdentityFixture() {
 
   const id = await generateRandomIdentifier();
 
-  const rawIdentity = {
-    protocolVersion: 1,
-    id: id.toBuffer(),
-    balance: 10,
-    revision: 0,
-    publicKeys: [
-      {
-        id: 0,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-      },
-      {
-        id: 1,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.from('A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L', 'base64'),
-        purpose: IdentityPublicKey.PURPOSES.ENCRYPTION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
-        readOnly: false,
-      },
-    ],
-  };
+  const key1 = new IdentityPublicKey(1);
+  key1.setData(Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'));
 
-  return new Identity(rawIdentity);
+  const key2 = new IdentityPublicKey(1);
+  key2.setData(Buffer.from('A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L', 'base64'));
+  key2.setId(1);
+  key2.setPurpose(IdentityPublicKey.PURPOSES.ENCRYPTION);
+  key2.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+
+  const identity = new Identity(1);
+  identity.setId(id);
+  identity.setPublicKeys([key1, key2]);
+  identity.setBalance(10000);
+
+  return identity;
 };

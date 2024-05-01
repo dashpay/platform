@@ -21,6 +21,7 @@ where
             read_only: true,
             data: BinaryData::new(voting_address.to_vec()),
             disabled_at: None,
+            contract_bounds: None,
         }
         .into())
     }

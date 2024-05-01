@@ -52,6 +52,7 @@ pub fn identity_v0_fixture() -> Identity {
                     id: 0,
                     purpose: Purpose::AUTHENTICATION,
                     security_level: SecurityLevel::MASTER,
+                    contract_bounds: None,
                     key_type: KeyType::ECDSA_SECP256K1,
                     read_only: false,
                     data: BinaryData::from_string(
@@ -69,6 +70,7 @@ pub fn identity_v0_fixture() -> Identity {
                     id: 0,
                     purpose: Purpose::ENCRYPTION,
                     security_level: SecurityLevel::MEDIUM,
+                    contract_bounds: None,
                     key_type: KeyType::ECDSA_SECP256K1,
                     read_only: false,
                     data: BinaryData::from_string(

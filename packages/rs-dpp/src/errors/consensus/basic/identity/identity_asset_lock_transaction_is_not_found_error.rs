@@ -2,13 +2,16 @@ use bincode::{Decode, Encode};
 use std::fmt::{Display, Formatter};
 
 use crate::consensus::basic::BasicError;
-use dashcore::hashes::hex::ToHex;
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
+#[platform_serialize(unversioned)]
 pub struct IdentityAssetLockTransactionIsNotFoundError {
     /*
 
@@ -20,7 +23,7 @@ pub struct IdentityAssetLockTransactionIsNotFoundError {
 
 impl Display for IdentityAssetLockTransactionIsNotFoundError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let hex = self.transaction_id.to_hex();
+        let hex = hex::encode(self.transaction_id);
         let message = format!("Asset Lock transaction {hex} is not found");
         f.write_str(&message)
     }

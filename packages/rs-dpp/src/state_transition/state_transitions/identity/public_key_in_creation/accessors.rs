@@ -1,3 +1,4 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_value::BinaryData;
@@ -24,6 +25,9 @@ pub trait IdentityPublicKeyInCreationV0Getters {
 
     /// Returns the key's `signature`.
     fn signature(&self) -> &BinaryData;
+
+    /// Contract bounds
+    fn contract_bounds(&self) -> Option<&ContractBounds>;
 }
 
 /// Trait providing getters for `IdentityPublicKeyInCreationV0`.
@@ -35,6 +39,8 @@ pub trait IdentityPublicKeyInCreationV0Setters {
     fn set_purpose(&mut self, purpose: Purpose);
 
     fn set_security_level(&mut self, security_level: SecurityLevel);
+
+    fn set_contract_bounds(&mut self, contract_bounds: Option<ContractBounds>);
 
     fn set_read_only(&mut self, read_only: bool);
 }
@@ -73,6 +79,12 @@ impl IdentityPublicKeyInCreationV0Setters for IdentityPublicKeyInCreation {
     fn set_security_level(&mut self, security_level: SecurityLevel) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.security_level = security_level,
+        }
+    }
+
+    fn set_contract_bounds(&mut self, contract_bounds: Option<ContractBounds>) {
+        match self {
+            IdentityPublicKeyInCreation::V0(v0) => v0.contract_bounds = contract_bounds,
         }
     }
 
@@ -124,6 +136,12 @@ impl IdentityPublicKeyInCreationV0Getters for IdentityPublicKeyInCreation {
     fn signature(&self) -> &BinaryData {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => &v0.signature,
+        }
+    }
+
+    fn contract_bounds(&self) -> Option<&ContractBounds> {
+        match self {
+            IdentityPublicKeyInCreation::V0(v0) => v0.contract_bounds.as_ref(),
         }
     }
 }

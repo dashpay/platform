@@ -1,12 +1,11 @@
-const getServicesScopeFactory = require('../../../../src/status/scopes/services');
-const getConfigMock = require('../../../../src/test/mock/getConfigMock');
+import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
+import getServicesScopeFactory from '../../../../src/status/scopes/services.js';
 
 describe('getServicesScopeFactory', () => {
   describe('#getServicesScope', () => {
     let mockDockerCompose;
 
     let config;
-    let configFile;
     let getServiceList;
     let getServicesScope;
 
@@ -15,13 +14,11 @@ describe('getServicesScopeFactory', () => {
 
       config = getConfigMock(this.sinon);
 
-      configFile = { getProjectId: this.sinon.stub() };
-
       getServiceList = this.sinon.stub();
 
       getServiceList.returns([{ name: 'mock', title: 'Mock service', image: 'fakeImageId' }]);
 
-      getServicesScope = getServicesScopeFactory(mockDockerCompose, configFile, getServiceList);
+      getServicesScope = getServicesScopeFactory(mockDockerCompose, getServiceList);
     });
 
     it('should just work', async () => {
@@ -51,7 +48,7 @@ describe('getServicesScopeFactory', () => {
 
       for (const [, service] of Object.entries(scope)) {
         expect(service.containerId).to.be.equal(null);
-        expect(service.image).to.be.equal(null);
+        expect(service.image).to.be.equal('fakeImageId');
         expect(service.status).to.be.equal(null);
       }
     });

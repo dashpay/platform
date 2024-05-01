@@ -1,23 +1,25 @@
-const calculatePaymentQueuePosition = require('../../core/calculatePaymentQueuePosition');
-const blocksToTime = require('../../util/blocksToTime');
-const MasternodeStateEnum = require('../enums/masternodeState');
-const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
-const generateEnvs = require('../../util/generateEnvs');
+import calculatePaymentQueuePosition from '../../core/calculatePaymentQueuePosition.js';
+import { MasternodeSyncAssetEnum } from '../enums/masternodeSyncAsset.js';
+import blocksToTime from '../../util/blocksToTime.js';
+import { MasternodeStateEnum } from '../enums/masternodeState.js';
 
 /**
  * @param {DockerCompose}dockerCompose
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
- * @param {ConfigFile} configFile
  * @returns {getMasternodeScopeFactory}
  */
-function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost, configFile) {
+export default function getMasternodeScopeFactory(
+  dockerCompose,
+  createRpcClient,
+  getConnectionHost,
+) {
   async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(config, 'core'),
+      host: await getConnectionHost(config, 'core', 'core.rpc.host'),
     });
 
     const mnsyncStatus = await rpcClient.mnsync('status');
@@ -31,13 +33,17 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(config, 'core'),
+      host: await getConnectionHost(config, 'core', 'core.rpc.host'),
     });
 
     const info = {
       proTxHash: null,
       state: null,
       status: null,
+      masternodeTotal: null,
+      masternodeEnabled: null,
+      evonodeTotal: null,
+      evonodeEnabled: null,
       nodeState: {
         dmnState: null,
         poSePenalty: null,
@@ -56,7 +62,13 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
     const { blocks: coreBlocks } = blockchainInfo.result;
 
     const countInfo = masternodeCount.result;
-    const { enabled } = countInfo;
+    const { detailed } = countInfo;
+    const { regular, evo } = detailed;
+
+    info.masternodeTotal = regular.total;
+    info.masternodeEnabled = regular.enabled;
+    info.evonodeTotal = evo.total;
+    info.evonodeEnabled = evo.enabled;
 
     const { state, status, proTxHash } = masternodeStatus.result;
 
@@ -69,9 +81,13 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
       const { PoSePenalty: poSePenalty, lastPaidHeight } = dmnState;
 
-      const position = calculatePaymentQueuePosition(dmnState, enabled, coreBlocks);
-      const lastPaidTime = blocksToTime(coreBlocks - lastPaidHeight);
-      const paymentQueuePosition = position / enabled;
+      const paymentQueuePosition = calculatePaymentQueuePosition(
+        dmnState,
+        info.masternodeEnabled,
+        info.evonodeEnabled,
+        coreBlocks,
+      );
+      const lastPaidTime = lastPaidHeight ? blocksToTime(coreBlocks - lastPaidHeight) : null;
       const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
 
       info.nodeState.dmnState = dmnState;
@@ -85,22 +101,6 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
     return info;
   }
 
-  async function getSentinelInfo(config) {
-    // cannot be put in Promise.all, because sentinel will cause exit 1 with simultaneous requests
-    const sentinelStateResponse = await dockerCompose
-      .execCommand(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py');
-    const sentinelVersionResponse = await dockerCompose
-      .execCommand(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py -v');
-
-    const [state] = sentinelStateResponse.out.split(/\r?\n/);
-
-    return {
-      state: state === '' ? 'ok' : state,
-      version: sentinelVersionResponse.out
-        .replace(/Dash Sentinel v/, '').trim(),
-    };
-  }
-
   /**
    * Get masternode status scope
    *
@@ -111,13 +111,13 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
   async function getMasternodeScope(config) {
     const scope = {
       syncAsset: null,
-      sentinel: {
-        state: null,
-        version: null,
-      },
       proTxHash: null,
       state: MasternodeStateEnum.UNKNOWN,
       status: null,
+      masternodeTotal: null,
+      masternodeEnabled: null,
+      evonodeTotal: null,
+      evonodeEnabled: null,
       nodeState: {
         dmnState: null,
         poSePenalty: null,
@@ -128,28 +128,13 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       },
     };
 
-    const basicResult = await Promise.allSettled([
-      getSyncAsset(config),
-      getSentinelInfo(config),
-    ]);
-
-    if (process.env.DEBUG) {
-      for (const error of basicResult.filter((e) => e.status === 'rejected')) {
+    try {
+      scope.syncAsset = await getSyncAsset(config);
+    } catch (error) {
+      if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
-        console.error(error.reason);
+        console.error(error);
       }
-    }
-
-    const [syncAsset, sentinelInfo] = basicResult
-      .map((result) => (result.status === 'fulfilled' ? result.value : null));
-
-    if (syncAsset) {
-      scope.syncAsset = syncAsset;
-    }
-
-    if (sentinelInfo) {
-      scope.sentinel.state = sentinelInfo.state;
-      scope.sentinel.version = sentinelInfo.version;
     }
 
     if (scope.syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
@@ -157,6 +142,10 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
         const masternodeInfo = await getMasternodeInfo(config);
 
         scope.proTxHash = masternodeInfo.proTxHash;
+        scope.masternodeTotal = masternodeInfo.masternodeTotal;
+        scope.masternodeEnabled = masternodeInfo.masternodeEnabled;
+        scope.evonodeEnabled = masternodeInfo.evonodeEnabled;
+        scope.evonodeTotal = masternodeInfo.evonodeTotal;
         scope.state = masternodeInfo.state;
         scope.status = masternodeInfo.status;
         scope.nodeState = masternodeInfo.nodeState;
@@ -173,5 +162,3 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
   return getMasternodeScope;
 }
-
-module.exports = getMasternodeScopeFactory;

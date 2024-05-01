@@ -9,21 +9,21 @@ use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
-use dpp::prelude::TimestampMillis;
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 /// Represents a request to determine the uniqueness of data.
 /// This structure is defined to handle index uniqueness within a document.
-/// The purpose is to encapsulate all the required parameters to determine 
+/// The purpose is to encapsulate all the required parameters to determine
 /// if a particular data is unique or not.
 ///
-/// **Note**: Modifications to this structure are discouraged due to its close coupling 
+/// **Note**: Modifications to this structure are discouraged due to its close coupling
 /// with index uniqueness methods. Any change here might necessitate changes across
-/// all those methods. Given the likely infrequent need for changes, this design choice 
+/// all those methods. Given the likely infrequent need for changes, this design choice
 /// is deemed acceptable.
 pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequest<'a> {
     /// Reference to the associated data contract.
@@ -40,6 +40,20 @@ pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequest<
     pub created_at: Option<TimestampMillis>,
     /// Optional timestamp indicating the last time the document was updated.
     pub updated_at: Option<TimestampMillis>,
+    /// Optional timestamp indicating the last time the document was transferred.
+    pub transferred_at: Option<TimestampMillis>,
+    /// Optional timestamp indicating the block height at which the document was created.
+    pub created_at_block_height: Option<BlockHeight>,
+    /// Optional timestamp indicating the last block height the document was updated.
+    pub updated_at_block_height: Option<BlockHeight>,
+    /// Optional timestamp indicating the last block height the document was transferred.
+    pub transferred_at_block_height: Option<BlockHeight>,
+    /// Optional timestamp indicating the core height at which the document was created.
+    pub created_at_core_block_height: Option<CoreBlockHeight>,
+    /// Optional timestamp indicating the last core block height the document was updated.
+    pub updated_at_core_block_height: Option<CoreBlockHeight>,
+    /// Optional timestamp indicating the last core block height the document was transferred.
+    pub transferred_at_core_block_height: Option<CoreBlockHeight>,
     /// The actual data to be checked for uniqueness, represented as a mapping.
     pub data: &'a BTreeMap<String, Value>,
 }

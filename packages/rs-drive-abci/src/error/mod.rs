@@ -3,6 +3,9 @@ use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
 use crate::logging;
 use dashcore_rpc::Error as CoreRpcError;
+use dpp::bls_signatures::BlsError;
+use dpp::data_contract::errors::DataContractError;
+use dpp::platform_value::Error as ValueError;
 use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
@@ -11,7 +14,6 @@ use tracing::error;
 
 /// Execution errors module
 pub mod execution;
-
 /// Query errors module
 pub mod query;
 /// Serialization errors module
@@ -36,6 +38,9 @@ pub enum Error {
     /// Core RPC Error
     #[error("core rpc error: {0}")]
     CoreRpc(#[from] CoreRpcError),
+    /// BLS Error
+    #[error("BLS error: {0}")]
+    BLSError(#[from] BlsError),
     /// Serialization Error
     #[error("serialization: {0}")]
     Serialization(#[from] SerializationError),
@@ -52,6 +57,19 @@ pub enum Error {
 
 impl From<PlatformVersionError> for Error {
     fn from(value: PlatformVersionError) -> Self {
+        let platform_error: ProtocolError = value.into();
+        platform_error.into()
+    }
+}
+
+impl From<DataContractError> for Error {
+    fn from(value: DataContractError) -> Self {
+        Self::Protocol(ProtocolError::DataContractError(value))
+    }
+}
+
+impl From<ValueError> for Error {
+    fn from(value: ValueError) -> Self {
         let platform_error: ProtocolError = value.into();
         platform_error.into()
     }

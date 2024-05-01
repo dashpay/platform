@@ -4,9 +4,11 @@
  * @param getMasternodeScope {getMasternodeScope}
  * @param getPlatformScope {getPlatformScope}
  */
-function getOverviewScopeFactory(getCoreScope,
+export default function getOverviewScopeFactory(
+  getCoreScope,
   getMasternodeScope,
-  getPlatformScope) {
+  getPlatformScope,
+) {
   /**
    * Get overview status scope
    *
@@ -37,10 +39,6 @@ function getOverviewScopeFactory(getCoreScope,
       proTxHash: null,
       nodeState: null,
       state: null,
-      sentinel: {
-        version: null,
-        state: null,
-      },
     };
 
     const platform = {
@@ -50,12 +48,11 @@ function getOverviewScopeFactory(getCoreScope,
 
     if (masternodeEnabled) {
       const {
-        state, proTxHash, sentinel, nodeState,
+        state, proTxHash, nodeState,
       } = await getMasternodeScope(config);
 
       masternode.state = state;
       masternode.proTxHash = proTxHash;
-      masternode.sentinel = sentinel;
       masternode.nodeState = nodeState;
     }
 
@@ -75,5 +72,3 @@ function getOverviewScopeFactory(getCoreScope,
 
   return getOverviewScope;
 }
-
-module.exports = getOverviewScopeFactory;

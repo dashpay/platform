@@ -15,7 +15,7 @@ pub enum IdentityError {
 
     /// A unique key with that hash already exists
     #[error("a unique key with that hash already exists: {0}")]
-    UniqueKeyAlreadyExists(&'static str),
+    UniqueKeyAlreadyExists(String),
 
     /// Missing required key error
     #[error("missing required key: {0}")]
@@ -45,7 +45,19 @@ pub enum IdentityError {
     #[error("critical balance overflow error: {0}")]
     CriticalBalanceOverflow(&'static str),
 
+    /// Identity Contract revision nonce error
+    #[error("identity contract revision nonce error: {0}")]
+    IdentityNonceError(&'static str),
+
     /// Identity key incorrect query missing information error
     #[error("identity key incorrect query missing information error: {0}")]
     IdentityKeyIncorrectQueryMissingInformation(&'static str),
+
+    /// Identity key bounds error
+    #[error("identity key bounds error: {0}")]
+    IdentityKeyBoundsError(&'static str),
+
+    /// Identity Key Data Contract Not Found
+    #[error("contact with specified identifier is not found for identity key data contract")]
+    IdentityKeyDataContractNotFound,
 }

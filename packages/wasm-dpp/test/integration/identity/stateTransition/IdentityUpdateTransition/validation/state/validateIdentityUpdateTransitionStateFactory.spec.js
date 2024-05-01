@@ -24,7 +24,6 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
   let IdentityPublicKeyIsDisabledError;
   let InvalidIdentityPublicKeyIdError;
   let MissingMasterPublicKeyError;
-  let IdentityPublicKeyDisabledAtWindowViolationError;
   let MaxIdentityPublicKeyLimitReachedError;
   let StateTransitionExecutionContext;
   let IdentityUpdateTransitionStateValidator;
@@ -37,7 +36,6 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
       IdentityPublicKeyIsReadOnlyError,
       IdentityPublicKeyIsDisabledError,
       InvalidIdentityPublicKeyIdError,
-      IdentityPublicKeyDisabledAtWindowViolationError,
       MaxIdentityPublicKeyLimitReachedError,
       StateTransitionExecutionContext,
       IdentityUpdateTransitionStateValidator,
@@ -51,13 +49,13 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
     rawIdentity.id = await generateRandomIdentifierAsync();
     identity = new Identity(rawIdentity);
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
     blockTime = Date.now();
     const blsAdapter = await getBlsAdapterMock();
 
-    stateRepositoryMock.fetchLatestPlatformBlockTime = this.sinonSandbox.stub();
+    stateRepositoryMock.fetchLatestPlatformBlockTime = this.sinon.stub();
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
     executionContext = new StateTransitionExecutionContext();
@@ -68,13 +66,10 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     stateTransition.setRevision(identity.getRevision() + 1);
     stateTransition.setPublicKeyIdsToDisable(undefined);
-    stateTransition.setPublicKeysDisabledAt(undefined);
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-    await stateTransition.signByPrivateKey(
-      Buffer.from(privateKey, 'hex'), IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-    );
+    await stateTransition.signByPrivateKey(Buffer.from(privateKey, 'hex'), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
   });
 
   it('should return InvalidIdentityRevisionError if new revision is not incremented by 1', async () => {
@@ -118,35 +113,8 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
     expect(error.getPublicKeyIndex()).to.equal(0);
   });
 
-  it('should return invalid result if disabledAt has violated time window', async () => {
-    stateTransition.setPublicKeyIdsToDisable([1]);
-    // blockTime - 10 minutes
-    const disabledAt = new Date(blockTime - 1000 * 60 * 60 * 10);
-    stateTransition.setPublicKeysDisabledAt(disabledAt);
-
-    const timeWindowStart = new Date(blockTime);
-    timeWindowStart.setMinutes(
-      timeWindowStart.getMinutes() - 5,
-    );
-
-    const timeWindowEnd = new Date(blockTime);
-    timeWindowEnd.setMinutes(
-      timeWindowEnd.getMinutes() + 5,
-    );
-
-    const result = await validateIdentityUpdateTransitionState(stateTransition);
-
-    await expectValidationError(result, IdentityPublicKeyDisabledAtWindowViolationError);
-
-    const [error] = result.getErrors();
-    expect(error.getDisabledAt()).to.deep.equal(disabledAt);
-    expect(error.getTimeWindowStart()).to.be.instanceOf(Date);
-    expect(error.getTimeWindowEnd()).to.be.instanceOf(Date);
-  });
-
   it('should throw InvalidIdentityPublicKeyIdError if identity does not contain public key with disabling ID', async () => {
     stateTransition.setPublicKeyIdsToDisable([3]);
-    stateTransition.setPublicKeysDisabledAt(new Date());
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
@@ -158,14 +126,13 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
   it('should pass when disabling public key', async function () {
     stateTransition.setPublicKeyIdsToDisable([1]);
-    stateTransition.setPublicKeysDisabledAt(new Date());
     stateTransition.setPublicKeysToAdd(undefined);
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
@@ -178,13 +145,12 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
   it('should pass when adding public key', async function () {
     stateTransition.setPublicKeyIdsToDisable(undefined);
-    stateTransition.setPublicKeysDisabledAt(undefined);
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
@@ -197,13 +163,12 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
   it('should pass when both adding and disabling public keys', async function () {
     stateTransition.setPublicKeyIdsToDisable([1]);
-    stateTransition.setPublicKeysDisabledAt(new Date());
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
@@ -264,7 +229,6 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
   it('should return valid result on dry run', async function () {
     stateTransition.setPublicKeyIdsToDisable([3]);
-    stateTransition.setPublicKeysDisabledAt(new Date());
 
     // Make code that executes after dry run check to fail
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({});
@@ -276,7 +240,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),

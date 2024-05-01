@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
+    #[inline(always)]
     pub(super) fn delete_document_for_contract_v0(
         &self,
         document_id: [u8; 32],
@@ -41,6 +42,7 @@ impl Drive {
             None,
             Some(drive_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok(fees)

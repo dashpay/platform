@@ -1,48 +1,58 @@
-const fs = require('fs');
-const path = require('path');
-const dots = require('dot');
-const { HOME_DIR_PATH } = require('../../../constants');
+import fs from 'fs';
+import path from 'path';
+import dots from 'dot';
+import os from 'os';
+import { TEMPLATES_DIR } from '../../../constants.js';
 
-class VerificationServer {
+export default class VerificationServer {
   /**
    *
    * @param {Docker} docker
    * @param {dockerPull} dockerPull
    * @param {StartedContainers} startedContainers
+   * @param {HomeDir} homeDir
    */
-  constructor(docker, dockerPull, startedContainers) {
+  constructor(docker, dockerPull, startedContainers, homeDir) {
     this.docker = docker;
     this.dockerPull = dockerPull;
     this.startedContainers = startedContainers;
-    this.server = null;
+    this.homeDir = homeDir;
+    this.container = null;
     this.configPath = null;
-    this.isRunning = false;
+    this.config = null;
   }
 
   /**
    * Set up verification server
    *
    * @param {Config} config
-   * @param {string} route
-   * @param {string} body
+   * @param {string} validationUrl
+   * @param {string[]} validationContent
    * @return {Promise<void>}
    */
-  async setup(config, route, body) {
-    if (this.server) {
+  async setup(config, validationUrl, validationContent) {
+    if (this.config) {
       throw new Error('Server is already setup');
     }
 
+    this.config = config;
+
     dots.templateSettings.strip = false;
 
-    // Set up template
-    const templatePath = path.join(__dirname, '..', '..', '..', 'ssl', 'templates', 'sslValidation.yaml.dot');
+    // Set up Envoy config
+    const configSubPath = path.join('platform', 'dapi', 'envoy');
+    const templatePath = path.join(TEMPLATES_DIR, configSubPath, '_zerossl_validation.yaml.dot');
     const templateString = fs.readFileSync(templatePath, 'utf-8');
     const template = dots.template(templateString);
 
-    // set up envoy config
+    const route = validationUrl.replace(`http://${config.get('externalIp')}`, '');
+    const body = validationContent.join('\\n');
+
     const envoyConfig = template({ route, body });
-    const configDir = path.join(HOME_DIR_PATH, config.getName());
+
+    const configDir = this.homeDir.joinPath(config.getName(), 'platform', 'dapi', 'envoy');
     const configName = path.basename(templatePath, '.dot');
+
     this.configPath = path.join(configDir, configName);
 
     if (!fs.existsSync(configDir)) {
@@ -50,13 +60,33 @@ class VerificationServer {
     }
     fs.rmSync(this.configPath, { force: true });
     fs.writeFileSync(this.configPath, envoyConfig, 'utf8');
+  }
 
-    const image = 'envoyproxy/envoy:v1.22-latest';
+  /**
+   * Start verification server
+   *
+   * @return {Promise<boolean>} - False if already started
+   */
+  async start() {
+    if (!this.config) {
+      throw new Error('Setup server first');
+    }
+
+    if (this.container) {
+      return false;
+    }
+
+    const image = this.config.get('platform.dapi.envoy.docker.image');
+
+    const name = 'dashmate-zerossl-validation';
+
+    const { uid, gid } = os.userInfo();
 
     const opts = {
-      name: 'mn-ssl-verification',
+      name,
       Image: image,
       Tty: false,
+      Env: [`ENVOY_UID=${uid}`, `ENVOY_GID=${gid}`],
       ExposedPorts: { '80/tcp': {} },
       HostConfig: {
         AutoRemove: true,
@@ -66,26 +96,37 @@ class VerificationServer {
     };
 
     await this.dockerPull(image);
-    this.server = await this.docker.createContainer(opts);
+
+    try {
+      this.container = await this.docker.createContainer(opts);
+    } catch (e) {
+      if (e.statusCode === 409) {
+        // Remove container
+        const danglingContainer = await this.docker.getContainer(name);
+
+        await danglingContainer.remove({ force: true });
+
+        try {
+          await danglingContainer.wait();
+        } catch (waitError) {
+          // Skip error if container is already removed
+          if (e.statusCode !== 404) {
+            throw e;
+          }
+        }
+
+        // Try to create a container one more type
+        this.container = await this.docker.createContainer(opts);
+      }
+
+      throw e;
+    }
 
     this.startedContainers.addContainer(opts.name);
-  }
 
-  /**
-   * Start verification server
-   *
-   * @return {Promise<void>}
-   */
-  async start() {
-    if (!this.server) {
-      throw new Error('Setup server first');
-    }
+    await this.container.start();
 
-    if (this.isRunning) {
-      return;
-    }
-
-    await this.server.start();
+    return true;
   }
 
   /**
@@ -94,11 +135,22 @@ class VerificationServer {
    * @return {Promise<void>}
    */
   async stop() {
-    if (!this.isRunning) {
+    if (!this.container) {
       return;
     }
 
-    await this.server.stop();
+    await this.container.stop({ t: 3 });
+
+    try {
+      await this.container.wait();
+    } catch (e) {
+      // Skip error if container is already removed
+      if (e.statusCode !== 404) {
+        throw e;
+      }
+    }
+
+    this.container = null;
   }
 
   /**
@@ -107,14 +159,12 @@ class VerificationServer {
    * @return {Promise<void>}
    */
   async destroy() {
-    if (!this.server) {
+    if (!this.config) {
       throw new Error('Setup server first');
     }
 
     fs.rmSync(this.configPath, { force: true });
 
-    this.server = null;
+    this.config = null;
   }
 }
-
-module.exports = VerificationServer;

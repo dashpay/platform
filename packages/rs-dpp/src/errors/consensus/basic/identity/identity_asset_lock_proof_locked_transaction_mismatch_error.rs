@@ -1,20 +1,26 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use dashcore::Txid;
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("`Instant Lock transaction {instant_lock_transaction_id:?} and Asset lock transaction {asset_lock_transaction_id:?} mismatch`")]
+#[platform_serialize(unversioned)]
 pub struct IdentityAssetLockProofLockedTransactionMismatchError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
+    #[platform_serialize(with_serde)]
     #[bincode(with_serde)]
     instant_lock_transaction_id: Txid,
+    #[platform_serialize(with_serde)]
     #[bincode(with_serde)]
     asset_lock_transaction_id: Txid,
 }

@@ -1,4 +1,4 @@
-const requestApi = require('./requestApi');
+import requestApi from './requestApi.js';
 
 /**
  * Create a ZeroSSL Certificate
@@ -8,7 +8,7 @@ const requestApi = require('./requestApi');
  * @param {string} id
  * @return {Promise<Certificate>}
  */
-async function revokeCertificate(
+export default async function revokeCertificate(
   apiKey,
   id,
 ) {
@@ -23,5 +23,3 @@ async function revokeCertificate(
 
   return requestApi(url, requestOptions);
 }
-
-module.exports = revokeCertificate;

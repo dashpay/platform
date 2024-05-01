@@ -24,17 +24,20 @@ function waitForStateTransitionResultFactory(grpcTransport) {
     // eslint-disable-next-line no-param-reassign
     options = {
       // Set default timeout
-      timeout: 120000,
+      timeout: 80000,
       prove: false,
       retry: 0,
       throwDeadlineExceeded: true,
       ...options,
     };
 
+    const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;
     const waitForStateTransitionResultRequest = new WaitForStateTransitionResultRequest();
-
-    waitForStateTransitionResultRequest.setStateTransitionHash(stateTransitionHash);
-    waitForStateTransitionResultRequest.setProve(options.prove);
+    waitForStateTransitionResultRequest.setV0(
+      new WaitForStateTransitionResultRequestV0()
+        .setStateTransitionHash(stateTransitionHash)
+        .setProve(options.prove),
+    );
 
     let lastError;
 

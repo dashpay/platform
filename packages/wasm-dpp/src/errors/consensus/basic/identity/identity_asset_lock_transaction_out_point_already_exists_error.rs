@@ -1,21 +1,21 @@
-use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyExistsError;
+use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
-use dpp::serialization::PlatformSerializable;
+
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=IdentityAssetLockTransactionOutPointAlreadyExistsError)]
 pub struct IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm {
-    inner: IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    inner: IdentityAssetLockTransactionOutPointAlreadyConsumedError,
 }
 
-impl From<&IdentityAssetLockTransactionOutPointAlreadyExistsError>
+impl From<&IdentityAssetLockTransactionOutPointAlreadyConsumedError>
     for IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm
 {
-    fn from(e: &IdentityAssetLockTransactionOutPointAlreadyExistsError) -> Self {
+    fn from(e: &IdentityAssetLockTransactionOutPointAlreadyConsumedError) -> Self {
         Self { inner: e.clone() }
     }
 }
@@ -30,7 +30,7 @@ impl IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm {
     #[wasm_bindgen(js_name=getTransactionId)]
     pub fn transaction_id(&self) -> Buffer {
         let tx_id = self.inner.transaction_id();
-        let mut tx_id_bytes = tx_id.as_hash().into_inner();
+        let mut tx_id_bytes = tx_id.to_byte_array();
         tx_id_bytes.reverse();
         Buffer::from_bytes(&tx_id_bytes)
     }

@@ -1,3 +1,5 @@
+use dpp::block::epoch::Epoch;
+use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
@@ -13,6 +15,7 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
 
@@ -21,6 +24,8 @@ pub(super) trait DocumentDeleteTransitionActionStateValidationV0 {
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
@@ -30,6 +35,8 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
+        _epoch: &Epoch,
+        _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -37,7 +44,14 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type_for_name(self.base().document_type_name())?;
+        let document_type_name = self.base().document_type_name();
+
+        let Some(document_type) = contract.document_type_optional_for_name(document_type_name)
+        else {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
+            ));
+        };
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         let original_document = fetch_document_with_id(
@@ -50,11 +64,11 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         )?;
 
         let Some(document) = original_document else {
-            return Ok(ConsensusValidationResult::new_with_error(ConsensusError::StateError(
-                StateError::DocumentNotFoundError(DocumentNotFoundError::new(
-                    self.base().id(),
-                ))
-            )));
+            return Ok(ConsensusValidationResult::new_with_error(
+                ConsensusError::StateError(StateError::DocumentNotFoundError(
+                    DocumentNotFoundError::new(self.base().id()),
+                )),
+            ));
         };
 
         Ok(check_ownership(self, &document, &owner_id))

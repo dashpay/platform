@@ -27,29 +27,49 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::credit_pools::paths::pools_vec_path;
-use crate::error::Error;
-
+#[cfg(feature = "server")]
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+#[cfg(feature = "server")]
+use crate::drive::batch::GroveDbOpBatch;
+#[cfg(feature = "server")]
+use crate::drive::credit_pools::paths::pools_vec_path;
+#[cfg(feature = "server")]
+use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
+#[cfg(feature = "server")]
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
 };
+#[cfg(feature = "server")]
 use dpp::balances::credits::Creditable;
+#[cfg(feature = "server")]
 use dpp::block::epoch::{Epoch, EpochIndex};
-use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+#[cfg(feature = "server")]
+use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
+#[cfg(feature = "server")]
 use dpp::fee::Credits;
+use dpp::util::deserializer::ProtocolVersion;
+#[cfg(feature = "server")]
 use grovedb::batch::GroveDbOp;
+#[cfg(feature = "server")]
 use grovedb::Element;
 
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Epochs module
 pub mod epochs;
+
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Epochs root tree key constants module
 pub mod epochs_root_tree_key_constants;
 
+#[cfg(feature = "server")]
 /// Adds the operations to groveDB op batch to create the fee pool trees
-pub fn add_create_fee_pool_trees_operations(batch: &mut GroveDbOpBatch) -> Result<(), Error> {
+pub fn add_create_fee_pool_trees_operations(
+    batch: &mut GroveDbOpBatch,
+    epochs_per_era: u16,
+    protocol_version: ProtocolVersion,
+) -> Result<(), Error> {
     // Init storage credit pool
     batch.push(update_storage_fee_distribution_pool_operation(0)?);
 
@@ -58,21 +78,29 @@ pub fn add_create_fee_pool_trees_operations(batch: &mut GroveDbOpBatch) -> Resul
 
     add_create_pending_epoch_refunds_tree_operations(batch);
 
-    // We need to insert 50 years worth of epochs,
-    // with 20 epochs per year that's 1000 epochs
-    for i in GENESIS_EPOCH_INDEX..PERPETUAL_STORAGE_EPOCHS {
+    // We need to insert 50 era worth of epochs,
+    // with 40 epochs per era that's 2000 epochs
+    // however this is configurable
+    for i in GENESIS_EPOCH_INDEX..perpetual_storage_epochs(epochs_per_era) {
         let epoch = Epoch::new(i)?;
         epoch.add_init_empty_operations(batch)?;
     }
 
+    let genesis_epoch = Epoch::new(GENESIS_EPOCH_INDEX)?;
+
+    // Initial protocol version for genesis epoch
+    batch.push(genesis_epoch.update_protocol_version_operation(protocol_version));
+
     Ok(())
 }
 
+#[cfg(feature = "server")]
 /// Adds operations to batch to create pending pool updates tree
 pub fn add_create_pending_epoch_refunds_tree_operations(batch: &mut GroveDbOpBatch) {
     batch.add_insert_empty_sum_tree(pools_vec_path(), KEY_PENDING_EPOCH_REFUNDS.to_vec());
 }
 
+#[cfg(feature = "server")]
 /// Updates the storage fee distribution pool with a new storage fee
 pub fn update_storage_fee_distribution_pool_operation(
     storage_fee: Credits,
@@ -84,6 +112,7 @@ pub fn update_storage_fee_distribution_pool_operation(
     ))
 }
 
+#[cfg(feature = "server")]
 /// Updates the unpaid epoch index
 pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> GroveDbOp {
     GroveDbOp::insert_op(
@@ -123,7 +152,9 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let transaction = drive.grove.start_transaction();
 
-            for epoch_index in 0..1000 {
+            let perpetual_storage_epochs = perpetual_storage_epochs(drive.config.epochs_per_era);
+
+            for epoch_index in 0..perpetual_storage_epochs {
                 let epoch = Epoch::new(epoch_index).unwrap();
 
                 let storage_fee = drive
@@ -137,7 +168,7 @@ mod tests {
                 assert_eq!(storage_fee, 0);
             }
 
-            let epoch = Epoch::new(1000).unwrap(); // 1001th epochs pool
+            let epoch = Epoch::new(perpetual_storage_epochs).unwrap(); // 1001th epochs pool
 
             let result = drive.get_epoch_storage_credits_for_distribution(
                 &epoch,

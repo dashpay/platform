@@ -1,4 +1,4 @@
-use dpp::dashcore::anyhow::anyhow;
+use anyhow::anyhow;
 use dpp::{BlsModule, PublicKeyValidationError};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;

@@ -3,12 +3,16 @@ use crate::consensus::ConsensusError;
 use crate::fee::Credits;
 use thiserror::Error;
 
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Current credits balance {balance} is not enough to pay {fee} fee")]
+#[platform_serialize(unversioned)]
 pub struct BalanceIsNotEnoughError {
     /*
 

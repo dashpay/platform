@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import AbstractError from '../../errors/AbstractError.js';
 
-class ServiceIsNotRunningError extends AbstractError {
+export default class ServiceIsNotRunningError extends AbstractError {
   /**
    * @param {string} configName
    * @param {string} serviceName
@@ -30,5 +30,3 @@ class ServiceIsNotRunningError extends AbstractError {
     return this.serviceName;
   }
 }
-
-module.exports = ServiceIsNotRunningError;

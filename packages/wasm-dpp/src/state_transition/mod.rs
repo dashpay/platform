@@ -1,7 +1,7 @@
 // use dpp::state_transition::fee::operations::Operation;
 // use wasm_bindgen::prelude::*;
 //
-// pub mod errors;
+pub mod errors;
 // pub mod state_transition_facade;
 pub mod state_transition_factory;
 

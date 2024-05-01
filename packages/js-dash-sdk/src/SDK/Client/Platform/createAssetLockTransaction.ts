@@ -1,4 +1,6 @@
-import { PrivateKey, Transaction } from '@dashevo/dashcore-lib';
+import {
+  PrivateKey, Transaction, Script, Address, Opcode,
+} from '@dashevo/dashcore-lib';
 import { utils } from '@dashevo/wallet-lib';
 import { Platform } from './Platform';
 
@@ -44,11 +46,35 @@ export async function createAssetLockTransaction(
 
   const selection = utils.coinSelection(utxos, [output]);
 
+  const realOutput = {
+    satoshis: output.satoshis,
+    script: Script
+      .buildPublicKeyHashOut(Address.fromString(identityAddress, this.client.network)).toString(),
+  };
+
+  const payload = Transaction.Payload.AssetLockPayload.fromJSON({
+    version: 1,
+    creditOutputs: [{
+      satoshis: realOutput.satoshis,
+      script: realOutput.script,
+    }],
+  });
+
   lockTransaction
+  // @ts-ignore
+    .setType(Transaction.TYPES.TRANSACTION_ASSET_LOCK)
     .from(selection.utxos)
-    // eslint-disable-next-line
-    .addBurnOutput(output.satoshis, assetLockOneTimePublicKey._getID())
-    .change(changeAddress);
+  // eslint-disable-next-line
+      .addOutput(
+      new Transaction.Output({
+        satoshis: realOutput.satoshis,
+        // @ts-ignore
+        script: new Script().add(Opcode.OP_RETURN).add(Buffer.alloc(0)),
+      }),
+    )
+    .change(changeAddress)
+  // @ts-ignore
+    .setExtraPayload(payload);
 
   const utxoAddresses = selection.utxos.map((utxo: any) => utxo.address.toString());
 

@@ -137,7 +137,9 @@ impl TestQuorumInfo {
         let bls_id_private_key_pairs = private_keys
             .into_iter()
             .zip(pro_tx_hashes)
-            .map(|(private_key, pro_tx_hashes)| (pro_tx_hashes.to_vec(), private_key))
+            .map(|(private_key, pro_tx_hashes)| {
+                (pro_tx_hashes.to_byte_array().to_vec(), private_key)
+            })
             .collect::<Vec<_>>();
         let recovered_private_key =
             bls_signatures::PrivateKey::threshold_recover(&bls_id_private_key_pairs)

@@ -1,4 +1,4 @@
-use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
+use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 
 use crate::drive::flags::StorageFlags;
@@ -26,6 +26,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Applies a contract and returns the fee for applying.
     /// If the contract already exists, an update is applied, otherwise an insert.
+    #[inline(always)]
     pub(super) fn apply_contract_with_serialization_v0(
         &self,
         contract: &DataContract,
@@ -64,6 +65,7 @@ impl Drive {
             None,
             Some(cost_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok(fees)
@@ -72,6 +74,7 @@ impl Drive {
     /// Gets the operations for applying a contract with it's serialization
     /// If the contract already exists, we get operations for an update
     /// Otherwise we get operations for an insert
+    #[inline(always)]
     pub(super) fn apply_contract_with_serialization_operations_v0(
         &self,
         contract: &DataContract,
@@ -125,9 +128,7 @@ impl Drive {
                         // we need to get the latest of a contract that keeps history, can't be raw since there is a reference
                         let stored_element = self
                             .grove_get(
-                                (&contract_keeping_history_storage_path(
-                                    contract.id_ref().as_bytes(),
-                                ))
+                                (&contract_keeping_history_root_path(contract.id_ref().as_bytes()))
                                     .into(),
                                 &[0],
                                 QueryType::StatefulQuery,

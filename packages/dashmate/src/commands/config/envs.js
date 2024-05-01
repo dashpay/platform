@@ -1,19 +1,28 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { Flags } from '@oclif/core';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
-const { Flags } = require('@oclif/core');
+export default class ConfigEnvsCommand extends ConfigBaseCommand {
+  static description = `Export config to envs
 
-const { HOME_DIR_PATH } = require('../../constants');
+Export configuration options as Docker Compose envs
+`;
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const generateEnvs = require('../../util/generateEnvs');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    'output-file': Flags.string({
+      char: 'o',
+      description: 'output to file',
+      default: null,
+    }),
+  };
 
-class ConfigEnvsCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
-   * @param {ConfigFile} configFile
+   * @param {generateEnvs} generateEnvs
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -22,15 +31,15 @@ class ConfigEnvsCommand extends ConfigBaseCommand {
       'output-file': outputFile,
     },
     config,
-    configFile,
+    generateEnvs,
   ) {
+    const envs = generateEnvs(config);
+
     let envOutput = '';
 
-    for (const [key, value] of Object.entries(generateEnvs(configFile, config))) {
+    for (const [key, value] of Object.entries(envs)) {
       envOutput += `${key}=${value}\n`;
     }
-
-    envOutput += `DASHMATE_HOME_DIR=${HOME_DIR_PATH}\n`;
 
     if (outputFile !== null) {
       const outputFilePath = path.resolve(process.cwd(), outputFile);
@@ -42,19 +51,3 @@ class ConfigEnvsCommand extends ConfigBaseCommand {
     }
   }
 }
-
-ConfigEnvsCommand.description = `Export config to envs
-
-Export configuration options as Docker Compose envs
-`;
-
-ConfigEnvsCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  'output-file': Flags.string({
-    char: 'o',
-    description: 'output to file',
-    default: null,
-  }),
-};
-
-module.exports = ConfigEnvsCommand;

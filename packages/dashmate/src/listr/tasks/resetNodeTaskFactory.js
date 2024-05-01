@@ -1,26 +1,28 @@
-const { Listr } = require('listr2');
-const fs = require('node:fs');
-const path = require('node:path');
-const wait = require('../../util/wait');
-const generateEnvs = require('../../util/generateEnvs');
-const { HOME_DIR_PATH } = require('../../constants');
+import { Listr } from 'listr2';
+import fs from 'fs';
+import path from 'path';
+import wait from '../../util/wait.js';
 
 /**
  * @param {DockerCompose} dockerCompose
  * @param {Docker} docker
  * @param {startNodeTask} startNodeTask
  * @param {generateToAddressTask} generateToAddressTask
- * @param {systemConfigs} systemConfigs
+ * @param {DefaultConfigs} defaultConfigs
  * @param {ConfigFile} configFile
+ * @param {HomeDir} homeDir
+ * @param {generateEnvs} generateEnvs
  * @return {resetNodeTask}
  */
-function resetNodeTaskFactory(
+export default function resetNodeTaskFactory(
   dockerCompose,
   docker,
   startNodeTask,
   generateToAddressTask,
-  systemConfigs,
+  defaultConfigs,
   configFile,
+  homeDir,
+  generateEnvs,
 ) {
   /**
    * @typedef {resetNodeTask}
@@ -38,8 +40,11 @@ function resetNodeTaskFactory(
       {
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
-        task: async () => {
-          if (await dockerCompose.isNodeRunning(generateEnvs(configFile, config))) {
+        task: async (ctx) => {
+          if (await dockerCompose.isNodeRunning(
+            config,
+            { profiles: ctx.isPlatformOnlyReset ? ['platform'] : [] },
+          )) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
@@ -47,30 +52,20 @@ function resetNodeTaskFactory(
       {
         title: 'Remove all services and associated data',
         enabled: (ctx) => !ctx.isPlatformOnlyReset,
-        task: async () => dockerCompose.down(generateEnvs(configFile, config)),
+        task: async () => dockerCompose.down(config),
       },
       {
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async () => {
-          const nonPlatformServices = ['core', 'sentinel'];
-          const envs = generateEnvs(configFile, config);
-
-          // Remove containers
-          const serviceNames = (await dockerCompose
-            .getContainersList(
-              envs,
-              { returnServiceNames: true },
-            ))
-            .filter((serviceName) => !nonPlatformServices.includes(serviceName));
-
-          await dockerCompose.rm(generateEnvs(configFile, config), serviceNames);
+          await dockerCompose.rm(config, { profiles: ['platform'] });
 
           // Remove volumes
-          const { COMPOSE_PROJECT_NAME: composeProjectName } = envs;
+          const { COMPOSE_PROJECT_NAME: composeProjectName } = generateEnvs(config);
 
           const projectVolumeNames = await dockerCompose.getVolumeNames(
-            generateEnvs(configFile, config, { platformOnly: true }),
+            config,
+            { profiles: ['platform'] },
           );
 
           await Promise.all(
@@ -91,7 +86,7 @@ function resetNodeTaskFactory(
                       await wait(1000);
 
                       // Remove containers
-                      await dockerCompose.rm(generateEnvs(configFile, config), serviceNames);
+                      await dockerCompose.rm(config, { profiles: ['platform'] });
 
                       isRetry = true;
 
@@ -112,48 +107,69 @@ function resetNodeTaskFactory(
       },
       {
         title: 'Reset dashmate\'s ephemeral data',
-        task: (ctx) => {
-          if (!ctx.isPlatformOnlyReset) {
-            config.set('core.miner.mediantime', null);
-          }
+        enabled: (ctx) => !ctx.removeConfig && !ctx.isHardReset && !ctx.isPlatformOnlyReset,
+        task: () => {
+          // TODO: We should remove it from config
+          config.set('core.miner.mediantime', null);
         },
       },
       {
-        title: `Reset config ${config.getName()}`,
-        enabled: (ctx) => ctx.isHardReset,
-        task: (ctx) => {
-          const baseConfigName = config.get('group') || config.getName();
+        title: `Remove config ${config.getName()}`,
+        enabled: (ctx) => ctx.removeConfig,
+        task: () => {
+          configFile.removeConfig(config.getName());
 
-          if (systemConfigs[baseConfigName]) {
-            // Reset config if the corresponding base config exists
-            if (ctx.isPlatformOnlyReset) {
-              const { platform: systemPlatformConfig } = systemConfigs[baseConfigName];
-              config.set('platform', systemPlatformConfig);
-            } else {
-              config.setOptions(systemConfigs[baseConfigName]);
-            }
-          } else {
-            // Delete config if no base config
-            configFile.removeConfig(config.getName());
-          }
-
-          // Remove service configs
-          let serviceConfigsPath = path.join(HOME_DIR_PATH, baseConfigName);
-
-          if (ctx.isPlatformOnlyReset) {
-            serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
-          }
+          const serviceConfigsPath = homeDir.joinPath(config.getName());
 
           fs.rmSync(serviceConfigsPath, {
             recursive: true,
             force: true,
           });
+        },
+      },
+      {
+        title: `Reset config ${config.getName()}`,
+        enabled: (ctx) => !ctx.removeConfig && ctx.isHardReset,
+        task: (ctx) => {
+          const groupName = config.get('group');
+          const defaultConfigName = groupName || config.getName();
 
-          // Remove SSL files
-          fs.rmSync(path.join(HOME_DIR_PATH, 'ssl', baseConfigName), {
-            recursive: true,
-            force: true,
-          });
+          if (defaultConfigs.has(defaultConfigName)) {
+            // Reset config if the corresponding default config exists
+            if (ctx.isPlatformOnlyReset) {
+              const defaultPlatformConfig = defaultConfigs.get(defaultConfigName).get('platform');
+              config.set('platform', defaultPlatformConfig);
+            } else {
+              const defaultConfigOptions = defaultConfigs.get(defaultConfigName).getOptions();
+
+              config.setOptions(defaultConfigOptions);
+            }
+
+            config.set('group', groupName);
+
+            // Remove service configs
+            let serviceConfigsPath = homeDir.joinPath(defaultConfigName);
+
+            if (ctx.isPlatformOnlyReset) {
+              serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
+            }
+
+            fs.rmSync(serviceConfigsPath, {
+              recursive: true,
+              force: true,
+            });
+          } else {
+            // Delete config if no base config
+            configFile.removeConfig(config.getName());
+
+            // Remove service configs
+            const serviceConfigsPath = homeDir.joinPath(defaultConfigName);
+
+            fs.rmSync(serviceConfigsPath, {
+              recursive: true,
+              force: true,
+            });
+          }
         },
       },
     ]);
@@ -161,5 +177,3 @@ function resetNodeTaskFactory(
 
   return resetNodeTask;
 }
-
-module.exports = resetNodeTaskFactory;

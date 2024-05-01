@@ -46,6 +46,8 @@ pub trait IdentityGettersV0 {
         security_levels: HashSet<SecurityLevel>,
         key_types: HashSet<KeyType>,
     ) -> Option<&IdentityPublicKey>;
+    /// Add an identity public key
+    fn add_public_key(&mut self, key: IdentityPublicKey);
 }
 
 /// Trait for setters in Identity

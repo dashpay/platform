@@ -1,8 +1,14 @@
-const { Listr } = require('listr2');
-const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
+import { Listr } from 'listr2';
+import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
-class GroupRestartCommand extends GroupBaseCommand {
+export default class GroupRestartCommand extends GroupBaseCommand {
+  static description = 'Restart group nodes';
+
+  static flags = {
+    ...GroupBaseCommand.flags,
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -24,36 +30,38 @@ class GroupRestartCommand extends GroupBaseCommand {
   ) {
     const groupName = configGroup[0].get('group');
 
-    const tasks = new Listr({
-      title: `Restart ${groupName} nodes`,
-      task: async () => (
-        new Listr([
-          {
-            title: 'Stop nodes',
-            task: () => (
+    const tasks = new Listr(
+      {
+        title: `Restart ${groupName} nodes`,
+        task: async () => (
+          new Listr([
+            {
+              title: 'Stop nodes',
+              task: () => (
               // So we stop the miner first, as there's a chance that MNs will get banned
               // if the miner is still running when stopping them
-              new Listr(configGroup.reverse().map((config) => ({
-                task: () => stopNodeTask(config),
-              })))
-            ),
-          },
-          {
-            title: 'Start nodes',
-            task: () => startGroupNodesTask(configGroup),
-          },
-        ])
-      ),
-    },
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
+                new Listr(configGroup.reverse().map((config) => ({
+                  task: () => stopNodeTask(config),
+                })))
+              ),
+            },
+            {
+              title: 'Start nodes',
+              task: () => startGroupNodesTask(configGroup),
+            },
+          ])
+        ),
       },
-    });
+      {
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
+      },
+    );
 
     try {
       await tasks.run({
@@ -64,11 +72,3 @@ class GroupRestartCommand extends GroupBaseCommand {
     }
   }
 }
-
-GroupRestartCommand.description = 'Restart group nodes';
-
-GroupRestartCommand.flags = {
-  ...GroupBaseCommand.flags,
-};
-
-module.exports = GroupRestartCommand;

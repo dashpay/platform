@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::basic::BasicError;
@@ -7,8 +8,11 @@ use crate::identity::core_script::CoreScript;
 
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Output script must be either p2pkh or p2sh")]
+#[platform_serialize(unversioned)]
 pub struct InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
     output_script: CoreScript,
 }

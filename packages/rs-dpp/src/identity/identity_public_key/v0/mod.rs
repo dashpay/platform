@@ -13,6 +13,7 @@ use bincode::{Decode, Encode};
 use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::Purpose::AUTHENTICATION;
 use crate::identity::SecurityLevel::MASTER;
@@ -39,6 +40,7 @@ pub struct IdentityPublicKeyV0 {
     pub id: KeyID,
     pub purpose: Purpose,
     pub security_level: SecurityLevel,
+    pub contract_bounds: Option<ContractBounds>,
     #[serde(rename = "type")]
     pub key_type: KeyType,
     pub read_only: bool,
@@ -63,6 +65,7 @@ impl IdentityPublicKeyV0 {
             read_only,
             disabled_at: None,
             data,
+            contract_bounds: None,
         }
     }
 }
@@ -78,6 +81,7 @@ impl Into<IdentityPublicKeyInCreationV0> for &IdentityPublicKeyV0 {
             read_only: self.read_only,
             data: self.data.clone(),
             signature: BinaryData::default(),
+            contract_bounds: self.contract_bounds.clone(),
         }
     }
 }

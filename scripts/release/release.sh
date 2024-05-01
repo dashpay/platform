@@ -58,6 +58,8 @@ fi
 # bump version
 yarn node $DIR/bump_version.js "$RELEASE_TYPE"
 
+cargo metadata > /dev/null
+
 NEW_PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
 if [ -z "$LATEST_TAG" ]

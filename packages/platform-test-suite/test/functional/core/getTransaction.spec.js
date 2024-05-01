@@ -20,7 +20,9 @@ describe('Core', () => {
     });
 
     after(async () => {
-      await client.disconnect();
+      if (client) {
+        await client.disconnect();
+      }
     });
 
     it('should respond with a transaction by it\'s ID', async () => {

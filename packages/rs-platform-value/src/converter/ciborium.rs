@@ -23,6 +23,14 @@ impl Value {
             .map(|(key, value)| Ok((key, value.try_into()?)))
             .collect()
     }
+
+    pub fn to_cbor_buffer(&self) -> Result<Vec<u8>, Error> {
+        let mut buffer: Vec<u8> = Vec::new();
+        ciborium::ser::into_writer(self, &mut buffer)
+            .map_err(|e| Error::CborSerializationError(e.to_string()))?;
+
+        Ok(buffer)
+    }
 }
 
 impl TryFrom<CborValue> for Value {
@@ -46,8 +54,8 @@ impl TryFrom<CborValue> for Value {
                 if len > 10
                     && array.iter().all(|v| {
                         let Some(int) = v.as_integer() else {
-                        return false;
-                    };
+                            return false;
+                        };
                         int.le(&Integer::from(u8::MAX)) && int.ge(&Integer::from(0))
                     })
                 {
@@ -121,8 +129,16 @@ impl TryInto<CborValue> for Value {
                 )
             }
             Value::Identifier(bytes) => CborValue::Bytes(bytes.to_vec()),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 }

@@ -50,6 +50,7 @@ mod tests {
         drive
             .add_new_identity(
                 identity.clone(),
+                false,
                 &BlockInfo::default(),
                 true,
                 None,
@@ -144,6 +145,8 @@ mod tests {
             .grove
             .query_raw(
                 &path_query,
+                true,
+                true,
                 true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,

@@ -21,6 +21,8 @@ use crate::version::PlatformVersion;
 
 use integer_encoding::{VarInt, VarIntReader};
 
+use crate::consensus::basic::decode::DecodingError;
+use crate::data_contract::errors::DataContractError;
 use platform_version::version::FeatureVersion;
 
 impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
@@ -95,9 +97,11 @@ impl ExtendedDocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
         let (document_type_name_len, rest) =
             serialized_document
                 .split_first()
-                .ok_or(ProtocolError::DecodingError(
-                    "error reading document type name len from serialized extended document"
-                        .to_string(),
+                .ok_or(DataContractError::DecodingDocumentError(
+                    DecodingError::new(
+                        "error reading document type name len from serialized extended document"
+                            .to_string(),
+                    ),
                 ))?;
         if serialized_document.len() < *document_type_name_len as usize {
             return Err(ProtocolError::DecodingError(
@@ -130,7 +134,10 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
+    fn serialize_to_bytes(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
         match platform_version
             .dpp
             .document_versions
@@ -146,7 +153,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
         }
     }
 
-    fn serialize_specific_version(
+    fn serialize_specific_version_to_bytes(
         &self,
         feature_version: FeatureVersion,
         platform_version: &PlatformVersion,
@@ -165,7 +172,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume(
+    fn serialize_consume_to_bytes(
         self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {

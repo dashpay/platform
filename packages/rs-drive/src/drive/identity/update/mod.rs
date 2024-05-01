@@ -1,4 +1,4 @@
-mod methods;
+pub(crate) mod methods;
 mod operations;
 mod structs;
 
@@ -31,7 +31,14 @@ mod tests {
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let new_keys_to_add =
@@ -53,8 +60,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 14175000,
-                    processing_fee: 2411690,
+                    storage_fee: 14202000,
+                    processing_fee: 2434150,
                     ..Default::default()
                 }
             );
@@ -84,7 +91,14 @@ mod tests {
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let new_keys_to_add =
@@ -106,8 +120,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 346734000,
-                    processing_fee: 9300050,
+                    storage_fee: 347382000,
+                    processing_fee: 9344910,
                     ..Default::default()
                 }
             );
@@ -167,8 +181,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 17118000,
-                    processing_fee: 12544960,
+                    storage_fee: 17145000,
+                    processing_fee: 12012160,
                     ..Default::default()
                 }
             );
@@ -196,7 +210,14 @@ mod tests {
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block_info, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let new_keys_to_add = IdentityPublicKey::random_keys(5, 2, Some(15), platform_version);
@@ -234,7 +255,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1602860,
+                    processing_fee: 1452800,
                     ..Default::default()
                 }
             );
@@ -299,7 +320,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 486000,
-                    processing_fee: 5865330,
+                    processing_fee: 5432130,
                     ..Default::default()
                 }
             );
@@ -317,6 +338,7 @@ mod tests {
             drive
                 .add_new_identity(
                     identity.clone(),
+                    false,
                     &BlockInfo::default(),
                     true,
                     None,
@@ -374,7 +396,14 @@ mod tests {
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block_info, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let revision = 2;
@@ -396,7 +425,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 754320,
+                    processing_fee: 648660,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -457,7 +486,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 4632950,
+                    processing_fee: 4217750,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }

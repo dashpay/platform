@@ -1,32 +1,43 @@
-const { Listr } = require('listr2');
-const path = require('path');
-const fs = require('fs');
-const { HOME_DIR_PATH } = require('../../../constants');
+import { Listr } from 'listr2';
+import path from 'path';
+import fs from 'fs';
 
 /**
- * @typedef {saveCertificateTask}
- * @param {Config} config
- * @return {Listr}
+ * @param {HomeDir} homeDir
+ * @return {saveCertificateTask}
  */
-function saveCertificateTask(config) {
-  return new Listr([
-    {
-      title: 'Save certificates',
-      task: async (ctx) => {
-        const configDir = path.join(HOME_DIR_PATH, 'ssl', config.getName());
+export default function saveCertificateTaskFactory(homeDir) {
+  /**
+   * @typedef {function} saveCertificateTask
+   * @param {Config} config
+   * @return {Listr}
+   */
+  function saveCertificateTask(config) {
+    return new Listr([
+      {
+        title: 'Save certificates',
+        task: async (ctx) => {
+          const certificatesDir = homeDir.joinPath(
+            config.getName(),
+            'platform',
+            'dapi',
+            'envoy',
+            'ssl',
+          );
 
-        fs.mkdirSync(configDir, { recursive: true });
+          fs.mkdirSync(certificatesDir, { recursive: true });
 
-        const crtFile = path.join(configDir, 'bundle.crt');
+          const crtFile = path.join(certificatesDir, 'bundle.crt');
 
-        fs.writeFileSync(crtFile, ctx.certificateFile, 'utf8');
+          fs.writeFileSync(crtFile, ctx.certificateFile, 'utf8');
 
-        const keyFile = path.join(configDir, 'private.key');
-        fs.writeFileSync(keyFile, ctx.privateKeyFile, 'utf8');
+          const keyFile = path.join(certificatesDir, 'private.key');
+          fs.writeFileSync(keyFile, ctx.privateKeyFile, 'utf8');
 
-        config.set('platform.dapi.envoy.ssl.enabled', true);
-      },
-    }]);
+          config.set('platform.dapi.envoy.ssl.enabled', true);
+        },
+      }]);
+  }
+
+  return saveCertificateTask;
 }
-
-module.exports = saveCertificateTask;

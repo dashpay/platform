@@ -39,6 +39,9 @@ pub enum Error {
 
     #[error("serde deserialization error: {0}")]
     SerdeDeserializationError(String),
+
+    #[error("cbor serialization error: {0}")]
+    CborSerializationError(String),
 }
 
 impl serde::ser::Error for Error {

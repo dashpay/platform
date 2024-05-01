@@ -63,6 +63,7 @@ impl Drive {
             loaded_public_keys,
             balance: Some(balance),
             revision: None,
+
             not_found_public_keys,
         }))
     }
@@ -109,6 +110,7 @@ impl Drive {
                 loaded_public_keys,
                 balance: Some(balance),
                 revision: None,
+
                 not_found_public_keys: Default::default(),
             }),
             FeeResult::new_from_processing_fee(balance_cost + keys_cost),

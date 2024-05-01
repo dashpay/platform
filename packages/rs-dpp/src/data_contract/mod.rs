@@ -4,11 +4,9 @@ use crate::serialization::{
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
 
-pub use data_contract::*;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
-pub use generate_data_contract::*;
 
 pub mod errors;
 pub mod extra;
@@ -35,14 +33,14 @@ pub mod serialized_version;
 pub use methods::*;
 pub mod accessors;
 pub mod config;
+pub mod storage_requirements;
 
 pub use v0::*;
 
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
-use crate::data_contract::v0::data_contract::DataContractV0;
-use crate::util::hash::hash_to_vec;
+use crate::util::hash::hash_double_to_vec;
 
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
@@ -143,6 +141,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
             validate,
+            &mut vec![],
             platform_version,
         )
     }
@@ -171,6 +170,7 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
             DataContract::try_from_platform_versioned(
                 data_contract_in_serialization_format,
                 validate,
+                &mut vec![],
                 platform_version,
             )?,
             len,
@@ -202,6 +202,7 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
             true,
+            &mut vec![],
             platform_version,
         )
     }
@@ -239,25 +240,32 @@ impl DataContract {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.serialize_to_bytes_with_platform_version(
-            platform_version,
-        )?))
+        Ok(hash_double_to_vec(
+            self.serialize_to_bytes_with_platform_version(platform_version)?,
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::config::v0::DataContractConfigGettersV0;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
     use crate::data_contract::DataContract;
     use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::system_data_contracts::load_system_data_contract;
+    use crate::tests::fixtures::{
+        get_dashpay_contract_fixture, get_dashpay_contract_with_generalized_encryption_key_fixture,
+    };
     use crate::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;
 
     #[test]
     fn test_contract_serialization() {
         let platform_version = PlatformVersion::latest();
-        let data_contract = load_system_data_contract(Dashpay, platform_version.protocol_version)
+        let data_contract = load_system_data_contract(Dashpay, platform_version)
             .expect("expected dashpay contract");
         let platform_version = PlatformVersion::latest();
         let serialized = data_contract
@@ -276,5 +284,43 @@ mod tests {
             .expect("expected to deserialize data contract");
 
         assert_eq!(data_contract, unserialized);
+    }
+
+    #[test]
+    fn test_contract_can_have_specialized_contract_encryption_decryption_keys() {
+        let data_contract =
+            get_dashpay_contract_with_generalized_encryption_key_fixture(None, 0, 1)
+                .data_contract_owned();
+        assert_eq!(
+            data_contract
+                .config()
+                .requires_identity_decryption_bounded_key(),
+            Some(StorageKeyRequirements::Unique)
+        );
+        assert_eq!(
+            data_contract
+                .config()
+                .requires_identity_encryption_bounded_key(),
+            Some(StorageKeyRequirements::Unique)
+        );
+    }
+
+    #[test]
+    fn test_contract_document_type_can_have_specialized_contract_encryption_decryption_keys() {
+        let data_contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
+        assert_eq!(
+            data_contract
+                .document_type_for_name("contactRequest")
+                .expect("expected document type")
+                .requires_identity_decryption_bounded_key(),
+            Some(StorageKeyRequirements::MultipleReferenceToLatest)
+        );
+        assert_eq!(
+            data_contract
+                .document_type_for_name("contactRequest")
+                .expect("expected document type")
+                .requires_identity_encryption_bounded_key(),
+            Some(StorageKeyRequirements::MultipleReferenceToLatest)
+        );
     }
 }

@@ -23,7 +23,7 @@ npm install
 
 ### Dependencies
 
-DAPI targets the latest v18 release of Node.js.
+DAPI targets the latest v20 release of Node.js.
 
 DAPI requires the latest version of [dashcore](https://github.com/dashevo/dash-evo-branches/tree/evo) with Evolution features (special branch repo).
 

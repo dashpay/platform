@@ -1,5 +1,5 @@
+const zeromq = require('@pshenmic/zeromq/v5-compat');
 const { EventEmitter } = require('events');
-const zeromq = require('zeromq');
 const { ZMQ_TOPICS } = require('./constants');
 
 const defaultOptions = { topics: ZMQ_TOPICS, maxRetryCount: 20 };

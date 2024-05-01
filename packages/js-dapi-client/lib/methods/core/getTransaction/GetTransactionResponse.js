@@ -22,7 +22,6 @@ class GetTransactionResponse {
 
   /**
    * Get transaction
-   *
    * @returns {Buffer}
    */
   getTransaction() {
@@ -31,7 +30,6 @@ class GetTransactionResponse {
 
   /**
    * Get block hash
-   *
    * @returns {Buffer}
    */
   getBlockHash() {
@@ -40,7 +38,6 @@ class GetTransactionResponse {
 
   /**
    * Get height
-   *
    * @returns {number}
    */
   getHeight() {
@@ -49,7 +46,6 @@ class GetTransactionResponse {
 
   /**
    * Get number of confirmations
-   *
    * @returns {number}
    */
   getConfirmations() {
@@ -58,7 +54,6 @@ class GetTransactionResponse {
 
   /**
    * Is transaction instant locked
-   *
    * @returns {boolean}
    */
   isInstantLocked() {
@@ -67,7 +62,6 @@ class GetTransactionResponse {
 
   /**
    * Is transaction chain locked
-   *
    * @returns {boolean}
    */
   isChainLocked() {

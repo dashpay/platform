@@ -1,35 +1,7 @@
-// MIT LICENSE
-//
-// Copyright (c) 2022 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 mod contract;
 mod document;
 mod drive_methods;
+mod finalize_task;
 mod identity;
 mod system;
 mod withdrawals;
@@ -57,6 +29,10 @@ use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
+};
+use crate::error::drive::DriveError;
 use std::collections::{BTreeMap, HashMap};
 
 /// A converter that will get Drive Operations from High Level Operations
@@ -77,7 +53,9 @@ pub trait DriveLowLevelOperationConverter {
 /// The drive operation context keeps track of changes that might affect other operations
 /// Notably Identity balance changes are kept track of
 pub struct DriveOperationContext {
-    //todo: why is this not being used?
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     identity_balance_changes: BTreeMap<[u8; 32], i64>,
 }
 
@@ -89,7 +67,7 @@ pub enum DriveOperation<'a> {
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
     /// Withdrawal operation
-    WithdrawalOperation(WithdrawalOperationType<'a>),
+    WithdrawalOperation(WithdrawalOperationType),
     /// An identity operation
     IdentityOperation(IdentityOperationType),
     /// A system operation
@@ -164,7 +142,41 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     }
 }
 
-#[cfg(feature = "full")]
+impl DriveOperationFinalizationTasks for DriveOperation<'_> {
+    fn finalization_tasks(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .state_transitions
+            .operations
+            .finalization_tasks
+        {
+            0 => self.finalization_tasks_v0(platform_version),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "DriveOperation.finalization_tasks".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl DriveOperation<'_> {
+    fn finalization_tasks_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
+        match self {
+            DriveOperation::DataContractOperation(o) => o.finalization_tasks(platform_version),
+            _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use grovedb::Element;
@@ -180,7 +192,6 @@ mod tests {
     use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;
-    use tempfile::TempDir;
 
     use crate::common::setup_contract;
 
@@ -194,25 +205,21 @@ mod tests {
     use crate::drive::batch::DataContractOperationType::ApplyContract;
     use crate::drive::batch::DocumentOperationType::AddDocumentForContract;
     use crate::drive::batch::DriveOperation::{DataContractOperation, DocumentOperation};
-    use crate::drive::config::DriveConfig;
+
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     #[test]
     fn test_add_dashpay_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -315,23 +322,12 @@ mod tests {
 
     #[test]
     fn test_add_multiple_dashpay_documents_individually_should_succeed() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -432,23 +428,12 @@ mod tests {
 
     #[test]
     fn test_add_multiple_dashpay_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -574,23 +559,12 @@ mod tests {
 
     #[test]
     fn test_add_multiple_family_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -695,23 +669,12 @@ mod tests {
 
     #[test]
     fn test_update_multiple_family_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -922,23 +885,11 @@ mod tests {
 
     #[test]
     fn test_update_multiple_family_documents_with_index_being_removed_and_added() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
-        let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -971,31 +922,29 @@ mod tests {
         )
         .expect("expected to get document");
 
-        let mut operations = vec![];
-
-        operations.push(AddOperation {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((
-                    &person_document0,
-                    StorageFlags::optional_default_as_cow(),
-                )),
-                owner_id: Some(random_owner_id0),
+        let operations = vec![
+            AddOperation {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &person_document0,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id0),
+                },
+                override_document: false,
             },
-            override_document: false,
-        });
-
-        operations.push(AddOperation {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((
-                    &person_document1,
-                    StorageFlags::optional_default_as_cow(),
-                )),
-                owner_id: Some(random_owner_id1),
+            AddOperation {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &person_document1,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id1),
+                },
+                override_document: false,
             },
-            override_document: false,
-        });
-
-        drive_operations.push(DocumentOperation(
+        ];
+        let drive_operations = vec![DocumentOperation(
             MultipleDocumentOperationsForSameContractDocumentType {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
@@ -1003,7 +952,7 @@ mod tests {
                     document_type,
                 },
             },
-        ));
+        )];
 
         drive
             .apply_drive_operations(
@@ -1016,8 +965,6 @@ mod tests {
             .expect("expected to be able to insert documents");
 
         // This was the setup now let's do the update
-
-        drive_operations = vec![];
 
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0-older.json",
@@ -1035,23 +982,22 @@ mod tests {
         )
         .expect("expected to get document");
 
-        let mut operations = vec![];
+        let operations = vec![
+            UpdateOperation(UpdateOperationInfo {
+                document: &person_document0,
+                serialized_document: None,
+                owner_id: Some(random_owner_id0),
+                storage_flags: None,
+            }),
+            UpdateOperation(UpdateOperationInfo {
+                document: &person_document1,
+                serialized_document: None,
+                owner_id: Some(random_owner_id1),
+                storage_flags: None,
+            }),
+        ];
 
-        operations.push(UpdateOperation(UpdateOperationInfo {
-            document: &person_document0,
-            serialized_document: None,
-            owner_id: Some(random_owner_id0),
-            storage_flags: None,
-        }));
-
-        operations.push(UpdateOperation(UpdateOperationInfo {
-            document: &person_document1,
-            serialized_document: None,
-            owner_id: Some(random_owner_id1),
-            storage_flags: None,
-        }));
-
-        drive_operations.push(DocumentOperation(
+        let drive_operations = vec![DocumentOperation(
             MultipleDocumentOperationsForSameContractDocumentType {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
@@ -1059,7 +1005,7 @@ mod tests {
                     document_type,
                 },
             },
-        ));
+        )];
 
         drive
             .apply_drive_operations(

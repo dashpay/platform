@@ -12,6 +12,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
 
+use crate::error::cache::CacheError;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
 
@@ -59,16 +60,9 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        let mut cache = self.cache.write().unwrap();
-        let maybe_version_counter = &mut cache.protocol_versions_counter;
+        let version_counter = &mut self.cache.protocol_versions_counter.write();
 
-        let version_counter = if let Some(version_counter) = maybe_version_counter {
-            version_counter
-        } else {
-            *maybe_version_counter =
-                Some(self.fetch_versions_with_counter(transaction, drive_version)?);
-            maybe_version_counter.as_mut().unwrap()
-        };
+        version_counter.load_if_needed(self, transaction, drive_version)?;
 
         let path = desired_version_for_validators_path();
         let version_bytes = version.encode_var_vec();
@@ -99,7 +93,15 @@ impl Drive {
                 //we should remove 1 from the previous version
                 let previous_count =
                     version_counter
-                        .get_mut(&previous_version)
+                        .get(&previous_version)
+                        .map_err(|error| {
+                            match error {
+                                Error::Cache(CacheError::GlobalCacheIsBlocked) => Error::Drive(DriveError::CorruptedCacheState(
+                                    "global cache is blocked. we should never get into it when we get previous count because version counter trees must be empty at this point".to_string(),
+                                )),
+                                _ => error
+                            }
+                        })?
                         .ok_or(Error::Drive(DriveError::CorruptedCacheState(
                             "trying to lower the count of a version from cache that is not found"
                                 .to_string(),
@@ -110,26 +112,36 @@ impl Drive {
                             .to_string(),
                     )));
                 }
-                *previous_count -= 1;
+                let new_count = previous_count - 1;
+                version_counter.set_block_cache_version_count(previous_version, new_count); // push to block_cache
                 self.batch_insert(
                     PathKeyElementInfo::PathFixedSizeKeyRefElement((
                         versions_counter_path(),
                         previous_version_bytes,
-                        Element::new_item(previous_count.encode_var_vec()),
+                        Element::new_item(new_count.encode_var_vec()),
                     )),
                     drive_operations,
                     drive_version,
                 )?;
             }
 
-            let version_count = version_counter.entry(version).or_default();
-            if version_count == &u64::MAX {
+            let mut version_count = match version_counter.get(&version) {
+                Ok(count) => count.copied().unwrap_or_default(),
+                // if global cache is blocked then it means we are starting from scratch
+                Err(Error::Cache(CacheError::GlobalCacheIsBlocked)) => 0,
+                Err(other_error) => return Err(other_error),
+            };
+
+            version_count += 1;
+
+            if version_count == u64::MAX {
                 return Err(Error::Drive(DriveError::CorruptedCacheState(
                     "trying to raise the count of a version from cache that is already at max"
                         .to_string(),
                 )));
             }
-            *version_count += 1;
+            version_counter.set_block_cache_version_count(version, version_count); // push to block_cache
+
             self.batch_insert(
                 PathKeyElementInfo::PathFixedSizeKeyRefElement((
                     versions_counter_path(),

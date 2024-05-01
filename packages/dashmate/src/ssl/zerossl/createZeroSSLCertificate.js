@@ -1,6 +1,6 @@
-const qs = require('qs');
-const Certificate = require('./Certificate');
-const requestApi = require('./requestApi');
+import qs from 'qs';
+import Certificate from './Certificate.js';
+import requestApi from './requestApi.js';
 
 /**
  * Create a ZeroSSL Certificate
@@ -11,7 +11,7 @@ const requestApi = require('./requestApi');
  * @param {string} apiKey
  * @return {Promise<Certificate>}
  */
-async function createZeroSSLCertificate(
+export default async function createZeroSSLCertificate(
   csr,
   externalIp,
   apiKey,
@@ -36,5 +36,3 @@ async function createZeroSSLCertificate(
 
   return new Certificate(data);
 }
-
-module.exports = createZeroSSLCertificate;

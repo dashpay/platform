@@ -26,7 +26,7 @@ class GetDataContractHistoryResponse extends AbstractResponse {
    */
   static createFromProto(proto) {
     // History is something that we need to call a method to get a list of entries on
-    const dataContractHistory = proto.getDataContractHistory();
+    const dataContractHistory = proto.getV0().getDataContractHistory();
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
     if (!dataContractHistory && !proof) {

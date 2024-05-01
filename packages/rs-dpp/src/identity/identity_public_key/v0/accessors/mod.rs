@@ -1,3 +1,4 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
@@ -43,6 +44,10 @@ impl IdentityPublicKeyGettersV0 for IdentityPublicKeyV0 {
 
     fn is_disabled(&self) -> bool {
         self.disabled_at.is_some()
+    }
+
+    fn contract_bounds(&self) -> Option<&ContractBounds> {
+        self.contract_bounds.as_ref()
     }
 }
 

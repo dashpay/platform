@@ -78,6 +78,20 @@ mod test {
     #[test]
     #[cfg(feature = "data-contract-cbor-conversion")]
     fn deserialize_from_cbor_with_contract_inner() {
+        // Uncomment and run to regenerate
+
+        // let platform_version = PlatformVersion::latest();
+        // let dashpay_contract = json_document_to_contract(
+        //     "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        //     false,
+        //     platform_version,
+        // )
+        //     .expect("expected to get cbor document");
+        //
+        // let cbor = dashpay_contract.to_cbor(platform_version).expect("expected cbor");
+        //
+        // std::fs::write("../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-cbor.bin",cbor);
+
         let cbor_bytes = std::fs::read(
             "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-cbor.bin",
         )
@@ -205,6 +219,9 @@ mod test {
             .set_documents_mutable_contract_default(false);
         contract
             .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract
+            .config
             .set_documents_keep_history_contract_default(true);
 
         let contract_cbor = contract
@@ -221,6 +238,9 @@ mod test {
                 keeps_history: true,
                 documents_mutable_contract_default: false,
                 documents_keep_history_contract_default: true,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
             })
         ));
     }
@@ -250,6 +270,9 @@ mod test {
             .set_documents_mutable_contract_default(false);
         contract_v0
             .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract_v0
+            .config
             .set_documents_keep_history_contract_default(true);
 
         let contract = contract
@@ -267,6 +290,9 @@ mod test {
                 keeps_history: true,
                 documents_mutable_contract_default: false,
                 documents_keep_history_contract_default: true,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+                documents_can_be_deleted_contract_default: false,
             })
         );
     }

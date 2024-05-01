@@ -17,6 +17,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
+    #[inline(always)]
     pub(super) fn delete_document_for_contract_id_with_named_type_operations_v0(
         &self,
         document_id: [u8; 32],
@@ -31,8 +32,16 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations = vec![];
-        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), true, transaction, &mut operations, platform_version)? else {
-            return Err(Error::Document(DocumentError::DataContractNotFound))
+        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(
+            contract_id,
+            Some(epoch),
+            true,
+            transaction,
+            &mut operations,
+            platform_version,
+        )?
+        else {
+            return Err(Error::Document(DocumentError::DataContractNotFound));
         };
 
         let contract = &contract_fetch_info.contract;

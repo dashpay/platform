@@ -1,43 +1,61 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-
-use dpp::consensus::basic::identity::{
-    IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    IdentityAssetLockTransactionOutputNotFoundError,
-};
-use dpp::consensus::basic::BasicError;
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
+use dpp::balances::credits::CREDITS_PER_DUFF;
+use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
+use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{signer, ScriptBuf, Txid};
+use dpp::identity::KeyType;
 
-use dpp::consensus::ConsensusError;
-use dpp::dashcore::OutPoint;
-
-use dpp::platform_value::Bytes36;
+use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::ProtocolError;
+
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::StateTransitionLike;
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
+use crate::error::execution::ExecutionError;
+use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
+use crate::execution::types::execution_operation::{ValidationOperation, SHA256_BLOCK_SIZE};
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
+use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use drive::grovedb::TransactionArg;
-use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
-use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
+use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
+
+use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
+use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
+use crate::execution::validation::state_transition::ValidationMode;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStateValidationV0
 {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        tx: TransactionArg,
+        action: IdentityCreateTransitionAction,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        signable_bytes: Vec<u8>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -46,99 +64,207 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        tx: TransactionArg,
+        action: IdentityCreateTransitionAction,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
-        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         let identity_id = self.identity_id();
         let balance =
-            drive.fetch_identity_balance(identity_id.to_buffer(), tx, platform_version)?;
+            drive.fetch_identity_balance(identity_id.to_buffer(), transaction, platform_version)?;
 
         // Balance is here to check if the identity does already exist
         if balance.is_some() {
+            // Since the id comes from the state transition this should never be reachable
             return Ok(ConsensusValidationResult::new_with_error(
                 IdentityAlreadyExistsError::new(identity_id.to_owned()).into(),
             ));
         }
-        let outpoint = match self.asset_lock_proof().out_point() {
-            None => {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::BasicError(
-                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                            IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof().instant_lock_output_index().unwrap(),
-                            ),
-                        ),
-                    ),
-                ));
-            }
-            Some(outpoint) => outpoint,
-        };
-
-        // Now we should check that we aren't using an asset lock again
-        let asset_lock_already_found =
-            drive.has_asset_lock_outpoint(&Bytes36(outpoint), tx, &platform_version.drive)?;
-
-        if asset_lock_already_found {
-            let outpoint = OutPoint::from(outpoint);
-            return Ok(ConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(
-                    BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(
-                        IdentityAssetLockTransactionOutPointAlreadyExistsError::new(
-                            outpoint.txid,
-                            outpoint.vout as usize,
-                        ),
-                    ),
-                ),
-            ));
-        }
 
         // Now we should check the state of added keys to make sure there aren't any that already exist
-        validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_in_state_v0(
+        let unique_public_key_validation_result =
+            validate_unique_identity_public_key_hashes_not_in_state(
                 self.public_keys(),
                 drive,
-                tx,
+                execution_context,
+                transaction,
                 platform_version,
-            )?
-            .errors,
-        );
+            )?;
 
-        if !validation_result.is_valid() {
-            return Ok(validation_result);
+        if unique_public_key_validation_result.is_valid() {
+            // We just pass the action that was given to us
+            Ok(ConsensusValidationResult::new_with_data(
+                StateTransitionAction::IdentityCreateAction(action),
+            ))
+        } else {
+            // It's not valid, we need to give back the action that partially uses the asset lock
+
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .unique_key_already_present;
+
+            let used_credits = penalty
+                .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
+                .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
+
+            let bump_action = PartiallyUseAssetLockAction::from_identity_create_transition_action(
+                action,
+                used_credits,
+            );
+            Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action.into(),
+                unique_public_key_validation_result.errors,
+            ))
         }
-
-        self.transform_into_action_v0(platform, platform_version)
     }
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _platform_version: &PlatformVersion,
+        signable_bytes: Vec<u8>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
+        // Todo: we might want a lowered required balance
+        let required_balance = platform_version
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .required_asset_lock_duff_balance_for_processing_start_for_identity_create
+            * CREDITS_PER_DUFF;
 
-        let tx_out_validation = self
-            .asset_lock_proof()
-            .fetch_asset_lock_transaction_output_sync_v0(platform.core_rpc)?;
-        if !tx_out_validation.is_valid() {
+        let signable_bytes_len = signable_bytes.len();
+
+        let mut signable_bytes_hasher = SignableBytesHasher::Bytes(signable_bytes);
+        // Validate asset lock proof state
+        // The required balance is in credits because we verify the asset lock value (which is in credits)
+        let asset_lock_proof_validation = if validation_mode != ValidationMode::NoValidation {
+            self.asset_lock_proof().validate(
+                platform,
+                &mut signable_bytes_hasher,
+                required_balance,
+                validation_mode,
+                transaction,
+                platform_version,
+            )?
+        } else {
+            ConsensusValidationResult::new()
+        };
+
+        if !asset_lock_proof_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
-                tx_out_validation.errors,
+                asset_lock_proof_validation.errors,
             ));
         }
 
-        let tx_out = tx_out_validation.into_data()?;
-        match IdentityCreateTransitionAction::try_from_borrowed(self, tx_out.value * 1000) {
-            Ok(action) => {
-                validation_result.set_data(action.into());
+        let mut needs_signature_verification = true;
+
+        let asset_lock_value_to_be_consumed = if asset_lock_proof_validation.has_data() {
+            let asset_lock_value = asset_lock_proof_validation.into_data()?;
+
+            if validation_mode == ValidationMode::RecheckTx {
+                needs_signature_verification = false;
             }
-            Err(error) => {
-                validation_result.add_error(error);
+            asset_lock_value
+        } else {
+            let tx_out_validation = fetch_asset_lock_transaction_output_sync(
+                platform.core_rpc,
+                self.asset_lock_proof(),
+                platform_version,
+            )?;
+
+            if !tx_out_validation.is_valid() {
+                return Ok(ConsensusValidationResult::new_with_errors(
+                    tx_out_validation.errors,
+                ));
+            }
+
+            let tx_out = tx_out_validation.into_data()?;
+
+            let min_value = platform_version
+                .dpp
+                .state_transitions
+                .identities
+                .asset_locks
+                .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
+            if tx_out.value < min_value {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    IdentityAssetLockTransactionOutPointNotEnoughBalanceError::new(
+                        self.asset_lock_proof()
+                            .out_point()
+                            .map(|outpoint| outpoint.txid)
+                            .unwrap_or(Txid::all_zeros()),
+                        self.asset_lock_proof().output_index() as usize,
+                        tx_out.value,
+                        tx_out.value,
+                        min_value,
+                    )
+                    .into(),
+                ));
+            }
+
+            // Verify one time signature
+
+            if validation_mode == ValidationMode::RecheckTx {
+                needs_signature_verification = false;
+            }
+
+            let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
+            AssetLockValue::new(
+                initial_balance_amount,
+                tx_out.script_pubkey.0,
+                initial_balance_amount,
+                vec![],
+                platform_version,
+            )?
+        };
+
+        if needs_signature_verification {
+            let tx_out_script_pubkey =
+                ScriptBuf(asset_lock_value_to_be_consumed.tx_out_script().clone());
+
+            // Verify one time signature
+
+            let public_key_hash = tx_out_script_pubkey
+                .p2pkh_public_key_hash_bytes()
+                .ok_or_else(|| {
+                    Error::Execution(ExecutionError::CorruptedCachedState(
+                        "the script inside the state must be a p2pkh".to_string(),
+                    ))
+                })?;
+
+            let block_count = signable_bytes_len as u16 / SHA256_BLOCK_SIZE;
+
+            execution_context.add_operation(ValidationOperation::DoubleSha256(block_count));
+            execution_context.add_operation(ValidationOperation::SignatureVerification(
+                SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
+            ));
+
+            if let Err(e) = signer::verify_hash_signature(
+                &signable_bytes_hasher.hash_bytes().as_slice(),
+                self.signature().as_slice(),
+                public_key_hash,
+            ) {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
+                ));
             }
         }
 
-        Ok(validation_result)
+        match IdentityCreateTransitionAction::try_from_borrowed(
+            self,
+            signable_bytes_hasher,
+            asset_lock_value_to_be_consumed,
+        ) {
+            Ok(action) => Ok(ConsensusValidationResult::new_with_data(action.into())),
+            Err(error) => Ok(ConsensusValidationResult::new_with_error(error)),
+        }
     }
 }

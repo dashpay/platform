@@ -25,7 +25,7 @@ class GetDataContractResponse extends AbstractResponse {
    * @returns {GetDataContractResponse}
    */
   static createFromProto(proto) {
-    const dataContract = proto.getDataContract();
+    const dataContract = proto.getV0().getDataContract();
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
     if (!dataContract && !proof) {

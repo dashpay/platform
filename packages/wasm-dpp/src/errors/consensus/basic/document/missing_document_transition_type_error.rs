@@ -1,8 +1,7 @@
-use crate::buffer::Buffer;
 use dpp::consensus::basic::document::MissingDocumentTransitionTypeError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformSerializable;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=MissingDocumentTransitionTypeError)]

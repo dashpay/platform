@@ -1,4 +1,4 @@
-const { Wallet } = require('@dashevo/wallet-lib');
+import { Wallet } from '@dashevo/wallet-lib';
 
 /**
  * Get identity HDPrivateKey for network
@@ -13,7 +13,7 @@ const { Wallet } = require('@dashevo/wallet-lib');
  *   derivedPrivateKeys: HDPrivateKey[],
  * }>}
  */
-async function generateHDPrivateKeys(network, keyIndexes = [0]) {
+export default async function generateHDPrivateKeys(network, keyIndexes = [0]) {
   const wallet = new Wallet({ network, offlineMode: true });
   const account = await wallet.getAccount();
 
@@ -33,5 +33,3 @@ async function generateHDPrivateKeys(network, keyIndexes = [0]) {
     derivedPrivateKeys,
   };
 }
-
-module.exports = generateHDPrivateKeys;

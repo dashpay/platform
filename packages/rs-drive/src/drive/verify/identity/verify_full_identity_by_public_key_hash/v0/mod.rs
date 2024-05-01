@@ -4,7 +4,7 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-pub use dpp::prelude::{Identity, Revision};
+pub use dpp::prelude::Identity;
 
 use dpp::version::PlatformVersion;
 
@@ -37,6 +37,7 @@ impl Drive {
     /// * The public key hash does not correspond to a valid identity ID.
     /// * The identity ID does not correspond to a valid full identity.
     ///
+    #[inline(always)]
     pub(super) fn verify_full_identity_by_public_key_hash_v0(
         proof: &[u8],
         public_key_hash: [u8; 20],

@@ -20,10 +20,10 @@ function isOperationalError(error) {
 /**
  * Decorates function with an error handler
  * @param {function} command
- * @param {Logger} log
+ * @param {Logger} logger
  * @return {function(*=): Promise<T | never>}
  */
-function errorHandlerDecorator(command, log) {
+function errorHandlerDecorator(command, logger) {
   return function callCommand(args) {
     return command(args)
       .catch((e) => {
@@ -33,8 +33,8 @@ function errorHandlerDecorator(command, log) {
           throw new RPCError(-32602, e.message, e.data);
         }
         // In case if this is not a user error, print it to log and return 'Internal Error' to user
-        if (log && typeof log.error === 'function') {
-          log.error(e);
+        if (logger && typeof logger.error === 'function') {
+          logger.error(e);
         }
         throw new RPCError(-32603, 'Internal error');
       });

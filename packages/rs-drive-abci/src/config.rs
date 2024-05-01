@@ -31,6 +31,7 @@ use std::path::PathBuf;
 
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
+use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::logging::LogConfigs;
@@ -76,44 +77,56 @@ impl Default for CoreRpcConfig {
 }
 
 /// Configuration for Dash Core related things
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CoreConfig {
     /// Core RPC config
     #[serde(flatten)]
     pub rpc: CoreRpcConfig,
-
-    /// DKG interval
-    pub dkg_interval: String, // String due to https://github.com/softprops/envy/issues/26
-    /// Minimum number of valid members to use the quorum
-    pub min_quorum_valid_members: String, // String due to https://github.com/softprops/envy/issues/26
 }
 
-impl CoreConfig {
-    /// return dkg_interval
-    pub fn dkg_interval(&self) -> u32 {
-        self.dkg_interval
-            .parse::<u32>()
-            .expect("DKG_INTERVAL is not an int")
-    }
-    /// Returns minimal number of quorum members
-    pub fn min_quorum_valid_members(&self) -> u32 {
-        self.min_quorum_valid_members
-            .parse::<u32>()
-            .expect("MIN_QUORUM_VALID_MEMBERS is not an int")
-    }
-}
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            dkg_interval: String::from("24"),
-            min_quorum_valid_members: String::from("3"),
-            rpc: Default::default(),
-        }
-    }
+/// Configuration of the execution part of Dash Platform.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+// NOTE: in renames, we use lower_snake_case, because uppercase does not work; see
+// https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
+pub struct ExecutionConfig {
+    /// Should we use document triggers? Useful to set as `false` for tests
+    #[serde(default = "ExecutionConfig::default_use_document_triggers")]
+    pub use_document_triggers: bool,
+
+    /// Should we verify sum trees? Useful to set as `false` for tests
+    #[serde(default = "ExecutionConfig::default_verify_sum_trees")]
+    pub verify_sum_trees: bool,
+
+    /// How often should quorums change?
+    #[serde(
+        default = "ExecutionConfig::default_validator_set_rotation_block_count",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub validator_set_rotation_block_count: u32,
+
+    /// How long in seconds should an epoch last
+    /// It might last a lot longer if the chain is halted
+    #[serde(
+        default = "ExecutionConfig::default_epoch_time_length_s",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub epoch_time_length_s: u64,
 }
 
-/// Configurtion of Dash Platform.
+fn from_str_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de> + std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::fmt::Display,
+{
+    use serde::de::Error;
+
+    let s = String::deserialize(deserializer)?;
+    s.parse::<T>().map_err(Error::custom)
+}
+
+/// Configuration of Dash Platform.
 ///
 /// All fields in this struct can be configured using environment variables.
 /// These variables can also be defined in `.env` file in the current directory
@@ -144,22 +157,43 @@ pub struct PlatformConfig {
     #[serde(flatten)]
     pub abci: AbciConfig,
 
-    /// Should we verify sum trees? Useful to set as `false` for tests
-    #[serde(default = "PlatformConfig::default_verify_sum_trees")]
-    pub verify_sum_trees: bool,
+    /// Address to listen for Prometheus connection.
+    ///
+    /// Optional.
+    ///
+    /// /// Address should be an URL with scheme `http://`, for example:
+    /// - `http://127.0.0.1:29090`
+    ///
+    /// Port number defaults to [crate::metrics::DEFAULT_PROMETHEUS_PORT].
+    pub prometheus_bind_address: Option<String>,
+
+    /// Address to listen for gRPC connection.
+    pub grpc_bind_address: String,
+
+    /// Execution config
+    #[serde(flatten)]
+    pub execution: ExecutionConfig,
 
     /// The default quorum type
-    pub quorum_type: String,
+    pub validator_set_quorum_type: String,
 
-    /// The default quorum size
-    pub quorum_size: u16,
+    /// The quorum type used for verifying chain locks
+    pub chain_lock_quorum_type: String,
 
-    // todo: this should probably be coming from Tenderdash config
+    /// The validator set quorum size
+    pub validator_set_quorum_size: u16,
+
+    /// The chain lock quorum size
+    pub chain_lock_quorum_size: u16,
+
+    /// The window for chain locks
+    /// On Mainnet Chain Locks are signed using 400_60: One quorum in every 288 blocks and activeQuorumCount is 4.
+    /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
+    pub chain_lock_quorum_window: u32,
+
+    // todo: this should probably be coming from Tenderdash config. It's a test only param
     /// Approximately how often are blocks produced
     pub block_spacing_ms: u64,
-
-    /// How often should quorums change?
-    pub validator_set_quorum_rotation_block_count: u32,
 
     /// Initial protocol version
     #[serde(default = "PlatformConfig::default_initial_protocol_version")]
@@ -167,38 +201,96 @@ pub struct PlatformConfig {
 
     /// Path to data storage
     pub db_path: PathBuf,
-
+    
     /// Path to checkpoints
     pub checkpoints_path: PathBuf,
+
+    /// Path to store rejected / invalid items (like transactions).
+    /// Used mainly for debugging.
+    ///
+    /// If not set, rejected and invalid items will not be stored.
+    #[serde(default)]
+    pub rejections_path: Option<PathBuf>,
 
     // todo: put this in tests like #[cfg(test)]
     /// This should be None, except in the case of Testing platform
     #[serde(skip)]
     pub testing_configs: PlatformTestConfig,
+
+    /// Enable tokio console (console feature must be enabled)
+    pub tokio_console_enabled: bool,
+
+    /// Tokio console address to connect to
+    #[serde(default = "PlatformConfig::default_tokio_console_address")]
+    pub tokio_console_address: String,
+
+    /// Number of seconds to store task information if there is no clients connected
+    #[serde(default = "PlatformConfig::default_tokio_console_retention_secs")]
+    pub tokio_console_retention_secs: u64,
 }
 
-impl PlatformConfig {
-    // #[allow(unused)]
+impl ExecutionConfig {
     fn default_verify_sum_trees() -> bool {
         true
     }
 
-    // #[allow(unused)]
+    fn default_use_document_triggers() -> bool {
+        true
+    }
+
+    fn default_validator_set_rotation_block_count() -> u32 {
+        15
+    }
+
+    fn default_epoch_time_length_s() -> u64 {
+        788400
+    }
+}
+
+impl PlatformConfig {
     fn default_initial_protocol_version() -> ProtocolVersion {
-        //todo: versioning
-        1
+        INITIAL_PROTOCOL_VERSION
+    }
+
+    fn default_tokio_console_address() -> String {
+        String::from("127.0.0.1:6669")
+    }
+
+    fn default_tokio_console_retention_secs() -> u64 {
+        60 * 3
     }
 
     /// Return type of quorum
-    pub fn quorum_type(&self) -> QuorumType {
-        let found = if let Ok(t) = self.quorum_type.trim().parse::<u32>() {
+    pub fn validator_set_quorum_type(&self) -> QuorumType {
+        let found = if let Ok(t) = self.validator_set_quorum_type.trim().parse::<u32>() {
             QuorumType::from(t)
         } else {
-            QuorumType::from(self.quorum_type.as_str())
+            QuorumType::from(self.validator_set_quorum_type.as_str())
         };
 
         if found == QuorumType::UNKNOWN {
-            panic!("config: unsupported QUORUM_TYPE: {}", self.quorum_type);
+            panic!(
+                "config: unsupported QUORUM_TYPE: {}",
+                self.validator_set_quorum_type
+            );
+        }
+
+        found
+    }
+
+    /// Return type of quorum for validating chain locks
+    pub fn chain_lock_quorum_type(&self) -> QuorumType {
+        let found = if let Ok(t) = self.chain_lock_quorum_type.trim().parse::<u32>() {
+            QuorumType::from(t)
+        } else {
+            QuorumType::from(self.chain_lock_quorum_type.as_str())
+        };
+
+        if found == QuorumType::UNKNOWN {
+            panic!(
+                "config: unsupported QUORUM_TYPE: {}",
+                self.chain_lock_quorum_type
+            );
         }
 
         found
@@ -227,21 +319,96 @@ impl FromEnv for PlatformConfig {
     }
 }
 
-impl Default for PlatformConfig {
+impl Default for ExecutionConfig {
     fn default() -> Self {
         Self {
-            verify_sum_trees: true,
-            quorum_type: "llmq_100_67".to_string(),
-            quorum_size: 100,
+            use_document_triggers: ExecutionConfig::default_use_document_triggers(),
+            verify_sum_trees: ExecutionConfig::default_verify_sum_trees(),
+            validator_set_rotation_block_count:
+                ExecutionConfig::default_validator_set_rotation_block_count(),
+            epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
+        }
+    }
+}
+
+impl Default for PlatformConfig {
+    fn default() -> Self {
+        Self::default_mainnet()
+    }
+}
+
+#[allow(missing_docs)]
+impl PlatformConfig {
+    pub fn default_local() -> Self {
+        Self {
+            validator_set_quorum_type: "llmq_test_platform".to_string(),
+            chain_lock_quorum_type: "llmq_test".to_string(),
+            validator_set_quorum_size: 3,
+            chain_lock_quorum_size: 3,
+            chain_lock_quorum_window: 24,
             block_spacing_ms: 5000,
-            validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
             abci: Default::default(),
             core: Default::default(),
+            execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/checkpoints"),
+            rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
+            initial_protocol_version: Self::default_initial_protocol_version(),
+            prometheus_bind_address: None,
+            grpc_bind_address: "0.0.0.0:26670".to_string(),
+        }
+    }
+
+    pub fn default_testnet() -> Self {
+        Self {
+            validator_set_quorum_type: "llmq_25_67".to_string(),
+            chain_lock_quorum_type: "llmq_50_60".to_string(),
+            validator_set_quorum_size: 25,
+            chain_lock_quorum_size: 50,
+            chain_lock_quorum_window: 24,
+            block_spacing_ms: 5000,
+            drive: Default::default(),
+            abci: Default::default(),
+            core: Default::default(),
+            execution: Default::default(),
+            db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            testing_configs: PlatformTestConfig::default(),
+            initial_protocol_version: Self::default_initial_protocol_version(),
+            prometheus_bind_address: None,
+            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
+        }
+    }
+
+    pub fn default_mainnet() -> Self {
+        Self {
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_400_60".to_string(),
+            validator_set_quorum_size: 100,
+            chain_lock_quorum_size: 400,
+            chain_lock_quorum_window: 288,
+            block_spacing_ms: 5000,
+            drive: Default::default(),
+            abci: Default::default(),
+            core: Default::default(),
+            execution: Default::default(),
+            db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            testing_configs: PlatformTestConfig::default(),
+            initial_protocol_version: Self::default_initial_protocol_version(),
+            prometheus_bind_address: None,
+            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
         }
     }
 }
@@ -277,28 +444,37 @@ impl Default for PlatformTestConfig {
 #[cfg(test)]
 mod tests {
     use super::FromEnv;
+    use crate::logging::LogDestination;
     use dashcore_rpc::dashcore_rpc_json::QuorumType;
     use std::env;
 
     #[test]
     fn test_config_from_env() {
         // ABCI log configs are parsed manually, so they deserve separate handling
-        // Notat that STDOUT is also defined in .env.example, but env var should overwrite it.
-        let log_ids = &["STDOUT", "UPPERCASE", "lowercase", "miXedC4s3", "123"];
-        for id in log_ids {
-            env::set_var(format!("ABCI_LOG_{}_DESTINATION", id), "bytes");
+        // Note that STDOUT is also defined in .env.example, but env var should overwrite it.
+        let vectors = &[
+            ("STDOUT", "pretty"),
+            ("UPPERCASE", "json"),
+            ("lowercase", "pretty"),
+            ("miXedC4s3", "full"),
+            ("123", "compact"),
+        ];
+        for vector in vectors {
+            env::set_var(format!("ABCI_LOG_{}_DESTINATION", vector.0), "bytes");
+            env::set_var(format!("ABCI_LOG_{}_FORMAT", vector.0), vector.1);
         }
 
-        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.example");
+        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
-        assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
+        assert_eq!("/tmp/db", env::var("DB_PATH").unwrap());
+        assert_eq!("/tmp/rejected", env::var("REJECTIONS_PATH").unwrap());
 
-        let config = super::PlatformConfig::from_env().unwrap();
-        assert!(config.verify_sum_trees);
-        assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
-        for id in log_ids {
-            assert_eq!(config.abci.log[*id].destination.as_str(), "bytes");
+        let config = super::PlatformConfig::from_env().expect("expected config from env");
+        assert!(config.execution.verify_sum_trees);
+        assert_ne!(config.validator_set_quorum_type(), QuorumType::UNKNOWN);
+        for id in vectors {
+            matches!(config.abci.log[id.0].destination, LogDestination::Bytes);
         }
     }
 }

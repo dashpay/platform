@@ -1,4 +1,3 @@
-use crate::frequency::Frequency;
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash, Txid};
@@ -10,6 +9,7 @@ use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
+use strategy_tests::frequency::Frequency;
 
 #[derive(Clone, Debug)]
 pub struct GenerateTestMasternodeUpdates<'a> {
@@ -196,14 +196,14 @@ pub fn generate_test_masternodes(
             .expect("expected to get public key")
             .to_bytes()
             .to_vec();
-        let pro_tx_hash = ProTxHash::from_inner(rng.gen::<[u8; 32]>());
+        let pro_tx_hash = ProTxHash::from_byte_array(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
             pro_tx_hash,
-            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
+            collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
             collateral_address: [0; 20],
-            operator_reward: 0,
+            operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
                     .unwrap(),
@@ -333,12 +333,12 @@ pub fn generate_test_masternodes(
             .to_bytes()
             .to_vec();
         let masternode_list_item = MasternodeListItem {
-            node_type: MasternodeType::HighPerformance,
-            pro_tx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
-            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
+            node_type: MasternodeType::Evo,
+            pro_tx_hash: ProTxHash::from_byte_array(rng.gen::<[u8; 32]>()),
+            collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
             collateral_address: [0; 20],
-            operator_reward: 0,
+            operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.1.{}.{}:1234", i / 256, i % 256).as_str())
                     .unwrap(),
@@ -486,18 +486,14 @@ pub fn generate_test_masternodes(
                         SocketAddr::new(IpAddr::V4(random_ip), old_port);
                 }
                 if update.p2p_port {
-                    hpmn_list_item_b
-                        .state
-                        .platform_p2p_port
-                        .as_mut()
-                        .map(|port| *port += 1);
+                    if let Some(port) = hpmn_list_item_b.state.platform_p2p_port.as_mut() {
+                        *port += 1
+                    }
                 }
                 if update.http_port {
-                    hpmn_list_item_b
-                        .state
-                        .platform_http_port
-                        .as_mut()
-                        .map(|port| *port += 1);
+                    if let Some(port) = hpmn_list_item_b.state.platform_http_port.as_mut() {
+                        *port += 1
+                    }
                 }
 
                 latest_masternode_list_item = hpmn_list_item_b.clone();
@@ -528,10 +524,10 @@ where
     (0..count)
         .enumerate()
         .map(|(index, _)| {
-            let quorum_hash: QuorumHash = QuorumHash::from_inner(rng.gen());
+            let quorum_hash: QuorumHash = QuorumHash::from_byte_array(rng.gen());
             let validator_pro_tx_hashes = proposers
                 .clone()
-                .filter(|m| m.node_type == MasternodeType::HighPerformance)
+                .filter(|m| m.node_type == MasternodeType::Evo)
                 .choose_multiple(rng, quorum_size)
                 .iter()
                 .map(|masternode| masternode.pro_tx_hash)
@@ -549,7 +545,7 @@ where
         .collect()
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MasternodeListItemWithUpdates {
     pub masternode: MasternodeListItem,
     pub updates: BTreeMap<u32, MasternodeListItem>,

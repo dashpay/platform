@@ -1,4 +1,4 @@
-const { toDash } = require('../../util/satoshiConverter');
+import { toDash } from '../../util/satoshiConverter.js';
 
 /**
  * Get balance of the address
@@ -8,12 +8,10 @@ const { toDash } = require('../../util/satoshiConverter');
  * @param {string} address
  * @return {Promise<number>}
  */
-async function getAddressBalance(coreService, address) {
+export default async function getAddressBalance(coreService, address) {
   const { result: { balance } } = await coreService.getRpcClient().getAddressBalance({
     addresses: [address],
   });
 
   return toDash(balance);
 }
-
-module.exports = getAddressBalance;

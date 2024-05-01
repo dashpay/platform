@@ -112,7 +112,7 @@ describe('e2e', () => {
 
         // Wait for new block if transaction has not been propagated yet
         if (Object.keys(transactions).length === 0) {
-          await new Promise((resolve) => restoredAccount.once(EVENTS.BLOCKHEADER, resolve));
+          await new Promise((resolve) => { restoredAccount.once(EVENTS.BLOCKHEADER, resolve); });
           transactions = restoredAccount.getTransactions();
         }
 

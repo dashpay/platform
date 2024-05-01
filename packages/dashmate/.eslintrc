@@ -2,17 +2,20 @@
   "extends": "airbnb-base",
   "parserOptions": {
     // Required for certain syntax usages
-    "ecmaVersion": 2022
+    "ecmaVersion": 2022,
+    "requireConfigFile": false
   },
-  "globals": {
-    "fetch": false
-  },
-  "parser":"babel-eslint",
+  "parser": "@babel/eslint-parser",
   "env": {
-    "commonjs": true,
     "node": true
   },
   "rules": {
+    "import/extensions": [
+      "error",
+      {
+        "js": "ignorePackages"
+      }
+    ],
     "no-plusplus": 0,
     "eol-last": [
       "error",

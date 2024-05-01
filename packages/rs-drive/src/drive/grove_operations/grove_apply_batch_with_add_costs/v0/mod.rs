@@ -1,6 +1,6 @@
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::flags::StorageFlags;
+use crate::drive::flags::{MergingOwnersStrategy, StorageFlags};
 use crate::drive::grove_operations::push_drive_operation_result;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -24,19 +24,38 @@ impl Drive {
         if ops.is_empty() {
             return Err(Error::Drive(DriveError::BatchIsEmpty()));
         }
-        // if ops.operations.len() < 500 { //no initialization
+        // if ops.operations.len() < 500 {
+        //     //no initialization
         //     dbg!("batch {:#?}", &ops);
         // }
 
         if self.config.batching_consistency_verification {
             let consistency_results = GroveDbOp::verify_consistency_of_operations(&ops.operations);
             if !consistency_results.is_empty() {
-                println!("consistency_results {:#?}", consistency_results);
+                tracing::error!(
+                    ?consistency_results,
+                    "grovedb consistency verification failed"
+                );
                 return Err(Error::Drive(DriveError::GroveDBInsertion(
                     "insertion order error",
                 )));
             }
         }
+
+        // Clone ops only if we log them
+        #[cfg(feature = "grovedb_operations_logging")]
+        let maybe_params_for_logs = if tracing::event_enabled!(target: "drive_grovedb_operations", tracing::Level::TRACE)
+        {
+            let root_hash = self
+                .grove
+                .root_hash(transaction)
+                .unwrap()
+                .map_err(Error::GroveDB)?;
+
+            Some((ops.clone(), root_hash))
+        } else {
+            None
+        };
 
         let cost_context = self.grove.apply_batch_with_element_flags_update(
             ops.operations,
@@ -57,30 +76,33 @@ impl Drive {
                 // This could be none only because the old element didn't exist
                 // If they were empty we get an error
                 let maybe_old_storage_flags = StorageFlags::map_some_element_flags_ref(&old_flags)
-                    .map_err(|_| {
+                    .map_err(|e| {
                         GroveError::JustInTimeElementFlagsClientError(
-                            "drive did not understand flags of old item being updated",
+                            format!("drive did not understand flags of old item being updated: {}", e)
                         )
                     })?;
                 let new_storage_flags = StorageFlags::from_element_flags_ref(new_flags)
-                    .map_err(|_| {
+                    .map_err(|e| {
                         GroveError::JustInTimeElementFlagsClientError(
-                            "drive did not understand updated item flag information",
+                            format!("drive did not understand updated item flag information: {}",e)
                         )
                     })?
                     .ok_or(GroveError::JustInTimeElementFlagsClientError(
-                        "removing flags from an item with flags is not allowed",
+                        "removing flags from an item with flags is not allowed".to_string()
                     ))?;
                 match &cost.transition_type() {
                     OperationStorageTransitionType::OperationUpdateBiggerSize => {
+                        // In the case that the owners do not match up this means that there has been a transfer
+                        //  of ownership of the underlying document, the value held is transferred to the new owner
                         let combined_storage_flags = StorageFlags::optional_combine_added_bytes(
                             maybe_old_storage_flags,
                             new_storage_flags,
                             cost.added_bytes,
+                            MergingOwnersStrategy::UseTheirs,
                         )
-                        .map_err(|_| {
+                        .map_err(|e| {
                             GroveError::JustInTimeElementFlagsClientError(
-                                "drive could not combine storage flags (new flags were bigger)",
+                                format!("drive could not combine storage flags (new flags were bigger): {}",e)
                             )
                         })?;
                         let combined_flags = combined_storage_flags.to_element_flags();
@@ -94,14 +116,17 @@ impl Drive {
                         }
                     }
                     OperationStorageTransitionType::OperationUpdateSmallerSize => {
+                        // In the case that the owners do not match up this means that there has been a transfer
+                        //  of ownership of the underlying document, the value held is transferred to the new owner
                         let combined_storage_flags = StorageFlags::optional_combine_removed_bytes(
                             maybe_old_storage_flags,
                             new_storage_flags,
                             &cost.removed_bytes,
+                            MergingOwnersStrategy::UseTheirs,
                         )
-                        .map_err(|_| {
+                        .map_err(|e| {
                             GroveError::JustInTimeElementFlagsClientError(
-                                "drive could not combine storage flags (new flags were smaller)",
+                                format!("drive could not combine storage flags (new flags were smaller): {}", e)
                             )
                         })?;
                         let combined_flags = combined_storage_flags.to_element_flags();
@@ -119,9 +144,9 @@ impl Drive {
             },
             |flags, removed_key_bytes, removed_value_bytes| {
                 let maybe_storage_flags =
-                    StorageFlags::from_element_flags_ref(flags).map_err(|_| {
+                    StorageFlags::from_element_flags_ref(flags).map_err(|e| {
                         GroveError::SplitRemovalBytesClientError(
-                            "drive did not understand flags of item being updated",
+                            format!("drive did not understand flags of item being updated: {}",e)
                         )
                     })?;
                 // if there were no flags before then the new flags are used
@@ -136,6 +161,30 @@ impl Drive {
             },
             transaction,
         );
+
+        #[cfg(feature = "grovedb_operations_logging")]
+        if tracing::event_enabled!(target: "drive_grovedb_operations", tracing::Level::TRACE)
+            && cost_context.value.is_ok()
+        {
+            let root_hash = self
+                .grove
+                .root_hash(transaction)
+                .unwrap()
+                .map_err(Error::GroveDB)?;
+
+            let (ops, previous_root_hash) =
+                maybe_params_for_logs.expect("log params should be set above");
+
+            tracing::trace!(
+                target: "drive_grovedb_operations",
+                ?ops,
+                ?root_hash,
+                ?previous_root_hash,
+                is_transactional = transaction.is_some(),
+                "grovedb batch applied",
+            );
+        }
+
         push_drive_operation_result(cost_context, drive_operations)
     }
 }

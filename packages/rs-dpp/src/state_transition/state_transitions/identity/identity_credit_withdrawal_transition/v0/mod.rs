@@ -3,22 +3,34 @@ mod identity_signed;
 mod json_conversion;
 mod state_transition_like;
 mod types;
+mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
 
 use bincode::{Decode, Encode};
+use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use platform_serialization_derive::PlatformSignable;
 use platform_value::BinaryData;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+use crate::balances::credits::CREDITS_PER_DUFF;
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
-    prelude::{Identifier, Revision},
+    prelude::Identifier,
+    withdrawal::Pooling,
     ProtocolError,
 };
 
-use crate::withdrawal::Pooling;
+// TODO: unsafe - we must use actual relay fee from core
+/// Minimal core per byte. Must be a fibonacci number
+pub const MIN_CORE_FEE_PER_BYTE: u32 = 1;
+
+/// Minimal amount in credits (x1000) to avoid "dust" error in Core
+pub const MIN_WITHDRAWAL_AMOUNT: u64 =
+    (ASSET_UNLOCK_TX_SIZE as u64) * (MIN_CORE_FEE_PER_BYTE as u64) * CREDITS_PER_DUFF;
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
 #[cfg_attr(
@@ -33,7 +45,8 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
     pub output_script: CoreScript,
-    pub revision: Revision,
+    pub nonce: IdentityNonce,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

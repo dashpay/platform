@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::default::Default;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
@@ -11,7 +11,7 @@ use crate::identifier::IdentifierWrapper;
 use crate::{
     buffer::Buffer,
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
-    identity::IdentityPublicKeyWasm, utils, with_js_error,
+    identity::IdentityPublicKeyWasm, with_js_error,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
@@ -19,12 +19,14 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::utils::{generic_of_js_val, WithJsError};
 
 use crate::errors::from_dpp_err;
+use dpp::errors::consensus::signature::SignatureError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::errors::ProtocolError;
 use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{string_encoding, BinaryData, ReplacementType, Value};
+use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::prelude::Revision;
 use dpp::serialization::PlatformSerializable;
-use dpp::serialization::ValueConvertible;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -76,7 +78,7 @@ impl IdentityUpdateTransitionWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityUpdateTransition::default_versioned(&platform_version)
+        IdentityUpdateTransition::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -140,23 +142,6 @@ impl IdentityUpdateTransitionWasm {
         }
 
         self.0.set_public_key_ids_to_disable(keys);
-    }
-
-    #[wasm_bindgen(js_name=getPublicKeysDisabledAt)]
-    pub fn get_public_keys_disabled_at(&self) -> Option<js_sys::Date> {
-        self.0
-            .public_keys_disabled_at()
-            .map(|timestamp| js_sys::Date::new(&JsValue::from_f64(timestamp as f64)))
-    }
-
-    #[wasm_bindgen(js_name=setPublicKeysDisabledAt)]
-    pub fn set_public_keys_disabled_at(&mut self, timestamp: Option<js_sys::Date>) {
-        if let Some(timestamp) = timestamp {
-            self.0
-                .set_public_keys_disabled_at(Some(timestamp.get_time() as TimestampMillis));
-        } else {
-            self.0.set_public_keys_disabled_at(None);
-        }
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -226,14 +211,6 @@ impl IdentityUpdateTransitionWasm {
                 &js_object,
                 &"signaturePublicKeyId".to_owned().into(),
                 &JsValue::from(object.signature_public_key_id),
-            )?;
-        }
-
-        if let Some(timestamp) = object.public_keys_disabled_at {
-            js_sys::Reflect::set(
-                &js_object,
-                &"publicKeysDisabledAt".to_owned().into(),
-                &js_sys::Date::new(&JsValue::from_f64(timestamp as f64)).into(),
             )?;
         }
 
@@ -320,14 +297,6 @@ impl IdentityUpdateTransitionWasm {
                 &js_object,
                 &"signaturePublicKeyId".to_owned().into(),
                 &object.signature_public_key_id.into(),
-            )?;
-        }
-
-        if let Some(timestamp) = object.public_keys_disabled_at {
-            js_sys::Reflect::set(
-                &js_object,
-                &"publicKeysDisabledAt".to_owned().into(),
-                &JsValue::from_f64(timestamp as f64),
             )?;
         }
 
@@ -441,7 +410,7 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0
-            .set_signature(BinaryData::new(signature.unwrap_or(vec![])))
+            .set_signature(BinaryData::new(signature.unwrap_or_default()))
     }
 
     #[wasm_bindgen(js_name=getRevision)]
@@ -481,30 +450,29 @@ impl IdentityUpdateTransitionWasm {
         Ok(())
     }
 
-    // #[wasm_bindgen(js_name=verifySignature)]
-    // pub fn verify_signature(
-    //     &self,
-    //     identity_public_key: &IdentityPublicKeyWasm,
-    //     bls: JsBlsAdapter,
-    // ) -> Result<bool, JsValue> {
-    //     let bls_adapter = BlsAdapter(bls);
-    //
-    //     let verification_result = self
-    //         .0
-    //         .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
-    //
-    //     match verification_result {
-    //         Ok(()) => Ok(true),
-    //         Err(protocol_error) => match &protocol_error {
-    //             ProtocolError::ConsensusError(err) => match err.as_ref() {
-    //                 ConsensusError::SignatureError(
-    //                     SignatureError::InvalidStateTransitionSignatureError { .. },
-    //                 ) => Ok(false),
-    //                 _ => Err(protocol_error),
-    //             },
-    //             _ => Err(protocol_error),
-    //         },
-    //     }
-    //     .with_js_error()
-    // }
+    #[wasm_bindgen(js_name=verifySignature)]
+    pub fn verify_signature(
+        &self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        bls: JsBlsAdapter,
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = StateTransition::IdentityUpdate(self.0.clone())
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::ConsensusError(err) => match err.as_ref() {
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError { .. },
+                    ) => Ok(false),
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
+    }
 }

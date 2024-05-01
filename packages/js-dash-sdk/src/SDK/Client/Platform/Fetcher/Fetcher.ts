@@ -1,6 +1,7 @@
 import DAPIClient from '@dashevo/dapi-client';
 import { Identifier } from '@dashevo/wasm-dpp/dist';
-import { GetDataContractResponse, GetIdentityResponse } from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
+import { GetDataContractResponse } from '@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse';
+import { GetIdentityResponse } from '@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse';
 
 import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
 import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse';
@@ -96,14 +97,8 @@ class Fetcher {
   public async fetchIdentity(id: Identifier): Promise<GetIdentityResponse> {
     // Define query
     const query = async (): Promise<GetIdentityResponse> => {
-      const result = await this.dapiClient.platform
-        .getIdentity(id);
-
-      // TODO(rs-drive-abci): Remove this when rs-drive-abci returns error instead of empty bytes
-      if (result.getIdentity().length === 0) {
-        throw new NotFoundError(`Identity with id "${id}" not found`);
-      }
-      return result;
+      const { platform } = this.dapiClient;
+      return platform.getIdentity(id);
     };
 
     // Define retry attempts.
@@ -120,14 +115,8 @@ class Fetcher {
   public async fetchDataContract(id: Identifier): Promise<GetDataContractResponse> {
     // Define query
     const query = async (): Promise<GetDataContractResponse> => {
-      const result = await this.dapiClient.platform
-        .getDataContract(id);
-
-      // TODO(rs-drive-abci): Remove this when rs-drive-abci returns error instead of empty bytes
-      if (result.getDataContract().length === 0) {
-        throw new NotFoundError(`DataContract with id "${id}" not found`);
-      }
-      return result;
+      const { platform } = this.dapiClient;
+      return platform.getDataContract(id);
     };
 
     // Define retry attempts.
@@ -145,7 +134,10 @@ class Fetcher {
    * @param offset
    */
   public async fetchDataContractHistory(
-    id: Identifier, startAMs: number, limit: number, offset: number,
+    id: Identifier,
+    startAMs: number,
+    limit: number,
+    offset: number,
   ): Promise<GetDataContractHistoryResponse> {
     // Define query
     const query = async (): Promise<GetDataContractHistoryResponse> => await this

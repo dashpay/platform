@@ -5,6 +5,7 @@ use crate::error::Error;
 
 use crate::platform_types::platform::Platform;
 
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::version::PlatformVersion;
@@ -35,6 +36,7 @@ where
     pub fn update_state_cache(
         &self,
         extended_block_info: ExtendedBlockInfo,
+        block_platform_state: PlatformState,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -44,7 +46,12 @@ where
             .block_end
             .update_state_cache
         {
-            0 => self.update_state_cache_v0(extended_block_info, transaction, platform_version),
+            0 => self.update_state_cache_v0(
+                extended_block_info,
+                block_platform_state,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_state_cache".to_string(),
                 known_versions: vec![0],
