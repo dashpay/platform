@@ -3,7 +3,6 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
-use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
 
 #[cfg(any(feature = "mocks", test))]
@@ -18,7 +17,6 @@ use dashcore_rpc::dashcore::BlockHash;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use crate::platform_types::snapshot::Manager;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::error::Error::GroveDB;
