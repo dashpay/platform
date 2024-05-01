@@ -177,13 +177,13 @@ services:
     profiles:
       - platform
 
-  gateway: # TODO: add option to set logging level for envoy. Shall we store access logs to file?
+  gateway:
     image: ${PLATFORM_GATEWAY_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Gateway"
     restart: unless-stopped
     ports:
-      # Actual entry point to the platform.
+      # HTTP entry point to the platform.
       # Supports HTTP1 and HTTP2
       # Serves JSON RPC, gRPC, and gRPC-Web
       - ${PLATFORM_GATEWAY_LISTENERS_DAPI_AND_DRIVE_HOST:?err}:${PLATFORM_GATEWAY_LISTENERS_DAPI_AND_DRIVE_PORT:?err}:10000
@@ -199,6 +199,7 @@ services:
     environment:
       - ENVOY_UID=${LOCAL_UID:?err}
       - ENVOY_GID=${LOCAL_GID:?err}
+      - LOG_LEVEL=${PLATFORM_GATEWAY_LOG_LEVEL:?err}
     volumes:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/envoy.yaml:/etc/envoy/envoy.yaml:ro
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/ssl/bundle.crt:/etc/ssl/bundle.crt:ro
