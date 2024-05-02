@@ -77,6 +77,7 @@
       {{~}}
 {{?}}
       http_filters:
+        # TODO: Introduce when stable https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/adaptive_concurrency_filter.html
         {{? it.platform.gateway.rateLimiter.enabled}}
         - name: envoy.filters.http.ratelimit
           typed_config:
