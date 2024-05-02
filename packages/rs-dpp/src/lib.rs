@@ -50,6 +50,7 @@ pub mod signing;
 pub mod system_data_contracts;
 pub mod withdrawal;
 mod tokens;
+pub mod multi_identity_events;
 
 pub use async_trait;
 

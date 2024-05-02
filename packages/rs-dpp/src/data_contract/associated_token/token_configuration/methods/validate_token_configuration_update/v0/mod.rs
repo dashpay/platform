@@ -1,17 +1,22 @@
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
-use crate::data_contract::config::DataContractConfig;
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Identifier;
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::multi_identity_events::ActionTaker;
 
-impl DataContractConfig {
+impl TokenConfiguration {
     #[inline(always)]
-    pub(super) fn validate_config_update_v0(
+    pub(super) fn validate_token_config_update_v0(
         &self,
-        new_config: &DataContractConfig,
+        new_config: &TokenConfiguration,
         contract_id: Identifier,
+        action_taker: ActionTaker,
     ) -> SimpleConsensusValidationResult {
+        
+        
+        
         // Validate: Old contract is not read_only
 
         if self.readonly() {

@@ -1,16 +1,18 @@
-use crate::data_contract::config::DataContractConfig;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::multi_identity_events::ActionTaker;
 
 mod v0;
 
-impl DataContractConfig {
-    pub fn validate_config_update(
+impl TokenConfiguration {
+    pub fn validate_token_config_update(
         &self,
-        new_config: &DataContractConfig,
+        new_config: &TokenConfiguration,
         contract_id: Identifier,
+        action_taker: ActionTaker,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -19,9 +21,9 @@ impl DataContractConfig {
             .data_contract
             .validate_config_update
         {
-            0 => Ok(self.validate_config_update_v0(new_config, contract_id)),
+            0 => Ok(self.validate_token_config_update_v0(new_config, contract_id, action_taker)),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "validate_token_configuration_update".to_string(),
+                method: "validate_token_config_update".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

@@ -4,6 +4,7 @@ use crate::data_contract::associated_token::token_configuration::v0::TokenConfig
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 
 mod v0;
+mod methods;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From)]
 #[serde(tag = "$format_version")]
