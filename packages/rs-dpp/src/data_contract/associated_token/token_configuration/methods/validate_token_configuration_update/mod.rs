@@ -1,9 +1,9 @@
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::multi_identity_events::ActionTaker;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
-use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use crate::multi_identity_events::ActionTaker;
 
 mod v0;
 

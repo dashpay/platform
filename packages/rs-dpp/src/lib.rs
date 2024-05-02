@@ -39,6 +39,7 @@ pub mod asset_lock;
 pub mod balances;
 pub mod block;
 pub mod fee;
+pub mod multi_identity_events;
 pub mod nft;
 pub mod serialization;
 #[cfg(any(
@@ -48,9 +49,8 @@ pub mod serialization;
 pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
-pub mod withdrawal;
 mod tokens;
-pub mod multi_identity_events;
+pub mod withdrawal;
 
 pub use async_trait;
 

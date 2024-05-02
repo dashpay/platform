@@ -32,14 +32,14 @@ mod methods;
 pub mod serialized_version;
 pub use methods::*;
 pub mod accessors;
+mod associated_token;
 pub mod config;
 pub mod storage_requirements;
-mod associated_token;
 
 pub use v0::*;
 
 use crate::data_contract::serialized_version::{
-    CONTRACT_DESERIALIZATION_LIMIT, DataContractInSerializationFormat,
+    DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
 use crate::util::hash::hash_double_to_vec;
 
