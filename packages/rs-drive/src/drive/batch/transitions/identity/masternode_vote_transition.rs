@@ -3,9 +3,9 @@ use crate::drive::batch::DriveOperation::IdentityOperation;
 use crate::drive::batch::{DriveOperation, IdentityOperationType};
 
 use crate::error::Error;
+use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
-use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 
 impl DriveHighLevelOperationConverter for MasternodeVoteTransitionAction {
     fn into_high_level_drive_operations<'a>(

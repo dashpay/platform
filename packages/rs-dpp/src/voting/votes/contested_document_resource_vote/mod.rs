@@ -6,7 +6,6 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::voting::votes::contested_document_resource_vote::v0::ContestedDocumentResourceVoteV0;
 use crate::ProtocolError;
-use crate::voting::votes::Vote;
 
 mod v0;
 mod accessors;

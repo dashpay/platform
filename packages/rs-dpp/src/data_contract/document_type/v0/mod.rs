@@ -1,6 +1,5 @@
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
-use serde_json::map::BTreeMap;
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;

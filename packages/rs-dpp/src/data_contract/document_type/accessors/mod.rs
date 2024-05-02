@@ -35,7 +35,7 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
-    fn indices(&self) -> &Vec<Index> {
+    fn indices(&self) -> &BTreeMap<String, Index> {
         match self {
             DocumentType::V0(v0) => v0.indices(),
         }
@@ -279,7 +279,7 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
-    fn indices(&self) -> &Vec<Index> {
+    fn indices(&self) -> &BTreeMap<String, Index> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.indices(),
         }

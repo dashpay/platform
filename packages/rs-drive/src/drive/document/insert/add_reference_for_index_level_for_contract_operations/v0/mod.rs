@@ -9,7 +9,9 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo, PathKeyInfo};
+use crate::drive::object_size_info::{
+    DocumentAndContractInfo, PathInfo, PathKeyElementInfo, PathKeyInfo,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -206,10 +208,11 @@ impl Drive {
 
                 let document_id_key_path_info = KeyRef(document_id.as_slice());
 
-                let path_key_info = document_id_key_path_info.add_path_info(index_path_info.clone());
+                let path_key_info =
+                    document_id_key_path_info.add_path_info(index_path_info.clone());
 
                 index_path_info.push(Key(document_id.to_vec()))?;
-                
+
                 // We check to make sure we are not overridding the tree
                 let inserted = self.batch_insert_empty_tree_if_not_exists(
                     path_key_info,
@@ -269,10 +272,11 @@ impl Drive {
                     );
                 }
 
-                let reference_path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
-                    document_path_info.clone(),
-                    ref_key_element_info,
-                )?;
+                let reference_path_key_element_info =
+                    PathKeyElementInfo::from_path_info_and_key_element(
+                        document_path_info.clone(),
+                        ref_key_element_info,
+                    )?;
 
                 // here we are inserting the ref
                 self.batch_insert(
@@ -293,7 +297,6 @@ impl Drive {
                     }
                 };
 
-
                 // here we are the tree that will contain the voting tree
                 let inserted = self.batch_insert_empty_tree_if_not_exists(
                     votes_path_key_info,
@@ -311,9 +314,9 @@ impl Drive {
                         "contested votes tree already exists",
                     )));
                 }
-                
+
                 // Now we need to add a reference to this votes, so we can keep track of it more easily
-                
+
                 // self.add_new_masternode_vote_type()
             }
         } else {

@@ -198,7 +198,6 @@ impl Drive {
         // For the votes tree structure
         Drive::add_initial_vote_tree_main_structure_operations(&mut batch, platform_version)?;
 
-
         self.grove_apply_batch(batch, false, transaction, drive_version)?;
 
         Ok(())

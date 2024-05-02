@@ -4,6 +4,7 @@ use crate::prelude::DataContract;
 use crate::ProtocolError;
 use crate::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
 use crate::voting::votes::contested_document_resource_vote::methods::v0::ContestedDocumentResourceVoteMethodsV0;
+use crate::voting::votes::contested_document_resource_vote::accessors::v0::ContestedDocumentResourceVoteGettersV0;
 
 mod v0;
 

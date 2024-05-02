@@ -3,8 +3,8 @@ use crate::drive::RootTree;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
-use dpp::ProtocolError;
 use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
+use dpp::ProtocolError;
 
 mod cleanup;
 mod insert;
@@ -34,9 +34,7 @@ pub(in crate::drive::votes) fn vote_root_path<'a>() -> [&'a [u8]; 1] {
 }
 
 pub(in crate::drive::votes) fn vote_root_path_vec() -> Vec<Vec<u8>> {
-    vec![
-        vec![RootTree::Votes as u8],
-    ]
+    vec![vec![RootTree::Votes as u8]]
 }
 
 pub(in crate::drive::votes) fn vote_decisions_tree_path<'a>() -> [&'a [u8]; 2] {
@@ -76,7 +74,8 @@ pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_tree_pat
     ]
 }
 
-pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_tree_path_vec() -> Vec<Vec<u8>> {
+pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_tree_path_vec(
+) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Votes as u8],
         vec![CONTESTED_RESOURCE_TREE_KEY as u8],
@@ -93,14 +92,14 @@ pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path<
     ]
 }
 
-pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path_vec() -> Vec<Vec<u8>> {
+pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path_vec() -> Vec<Vec<u8>>
+{
     vec![
         vec![RootTree::Votes as u8],
         vec![CONTESTED_RESOURCE_TREE_KEY as u8],
         vec![IDENTITY_VOTES_TREE_KEY as u8],
     ]
 }
-
 
 pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path_for_identity<'a>(
     identity_id: &[u8; 32],

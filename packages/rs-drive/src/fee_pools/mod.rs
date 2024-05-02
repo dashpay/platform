@@ -33,6 +33,7 @@ use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
 #[cfg(feature = "server")]
 use crate::drive::credit_pools::paths::pools_vec_path;
+use crate::drive::Drive;
 #[cfg(feature = "server")]
 use crate::error::Error;
 #[cfg(feature = "server")]
@@ -54,7 +55,6 @@ use dpp::util::deserializer::ProtocolVersion;
 use grovedb::batch::GroveDbOp;
 #[cfg(feature = "server")]
 use grovedb::Element;
-use crate::drive::Drive;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Epochs module

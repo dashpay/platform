@@ -1,11 +1,11 @@
-use grovedb::TransactionArg;
+use crate::drive::object_size_info::OwnedDocumentInfo;
+use crate::drive::Drive;
+use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use crate::drive::Drive;
-use crate::drive::object_size_info::OwnedDocumentInfo;
-use crate::error::Error;
 
 impl Drive {
     pub(super) fn add_new_masternode_vote_type_v0(
@@ -19,6 +19,5 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        
     }
 }

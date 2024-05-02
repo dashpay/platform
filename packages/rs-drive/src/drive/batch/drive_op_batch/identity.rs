@@ -8,10 +8,10 @@ use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
 use dpp::version::PlatformVersion;
+use dpp::voting::votes::Vote;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::voting::votes::Vote;
 
 /// Operations on Identities
 #[derive(Clone, Debug)]
@@ -192,9 +192,14 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
             IdentityOperationType::MasternodeCastVote {
                 voter_pro_tx_hash,
                 vote,
-            } => {
-                drive.register_identity_vote_operations(voter_pro_tx_hash, vote, block_info, estimated_costs_only_with_layer_info, transaction, platform_version)
-            },
+            } => drive.register_identity_vote_operations(
+                voter_pro_tx_hash,
+                vote,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id,
                 contract_id,

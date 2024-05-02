@@ -5,8 +5,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use dpp::version::PlatformVersion;
 use crate::drive::batch::GroveDbOpBatch;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     pub fn add_initial_vote_tree_main_structure_operations(

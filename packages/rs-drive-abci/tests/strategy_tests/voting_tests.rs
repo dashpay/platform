@@ -19,8 +19,8 @@ mod tests {
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
-    use tenderdash_abci::proto::types::CoreChainLock;
     use strategy_tests::{IdentityInsertInfo, StartIdentities};
+    use tenderdash_abci::proto::types::CoreChainLock;
 
     #[test]
     fn run_chain_block_two_state_transitions_conflicting_unique_index() {
@@ -76,8 +76,14 @@ mod tests {
             &mut rng,
             platform_version,
         );
-        
-        let dpns_contract = platform.drive.cache.system_data_contracts.load_dpns().as_ref().clone();
+
+        let dpns_contract = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns()
+            .as_ref()
+            .clone();
 
         let document_type = dpns_contract
             .document_type_for_name("domain")

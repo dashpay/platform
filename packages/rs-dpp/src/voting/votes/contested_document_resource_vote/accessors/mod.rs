@@ -3,7 +3,7 @@ use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedD
 use crate::voting::votes::contested_document_resource_vote::accessors::v0::ContestedDocumentResourceVoteGettersV0;
 use crate::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
 
-mod v0;
+pub(crate) mod v0;
 
 impl ContestedDocumentResourceVoteGettersV0 for ContestedDocumentResourceVote {
     fn vote_poll(&self) -> &ContestedDocumentResourceVotePoll {

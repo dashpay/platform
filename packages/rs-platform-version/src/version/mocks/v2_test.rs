@@ -64,10 +64,9 @@ use crate::version::drive_versions::{
     DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
     DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
-    DriveVerifySystemMethodVersions, DriveVersion,  DriveVoteCleanupMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVersion, DriveVoteCleanupMethodVersions,
     DriveVoteContestedResourceInsertMethodVersions, DriveVoteInsertMethodVersions,
     DriveVoteMethodVersions, DriveVoteSetupMethodVersions,
-
 };
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;

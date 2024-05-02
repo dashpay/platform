@@ -64,7 +64,8 @@ use crate::version::drive_versions::{
     DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
     DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
-    DriveVerifySystemMethodVersions, DriveVersion, DriveVoteCleanupMethodVersions, DriveVoteContestedResourceInsertMethodVersions, DriveVoteInsertMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVersion, DriveVoteCleanupMethodVersions,
+    DriveVoteContestedResourceInsertMethodVersions, DriveVoteInsertMethodVersions,
     DriveVoteMethodVersions, DriveVoteSetupMethodVersions,
 };
 use crate::version::fee::v1::FEE_VERSION1;

@@ -24,8 +24,6 @@ impl Drive {
     }
 }
 
-
-
 /// Helper function to get root path
 pub fn get_withdrawal_root_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::WithdrawalTransactions as u8]]

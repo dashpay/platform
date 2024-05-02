@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use crate::data_contract::document_type::index::{Index, IndexProperty};
 use crate::ProtocolError;
 use rand::prelude::StdRng;
@@ -5,11 +6,15 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 
 impl Index {
-    pub fn random(
+    pub fn random<I, T>(
         field_names: &[String],
-        existing_indices: &[Index],
+        existing_indices: &I,
         rng: &mut StdRng,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, ProtocolError>
+        where
+            I: IntoIterator<Item = T>, // T is the type of elements in the collection
+            T: Borrow<Index>,          // Assuming Index is the type stored in the collection
+    {
         let index_name = format!("index_{}", rng.gen::<u16>());
 
         let mut properties;
@@ -32,8 +37,8 @@ impl Index {
                 .collect::<Vec<_>>();
 
             if !existing_indices
-                .iter()
-                .any(|index| index.properties == properties)
+                .into_iter()
+                .any(|index| index.borrow().properties == properties)
             {
                 break;
             }

@@ -6,15 +6,15 @@ use crate::error::Error;
 
 use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::votes::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
+use crate::drive::votes::TreePath;
 use crate::query::QueryItem;
 use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
+use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use grovedb_path::SubtreePath;
-use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
-use crate::drive::votes::TreePath;
 
 impl Drive {
     /// We remove vote_choices for an identity when that identity is somehow disabled. Currently there is
