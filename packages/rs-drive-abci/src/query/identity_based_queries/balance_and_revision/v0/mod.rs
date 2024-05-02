@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let request = GetIdentityBalanceAndRevisionRequestV0 {
             id: vec![0; 8],
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found_when_querying_balance_and_revision() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let id = vec![0; 32];
 
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_identity_balance_and_revision_absence_proof() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let id = vec![0; 32];
 

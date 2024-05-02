@@ -16,6 +16,9 @@ impl DocumentReplaceTransitionAction {
         originally_created_at: Option<TimestampMillis>,
         originally_created_at_block_height: Option<BlockHeight>,
         originally_created_at_core_block_height: Option<CoreBlockHeight>,
+        originally_transferred_at: Option<TimestampMillis>,
+        originally_transferred_at_block_height: Option<BlockHeight>,
+        originally_transferred_at_core_block_height: Option<CoreBlockHeight>,
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
@@ -26,6 +29,9 @@ impl DocumentReplaceTransitionAction {
                     originally_created_at,
                     originally_created_at_block_height,
                     originally_created_at_core_block_height,
+                    originally_transferred_at,
+                    originally_transferred_at_block_height,
+                    originally_transferred_at_core_block_height,
                     block_info,
                     get_data_contract,
                 )?

@@ -32,6 +32,7 @@ use std::collections::BTreeMap;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(feature = "validation")]
 use crate::data_contract::validation::DataContractValidationMethodsV0;
 #[cfg(feature = "document-json-conversion")]
@@ -161,9 +162,9 @@ impl ExtendedDocumentV0 {
             .map(|document_type| document_type.documents_mutable())
     }
 
-    pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
+    pub fn requires_revision(&self) -> Result<bool, ProtocolError> {
         self.document_type()
-            .map(|document_type| document_type.documents_mutable())
+            .map(|document_type| document_type.requires_revision())
     }
 
     pub fn revision(&self) -> Option<Revision> {

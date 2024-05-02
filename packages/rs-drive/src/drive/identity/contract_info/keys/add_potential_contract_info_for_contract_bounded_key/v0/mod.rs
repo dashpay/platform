@@ -30,6 +30,7 @@ use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
+    #[inline(always)]
     pub(in crate::drive::identity::contract_info) fn add_potential_contract_info_for_contract_bounded_key_v0(
         &self,
         identity_id: [u8; 32],
@@ -244,7 +245,7 @@ impl Drive {
                                 .requires_identity_encryption_bounded_key()
                                 .ok_or(Error::DataContract(
                                     DataContractError::KeyBoundsExpectedButNotPresent(
-                                        "expected encryption key bounds",
+                                        "expected encryption key bounds for encryption",
                                     ),
                                 ))?;
                             Ok(encryption_storage_key_requirements)
@@ -256,7 +257,7 @@ impl Drive {
                                 .requires_identity_decryption_bounded_key()
                                 .ok_or(Error::DataContract(
                                     DataContractError::KeyBoundsExpectedButNotPresent(
-                                        "expected encryption key bounds",
+                                        "expected encryption key bounds for decryption",
                                     ),
                                 ))?;
                             Ok(decryption_storage_key_requirements)

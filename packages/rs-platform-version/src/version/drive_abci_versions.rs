@@ -22,14 +22,13 @@ pub struct DriveAbciQueryVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryIdentityVersions {
     pub identity: FeatureVersionBounds,
-    pub identities: FeatureVersionBounds,
+    pub identities_contract_keys: FeatureVersionBounds,
     pub keys: FeatureVersionBounds,
     pub identity_nonce: FeatureVersionBounds,
     pub identity_contract_nonce: FeatureVersionBounds,
     pub balance: FeatureVersionBounds,
     pub balance_and_revision: FeatureVersionBounds,
     pub identity_by_public_key_hash: FeatureVersionBounds,
-    pub identities_by_public_key_hashes: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -100,6 +99,7 @@ pub struct DriveAbciPlatformStateStorageMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciDocumentsStateTransitionValidationVersions {
+    pub balance_pre_check: FeatureVersion,
     pub basic_structure: FeatureVersion,
     pub advanced_structure: FeatureVersion,
     pub revision: FeatureVersion,
@@ -109,9 +109,15 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_create_transition_structure_validation: FeatureVersion,
     pub document_delete_transition_structure_validation: FeatureVersion,
     pub document_replace_transition_structure_validation: FeatureVersion,
+    pub document_transfer_transition_structure_validation: FeatureVersion,
+    pub document_purchase_transition_structure_validation: FeatureVersion,
+    pub document_update_price_transition_structure_validation: FeatureVersion,
     pub document_create_transition_state_validation: FeatureVersion,
     pub document_delete_transition_state_validation: FeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,
+    pub document_transfer_transition_state_validation: FeatureVersion,
+    pub document_purchase_transition_state_validation: FeatureVersion,
+    pub document_update_price_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

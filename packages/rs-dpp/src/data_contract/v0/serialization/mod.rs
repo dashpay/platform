@@ -97,6 +97,7 @@ impl DataContractV0 {
             schema_defs.as_ref(),
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
+            config.documents_can_be_deleted_contract_default(),
             validate,
             validation_operations,
             platform_version,

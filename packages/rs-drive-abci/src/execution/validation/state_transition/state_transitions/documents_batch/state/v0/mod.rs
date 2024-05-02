@@ -16,7 +16,10 @@ use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::documents_batch::transformer::v0::DocumentsBatchTransitionTransformerV0;
@@ -92,7 +95,35 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                         transaction,
                         platform_version,
                     )?,
+                DocumentTransitionAction::TransferAction(transfer_action) => transfer_action
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        epoch,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
                 DocumentTransitionAction::DeleteAction(delete_action) => delete_action
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        epoch,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
+                DocumentTransitionAction::UpdatePriceAction(update_price_action) => {
+                    update_price_action.validate_state(
+                        platform,
+                        owner_id,
+                        epoch,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?
+                }
+                DocumentTransitionAction::PurchaseAction(purchase_action) => purchase_action
                     .validate_state(
                         platform,
                         owner_id,

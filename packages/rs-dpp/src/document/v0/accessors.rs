@@ -65,6 +65,15 @@ impl DocumentV0Getters for DocumentV0 {
         self.updated_at
     }
 
+    /// Returns the timestamp of the last time the document was transferred, if it is part
+    /// of the document. The document will have this field if it's schema has it set as required.
+    ///
+    /// # Returns
+    /// An `Option<TimestampMillis>` representing the transferred at time in milliseconds, or `None` if not available.
+    fn transferred_at(&self) -> Option<TimestampMillis> {
+        self.transferred_at
+    }
+
     /// Provides a reference to the document's unique identifier.
     ///
     /// # Returns
@@ -107,6 +116,15 @@ impl DocumentV0Getters for DocumentV0 {
         self.updated_at_block_height
     }
 
+    /// Returns the block height of the last time the document was transferred, if it is part
+    /// of the document. The document will have this field if it's schema has it set as required.
+    ///
+    /// # Returns
+    /// An `Option<u64>` representing the transfer block height, or `None` if not available.
+    fn transferred_at_block_height(&self) -> Option<u64> {
+        self.transferred_at_block_height
+    }
+
     /// Returns the core network block height at which the document was created, if it is part
     /// of the document. The document will have this field if it's schema has it set as required.
     ///
@@ -123,6 +141,15 @@ impl DocumentV0Getters for DocumentV0 {
     /// An `Option<u32>` representing the update core block height, or `None` if not available.
     fn updated_at_core_block_height(&self) -> Option<u32> {
         self.updated_at_core_block_height
+    }
+
+    /// Returns the core network block height of the last time the document was transferred, if it is part
+    /// of the document. The document will have this field if it's schema has it set as required.
+    ///
+    /// # Returns
+    /// An `Option<u32>` representing the transfer core block height, or `None` if not available.
+    fn transferred_at_core_block_height(&self) -> Option<u32> {
+        self.transferred_at_core_block_height
     }
 }
 
@@ -161,6 +188,15 @@ impl DocumentV0Setters for DocumentV0 {
         self.revision = revision;
     }
 
+    /// Bumps the document's revision if it has one. This is applicable if the document's schema indicates
+    /// the document type as mutable.
+    ///
+    fn bump_revision(&mut self) {
+        if let Some(revision) = self.revision {
+            self.revision = Some(revision.saturating_add(1))
+        }
+    }
+
     /// Sets the timestamp of when the document was created. This is applicable if the document's
     /// schema requires a creation timestamp.
     ///
@@ -179,6 +215,10 @@ impl DocumentV0Setters for DocumentV0 {
     /// `None` indicates the timestamp is not available.
     fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
         self.updated_at = updated_at;
+    }
+
+    fn set_transferred_at(&mut self, transferred_at: Option<TimestampMillis>) {
+        self.transferred_at = transferred_at;
     }
 
     /// Sets the block height at which the document was created. This is applicable if the document's
@@ -201,6 +241,10 @@ impl DocumentV0Setters for DocumentV0 {
         self.updated_at_block_height = updated_at_block_height;
     }
 
+    fn set_transferred_at_block_height(&mut self, transferred_at_block_height: Option<u64>) {
+        self.transferred_at_block_height = transferred_at_block_height;
+    }
+
     /// Sets the core network block height at which the document was created. This is applicable if the
     /// document's schema requires this information.
     ///
@@ -219,5 +263,12 @@ impl DocumentV0Setters for DocumentV0 {
     /// `None` indicates the core block height is not available.
     fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>) {
         self.updated_at_core_block_height = updated_at_core_block_height;
+    }
+
+    fn set_transferred_at_core_block_height(
+        &mut self,
+        transferred_at_core_block_height: Option<u32>,
+    ) {
+        self.transferred_at_core_block_height = transferred_at_core_block_height;
     }
 }

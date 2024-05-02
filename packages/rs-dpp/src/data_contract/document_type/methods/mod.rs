@@ -207,7 +207,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn initial_revision(&self) -> Option<Revision> {
-        if self.documents_mutable {
+        if self.requires_revision() {
             Some(INITIAL_REVISION)
         } else {
             None
@@ -216,6 +216,8 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
 
     fn requires_revision(&self) -> bool {
         self.documents_mutable
+            || self.documents_transferable.is_transferable()
+            || self.trade_mode.seller_sets_price()
     }
 
     fn top_level_indices(&self) -> Vec<&IndexProperty> {

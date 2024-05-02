@@ -84,6 +84,7 @@ mod tests {
             None,
             false,
             false,
+            false,
             true,
             &mut vec![],
             platform_version,

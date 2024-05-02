@@ -290,10 +290,13 @@ impl DocumentFromCreateTransitionV0 for Document {
                         revision: document_type.initial_revision(),
                         created_at,
                         updated_at,
+                        transferred_at: None,
                         created_at_block_height,
                         updated_at_block_height,
+                        transferred_at_block_height: None,
                         created_at_core_block_height,
                         updated_at_core_block_height,
+                        transferred_at_core_block_height: None,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -388,10 +391,13 @@ impl DocumentFromCreateTransitionV0 for Document {
                         revision: document_type.initial_revision(),
                         created_at,
                         updated_at,
+                        transferred_at: None,
                         created_at_block_height,
                         updated_at_block_height,
+                        transferred_at_block_height: None,
                         created_at_core_block_height,
                         updated_at_core_block_height,
+                        transferred_at_core_block_height: None,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {

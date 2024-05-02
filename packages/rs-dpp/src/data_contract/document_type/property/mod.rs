@@ -796,13 +796,13 @@ impl DocumentPropertyType {
                     Ok(vec)
                 }
             }
-            DocumentPropertyType::Date => DocumentPropertyType::encode_date_timestamp(
+            DocumentPropertyType::Date => Ok(DocumentPropertyType::encode_date_timestamp(
                 value.to_integer().map_err(ProtocolError::ValueError)?,
-            ),
+            )),
             DocumentPropertyType::Integer => {
                 let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
 
-                DocumentPropertyType::encode_signed_integer(value_as_i64)
+                Ok(DocumentPropertyType::encode_i64(value_as_i64))
             }
             DocumentPropertyType::Number => Ok(Self::encode_float(
                 value.to_float().map_err(ProtocolError::ValueError)?,
@@ -915,11 +915,11 @@ impl DocumentPropertyType {
         }
     }
 
-    pub fn encode_date_timestamp(val: TimestampMillis) -> Result<Vec<u8>, ProtocolError> {
-        Self::encode_unsigned_integer(val)
+    pub fn encode_date_timestamp(val: TimestampMillis) -> Vec<u8> {
+        Self::encode_u64(val)
     }
 
-    pub fn encode_unsigned_integer(val: u64) -> Result<Vec<u8>, ProtocolError> {
+    pub fn encode_u64(val: u64) -> Vec<u8> {
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
 
@@ -941,10 +941,35 @@ impl DocumentPropertyType {
         // change was uniform across all elements
         wtr[0] ^= 0b1000_0000;
 
-        Ok(wtr)
+        wtr
     }
 
-    pub fn encode_signed_integer(val: i64) -> Result<Vec<u8>, ProtocolError> {
+    pub fn encode_u32(val: u32) -> Vec<u8> {
+        // Positive integers are represented in binary with the signed bit set to 0
+        // Negative integers are represented in 2's complement form
+
+        // Encode the integer in big endian form
+        // This ensures that most significant bits are compared first
+        // a bigger positive number would be greater than a smaller one
+        // and a bigger negative number would be greater than a smaller one
+        // maintains sort order for each domain
+        let mut wtr = vec![];
+        wtr.write_u32::<BigEndian>(val).unwrap();
+
+        // Flip the sign bit
+        // to deal with interaction between the domains
+        // 2's complement values have the sign bit set to 1
+        // this makes them greater than the positive domain in terms of sort order
+        // to fix this, we just flip the sign bit
+        // so positive integers have the high bit and negative integers have the low bit
+        // the relative order of elements in each domain is still maintained, as the
+        // change was uniform across all elements
+        wtr[0] ^= 0b1000_0000;
+
+        wtr
+    }
+
+    pub fn encode_i64(val: i64) -> Vec<u8> {
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
 
@@ -966,7 +991,7 @@ impl DocumentPropertyType {
         // change was uniform across all elements
         wtr[0] ^= 0b1000_0000;
 
-        Ok(wtr)
+        wtr
     }
 
     pub fn encode_float(val: f64) -> Vec<u8> {

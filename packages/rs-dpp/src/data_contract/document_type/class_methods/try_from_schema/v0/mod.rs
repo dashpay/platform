@@ -32,6 +32,10 @@ use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityL
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
+use crate::data_contract::document_type::property_names::{
+    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
+    TRADE_MODE, TRANSFERABLE,
+};
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
@@ -48,7 +52,19 @@ use platform_value::{Identifier, Value};
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
-const SYSTEM_PROPERTIES: [&str; 4] = ["$id", "$ownerId", "$createdAt", "$updatedAt"];
+const SYSTEM_PROPERTIES: [&str; 11] = [
+    "$id",
+    "$ownerId",
+    "$createdAt",
+    "$updatedAt",
+    "$transferredAt",
+    "$createdAtBlockHeight",
+    "$updatedAtBlockHeight",
+    "$transferredAtBlockHeight",
+    "$createdAtCoreBlockHeight",
+    "$updatedAtCoreBlockHeight",
+    "$transferredAtCoreBlockHeight",
+];
 
 const MAX_INDEXED_STRING_PROPERTY_LENGTH: u16 = 63;
 const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: u16 = 255;
@@ -94,6 +110,7 @@ impl DocumentTypeV0 {
         schema_defs: Option<&BTreeMap<String, Value>>,
         default_keeps_history: bool,
         default_mutability: bool,
+        default_can_be_deleted: bool,
         validate: bool, // we don't need to validate if loaded from state
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
@@ -196,18 +213,47 @@ impl DocumentTypeV0 {
             ))
         })?;
 
-        // TODO: These properties aren't defined in JSON meta schema
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_optional_bool_value(schema_map, "documentsKeepHistory")
+            Value::inner_optional_bool_value(schema_map, DOCUMENTS_KEEP_HISTORY)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            Value::inner_optional_bool_value(schema_map, "documentsMutable")
+            Value::inner_optional_bool_value(schema_map, DOCUMENTS_MUTABLE)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(default_mutability);
+
+        // Can documents of this type be deleted? (Overrides contract value)
+        let documents_can_be_deleted: bool =
+            Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or(default_can_be_deleted);
+
+        // Are documents of this type transferable?
+        let documents_transferable_u8: u8 =
+            Value::inner_optional_integer_value(schema_map, TRANSFERABLE)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+
+        let documents_transferable = documents_transferable_u8.try_into()?;
+
+        // What is the trade mode of these documents
+        let documents_trade_mode_u8: u8 =
+            Value::inner_optional_integer_value(schema_map, TRADE_MODE)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+
+        let trade_mode = documents_trade_mode_u8.try_into()?;
+
+        // What is the creation restriction mode of this document type?
+        let documents_creation_restriction_mode_u8: u8 =
+            Value::inner_optional_integer_value(schema_map, CREATION_RESTRICTION_MODE)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+
+        let creation_restriction_mode = documents_creation_restriction_mode_u8.try_into()?;
 
         // Extract the properties
         let property_values = Value::inner_optional_index_map::<u64>(
@@ -491,6 +537,10 @@ impl DocumentTypeV0 {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            documents_can_be_deleted,
+            documents_transferable,
+            trade_mode,
+            creation_restriction_mode,
             data_contract_id,
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,
@@ -788,6 +838,7 @@ mod tests {
                 None,
                 false,
                 false,
+                false,
                 true,
                 &mut vec![],
                 platform_version,
@@ -815,6 +866,7 @@ mod tests {
                 "",
                 schema,
                 None,
+                false,
                 false,
                 false,
                 true,
@@ -855,6 +907,7 @@ mod tests {
                 None,
                 false,
                 false,
+                false,
                 true,
                 &mut vec![],
                 platform_version,
@@ -893,6 +946,7 @@ mod tests {
                 None,
                 false,
                 false,
+                false,
                 true,
                 &mut vec![],
                 platform_version,
@@ -913,6 +967,7 @@ mod tests {
                 "invalid&name",
                 schema,
                 None,
+                false,
                 false,
                 false,
                 true,

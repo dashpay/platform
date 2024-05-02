@@ -114,6 +114,27 @@ impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
     }
 }
 
+impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64)> {
+    fn query(self, prove: bool) -> Result<proto::GetDataContractHistoryRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let (id, start_at_ms) = self.query;
+
+        Ok(proto::GetDataContractHistoryRequest {
+            version: Some(proto::get_data_contract_history_request::Version::V0(
+                proto::get_data_contract_history_request::GetDataContractHistoryRequestV0 {
+                    id: id.to_vec(),
+                    limit: self.limit,
+                    offset: None,
+                    start_at_ms,
+                    prove,
+                },
+            )),
+        })
+    }
+}
+
 impl Query<proto::GetIdentityKeysRequest> for Identifier {
     /// Get all keys for an identity with provided identifier.
     fn query(self, prove: bool) -> Result<proto::GetIdentityKeysRequest, Error> {
@@ -242,14 +263,14 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
     }
 }
 
-/// Conveniance method that allows direct use of a ProTxHash
+/// Convenience method that allows direct use of a ProTxHash
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         Some(self).query(prove)
     }
 }
 
-/// Conveniance method that allows direct use of a ProTxHash
+/// Convenience method that allows direct use of a ProTxHash
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash> {
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         LimitQuery {

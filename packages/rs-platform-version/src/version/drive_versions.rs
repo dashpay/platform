@@ -103,6 +103,7 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_keys_by_identity_id: FeatureVersion,
     pub verify_identity_nonce: FeatureVersion,
     pub verify_identity_contract_nonce: FeatureVersion,
+    pub verify_identities_contract_keys: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -300,6 +301,9 @@ pub struct DriveDocumentIndexUniquenessMethodVersions {
     pub validate_document_uniqueness: FeatureVersion,
     pub validate_document_create_transition_action_uniqueness: FeatureVersion,
     pub validate_document_replace_transition_action_uniqueness: FeatureVersion,
+    pub validate_document_transfer_transition_action_uniqueness: FeatureVersion,
+    pub validate_document_purchase_transition_action_uniqueness: FeatureVersion,
+    pub validate_document_update_price_transition_action_uniqueness: FeatureVersion,
     pub validate_uniqueness_of_data: FeatureVersion,
 }
 
@@ -534,6 +538,7 @@ pub struct DriveIdentityProveMethodVersions {
     pub full_identities: FeatureVersion,
     pub identity_nonce: FeatureVersion,
     pub identity_contract_nonce: FeatureVersion,
+    pub identities_contract_keys: FeatureVersion,
     pub prove_full_identities_by_unique_public_key_hashes: FeatureVersion,
     pub prove_full_identity_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_id_by_unique_public_key_hash: FeatureVersion,
@@ -554,6 +559,7 @@ pub struct DriveIdentityKeysFetchMethodVersions {
     pub fetch_all_identity_keys: FeatureVersion,
     pub fetch_identities_all_keys: FeatureVersion,
     pub fetch_identity_keys: FeatureVersion,
+    pub fetch_identities_contract_keys: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -2,29 +2,27 @@
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetStatusRequest {}
+pub struct GetBlockchainStatusRequest {}
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetStatusResponse {
+pub struct GetBlockchainStatusResponse {
     #[prost(message, optional, tag = "1")]
-    pub version: ::core::option::Option<get_status_response::Version>,
+    pub version: ::core::option::Option<get_blockchain_status_response::Version>,
     #[prost(message, optional, tag = "2")]
-    pub time: ::core::option::Option<get_status_response::Time>,
-    #[prost(enumeration = "get_status_response::Status", tag = "3")]
+    pub time: ::core::option::Option<get_blockchain_status_response::Time>,
+    #[prost(enumeration = "get_blockchain_status_response::Status", tag = "3")]
     pub status: i32,
     #[prost(double, tag = "4")]
     pub sync_progress: f64,
     #[prost(message, optional, tag = "5")]
-    pub chain: ::core::option::Option<get_status_response::Chain>,
-    #[prost(message, optional, tag = "6")]
-    pub masternode: ::core::option::Option<get_status_response::Masternode>,
+    pub chain: ::core::option::Option<get_blockchain_status_response::Chain>,
     #[prost(message, optional, tag = "7")]
-    pub network: ::core::option::Option<get_status_response::Network>,
+    pub network: ::core::option::Option<get_blockchain_status_response::Network>,
 }
-/// Nested message and enum types in `GetStatusResponse`.
-pub mod get_status_response {
+/// Nested message and enum types in `GetBlockchainStatusResponse`.
+pub mod get_blockchain_status_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -70,80 +68,6 @@ pub mod get_status_response {
         pub is_synced: bool,
         #[prost(double, tag = "8")]
         pub sync_progress: f64,
-    }
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[derive(::dapi_grpc_macros::Mockable)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct Masternode {
-        #[prost(enumeration = "masternode::Status", tag = "1")]
-        pub status: i32,
-        #[prost(bytes = "vec", tag = "2")]
-        pub pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
-        #[prost(uint32, tag = "3")]
-        pub pose_penalty: u32,
-        #[prost(bool, tag = "4")]
-        pub is_synced: bool,
-        #[prost(double, tag = "5")]
-        pub sync_progress: f64,
-    }
-    /// Nested message and enum types in `Masternode`.
-    pub mod masternode {
-        #[derive(::serde::Serialize, ::serde::Deserialize)]
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
-        )]
-        #[repr(i32)]
-        pub enum Status {
-            Unknown = 0,
-            WaitingForProtx = 1,
-            PoseBanned = 2,
-            Removed = 3,
-            OperatorKeyChanged = 4,
-            ProtxIpChanged = 5,
-            Ready = 6,
-            Error = 7,
-        }
-        impl Status {
-            /// String value of the enum field names used in the ProtoBuf definition.
-            ///
-            /// The values are not transformed in any way and thus are considered stable
-            /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-            pub fn as_str_name(&self) -> &'static str {
-                match self {
-                    Status::Unknown => "UNKNOWN",
-                    Status::WaitingForProtx => "WAITING_FOR_PROTX",
-                    Status::PoseBanned => "POSE_BANNED",
-                    Status::Removed => "REMOVED",
-                    Status::OperatorKeyChanged => "OPERATOR_KEY_CHANGED",
-                    Status::ProtxIpChanged => "PROTX_IP_CHANGED",
-                    Status::Ready => "READY",
-                    Status::Error => "ERROR",
-                }
-            }
-            /// Creates an enum from field names used in the ProtoBuf definition.
-            pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-                match value {
-                    "UNKNOWN" => Some(Self::Unknown),
-                    "WAITING_FOR_PROTX" => Some(Self::WaitingForProtx),
-                    "POSE_BANNED" => Some(Self::PoseBanned),
-                    "REMOVED" => Some(Self::Removed),
-                    "OPERATOR_KEY_CHANGED" => Some(Self::OperatorKeyChanged),
-                    "PROTX_IP_CHANGED" => Some(Self::ProtxIpChanged),
-                    "READY" => Some(Self::Ready),
-                    "ERROR" => Some(Self::Error),
-                    _ => None,
-                }
-            }
-        }
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[derive(::dapi_grpc_macros::Mockable)]
@@ -202,6 +126,85 @@ pub mod get_status_response {
             match value {
                 "NOT_STARTED" => Some(Self::NotStarted),
                 "SYNCING" => Some(Self::Syncing),
+                "READY" => Some(Self::Ready),
+                "ERROR" => Some(Self::Error),
+                _ => None,
+            }
+        }
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetMasternodeStatusRequest {}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetMasternodeStatusResponse {
+    #[prost(enumeration = "get_masternode_status_response::Status", tag = "1")]
+    pub status: i32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "3")]
+    pub pose_penalty: u32,
+    #[prost(bool, tag = "4")]
+    pub is_synced: bool,
+    #[prost(double, tag = "5")]
+    pub sync_progress: f64,
+}
+/// Nested message and enum types in `GetMasternodeStatusResponse`.
+pub mod get_masternode_status_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum Status {
+        Unknown = 0,
+        WaitingForProtx = 1,
+        PoseBanned = 2,
+        Removed = 3,
+        OperatorKeyChanged = 4,
+        ProtxIpChanged = 5,
+        Ready = 6,
+        Error = 7,
+    }
+    impl Status {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Status::Unknown => "UNKNOWN",
+                Status::WaitingForProtx => "WAITING_FOR_PROTX",
+                Status::PoseBanned => "POSE_BANNED",
+                Status::Removed => "REMOVED",
+                Status::OperatorKeyChanged => "OPERATOR_KEY_CHANGED",
+                Status::ProtxIpChanged => "PROTX_IP_CHANGED",
+                Status::Ready => "READY",
+                Status::Error => "ERROR",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "UNKNOWN" => Some(Self::Unknown),
+                "WAITING_FOR_PROTX" => Some(Self::WaitingForProtx),
+                "POSE_BANNED" => Some(Self::PoseBanned),
+                "REMOVED" => Some(Self::Removed),
+                "OPERATOR_KEY_CHANGED" => Some(Self::OperatorKeyChanged),
+                "PROTX_IP_CHANGED" => Some(Self::ProtxIpChanged),
                 "READY" => Some(Self::Ready),
                 "ERROR" => Some(Self::Error),
                 _ => None,
@@ -516,11 +519,11 @@ pub mod core_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        pub async fn get_status(
+        pub async fn get_blockchain_status(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetStatusRequest>,
+            request: impl tonic::IntoRequest<super::GetBlockchainStatusRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetStatusResponse>,
+            tonic::Response<super::GetBlockchainStatusResponse>,
             tonic::Status,
         > {
             self.inner
@@ -534,11 +537,46 @@ pub mod core_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/org.dash.platform.dapi.v0.Core/getStatus",
+                "/org.dash.platform.dapi.v0.Core/getBlockchainStatus",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("org.dash.platform.dapi.v0.Core", "getStatus"));
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Core",
+                        "getBlockchainStatus",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_masternode_status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetMasternodeStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetMasternodeStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Core/getMasternodeStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Core",
+                        "getMasternodeStatus",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_block(
@@ -726,11 +764,18 @@ pub mod core_server {
     /// Generated trait containing gRPC methods that should be implemented for use with CoreServer.
     #[async_trait]
     pub trait Core: Send + Sync + 'static {
-        async fn get_status(
+        async fn get_blockchain_status(
             &self,
-            request: tonic::Request<super::GetStatusRequest>,
+            request: tonic::Request<super::GetBlockchainStatusRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetStatusResponse>,
+            tonic::Response<super::GetBlockchainStatusResponse>,
+            tonic::Status,
+        >;
+        async fn get_masternode_status(
+            &self,
+            request: tonic::Request<super::GetMasternodeStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetMasternodeStatusResponse>,
             tonic::Status,
         >;
         async fn get_block(
@@ -873,22 +918,26 @@ pub mod core_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/org.dash.platform.dapi.v0.Core/getStatus" => {
+                "/org.dash.platform.dapi.v0.Core/getBlockchainStatus" => {
                     #[allow(non_camel_case_types)]
-                    struct getStatusSvc<T: Core>(pub Arc<T>);
-                    impl<T: Core> tonic::server::UnaryService<super::GetStatusRequest>
-                    for getStatusSvc<T> {
-                        type Response = super::GetStatusResponse;
+                    struct getBlockchainStatusSvc<T: Core>(pub Arc<T>);
+                    impl<
+                        T: Core,
+                    > tonic::server::UnaryService<super::GetBlockchainStatusRequest>
+                    for getBlockchainStatusSvc<T> {
+                        type Response = super::GetBlockchainStatusResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetStatusRequest>,
+                            request: tonic::Request<super::GetBlockchainStatusRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).get_status(request).await };
+                            let fut = async move {
+                                (*inner).get_blockchain_status(request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -899,7 +948,53 @@ pub mod core_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = getStatusSvc(inner);
+                        let method = getBlockchainStatusSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Core/getMasternodeStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct getMasternodeStatusSvc<T: Core>(pub Arc<T>);
+                    impl<
+                        T: Core,
+                    > tonic::server::UnaryService<super::GetMasternodeStatusRequest>
+                    for getMasternodeStatusSvc<T> {
+                        type Response = super::GetMasternodeStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetMasternodeStatusRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_masternode_status(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getMasternodeStatusSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

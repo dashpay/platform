@@ -9,7 +9,10 @@ use crate::data_contract::storage_requirements::keys_for_document_type::StorageK
 #[cfg(feature = "validation")]
 pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
 
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
+use crate::nft::TradeMode;
 use platform_value::{Identifier, Value};
 
 mod accessors;
@@ -53,6 +56,15 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_keep_history: bool,
     /// Are documents mutable?
     pub(in crate::data_contract) documents_mutable: bool,
+    /// Can documents of this type be deleted?
+    pub(in crate::data_contract) documents_can_be_deleted: bool,
+    /// Can documents be transferred without a trade?
+    pub(in crate::data_contract) documents_transferable: Transferable,
+    /// How are these documents traded?
+    pub(in crate::data_contract) trade_mode: TradeMode,
+    /// Is document creation restricted?
+    pub(in crate::data_contract) creation_restriction_mode: CreationRestrictionMode,
+    /// The data contract id
     pub(in crate::data_contract) data_contract_id: Identifier,
     /// Encryption key storage requirements
     pub(in crate::data_contract) requires_identity_encryption_bounded_key:

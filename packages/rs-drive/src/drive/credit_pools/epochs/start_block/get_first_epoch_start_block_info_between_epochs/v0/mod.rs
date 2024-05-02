@@ -45,6 +45,7 @@ impl Drive {
                 &path_query,
                 transaction.is_some(),
                 false, //set to false on purpose
+                true,
                 QueryPathKeyElementTrioResultType,
                 transaction,
             )

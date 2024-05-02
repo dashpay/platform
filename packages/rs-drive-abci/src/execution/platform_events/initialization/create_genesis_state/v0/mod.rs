@@ -201,7 +201,6 @@ impl<C> Platform<C> {
         let serialization =
             data_contract.serialize_to_bytes_with_platform_version(platform_version)?;
         operations.push(DriveOperation::DataContractOperation(
-            //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Borrowed(data_contract),
                 serialized_contract: serialization,
@@ -256,10 +255,13 @@ impl<C> Platform<C> {
             revision: None,
             created_at: None,
             updated_at: None,
+            transferred_at: None,
             created_at_block_height: None,
             updated_at_block_height: None,
+            transferred_at_block_height: None,
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
         }
         .into();
 
@@ -314,8 +316,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    145, 134, 225, 227, 181, 246, 225, 73, 216, 216, 249, 73, 21, 213, 116, 110,
-                    85, 106, 80, 222, 95, 167, 97, 242, 69, 142, 176, 211, 89, 182, 162, 67
+                    162, 81, 50, 217, 246, 11, 77, 233, 231, 192, 228, 176, 197, 102, 24, 18, 160,
+                    5, 182, 75, 119, 174, 75, 155, 86, 92, 88, 197, 201, 60, 60, 157
                 ]
             )
         }
