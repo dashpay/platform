@@ -26,6 +26,8 @@ use dpp::version::PlatformVersion;
 #[cfg(test)]
 use drive::grovedb::Transaction;
 
+const PRIORITY_USER_FEE_INCREASE_MULTIPLIER: u32 = 100;
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -134,7 +136,8 @@ where
 
         let unique_identifiers = state_transition.unique_identifiers();
 
-        let priority = state_transition.user_fee_increase() as u32 * 100; // TODO: saturating_mut + constant
+        let user_fee_increase = state_transition.user_fee_increase() as u32;
+        let priority = user_fee_increase.saturating_mul(PRIORITY_USER_FEE_INCREASE_MULTIPLIER);
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
