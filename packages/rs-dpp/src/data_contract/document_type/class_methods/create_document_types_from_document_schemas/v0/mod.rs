@@ -22,7 +22,7 @@ impl DocumentTypeV0 {
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
 
-        if document_schemas.is_empty() {
+        if validate && document_schemas.is_empty() {
             return Err(ProtocolError::ConsensusError(Box::new(
                 DataContractEmptySchemaError::new(data_contract_id).into(),
             )));
