@@ -28,8 +28,8 @@ use crate::execution::validation::state_transition::transformer::StateTransition
 use crate::execution::validation::state_transition::ValidationMode;
 
 impl ValidationMode {
-    /// Returns if we should validate the contract when we transform it from its serialized form
-    pub fn should_validate_contract_on_transform_into_action(&self) -> bool {
+    /// Returns if we should do the full validation of the contract when we transform it from its serialized form
+    pub fn should_fully_validate_contract_on_transform_into_action(&self) -> bool {
         match self {
             ValidationMode::CheckTx => false,
             ValidationMode::RecheckTx => false,
