@@ -10,15 +10,16 @@ use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
-use dpp::consensus::basic::decode::SerializedObjectParsingError;
-use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 
+use crate::error::execution::ExecutionError;
+use crate::execution::types::state_transition_container::v0::StateTransitionContainerGettersV0;
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform_state::PlatformState;
+#[cfg(test)]
 use dpp::serialization::PlatformDeserializable;
+#[cfg(test)]
 use dpp::state_transition::StateTransition;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
@@ -92,42 +93,37 @@ where
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
-        if raw_tx.len() as u64
-            > platform_version
-                .dpp
-                .state_transitions
-                .max_state_transition_size
-        {
-            // The state transition is too big
-            let consensus_error =
-                ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
-                    StateTransitionMaxSizeExceededError::new(
-                        raw_tx.len() as u64,
-                        platform_version
-                            .dpp
-                            .state_transitions
-                            .max_state_transition_size,
-                    ),
-                ));
-            tracing::debug!(
-                ?consensus_error,
-                "State transition too big on check tx (starts with {})",
-                hex::encode(raw_tx.split_at(80).0)
-            );
+        let raw_state_transitions = vec![raw_tx.to_vec()];
+        let state_transition_container =
+            self.decode_raw_state_transitions(&raw_state_transitions, platform_version)?;
+
+        let (
+            mut valid_state_transitions,
+            mut invalid_state_transitions,
+            mut invalid_state_transitions_with_protocol_error,
+        ) = state_transition_container.destructure();
+
+        // Return internal error if happened
+        if !invalid_state_transitions_with_protocol_error.is_empty() {
+            let (_, protocol_error) = invalid_state_transitions_with_protocol_error.remove(0);
+
+            return Err(protocol_error.into());
+        }
+
+        // Return consensus error if happened
+        if !invalid_state_transitions.is_empty() {
+            let (_, consensus_error) = invalid_state_transitions.remove(0);
 
             return Ok(ValidationResult::new_with_error(consensus_error));
         }
 
-        let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
-            Ok(state_transition) => state_transition,
-            Err(err) => {
-                return Ok(ValidationResult::new_with_error(
-                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
-                        SerializedObjectParsingError::new(err.to_string()),
-                    )),
-                ))
-            }
-        };
+        // If there are no errors, then state transition is valid
+        if valid_state_transitions.is_empty() {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "valid state transition must be present",
+            )));
+        }
+        let (_, state_transition) = valid_state_transitions.remove(0);
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -146,8 +142,11 @@ where
             check_tx_level,
         )?;
 
-        // We should run the execution event in dry run to see if we would have enough fees for the transition
+        // TODO: Name of this function is contr-intuitive. It's actually maps the data in validation result.
+        //  it fine that we aren't adding CheckTx result if we haven't set data?
         validation_result.and_then_borrowed_validation(|execution_event| {
+            // We should run the execution event in dry run to see if we would have enough fees for the transition
+            // TODO: Even in case if we have validation errors?
             if let Some(execution_event) = execution_event {
                 self.validate_fees_of_event(
                     execution_event,
