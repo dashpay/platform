@@ -134,7 +134,7 @@ where
 
         let unique_identifiers = state_transition.unique_identifiers();
 
-        let priority = state_transition.user_fee_increase() as u32 * 100;
+        let priority = state_transition.user_fee_increase() as u32 * 100; // TODO: saturating_mut + constant
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
@@ -142,35 +142,45 @@ where
             check_tx_level,
         )?;
 
-        // TODO: Name of this function is contr-intuitive. It's actually maps the data in validation result.
-        //  it fine that we aren't adding CheckTx result if we haven't set data?
-        validation_result.and_then_borrowed_validation(|execution_event| {
-            // We should run the execution event in dry run to see if we would have enough fees for the transition
-            // TODO: Even in case if we have validation errors?
-            if let Some(execution_event) = execution_event {
-                self.validate_fees_of_event(
-                    execution_event,
-                    platform_state.last_block_info(),
-                    None,
-                    platform_version,
-                )
-                .map(|validation_result| {
-                    validation_result.map(|fee_result| CheckTxResult {
-                        level: check_tx_level,
-                        fee_result: Some(fee_result),
-                        unique_identifiers,
-                        priority,
-                    })
-                })
-            } else {
-                Ok(ValidationResult::new_with_data(CheckTxResult {
+        // If there are any validation errors happen we return
+        // the validation result with errors and CheckTxResult data
+        if !validation_result.is_valid() {
+            return Ok(validation_result.map(|_| CheckTxResult {
+                level: check_tx_level,
+                fee_result: None,
+                unique_identifiers,
+                priority,
+            }));
+        }
+
+        // Validation succeeded. we need to map validation data to CheckTxResult
+        if let Some(execution_event) = validation_result.into_data()? {
+            // We should run the execution event in dry run (estimated fees)
+            // to see if we would have enough fees for the transition
+            self.validate_fees_of_event(
+                &execution_event,
+                platform_state.last_block_info(),
+                None,
+                platform_version,
+            )
+            .map(|validation_result| {
+                validation_result.map(|fee_result| CheckTxResult {
                     level: check_tx_level,
-                    fee_result: None,
+                    fee_result: Some(fee_result),
                     unique_identifiers,
                     priority,
-                }))
-            }
-        })
+                })
+            })
+        } else {
+            // In case of asset lock based transitions, we don't have execution event
+            // because we already validated remaining balance
+            Ok(ValidationResult::new_with_data(CheckTxResult {
+                level: check_tx_level,
+                fee_result: None,
+                unique_identifiers,
+                priority,
+            }))
+        }
     }
 }
 

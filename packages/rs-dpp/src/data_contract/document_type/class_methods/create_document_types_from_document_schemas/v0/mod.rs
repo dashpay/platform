@@ -16,12 +16,13 @@ impl DocumentTypeV0 {
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         documents_can_be_deleted_contract_default: bool,
-        validate: bool,
+        validate: bool, // TODO: rename to full validation
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
 
+        // TODO: we should always return either ProtocolError::DataContract or ProtocolError::ConsensusError
         if validate && document_schemas.is_empty() {
             return Err(ProtocolError::ConsensusError(Box::new(
                 DataContractEmptySchemaError::new(data_contract_id).into(),
