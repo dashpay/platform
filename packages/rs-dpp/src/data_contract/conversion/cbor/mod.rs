@@ -12,7 +12,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
     fn from_cbor_with_id(
         cbor_bytes: impl AsRef<[u8]>,
         contract_id: Option<Identifier>,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -23,7 +23,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
             0 => Ok(DataContractV0::from_cbor_with_id(
                 cbor_bytes,
                 contract_id,
-                validate,
+                full_validation,
                 platform_version,
             )?
             .into()),

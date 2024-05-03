@@ -15,7 +15,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
@@ -26,7 +26,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
             self.config.documents_can_be_deleted_contract_default(),
-            validate,
+            full_validation,
             validation_operations,
             platform_version,
         )?;
@@ -38,7 +38,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         &mut self,
         name: &str,
         schema: Value,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
@@ -50,7 +50,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
             self.config.documents_mutable_contract_default(),
-            validate,
+            full_validation,
             validation_operations,
             platform_version,
         )?;
