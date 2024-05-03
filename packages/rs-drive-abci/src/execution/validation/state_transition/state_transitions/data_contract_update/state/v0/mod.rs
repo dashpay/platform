@@ -11,6 +11,7 @@ use dpp::consensus::basic::data_contract::{
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
+use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::ConsensusError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -202,7 +203,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let config_validation_result = old_data_contract.config().validate_config_update(
             new_data_contract.config(),
-            self.data_contract().id(),
+            new_data_contract.id(),
             platform_version,
         )?;
 
@@ -219,9 +220,29 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ));
         }
 
-        // Validate document types
+        // Make sure that existing document aren't removed
 
-        // TODO: We need to check if any old document types are removed
+        for document_type_name in old_data_contract.document_types().keys() {
+            if !new_data_contract.has_document_type_for_name(document_type_name) {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    ),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![DocumentTypeUpdateError::new(
+                        new_data_contract.id(),
+                        document_type_name,
+                        "document type can't be removed",
+                    )
+                    .into()],
+                ));
+            }
+        }
+
+        // Validate updates for existing document types
 
         for (new_contract_document_type_name, new_contract_document_type) in
             new_data_contract.document_types()
