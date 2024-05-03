@@ -195,65 +195,92 @@ where
             request.round,
         );
 
-        Ok(response)
-    } else {
-        let block_execution_outcome::v0::BlockExecutionOutcome {
-            app_hash,
-            state_transitions_result: state_transition_results,
-            validator_set_update,
-            protocol_version,
-            block_execution_context,
-        } = run_result.into_data().map_err(Error::Protocol)?;
+        return Ok(response);
+    }
 
-        let platform_version = PlatformVersion::get(protocol_version)
-            .expect("must be set in run block proposer from existing platform version");
+    let block_execution_outcome::v0::BlockExecutionOutcome {
+        app_hash,
+        state_transitions_result: state_transition_results,
+        validator_set_update,
+        protocol_version,
+        block_execution_context,
+    } = run_result.into_data().map_err(Error::Protocol)?;
 
-        app.block_execution_context()
-            .write()
-            .unwrap()
-            .replace(block_execution_context);
+    let platform_version = PlatformVersion::get(protocol_version)
+        .expect("must be set in run block proposer from existing platform version");
 
-        let invalid_tx_count = state_transition_results.invalid_paid_count();
-        let valid_tx_count = state_transition_results.valid_count();
+    app.block_execution_context()
+        .write()
+        .unwrap()
+        .replace(block_execution_context);
 
-        let tx_results = state_transition_results
-            .into_execution_results()
-            .into_iter()
-            // To prevent spam attacks we add to the block state transitions covered with fees only
-            .filter(|execution_result| {
-                matches!(
-                    execution_result,
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
-                        | StateTransitionExecutionResult::PaidConsensusError(..)
-                )
-            })
-            .map(|execution_result| execution_result.try_into_platform_versioned(platform_version))
-            .collect::<Result<_, _>>()?;
+    let invalid_tx_count = state_transition_results.invalid_paid_count();
+    let valid_tx_count = state_transition_results.valid_count();
+    let failed_tx_count = state_transition_results.failed_count();
+    let invalid_unpaid_tx_count = state_transition_results.invalid_unpaid_count();
+    let unexpected_execution_results = failed_tx_count + invalid_unpaid_tx_count;
 
+    // Reject block if proposal contains failed or unpaid state transitions
+    if unexpected_execution_results > 0 {
         let response = proto::ResponseProcessProposal {
             app_hash: app_hash.to_vec(),
-            tx_results,
-            // TODO: Must be reject if results are different
-            status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-            validator_set_update,
-            // TODO: Implement consensus param updates
-            consensus_param_updates: None,
-            events: Vec::new(),
+            status: proto::response_process_proposal::ProposalStatus::Reject.into(),
+            ..Default::default()
         };
 
         let elapsed_time_ms = timer.elapsed().as_millis();
 
-        tracing::info!(
+        tracing::warn!(
             invalid_tx_count,
             valid_tx_count,
+            failed_tx_count,
+            invalid_unpaid_tx_count,
             elapsed_time_ms,
-            "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
-            valid_tx_count + invalid_tx_count,
+            "Rejected invalid proposal for height: {}, round: {} due to {} unexpected state transition execution result(s)",
             request.height,
             request.round,
-            elapsed_time_ms,
+            unexpected_execution_results
         );
 
-        Ok(response)
+        return Ok(response);
     }
+
+    let tx_results = state_transition_results
+        .into_execution_results()
+        .into_iter()
+        // To prevent spam attacks we add to the block state transitions covered with fees only
+        .filter(|execution_result| {
+            matches!(
+                execution_result,
+                StateTransitionExecutionResult::SuccessfulExecution(..)
+                    | StateTransitionExecutionResult::PaidConsensusError(..)
+            )
+        })
+        .map(|execution_result| execution_result.try_into_platform_versioned(platform_version))
+        .collect::<Result<_, _>>()?;
+
+    let response = proto::ResponseProcessProposal {
+        app_hash: app_hash.to_vec(),
+        tx_results,
+        status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+        validator_set_update,
+        // TODO: Implement consensus param updates
+        consensus_param_updates: None,
+        events: Vec::new(),
+    };
+
+    let elapsed_time_ms = timer.elapsed().as_millis();
+
+    tracing::info!(
+        invalid_tx_count,
+        valid_tx_count,
+        elapsed_time_ms,
+        "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
+        valid_tx_count + invalid_tx_count,
+        request.height,
+        request.round,
+        elapsed_time_ms,
+    );
+
+    Ok(response)
 }
