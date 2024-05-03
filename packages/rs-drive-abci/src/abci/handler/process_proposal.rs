@@ -41,7 +41,6 @@ where
             if let Some(proposal_info) = block_execution_context.proposer_results() {
                 tracing::debug!(
                     method = "process_proposal",
-                    ?proposal_info, // TODO: It might be too big for debug
                     "we knew block hash, block execution context already had a proposer result",
                 );
                 // We were the proposer as well, so we have the result in cache
@@ -59,7 +58,6 @@ where
                 // We were not the proposer, just drop the execution context
                 tracing::warn!(
                         method = "process_proposal",
-                        ?request, // Shumkov, lklimek: this structure might be very big and we already logged it such as all other ABCI requests and responses
                         "block execution context already existed, but we are running it again for same height {}/round {}",
                         request.height,
                         request.round,
@@ -136,10 +134,9 @@ where
                 });
             } else {
                 tracing::warn!(
-                            method = "process_proposal",
-                            "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}, but we are requesting a different amount of transactions, dropping the cache",
-                            proposal_info,
-                        );
+                    method = "process_proposal",
+                    "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result, but we are requesting a different amount of transactions, dropping the cache",
+                );
 
                 drop_block_execution_context = true;
             };
