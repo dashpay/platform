@@ -95,7 +95,7 @@ mod test {
         match result {
             Err(crate::ProtocolError::ConsensusError(e)) => match e.deref() {
                 ConsensusError::BasicError(err) => match err {
-                    BasicError::DataContractEmptySchemaError(_) => {}
+                    BasicError::DocumentTypesAreMissingError(_) => {}
                     _ => panic!("Expected DataContractEmptySchemaError"),
                 },
                 _ => panic!("Expected basic consensus error"),

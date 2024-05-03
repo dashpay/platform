@@ -71,11 +71,11 @@ use dpp::consensus::state::identity::identity_public_key_already_exists_for_uniq
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 
 use crate::errors::consensus::basic::data_contract::{
-    DataContractEmptySchemaErrorWasm, DataContractErrorWasm,
-    DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
+    DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
+    DataContractImmutablePropertiesUpdateErrorWasm,
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
-    IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
-    InvalidDocumentTypeNameErrorWasm,
+    DocumentTypesAreMissingErrorWasm, IncompatibleDataContractSchemaErrorWasm,
+    InvalidDataContractIdErrorWasm, InvalidDocumentTypeNameErrorWasm,
 };
 use crate::errors::consensus::basic::document::{
     DocumentTransitionsAreAbsentErrorWasm, DuplicateDocumentTransitionsWithIdsErrorWasm,
@@ -330,8 +330,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::IncompatibleDataContractSchemaError(err) => {
             IncompatibleDataContractSchemaErrorWasm::from(err).into()
         }
-        BasicError::DataContractEmptySchemaError(err) => {
-            DataContractEmptySchemaErrorWasm::from(err).into()
+        BasicError::DocumentTypesAreMissingError(err) => {
+            DocumentTypesAreMissingErrorWasm::from(err).into()
         }
         BasicError::InvalidIdentityKeySignatureError(err) => {
             InvalidIdentityKeySignatureErrorWasm::from(err).into()

@@ -1,6 +1,8 @@
-use crate::consensus::basic::data_contract::DataContractEmptySchemaError;
+use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DocumentName;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -22,11 +24,10 @@ impl DocumentTypeV0 {
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
 
-        // TODO: we should always return either ProtocolError::DataContract or ProtocolError::ConsensusError
-        if full_validation && document_schemas.is_empty() {
-            return Err(ProtocolError::ConsensusError(Box::new(
-                DataContractEmptySchemaError::new(data_contract_id).into(),
-            )));
+        if document_schemas.is_empty() {
+            return Err(consensus_or_protocol_data_contract_error(
+                DocumentTypesAreMissingError::new(data_contract_id).into(),
+            ));
         }
 
         for (name, schema) in document_schemas.into_iter() {
