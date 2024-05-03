@@ -9,6 +9,8 @@ impl<'a> DocumentTypeRef<'a> {
         &self,
         new_document_type: &DocumentType,
     ) -> SimpleConsensusValidationResult {
+        // TODO: Missing verification for documents_can_be_deleted, documents_transferable, trade_mode, creation_restriction_mode
+
         if new_document_type.documents_keep_history() != self.documents_keep_history() {
             return SimpleConsensusValidationResult::new_with_error(
                 DocumentTypeUpdateError::new(
@@ -85,21 +87,6 @@ impl<'a> DocumentTypeRef<'a> {
                     ),
                 )
                     .into(),
-            );
-        }
-
-        if new_document_type.required_fields() != self.required_fields() {
-            return SimpleConsensusValidationResult::new_with_error(
-                DocumentTypeUpdateError::new(
-                    self.data_contract_id(),
-                    self.name(),
-                    format!(
-                        "document type can not change required fields: changing from {:?} to {:?}",
-                        self.required_fields(),
-                        new_document_type.required_fields()
-                    ),
-                )
-                .into(),
             );
         }
 

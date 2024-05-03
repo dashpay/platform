@@ -218,9 +218,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
             if !validate_update_result.is_valid() {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                ),
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    ),
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
