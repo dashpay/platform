@@ -10,6 +10,7 @@ use dpp::consensus::basic::data_contract::{
 };
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use dpp::consensus::ConsensusError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -29,6 +30,7 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::StateTransitionLike;
 use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 
@@ -144,6 +146,24 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let old_data_contract = &contract_fetch_info.contract;
 
+        // Check if the contract is owned by the same identity
+        if old_data_contract.owner_id() != self.owner_id() {
+            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                    self,
+                ),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                vec![DataContractUpdatePermissionError::new(
+                    new_data_contract.id(),
+                    self.owner_id(),
+                )
+                .into()],
+            ));
+        }
+
         // Check version is bumped
         // Failure (version != previous version + 1): Keep ST and transform it to a nonce bump action.
         // How: A user pushed an update that was not the next version.
@@ -199,8 +219,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ));
         }
 
-        // We should now validate that new indexes contains all old indexes
-        // This is most easily done by using the index level construct
+        // Validate document types
+
+        // TODO: We need to check if any old document types are removed
 
         for (new_contract_document_type_name, new_contract_document_type) in
             new_data_contract.document_types()
@@ -213,6 +234,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 continue;
             };
 
+            // Validate document type config
+            // TODO: Move index and schema validation to the validate_update method as well?
             let validate_update_result = old_contract_document_type
                 .validate_update(new_contract_document_type, platform_version)?;
 
@@ -287,7 +310,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             }
         }
 
-        // Schema defs should be compatible
+        // Schema $defs should be compatible
 
         // TODO: WE need to combine defs with documents schema and and resolve all refs
         //  Having such full schema we can make sure that changes in defs are actually
