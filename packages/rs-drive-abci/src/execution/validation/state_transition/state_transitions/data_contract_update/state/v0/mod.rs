@@ -5,26 +5,18 @@ use dpp::block::epoch::Epoch;
 use serde_json::json;
 
 use dpp::consensus::basic::data_contract::{
-    DataContractInvalidIndexDefinitionUpdateError, IncompatibleDataContractSchemaError,
-    InvalidDataContractVersionError,
+    IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
 };
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
-use dpp::consensus::ConsensusError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::schema::{
-    validate_schema_compatibility, IncompatibleJsonSchemaOperation,
-};
-use dpp::data_contract::errors::DataContractError;
+use dpp::data_contract::document_type::schema::validate_schema_compatibility;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::data_contract::JsonValue;
-use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::{Value, ValueMap};
+use dpp::platform_value::Value;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
@@ -32,7 +24,6 @@ use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransitionLike;
-use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 
 use crate::error::execution::ExecutionError;
