@@ -6,7 +6,6 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
-use crate::data_contract::JsonValue;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -173,7 +172,7 @@ impl<'a> DocumentTypeRef<'a> {
             return Ok(SimpleConsensusValidationResult::new());
         }
 
-        let old_document_schema_json: JsonValue = match self.schema().clone().try_into() {
+        let old_document_schema_json = match self.schema().clone().try_into_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -186,19 +185,22 @@ impl<'a> DocumentTypeRef<'a> {
             }
         };
 
-        let new_document_schema_json: JsonValue =
-            match new_document_type.schema().clone().try_into() {
-                Ok(json_value) => json_value,
-                Err(e) => {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        DataContractError::ValueDecodingError(format!(
-                            "invalid new json schema structure for document type {}: {e}",
-                            self.name()
-                        ))
-                        .into(),
-                    ));
-                }
-            };
+        let new_document_schema_json = match new_document_type
+            .schema()
+            .clone()
+            .try_into_validating_json()
+        {
+            Ok(json_value) => json_value,
+            Err(e) => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DataContractError::ValueDecodingError(format!(
+                        "invalid new json schema structure for document type {}: {e}",
+                        self.name()
+                    ))
+                    .into(),
+                ));
+            }
+        };
 
         let compatibility_validation_result = validate_schema_compatibility(
             &old_document_schema_json,

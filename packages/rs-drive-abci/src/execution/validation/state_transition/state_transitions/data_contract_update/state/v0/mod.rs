@@ -24,7 +24,7 @@ use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::JsonValue;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::ValueMap;
+use dpp::platform_value::{Value, ValueMap};
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
@@ -220,8 +220,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ));
         }
 
-        // Validate updates for existing document types
-
+        // Validate updates for existing document types to make sure that previously created
+        // documents will be still valid with a new version of the data contract
         for (document_type_name, old_document_type) in old_data_contract.document_types() {
             // Make sure that existing document aren't removed
             let Some(new_document_type) =
@@ -264,13 +264,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         }
 
         // Schema $defs should be compatible
-
-        // TODO: WE need to combine defs with documents schema and and resolve all refs
-        //  Having such full schema we can make sure that changes in defs are actually
-        //  affect document schema. Current simplified solution just apply the same logic
-        //  as for document schema
-        if let Some(old_defs) = old_data_contract.schema_defs() {
-            let Some(new_defs) = self.data_contract().schema_defs() else {
+        if let Some(old_defs_map) = old_data_contract.schema_defs() {
+            // If new contract doesn't have $defs, it means that it's $defs was removed and compatibility is broken
+            let Some(new_defs_map) = self.data_contract().schema_defs() else {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                     BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                         self,
@@ -290,70 +286,60 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 ));
             };
 
-            // Old defs are in state so should be valid
-            let old_defs_json: JsonValue = old_defs
-                .to_json_value()
-                .map_err(ProtocolError::ValueError)?;
+            // If $defs is updated we need to make sure that our data contract is still compatible
+            // with previously created data
+            if old_defs_map != new_defs_map {
+                // both new and old $defs already validated as a part of new and old contract
+                let old_defs_json = Value::from(old_defs_map)
+                    .try_into_validating_json()
+                    .map_err(ProtocolError::ValueError)?;
 
-            let new_defs_json: JsonValue = match new_defs.to_json_value() {
-                Ok(json_value) => json_value,
-                Err(e) => {
+                let new_defs_json = Value::from(new_defs_map)
+                    .try_into_validating_json()
+                    .map_err(ProtocolError::ValueError)?;
+
+                let old_defs_schema = json!({
+                    "$defs": old_defs_json
+                });
+
+                let new_defs_schema = json!({
+                    "$defs": new_defs_json
+                });
+
+                // We do not allow to remove or modify $ref in document type schemas
+                // it means that compatible changes in $defs won't break the overall compatibility
+                // Make sure that updated $defs schema is compatible
+                let compatibility_validation_result = validate_schema_compatibility(
+                    &old_defs_schema,
+                    &new_defs_schema,
+                    platform_version,
+                )?;
+
+                if !compatibility_validation_result.is_valid() {
                     let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                         BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                             self,
                         ),
                     );
 
-                    let data_contract_error: DataContractError =
-                        (e, "json schema new defs invalid").into();
+                    let errors = compatibility_validation_result
+                        .errors
+                        .into_iter()
+                        .map(|operation| {
+                            IncompatibleDataContractSchemaError::new(
+                                self.data_contract().id(),
+                                operation.name,
+                                operation.path,
+                            )
+                            .into()
+                        })
+                        .collect();
 
                     return Ok(ConsensusValidationResult::new_with_data_and_errors(
                         bump_action,
-                        vec![ConsensusError::BasicError(BasicError::ContractError(
-                            data_contract_error,
-                        ))],
+                        errors,
                     ));
                 }
-            };
-
-            let old_defs_schema = json!({
-                "$defs": old_defs_json
-            });
-
-            let new_defs_schema = json!({
-                "$defs": new_defs_json
-            });
-
-            let compatibility_validation_result = validate_schema_compatibility(
-                &old_defs_schema,
-                &new_defs_schema,
-                platform_version,
-            )?;
-
-            if !compatibility_validation_result.is_valid() {
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                        self,
-                    ),
-                );
-
-                let errors = compatibility_validation_result
-                    .errors
-                    .into_iter()
-                    .map(|operation| {
-                        IncompatibleDataContractSchemaError::new(
-                            self.data_contract().id(),
-                            operation.name,
-                            operation.path,
-                        )
-                        .into()
-                    })
-                    .collect();
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    errors,
-                ));
             }
         }
 
