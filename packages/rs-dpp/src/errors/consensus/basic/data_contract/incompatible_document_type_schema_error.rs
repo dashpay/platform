@@ -20,11 +20,15 @@ pub struct IncompatibleDocumentTypeSchemaError {
 }
 
 impl IncompatibleDocumentTypeSchemaError {
-    pub fn new(document_type_name: String, operation: String, property_path: String) -> Self {
+    pub fn new(
+        document_type_name: impl Into<String>,
+        operation: impl Into<String>,
+        property_path: impl Into<String>,
+    ) -> Self {
         Self {
-            document_type_name,
-            operation,
-            property_path,
+            document_type_name: document_type_name.into(),
+            operation: operation.into(),
+            property_path: property_path.into(),
         }
     }
 

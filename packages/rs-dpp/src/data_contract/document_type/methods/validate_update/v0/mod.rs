@@ -36,7 +36,65 @@ impl<'a> DocumentTypeRef<'a> {
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {
-        // TODO: Missing verification for documents_can_be_deleted, documents_transferable, trade_mode, creation_restriction_mode
+        if new_document_type.creation_restriction_mode() != self.creation_restriction_mode() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change creation restriction mode: changing from {} to {}",
+                        self.creation_restriction_mode(),
+                        new_document_type.creation_restriction_mode()
+                    ),
+                )
+                .into(),
+            );
+        }
+
+        if new_document_type.trade_mode() != self.trade_mode() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change trade mode: changing from {} to {}",
+                        self.trade_mode(),
+                        new_document_type.trade_mode()
+                    ),
+                )
+                .into(),
+            );
+        }
+
+        if new_document_type.documents_transferable() != self.documents_transferable() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether its documents are transferable: changing from {} to {}",
+                        self.documents_transferable(),
+                        new_document_type.documents_transferable()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
+        if new_document_type.documents_can_be_deleted() != self.documents_can_be_deleted() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether its documents can be deleted: changing from {} to {}",
+                        self.documents_can_be_deleted(),
+                        new_document_type.documents_can_be_deleted()
+                    ),
+                )
+                    .into(),
+            );
+        }
 
         if new_document_type.documents_keep_history() != self.documents_keep_history() {
             return SimpleConsensusValidationResult::new_with_error(
