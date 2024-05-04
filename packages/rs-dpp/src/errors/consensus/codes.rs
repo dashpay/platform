@@ -93,6 +93,7 @@ impl ErrorWithCode for BasicError {
             Self::UnknownTransferableTypeError { .. } => 10243,
             Self::UnknownTradeModeError { .. } => 10244,
             Self::UnknownDocumentCreationRestrictionModeError { .. } => 10245,
+            Self::IncompatibleDocumentTypeSchemaError { .. } => 10246,
 
             // Document Errors: 10400-10499
             Self::DataContractNotPresentError { .. } => 10400,

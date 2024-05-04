@@ -220,10 +220,13 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ));
         }
 
-        // Make sure that existing document aren't removed
+        // Validate updates for existing document types
 
-        for document_type_name in old_data_contract.document_types().keys() {
-            if !new_data_contract.has_document_type_for_name(document_type_name) {
+        for (document_type_name, old_document_type) in old_data_contract.document_types() {
+            // Make sure that existing document aren't removed
+            let Some(new_document_type) =
+                old_data_contract.document_type_optional_for_name(document_type_name)
+            else {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                     BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                         self,
@@ -239,26 +242,12 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     )
                     .into()],
                 ));
-            }
-        }
-
-        // Validate updates for existing document types
-
-        for (new_contract_document_type_name, new_contract_document_type) in
-            new_data_contract.document_types()
-        {
-            let Some(old_contract_document_type) =
-                old_data_contract.document_type_optional_for_name(new_contract_document_type_name)
-            else {
-                // if it's a new document type (ie the old data contract didn't have it)
-                // then new indices on it are fine and we don't need to validate that configuration didn't change
-                continue;
             };
 
-            // Validate document type config
-            // TODO: Move index and schema validation to the validate_update method as well?
-            let validate_update_result = old_contract_document_type
-                .validate_update(new_contract_document_type, platform_version)?;
+            // Validate document type update rules
+            let validate_update_result = old_document_type
+                .as_ref()
+                .validate_update(new_document_type, platform_version)?;
 
             if !validate_update_result.is_valid() {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
@@ -271,63 +260,6 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     bump_action,
                     validate_update_result.errors,
                 ));
-            }
-
-            // We currently don't allow indexes to change
-            if new_contract_document_type.index_structure()
-                != old_contract_document_type.index_structure()
-            {
-                // We want to figure out what changed, so we compare one way then the other
-
-                // If the new contract document type doesn't contain all previous indexes
-                if let Some(non_subset_path) = new_contract_document_type
-                    .index_structure()
-                    .contains_subset_first_non_subset_path(
-                        old_contract_document_type.index_structure(),
-                    )
-                {
-                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                            self,
-                        ),
-                    );
-
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        bump_action,
-                        vec![BasicError::DataContractInvalidIndexDefinitionUpdateError(
-                            DataContractInvalidIndexDefinitionUpdateError::new(
-                                new_contract_document_type_name.clone(),
-                                non_subset_path,
-                            ),
-                        )
-                        .into()],
-                    ));
-                }
-
-                // If the old contract document type doesn't contain all new indexes
-                if let Some(non_subset_path) = old_contract_document_type
-                    .index_structure()
-                    .contains_subset_first_non_subset_path(
-                        new_contract_document_type.index_structure(),
-                    )
-                {
-                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                            self,
-                        ),
-                    );
-
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        bump_action,
-                        vec![BasicError::DataContractInvalidIndexDefinitionUpdateError(
-                            DataContractInvalidIndexDefinitionUpdateError::new(
-                                new_contract_document_type_name.clone(),
-                                non_subset_path,
-                            ),
-                        )
-                        .into()],
-                    ));
-                }
             }
         }
 
@@ -399,63 +331,29 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             )?;
 
             if !compatibility_validation_result.is_valid() {
-                let validation_result = convert_compatibility_to_consensus_validation_result(
-                    self,
-                    compatibility_validation_result,
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    ),
                 );
 
-                return Ok(validation_result);
-            }
-        }
+                let errors = compatibility_validation_result
+                    .errors
+                    .into_iter()
+                    .map(|operation| {
+                        IncompatibleDataContractSchemaError::new(
+                            self.data_contract().id(),
+                            operation.name,
+                            operation.path,
+                        )
+                        .into()
+                    })
+                    .collect();
 
-        for (document_type_name, old_document_schema) in old_data_contract.document_schemas() {
-            // The old document schema is in the state already so we are guaranteed that it can be transformed into a JSON value
-            let old_document_schema_json: JsonValue = old_document_schema
-                .clone()
-                .try_into()
-                .map_err(ProtocolError::ValueError)?;
-
-            let new_document_schema = new_data_contract
-                .document_type_optional_for_name(&document_type_name)
-                .map(|document_type| document_type.schema().clone())
-                .unwrap_or(ValueMap::new().into());
-
-            // The new document schema is not the state already so we are not guaranteed that it can be transformed into a JSON value
-            // If it can not we should throw a consensus validation error
-            let new_document_schema_json: JsonValue = match new_document_schema.clone().try_into() {
-                Ok(json_value) => json_value,
-                Err(e) => {
-                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                            self,
-                        ),
-                    );
-
-                    let data_contract_error: DataContractError =
-                        (e, "json schema new schema invalid").into();
-
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        bump_action,
-                        vec![ConsensusError::BasicError(BasicError::ContractError(
-                            data_contract_error,
-                        ))],
-                    ));
-                }
-            };
-
-            let compatibility_validation_result = validate_schema_compatibility(
-                &old_document_schema_json,
-                &new_document_schema_json,
-                platform_version,
-            )?;
-
-            if !compatibility_validation_result.is_valid() {
-                let validation_result = convert_compatibility_to_consensus_validation_result(
-                    self,
-                    compatibility_validation_result,
-                );
-
-                return Ok(validation_result);
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    errors,
+                ));
             }
         }
 
@@ -499,30 +397,4 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             }
         }
     }
-}
-
-fn convert_compatibility_to_consensus_validation_result(
-    state_transition: &DataContractUpdateTransition,
-    validation_result: SimpleValidationResult<IncompatibleJsonSchemaOperation>,
-) -> ConsensusValidationResult<StateTransitionAction> {
-    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-            state_transition,
-        ),
-    );
-
-    let errors = validation_result
-        .errors
-        .into_iter()
-        .map(|operation| {
-            IncompatibleDataContractSchemaError::new(
-                state_transition.data_contract().id(),
-                operation.name,
-                operation.path,
-            )
-            .into()
-        })
-        .collect();
-
-    return ConsensusValidationResult::new_with_data_and_errors(bump_action, errors);
 }

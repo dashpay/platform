@@ -7,6 +7,7 @@ mod document_types_are_missing_error;
 mod duplicate_index_error;
 mod duplicate_index_name_error;
 mod incompatible_data_contract_schema_error;
+mod incompatible_document_type_schema_error;
 mod incompatible_re2_pattern_error;
 mod invalid_compound_index_error;
 mod invalid_data_contract_id_error;
@@ -48,6 +49,7 @@ pub use system_property_index_already_present_error::*;
 pub use undefined_index_property_error::*;
 pub use unique_indices_limit_reached_error::*;
 
+pub use incompatible_document_type_schema_error::*;
 pub use invalid_document_type_name_error::*;
 pub use unknown_document_creation_restriction_mode_error::*;
 pub use unknown_security_level_error::*;

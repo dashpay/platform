@@ -30,7 +30,7 @@ impl IncompatibleDataContractSchemaErrorWasm {
 
     #[wasm_bindgen(js_name=getFieldPath)]
     pub fn get_field_path(&self) -> String {
-        self.inner.field_path()
+        self.inner.property_path()
     }
 
     #[wasm_bindgen(js_name=getCode)]

@@ -10,8 +10,8 @@ use crate::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
     DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
-    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
-    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
@@ -369,6 +369,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidDocumentTypeNameError(InvalidDocumentTypeNameError),
+
+    #[error(transparent)]
+    IncompatibleDocumentTypeSchemaError(IncompatibleDocumentTypeSchemaError),
 }
 
 impl From<BasicError> for ConsensusError {
