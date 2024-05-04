@@ -51,6 +51,16 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let action = self.transform_into_action_v0::<C>(
+            validation_mode,
+            execution_context,
+            platform_version,
+        )?;
+
+        if !action.is_valid() {
+            return Ok(action);
+        }
+
         let contract_fetch_info = platform.drive.get_contract_with_fetch_info_and_fee(
             self.data_contract().id().to_buffer(),
             Some(epoch),
@@ -74,16 +84,16 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                 BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
             );
 
-            Ok(ConsensusValidationResult::new_with_data_and_errors(
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
                 bump_action,
                 vec![StateError::DataContractAlreadyPresentError(
                     DataContractAlreadyPresentError::new(self.data_contract().id().to_owned()),
                 )
                 .into()],
-            ))
-        } else {
-            self.transform_into_action_v0::<C>(validation_mode, execution_context, platform_version)
+            ));
         }
+
+        Ok(action)
     }
 
     fn transform_into_action_v0<C: CoreRPCLike>(
