@@ -1,8 +1,7 @@
 /* eslint-disable no-console */
 import { Listr } from 'listr2';
-import { NETWORK_LOCAL } from '../../constants.js';
-
-const MIN_BLOCKS_BEFORE_DKG = 6;
+import { MIN_BLOCKS_BEFORE_DKG } from '../../constants.js';
+import waitForDKGWindowPass from '../../core/quorum/waitForDKGWindowPass.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -40,8 +39,8 @@ export default function stopNodeTaskFactory(
       },
       {
         title: 'Check node is participating in DKG',
-        enable: (ctx) => !ctx.isForce && config.get('network') !== NETWORK_LOCAL,
-        task: async (ctx, task) => {
+        enabled: (ctx) => !ctx.isForce && !ctx.isSafe,
+        task: async () => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
@@ -54,21 +53,20 @@ export default function stopNodeTaskFactory(
           const { active_dkgs: activeDkgs, next_dkg: nextDkg } = dkgInfo;
 
           if (activeDkgs !== 0 || nextDkg < MIN_BLOCKS_BEFORE_DKG) {
-            const agreement = await task.prompt({
-              type: 'toggle',
-              name: 'confirm',
-              header: 'Your node is currently participating in DKG exchange session, restarting may '
-                + 'result in PoSE ban.\n Do you want to proceed?',
-              message: 'Restart node?',
-              enabled: 'Yes',
-              disabled: 'No',
-            });
-
-            if (!agreement) {
-              throw new Error('Node is currently in the DKG window');
-            }
+            throw new Error('Your node is currently participating in DKG exchange session and '
+              + 'stopping it right now may result in PoSE ban. Try again later, or continue with --force flag');
           }
         },
+      },
+      {
+        title: 'Wait for DKG window to pass',
+        enabled: (ctx) => !ctx.isForce && ctx.isSafe,
+        task: async () => waitForDKGWindowPass(createRpcClient({
+          port: config.get('core.rpc.port'),
+          user: config.get('core.rpc.user'),
+          pass: config.get('core.rpc.password'),
+          host: await getConnectionHost(config, 'core', 'core.rpc.host'),
+        })),
       },
       {
         title: 'Save core node time',
