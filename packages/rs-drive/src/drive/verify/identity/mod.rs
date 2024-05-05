@@ -1,6 +1,7 @@
 mod verify_full_identities_by_public_key_hashes;
 mod verify_full_identity_by_identity_id;
 mod verify_full_identity_by_public_key_hash;
+mod verify_identities_contract_keys;
 mod verify_identity_balance_and_revision_for_identity_id;
 mod verify_identity_balance_for_identity_id;
 mod verify_identity_balances_for_identity_ids;

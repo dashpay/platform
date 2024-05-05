@@ -92,6 +92,20 @@ impl DataContractConfig {
             );
         }
 
+        // Validate: Documents can be deleted contract default did not change
+
+        if new_config.documents_can_be_deleted_contract_default()
+            != self.documents_can_be_deleted_contract_default()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractConfigUpdateError::new(
+                    contract_id,
+                    "contract can not change the default of whether documents can be deleted",
+                )
+                .into(),
+            );
+        }
+
         // Validate: Requires identity encryption bounded key did not change
 
         if new_config.requires_identity_encryption_bounded_key()

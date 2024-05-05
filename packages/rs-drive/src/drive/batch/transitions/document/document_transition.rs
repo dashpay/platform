@@ -36,6 +36,27 @@ impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
                     platform_version,
                 )
             }
+            DocumentTransitionAction::TransferAction(document_transfer_transition) => {
+                document_transfer_transition.into_high_level_document_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
+            }
+            DocumentTransitionAction::PurchaseAction(document_purchase_transition) => {
+                document_purchase_transition.into_high_level_document_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
+            }
+            DocumentTransitionAction::UpdatePriceAction(document_update_price_transition) => {
+                document_update_price_transition.into_high_level_document_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
+            }
             DocumentTransitionAction::BumpIdentityDataContractNonce(
                 bump_identity_contract_nonce_action,
             ) => bump_identity_contract_nonce_action

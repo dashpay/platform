@@ -481,6 +481,43 @@
       ],
       "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
     },
+    "documentsKeepHistory": {
+      "type": "boolean",
+      "description": "True if the documents keep all their history, default is false"
+    },
+    "documentsMutable": {
+      "type": "boolean",
+      "description": "True if the documents are mutable, default is true"
+    },
+    "canBeDeleted": {
+      "type": "boolean",
+      "description": "True if the documents can be deleted, default is true"
+    },
+    "transferable": {
+      "type": "integer",
+      "enum": [
+        0,
+        1
+      ],
+      "description": "Transferable without a marketplace sell. 0 - Never, 1 - Always"
+    },
+    "tradeMode": {
+      "type": "integer",
+      "enum": [
+        0,
+        1
+      ],
+      "description": "Built in marketplace system. 0 - None, 1 - Direct purchase (The user can buy the item without the need for an approval)"
+    },
+    "creationRestrictionMode": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2
+      ],
+      "description": "Restrictions of document creation. 0 - No restrictions, 1 - Owner only, 2 - No creation (System Only)"
+    },
     "requiresIdentityEncryptionBoundedKey": {
       "type": "integer",
       "enum": [
@@ -515,7 +552,14 @@
         "$ownerId": true,
         "$revision": true,
         "$createdAt": true,
-        "$updatedAt": true
+        "$updatedAt": true,
+        "$transferredAt": true,
+        "$createdAtBlockHeight": true,
+        "$updatedAtBlockHeight": true,
+        "$transferredAtBlockHeight": true,
+        "$createdAtCoreBlockHeight": true,
+        "$updatedAtCoreBlockHeight": true,
+        "$transferredAtCoreBlockHeight": true
       },
       "propertyNames": {
         "oneOf": [
@@ -530,7 +574,14 @@
               "$ownerId",
               "$revision",
               "$createdAt",
-              "$updatedAt"
+              "$updatedAt",
+              "$transferredAt",
+              "$createdAtBlockHeight",
+              "$updatedAtBlockHeight",
+              "$transferredAtBlockHeight",
+              "$createdAtCoreBlockHeight",
+              "$updatedAtCoreBlockHeight",
+              "$transferredAtCoreBlockHeight"
             ]
           }
         ]

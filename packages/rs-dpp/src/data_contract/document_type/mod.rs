@@ -10,6 +10,7 @@ pub use index_level::IndexLevel;
 
 #[cfg(feature = "random-documents")]
 pub mod random_document;
+pub mod restricted_creation;
 pub mod schema;
 pub mod v0;
 
@@ -26,6 +27,12 @@ use std::collections::BTreeMap;
 mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
+
+    pub const CAN_BE_DELETED: &str = "canBeDeleted";
+    pub const TRANSFERABLE: &str = "transferable";
+    pub const TRADE_MODE: &str = "tradeMode";
+
+    pub const CREATION_RESTRICTION_MODE: &str = "creationRestrictionMode";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
     pub const REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityEncryptionBoundedKey";
@@ -39,6 +46,7 @@ mod property_names {
     pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
+    pub const TRANSFERRED_AT: &str = "$transferredAt";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
     pub const MIN_LENGTH: &str = "minLength";

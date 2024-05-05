@@ -1,6 +1,6 @@
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::flags::StorageFlags;
+use crate::drive::flags::{MergingOwnersStrategy, StorageFlags};
 use crate::drive::grove_operations::push_drive_operation_result;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -59,19 +59,19 @@ impl Drive {
                 // This could be none only because the old element didn't exist
                 // If they were empty we get an error
                 let maybe_old_storage_flags = StorageFlags::map_some_element_flags_ref(&old_flags)
-                    .map_err(|_| {
+                    .map_err(|e| {
                         GroveError::JustInTimeElementFlagsClientError(
-                            "drive did not understand flags of old item being updated",
+                            format!("drive did not understand flags of old item being updated {}",e)
                         )
                     })?;
                 let new_storage_flags = StorageFlags::from_element_flags_ref(new_flags)
-                    .map_err(|_| {
+                    .map_err(|e| {
                         GroveError::JustInTimeElementFlagsClientError(
-                            "drive did not understand updated item flag information",
+                            format!("drive did not understand updated item flag information {}", e)
                         )
                     })?
                     .ok_or(GroveError::JustInTimeElementFlagsClientError(
-                        "removing flags from an item with flags is not allowed",
+                        "removing flags from an item with flags is not allowed".to_string()
                     ))?;
                 match &cost.transition_type() {
                     OperationStorageTransitionType::OperationUpdateBiggerSize => {
@@ -79,10 +79,11 @@ impl Drive {
                             maybe_old_storage_flags,
                             new_storage_flags,
                             cost.added_bytes,
+                            MergingOwnersStrategy::RaiseIssue,
                         )
-                        .map_err(|_| {
+                        .map_err(|e| {
                             GroveError::JustInTimeElementFlagsClientError(
-                                "drive could not combine storage flags (new flags were bigger)",
+                                format!("drive could not combine storage flags (new flags were bigger): {}", e)
                             )
                         })?;
                         let combined_flags = combined_storage_flags.to_element_flags();
@@ -100,10 +101,11 @@ impl Drive {
                             maybe_old_storage_flags,
                             new_storage_flags,
                             &cost.removed_bytes,
+                            MergingOwnersStrategy::RaiseIssue,
                         )
-                        .map_err(|_| {
+                        .map_err(|e| {
                             GroveError::JustInTimeElementFlagsClientError(
-                                "drive could not combine storage flags (new flags were smaller)",
+                                format!("drive could not combine storage flags (new flags were smaller): {}",e)
                             )
                         })?;
                         let combined_flags = combined_storage_flags.to_element_flags();
@@ -121,9 +123,9 @@ impl Drive {
             },
             |flags, removed_key_bytes, removed_value_bytes| {
                 let maybe_storage_flags =
-                    StorageFlags::from_element_flags_ref(flags).map_err(|_| {
+                    StorageFlags::from_element_flags_ref(flags).map_err(|e| {
                         GroveError::SplitRemovalBytesClientError(
-                            "drive did not understand flags of item being updated",
+                            format!("drive did not understand flags of item being updated: {}",e)
                         )
                     })?;
                 // if there were no flags before then the new flags are used

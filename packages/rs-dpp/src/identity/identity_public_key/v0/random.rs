@@ -1,3 +1,4 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType::ECDSA_SECP256K1;
 use crate::identity::Purpose::AUTHENTICATION;
@@ -121,6 +122,7 @@ impl IdentityPublicKeyV0 {
         purpose: Purpose,
         security_level: SecurityLevel,
         key_type: KeyType,
+        contract_bounds: Option<ContractBounds>,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, Vec<u8>), ProtocolError> {
         let read_only = false;
@@ -135,7 +137,7 @@ impl IdentityPublicKeyV0 {
             read_only,
             disabled_at: None,
             data,
-            contract_bounds: None,
+            contract_bounds,
         };
         Ok((identity_public_key, private_data))
     }

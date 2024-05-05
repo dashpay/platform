@@ -31,12 +31,47 @@ pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
             "$createdAt" => {
                 return Ok(self
                     .created_at()
-                    .map(|time| DocumentPropertyType::encode_date_timestamp(time).unwrap()))
+                    .map(DocumentPropertyType::encode_date_timestamp))
+            }
+            "$createdAtBlockHeight" => {
+                return Ok(self
+                    .created_at_block_height()
+                    .map(DocumentPropertyType::encode_u64))
+            }
+            "$createdAtCoreBlockHeight" => {
+                return Ok(self
+                    .created_at_core_block_height()
+                    .map(DocumentPropertyType::encode_u32))
             }
             "$updatedAt" => {
                 return Ok(self
                     .updated_at()
-                    .map(|time| DocumentPropertyType::encode_date_timestamp(time).unwrap()))
+                    .map(DocumentPropertyType::encode_date_timestamp))
+            }
+            "$updatedAtBlockHeight" => {
+                return Ok(self
+                    .updated_at_block_height()
+                    .map(DocumentPropertyType::encode_u64))
+            }
+            "$updatedAtCoreBlockHeight" => {
+                return Ok(self
+                    .updated_at_core_block_height()
+                    .map(DocumentPropertyType::encode_u32))
+            }
+            "$transferredAt" => {
+                return Ok(self
+                    .transferred_at()
+                    .map(DocumentPropertyType::encode_date_timestamp))
+            }
+            "$transferredAtBlockHeight" => {
+                return Ok(self
+                    .transferred_at_block_height()
+                    .map(DocumentPropertyType::encode_u64))
+            }
+            "$transferredAtCoreBlockHeight" => {
+                return Ok(self
+                    .transferred_at_core_block_height()
+                    .map(DocumentPropertyType::encode_u32))
             }
             _ => {}
         }

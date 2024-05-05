@@ -1,13 +1,11 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_response::get_path_elements_response_v0::Elements;
 use dapi_grpc::platform::v0::get_path_elements_response::{
     get_path_elements_response_v0, GetPathElementsResponseV0,
 };
-use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::check_validation_result_with_data;
 
 use crate::error::query::QueryError;
@@ -86,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_query_total_system_credits_from_path_elements_query() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let platform_version = PlatformVersion::latest();
 

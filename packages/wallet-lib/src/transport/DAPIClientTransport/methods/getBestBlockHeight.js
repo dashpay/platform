@@ -4,7 +4,7 @@ module.exports = async function getBestBlockHeight() {
   logger.silly('DAPIClientTransport.getBestBlockHeight');
 
   // Previously we would have done getBlock(hash).height
-  const { chain: { blocksCount } } = await this.getStatus();
+  const { chain: { blocksCount } } = await this.getBlockchainStatus();
 
   return blocksCount;
 };

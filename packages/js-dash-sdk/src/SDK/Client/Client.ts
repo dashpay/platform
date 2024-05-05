@@ -165,6 +165,7 @@ export class Client extends EventEmitter {
 
     options = {
       index: this.defaultAccountIndex,
+      synchronize: true,
       ...options,
     };
 

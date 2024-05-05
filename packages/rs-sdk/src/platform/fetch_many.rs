@@ -12,7 +12,8 @@ use crate::{
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetIdentitiesContractKeysRequest, GetIdentityKeysRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
@@ -20,7 +21,7 @@ use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::identity::KeyID;
+use dpp::identity::{KeyID, Purpose};
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
@@ -36,7 +37,7 @@ use super::LimitQuery;
 /// To fetch multiple objects from the platform, you need to define some query (criteria that fetched objects must match)
 /// and use [FetchMany::fetch_many()] for your object type.
 ///
-/// You can also use conveniance methods:
+/// You can also use convenience methods:
 /// * [FetchMany::fetch_many_by_identifiers()] - to fetch multiple objects by their identifiers,
 /// * [FetchMany::fetch_many_with_limit()] - to fetch not more than `limit` objects.
 ///
@@ -149,7 +150,7 @@ where
 
     /// Fetch multiple objects from the Platform by their identifiers.
     ///
-    /// Conveniance method to fetch multiple objects by their identifiers.
+    /// Convenience method to fetch multiple objects by their identifiers.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
     ///
     /// ## Parameters

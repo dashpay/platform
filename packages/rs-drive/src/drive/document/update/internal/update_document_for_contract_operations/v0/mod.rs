@@ -28,6 +28,7 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -51,7 +52,9 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if !document_and_contract_info.document_type.documents_mutable() {
+        if !document_and_contract_info.document_type.requires_revision()
+        // if it requires revision then there are reasons for us to be able to update in drive
+        {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
             )));
@@ -195,7 +198,7 @@ impl Drive {
                 .get_raw_for_document_type(
                     &top_index_property.name,
                     document_type,
-                    owner_id,
+                    None, // We want to use the old owner id
                     None,
                     platform_version,
                 )?
@@ -266,7 +269,7 @@ impl Drive {
                     .get_raw_for_document_type(
                         &index_property.name,
                         document_type,
-                        owner_id,
+                        None, // We want to use the old owner_id
                         None,
                         platform_version,
                     )?

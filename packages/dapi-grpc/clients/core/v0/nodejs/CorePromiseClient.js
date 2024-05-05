@@ -24,8 +24,10 @@ const {
       platform: {
         dapi: {
           v0: {
-            GetStatusRequest: PBJSGetStatusRequest,
-            GetStatusResponse: PBJSGetStatusResponse,
+            GetBlockchainStatusRequest: PBJSGetBlockchainStatusRequest,
+            GetBlockchainStatusResponse: PBJSGetBlockchainStatusResponse,
+            GetMasternodeStatusRequest: PBJSGetMasternodeStatusRequest,
+            GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
             GetBlockRequest: PBJSGetBlockRequest,
             GetBlockResponse: PBJSGetBlockResponse,
             BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
@@ -46,7 +48,8 @@ const {
 } = require('./core_pbjs');
 
 const {
-  GetStatusResponse: ProtocGetStatusResponse,
+  GetBlockchainStatusResponse: ProtocGetBlockchainStatusResponse,
+  GetMasternodeStatusResponse: ProtocGetMasternodeStatusResponse,
   GetBlockResponse: ProtocGetBlockResponse,
   BroadcastTransactionResponse: ProtocBroadcastTransactionResponse,
   GetTransactionResponse: ProtocGetTransactionResponse,
@@ -79,8 +82,12 @@ class CorePromiseClient {
 
     this.client = new CoreNodeJSClient(strippedHostname, credentials, options);
 
-    this.client.getStatus = promisify(
-      this.client.getStatus.bind(this.client),
+    this.client.getBlockchainStatus = promisify(
+      this.client.getBlockchainStatus.bind(this.client),
+    );
+
+    this.client.getMasternodeStatus = promisify(
+      this.client.getMasternodeStatus.bind(this.client),
     );
 
     this.client.getBlock = promisify(
@@ -101,28 +108,28 @@ class CorePromiseClient {
   }
 
   /**
-   * @param {!GetStatusRequest} getStatusRequest
+   * @param {!GetBlockchainStatusRequest} getBlockchainStatusRequest
    * @param {?Object<string, string>} metadata
    * @param {CallOptions} [options={}]
-   * @return {Promise<!GetStatusResponse>}
+   * @return {Promise<!GetBlockchainStatusResponse>}
    */
-  getStatus(getStatusRequest, metadata = {}, options = {}) {
+  getBlockchainStatus(getBlockchainStatusRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
 
-    return this.client.getStatus(
-      getStatusRequest,
+    return this.client.getBlockchainStatus(
+      getBlockchainStatusRequest,
       convertObjectToMetadata(metadata),
       {
         interceptors: [
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
-              ProtocGetStatusResponse,
-              PBJSGetStatusResponse,
+              ProtocGetBlockchainStatusResponse,
+              PBJSGetBlockchainStatusResponse,
             ),
             protobufToJsonFactory(
-              PBJSGetStatusRequest,
+              PBJSGetBlockchainStatusRequest,
             ),
           ),
         ],
@@ -154,6 +161,37 @@ class CorePromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetBlockRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetMasternodeStatusRequest} getMasternodeStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetMasternodeStatusResponse>}
+   */
+  getMasternodeStatus(getMasternodeStatusRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getMasternodeStatus(
+      getMasternodeStatusRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetMasternodeStatusResponse,
+              PBJSGetMasternodeStatusResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetMasternodeStatusRequest,
             ),
           ),
         ],

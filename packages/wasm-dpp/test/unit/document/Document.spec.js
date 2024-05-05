@@ -90,6 +90,9 @@ describe('Document', () => {
       $updatedAt: now,
       $updatedAtBlockHeight: 1,
       $updatedAtCoreBlockHeight: 1,
+      $transferredAt: null,
+      $transferredAtBlockHeight: null,
+      $transferredAtCoreBlockHeight: null,
     };
 
     rawDocumentWithBuffers = {
@@ -105,6 +108,9 @@ describe('Document', () => {
       $updatedAt: now,
       $updatedAtBlockHeight: 1,
       $updatedAtCoreBlockHeight: 1,
+      $transferredAt: null,
+      $transferredAtBlockHeight: null,
+      $transferredAtCoreBlockHeight: null,
     };
 
     document = new ExtendedDocument(rawDocument, dataContract);
@@ -291,6 +297,9 @@ describe('Document', () => {
         $ownerId: await generateRandomIdentifierAsync(),
         $id: await generateRandomIdentifierAsync(),
         $updatedAt: updatedAt,
+        $transferredAt: null,
+        $transferredAtBlockHeight: null,
+        $transferredAtCoreBlockHeight: null,
         $type: 'test',
         ...data,
       };
@@ -415,7 +424,7 @@ describe('Document', () => {
     it('should return serialized Document', () => {
       const buffer = document.toBuffer();
       expect(buffer).to.be.instanceOf(Buffer);
-      expect(buffer.length).to.equal(647);
+      expect(buffer.length).to.equal(649);
     });
 
     // TODO: remove or replace?
