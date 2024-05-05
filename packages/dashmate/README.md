@@ -398,7 +398,8 @@ USAGE
   $ dashmate group stop [-v] [--group <value>] [-f]
 
 FLAGS
-  -f, --force      force stop even if any service is running
+  -f, --force      force stop even if any is running
+  -s, --safe       wait for dkg before stop
   -v, --verbose    use verbose mode for output
   --group=<value>  group name to use
 ```
