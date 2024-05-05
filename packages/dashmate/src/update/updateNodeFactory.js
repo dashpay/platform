@@ -40,12 +40,23 @@ export default function updateNodeFactory(getServiceList, docker) {
                   .trim()
                   .split('\r\n')
                   .map((str) => JSON.parse(str))
-                  .filter((obj) => obj.status.startsWith('Status: '));
+                  .filter((obj) => obj?.status?.startsWith('Status: '));
 
-                if (status?.status.includes('Image is up to date for')) {
-                  updated = 'up to date';
-                } else if (status?.status.includes('Downloaded newer image for')) {
-                  updated = 'updated';
+                if (status) {
+                  if (status.status.includes('Image is up to date for')) {
+                    updated = 'up to date';
+                  } else if (status.status.includes('Downloaded newer image for')) {
+                    updated = 'updated';
+                  }
+                } else {
+                  if (process.env.DEBUG) {
+                    // eslint-disable-next-line no-console
+                    console.error('Failed to read docker json data, status not found');
+                  }
+
+                  resolve({
+                    name, title, image, updated: 'error',
+                  });
                 }
               });
               stream.on('error', () => {
