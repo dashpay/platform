@@ -39,7 +39,7 @@ export default function stopNodeTaskFactory(
       },
       {
         title: 'Check node is participating in DKG',
-        enabled: (ctx) => !ctx.isForce && !ctx.isSafe && config.get('core.masternode.enable'),
+        enabled: (ctx) => !ctx.isForce && !ctx.isSafe,
         task: async () => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
@@ -49,10 +49,9 @@ export default function stopNodeTaskFactory(
           });
 
           const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
+          const { next_dkg: nextDkg } = dkgInfo;
 
-          const { active_dkgs: activeDkgs, next_dkg: nextDkg } = dkgInfo;
-
-          if (activeDkgs !== 0 || nextDkg <= MIN_BLOCKS_BEFORE_DKG) {
+          if (nextDkg <= MIN_BLOCKS_BEFORE_DKG) {
             throw new Error('Your node is currently participating in DKG exchange session and '
               + 'stopping it right now may result in PoSE ban. Try again later, or continue with --force or --safe flags');
           }
@@ -60,7 +59,7 @@ export default function stopNodeTaskFactory(
       },
       {
         title: 'Wait for DKG window to pass',
-        enabled: (ctx) => !ctx.isForce && ctx.isSafe && config.get('core.masternode.enable'),
+        enabled: (ctx) => !ctx.isForce && ctx.isSafe,
         task: async () => waitForDKGWindowPass(createRpcClient({
           port: config.get('core.rpc.port'),
           user: config.get('core.rpc.user'),
