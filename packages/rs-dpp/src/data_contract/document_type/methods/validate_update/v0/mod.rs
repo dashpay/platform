@@ -19,13 +19,13 @@ impl<'a> DocumentTypeRef<'a> {
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let result = self.validate_config(new_document_type);
 
-        if result.is_valid() {
+        if !result.is_valid() {
             return Ok(result);
         }
 
         let result = self.validate_indices(new_document_type);
 
-        if result.is_valid() {
+        if !result.is_valid() {
             return Ok(result);
         }
 

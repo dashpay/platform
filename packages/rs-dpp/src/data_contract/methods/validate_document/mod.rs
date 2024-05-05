@@ -8,7 +8,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 pub use v0::*;
 
-impl DataContractValidationMethodsV0 for DataContract {
+impl DataContractDocumentValidationMethodsV0 for DataContract {
     fn validate_document(
         &self,
         name: &str,

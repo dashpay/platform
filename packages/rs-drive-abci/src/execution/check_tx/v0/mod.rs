@@ -638,7 +638,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 909520);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 905460);
 
         let check_result = platform
             .check_tx(

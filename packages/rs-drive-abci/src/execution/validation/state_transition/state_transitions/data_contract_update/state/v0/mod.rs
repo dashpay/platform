@@ -16,6 +16,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::data_contract::document_type::schema::validate_schema_compatibility;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 use dpp::platform_value::Value;
 
 use dpp::prelude::ConsensusValidationResult;
@@ -138,8 +139,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let old_data_contract = &contract_fetch_info.contract;
 
-        // Check if the contract is owned by the same identity
-        if old_data_contract.owner_id() != self.owner_id() {
+        let validation_result =
+            old_data_contract.validate_update(new_data_contract, platform_version)?;
+
+        if !validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                     self,
@@ -148,190 +151,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
                 bump_action,
-                vec![DataContractUpdatePermissionError::new(
-                    new_data_contract.id(),
-                    self.owner_id(),
-                )
-                .into()],
+                validation_result.errors,
             ));
-        }
-
-        // Check version is bumped
-        // Failure (version != previous version + 1): Keep ST and transform it to a nonce bump action.
-        // How: A user pushed an update that was not the next version.
-
-        let new_version = new_data_contract.version();
-        let old_version = old_data_contract.version();
-        if new_version < old_version || new_version - old_version != 1 {
-            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                ),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                vec![BasicError::InvalidDataContractVersionError(
-                    InvalidDataContractVersionError::new(old_version + 1, new_version),
-                )
-                .into()],
-            ));
-        }
-
-        // Validate that the config was not updated
-        // * Includes verifications that:
-        //     - Old contract is not read_only
-        //     - New contract is not read_only
-        //     - Keeps history did not change
-        //     - Can be deleted did not change
-        //     - Documents keep history did not change
-        //     - Documents can be deleted contract default did not change
-        //     - Documents mutable contract default did not change
-        //     - Requires identity encryption bounded key did not change
-        //     - Requires identity decryption bounded key did not change
-        // * Failure (contract does not exist): Keep ST and transform it to a nonce bump action.
-        // * How: A user pushed an update to a contract that changed its configuration.
-
-        let config_validation_result = old_data_contract.config().validate_config_update(
-            new_data_contract.config(),
-            new_data_contract.id(),
-            platform_version,
-        )?;
-
-        if !config_validation_result.is_valid() {
-            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                ),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                config_validation_result.errors,
-            ));
-        }
-
-        // Validate updates for existing document types to make sure that previously created
-        // documents will be still valid with a new version of the data contract
-        for (document_type_name, old_document_type) in old_data_contract.document_types() {
-            // Make sure that existing document aren't removed
-            let Some(new_document_type) =
-                old_data_contract.document_type_optional_for_name(document_type_name)
-            else {
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                        self,
-                    ),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![DocumentTypeUpdateError::new(
-                        new_data_contract.id(),
-                        document_type_name,
-                        "document type can't be removed",
-                    )
-                    .into()],
-                ));
-            };
-
-            // Validate document type update rules
-            let validate_update_result = old_document_type
-                .as_ref()
-                .validate_update(new_document_type, platform_version)?;
-
-            if !validate_update_result.is_valid() {
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                        self,
-                    ),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    validate_update_result.errors,
-                ));
-            }
-        }
-
-        // Schema $defs should be compatible
-        if let Some(old_defs_map) = old_data_contract.schema_defs() {
-            // If new contract doesn't have $defs, it means that it's $defs was removed and compatibility is broken
-            let Some(new_defs_map) = self.data_contract().schema_defs() else {
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                        self,
-                    ),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![BasicError::IncompatibleDataContractSchemaError(
-                        IncompatibleDataContractSchemaError::new(
-                            self.data_contract().id(),
-                            "remove".to_string(),
-                            "/$defs".to_string(),
-                        ),
-                    )
-                    .into()],
-                ));
-            };
-
-            // If $defs is updated we need to make sure that our data contract is still compatible
-            // with previously created data
-            if old_defs_map != new_defs_map {
-                // both new and old $defs already validated as a part of new and old contract
-                let old_defs_json = Value::from(old_defs_map)
-                    .try_into_validating_json()
-                    .map_err(ProtocolError::ValueError)?;
-
-                let new_defs_json = Value::from(new_defs_map)
-                    .try_into_validating_json()
-                    .map_err(ProtocolError::ValueError)?;
-
-                let old_defs_schema = json!({
-                    "$defs": old_defs_json
-                });
-
-                let new_defs_schema = json!({
-                    "$defs": new_defs_json
-                });
-
-                // We do not allow to remove or modify $ref in document type schemas
-                // it means that compatible changes in $defs won't break the overall compatibility
-                // Make sure that updated $defs schema is compatible
-                let compatibility_validation_result = validate_schema_compatibility(
-                    &old_defs_schema,
-                    &new_defs_schema,
-                    platform_version,
-                )?;
-
-                if !compatibility_validation_result.is_valid() {
-                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                            self,
-                        ),
-                    );
-
-                    let errors = compatibility_validation_result
-                        .errors
-                        .into_iter()
-                        .map(|operation| {
-                            IncompatibleDataContractSchemaError::new(
-                                self.data_contract().id(),
-                                operation.name,
-                                operation.path,
-                            )
-                            .into()
-                        })
-                        .collect();
-
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        bump_action,
-                        errors,
-                    ));
-                }
-            }
         }
 
         Ok(action)
