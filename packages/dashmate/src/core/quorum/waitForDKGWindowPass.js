@@ -25,7 +25,7 @@ export default async function waitForDKGWindowPass(rpcClient) {
     isInDKG = activeDkgs !== 0 || nextDkg <= MIN_BLOCKS_BEFORE_DKG;
 
     if (isInDKG && blockchainInfo.blocks > startBlock + startNextDKG + 1) {
-      throw new Error(`waitForDKGWindowPass deadline exceeded: dkg did not happen for ${startBlock + nextDkg} blocks`);
+      throw new Error(`waitForDKGWindowPass deadline exceeded: dkg did not happen for ${startBlock + nextDkg + 1} ${startNextDKG + 1} blocks`);
     }
   }
 }
