@@ -1,9 +1,9 @@
-import { Listr } from 'listr2'
-import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js'
-import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js'
+import { Listr } from 'listr2';
+import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
 export default class GroupRestartCommand extends GroupBaseCommand {
-  static description = 'Restart group nodes'
+  static description = 'Restart group nodes';
 
   static flags = {
     ...GroupBaseCommand.flags,
@@ -11,8 +11,8 @@ export default class GroupRestartCommand extends GroupBaseCommand {
       char: 's',
       description: 'wait for dkg before stop',
       default: false,
-    }
-  }
+    },
+  };
 
   /**
    * @param {Object} args
@@ -23,7 +23,7 @@ export default class GroupRestartCommand extends GroupBaseCommand {
    * @param {Config[]} configGroup
    * @return {Promise<void>}
    */
-  async runWithDependencies (
+  async runWithDependencies(
     args,
     {
       safe: isSafe,
@@ -34,7 +34,7 @@ export default class GroupRestartCommand extends GroupBaseCommand {
     startGroupNodesTask,
     configGroup,
   ) {
-    const groupName = configGroup[0].get('group')
+    const groupName = configGroup[0].get('group');
 
     const tasks = new Listr(
       {
@@ -67,15 +67,15 @@ export default class GroupRestartCommand extends GroupBaseCommand {
           showSubtasks: true,
         },
       },
-    )
+    );
 
     try {
       await tasks.run({
         isVerbose,
         isSafe,
-      })
+      });
     } catch (e) {
-      throw new MuteOneLineError(e)
+      throw new MuteOneLineError(e);
     }
   }
 }
