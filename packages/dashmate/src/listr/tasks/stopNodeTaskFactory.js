@@ -39,7 +39,7 @@ export default function stopNodeTaskFactory(
       },
       {
         title: 'Check node is participating in DKG',
-        enabled: (ctx) => !ctx.isForce && !ctx.isSafe,
+        enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && !ctx.isSafe,
         task: async () => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
@@ -59,7 +59,7 @@ export default function stopNodeTaskFactory(
       },
       {
         title: 'Wait for DKG window to pass',
-        enabled: (ctx) => !ctx.isForce && ctx.isSafe,
+        enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && ctx.isSafe,
         task: async () => waitForDKGWindowPass(createRpcClient({
           port: config.get('core.rpc.port'),
           user: config.get('core.rpc.user'),
