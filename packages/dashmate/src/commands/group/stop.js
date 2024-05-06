@@ -69,7 +69,7 @@ export default class GroupStopCommand extends GroupBaseCommand {
       await tasks.run({
         isVerbose,
         isForce,
-        isSafe
+        isSafe,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
