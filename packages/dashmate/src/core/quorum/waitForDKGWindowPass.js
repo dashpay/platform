@@ -6,16 +6,18 @@ import wait from '../../util/wait.js';
  * @return {Promise<void>}
  */
 export default async function waitForDKGWindowPass(rpcClient) {
-  const { result: startBlockchainInfo } = await rpcClient.getBlockchainInfo();
-  const { blocks: startBlock } = startBlockchainInfo;
+  const [startBlockCount, startDkgInfo] = await Promise
+    .all([rpcClient.getBlockCount(), rpcClient.quorum('dkginfo')]);
 
-  const { result: startNextDKGInfo } = await rpcClient.quorum('dkginfo');
+  const { result: startBlock } = startBlockCount;
+  const { result: startNextDKGInfo } = startDkgInfo;
+
   const { next_dkg: startNextDKG } = startNextDKGInfo;
 
   let isInDKG = true;
 
   while (isInDKG) {
-    await wait(1000);
+    await wait(10000);
 
     const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
     const { next_dkg: nextDkg } = dkgInfo;
