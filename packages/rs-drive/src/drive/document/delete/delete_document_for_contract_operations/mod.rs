@@ -8,7 +8,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;

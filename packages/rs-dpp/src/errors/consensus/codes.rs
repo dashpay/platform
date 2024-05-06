@@ -1,6 +1,6 @@
-use crate::consensus::signature::SignatureError;
+use crate::errors::consensus::signature::SignatureError;
 #[cfg(feature = "state-transition-validation")]
-use crate::consensus::state::data_trigger::DataTriggerError;
+use crate::errors::consensus::state::data_trigger::DataTriggerError;
 
 use crate::errors::consensus::{
     basic::BasicError, fee::fee_error::FeeError, state::state_error::StateError, ConsensusError,

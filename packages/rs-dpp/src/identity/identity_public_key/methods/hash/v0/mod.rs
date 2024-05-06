@@ -1,4 +1,4 @@
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 pub trait IdentityPublicKeyHashMethodsV0 {
     /// Get the original public key hash

@@ -1,21 +1,22 @@
-use crate::{prelude::Identifier, state_transition::StateTransitionType, BlsModule, ProtocolError};
+use crate::{state_transition::StateTransitionType, BlsModule, ProtocolError};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::AssetLockProved;
 use crate::identity::Identity;
-use crate::identity::KeyType::ECDSA_HASH160;
-use crate::prelude::AssetLockProof;
+use crate::identity::identity_public_key::KeyType::ECDSA_HASH160;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::serialization::Signable;
-use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
-use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+use crate::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use crate::state_transition::state_transitions::identity::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransition;
-use crate::version::PlatformVersion;
+use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]

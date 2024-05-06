@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -13,13 +13,14 @@ use thiserror::Error;
     references
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DuplicateDocumentTransitionsWithIndicesError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    references: Vec<(String, [u8; 32])>,
+    pub references: Vec<(String, [u8; 32])>,
 }
 
 impl DuplicateDocumentTransitionsWithIndicesError {

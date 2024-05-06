@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,15 +10,16 @@ use thiserror::Error;
 )]
 #[error("System property '{property_name}' is already indexed and can't be used in '{index_name}' index of '{document_type}' document")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct SystemPropertyIndexAlreadyPresentError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_type: String,
-    index_name: String,
-    property_name: String,
+    pub document_type: String,
+    pub index_name: String,
+    pub property_name: String,
 }
 
 impl SystemPropertyIndexAlreadyPresentError {

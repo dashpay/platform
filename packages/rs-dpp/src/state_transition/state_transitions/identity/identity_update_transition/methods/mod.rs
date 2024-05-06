@@ -2,13 +2,13 @@ mod v0;
 pub use v0::*;
 
 use crate::identity::signer::Signer;
-use crate::identity::{Identity, IdentityPublicKey, KeyID};
+use crate::identity::{Identity, identity_public_key::{IdentityPublicKey, KeyID}};
 
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 
 use crate::state_transition::StateTransition;
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 use crate::ProtocolError;
 
 use platform_version::version::PlatformVersion;

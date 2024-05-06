@@ -1,11 +1,11 @@
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
 use crate::state_transition::StateTransitionType::DocumentsBatch;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
 impl From<DocumentsBatchTransitionV0> for StateTransition {

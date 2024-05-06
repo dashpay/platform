@@ -1,10 +1,10 @@
 use crate::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::v0::DataContractV0;
 use crate::util::cbor_value::CborCanonicalMap;
 
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use ciborium::Value as CborValue;
 use platform_value::{Identifier, Value};
 use std::convert::TryFrom;

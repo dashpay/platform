@@ -8,10 +8,10 @@ mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::identity::KeyID;
+use crate::identity::identity_public_key::KeyID;
 
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
-use crate::ProtocolError;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::DocumentTransition;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
     derive(Serialize, Deserialize)
 )]
 #[derive(Default)]
+#[ferment_macro::export]
 pub struct DocumentsBatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,

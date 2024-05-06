@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use platform_value::{Value};
 use crate::identity::TimestampMillis;
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
-use crate::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::DocumentCreateTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 
 impl DocumentCreateTransitionV0Methods for DocumentCreateTransition {
     fn base(&self) -> &DocumentBaseTransition {

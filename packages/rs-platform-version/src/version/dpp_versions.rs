@@ -1,6 +1,7 @@
 use crate::version::{FeatureVersion, FeatureVersionBounds};
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DPPVersion {
     pub costs: CostVersions,
     pub validation: DPPValidationVersions,
@@ -15,17 +16,20 @@ pub struct DPPVersion {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct StateTransitionVersions {
     pub documents: DocumentTransitionVersions,
     pub identities: IdentityTransitionVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct IdentityTransitionVersions {
     pub asset_locks: IdentityTransitionAssetLockVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct IdentityTransitionAssetLockVersions {
     pub validate_asset_lock_transaction_structure: FeatureVersion,
     pub validate_instant_asset_lock_proof_structure: FeatureVersion,
@@ -33,27 +37,32 @@ pub struct IdentityTransitionAssetLockVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentTransitionVersions {
     pub documents_batch_transition: DocumentsBatchTransitionVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentsBatchTransitionVersions {
     pub validation: DocumentsBatchTransitionValidationVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentsBatchTransitionValidationVersions {
     pub find_duplicates_by_id: FeatureVersion,
     pub validate_base_structure: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct CostVersions {
     pub signature_verify: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DPPValidationVersions {
     pub validate_time_in_block_time_window: FeatureVersion,
     pub json_schema_validator: JsonSchemaValidatorVersions,
@@ -61,6 +70,7 @@ pub struct DPPValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DataContractValidationVersions {
     pub validate: FeatureVersion,
     pub validate_config_update: FeatureVersion,
@@ -71,6 +81,7 @@ pub struct DataContractValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct JsonSchemaValidatorVersions {
     pub new: FeatureVersion,
     pub validate: FeatureVersion,
@@ -78,11 +89,13 @@ pub struct JsonSchemaValidatorVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct StateTransitionMethodVersions {
     pub public_key_in_creation_methods: PublicKeyInCreationMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct PublicKeyInCreationMethodVersions {
     pub from_public_key_signed_with_private_key: FeatureVersion,
     pub from_public_key_signed_external: FeatureVersion,
@@ -93,6 +106,7 @@ pub struct PublicKeyInCreationMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct StateTransitionConversionVersions {
     pub identity_to_identity_create_transition: FeatureVersion,
     pub identity_to_identity_top_up_transition: FeatureVersion,
@@ -101,6 +115,7 @@ pub struct StateTransitionConversionVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct StateTransitionSerializationVersions {
     pub identity_public_key_in_creation: FeatureVersionBounds,
     pub identity_create_state_transition: FeatureVersionBounds,
@@ -118,11 +133,13 @@ pub struct StateTransitionSerializationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentFeatureVersionBounds {
     pub bounds: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct ContractVersions {
     /// This is how we serialize and deserialize a contract
     pub contract_serialization_version: FeatureVersionBounds,
@@ -135,23 +152,27 @@ pub struct ContractVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DataContractMethodVersions {
     pub validate_document: FeatureVersion,
     pub schema: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentTypeClassMethodVersions {
     pub try_from_schema: FeatureVersion,
     pub create_document_types_from_document_schemas: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentTypeIndexVersions {
     pub index_levels_from_indices: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentTypeVersions {
     pub index_versions: DocumentTypeIndexVersions,
     pub class_method_versions: DocumentTypeClassMethodVersions,
@@ -162,6 +183,7 @@ pub struct DocumentTypeVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentTypeMethodVersions {
     pub create_document_from_data: FeatureVersion,
     pub create_document_with_prevalidated_properties: FeatureVersion,
@@ -172,6 +194,7 @@ pub struct DocumentTypeMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentTypeSchemaVersions {
     pub enrich_with_base_schema: FeatureVersion,
     pub find_identifier_and_binary_paths: FeatureVersion,
@@ -181,6 +204,7 @@ pub struct DocumentTypeSchemaVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct RecursiveSchemaValidatorVersions {
     pub traversal_validator: FeatureVersion,
     pub byte_array_has_no_items_as_parent_validator: FeatureVersion,
@@ -188,6 +212,7 @@ pub struct RecursiveSchemaValidatorVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct IdentityVersions {
     /// This is the structure of the Identity as it is defined for code paths
     pub identity_structure_version: FeatureVersion,
@@ -196,12 +221,14 @@ pub struct IdentityVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct IdentityKeyTypeMethodVersions {
     pub random_public_key_data: FeatureVersion,
     pub random_public_and_private_key_data: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentVersions {
     // This is for the overall structure of the document, like DocumentV0
     pub document_structure_version: FeatureVersion,
@@ -213,6 +240,7 @@ pub struct DocumentVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DocumentMethodVersions {
     pub hash: FeatureVersion,
     pub get_raw_for_contract: FeatureVersion,

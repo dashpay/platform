@@ -1,12 +1,14 @@
 pub mod accessors;
-mod property;
-pub use property::*;
+pub mod property;
+// pub use property::*;
+pub use property::{array::ArrayItemType, DocumentProperty, DocumentPropertyType};
 pub mod class_methods;
-mod index;
+pub mod index;
 pub mod methods;
-pub use index::*;
-mod index_level;
-pub use index_level::IndexLevel;
+// pub use index::*;
+pub use index::{Index, IndexProperty, OrderBy};
+pub mod index_level;
+// pub use index_level::IndexLevel;
 
 #[cfg(feature = "random-documents")]
 pub mod random_document;
@@ -17,8 +19,8 @@ use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
 use crate::prelude::Revision;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
@@ -60,6 +62,7 @@ pub enum DocumentTypeMutRef<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, From)]
+#[ferment_macro::export]
 pub enum DocumentType {
     V0(DocumentTypeV0),
 }
@@ -132,7 +135,7 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
 
     fn unique_id_for_document_field(
         &self,
-        index_level: &IndexLevel,
+        index_level: &index_level::IndexLevel,
         base_event: [u8; 32],
     ) -> Vec<u8> {
         match self {

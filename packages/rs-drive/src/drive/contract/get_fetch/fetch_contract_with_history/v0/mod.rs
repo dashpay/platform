@@ -8,7 +8,7 @@ use dpp::data_contract::DataContract;
 
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, TransactionArg};
 use std::collections::BTreeMap;

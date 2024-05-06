@@ -42,8 +42,8 @@ pub fn mock_data_contract(
     use dpp::{
         data_contract::document_type::accessors::DocumentTypeV0Getters,
         platform_value::{platform_value, Value},
-        version::PlatformVersion,
     };
+    use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     let platform_version = PlatformVersion::latest();

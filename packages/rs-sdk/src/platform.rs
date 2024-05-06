@@ -16,13 +16,18 @@ pub mod types;
 pub use dapi_grpc::platform::v0::{self as proto};
 pub use dpp::{
     self as dpp,
+    data_contract::DataContract,
+    identity::Identity,
+    identity::identity_public_key::IdentityPublicKey,
     document::Document,
-    prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
+    prelude::Revision,
 };
+use dpp::platform_value;
 pub use drive::query::DriveQuery;
 pub use drive_proof_verifier::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use drive_proof_verifier::MockContextProvider;
+pub use platform_value::Identifier;
 pub use rs_dapi_client as dapi;
 pub use {
     document_query::DocumentQuery,

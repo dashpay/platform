@@ -9,7 +9,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use grovedb_costs::{CostResult, CostsExt, OperationCost};
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 use std::sync::Arc;

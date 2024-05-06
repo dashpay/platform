@@ -103,9 +103,9 @@ use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
     v0::DocumentTypeV0, DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
-use crate::identity::SecurityLevel;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::identity::identity_public_key::SecurityLevel;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use platform_value::{Identifier, Value};

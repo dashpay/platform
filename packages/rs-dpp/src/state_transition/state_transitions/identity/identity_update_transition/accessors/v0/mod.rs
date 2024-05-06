@@ -1,9 +1,9 @@
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::{
-    identity::KeyID,
-    prelude::{Identifier, Revision, TimestampMillis},
+    identity::identity_public_key::KeyID,
+    prelude::{Revision, TimestampMillis},
 };
-
+use platform_value::Identifier;
 pub trait IdentityUpdateTransitionAccessorsV0 {
     fn set_identity_id(&mut self, id: Identifier);
     fn identity_id(&self) -> Identifier;

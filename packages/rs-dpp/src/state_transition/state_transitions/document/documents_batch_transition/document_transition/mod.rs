@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
-use crate::prelude::Identifier;
+use platform_value::Identifier;
 use document_base_transition::DocumentBaseTransition;
 
 pub mod action_type;
@@ -15,13 +15,13 @@ pub mod document_replace_transition;
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use derive_more::Display;
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 use platform_value::Value;
 
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
@@ -68,6 +68,7 @@ pub trait DocumentTransitionV0Methods {
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[ferment_macro::export]
 pub enum DocumentTransition {
     #[display(fmt = "CreateDocumentTransition({})", "_0")]
     Create(DocumentCreateTransition),

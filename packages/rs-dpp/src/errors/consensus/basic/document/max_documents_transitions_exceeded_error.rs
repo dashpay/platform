@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 
 use crate::errors::ProtocolError;
@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("Amount of document transitions must be less or equal to {max_transitions}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct MaxDocumentsTransitionsExceededError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    max_transitions: u32,
+    pub max_transitions: u32,
 }
 
 impl MaxDocumentsTransitionsExceededError {

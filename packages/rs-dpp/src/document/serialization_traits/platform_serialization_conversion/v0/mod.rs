@@ -1,7 +1,6 @@
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
-use platform_version::version::FeatureVersion;
+use crate::errors::ProtocolError;
+use platform_version::version::{FeatureVersion, PlatformVersion};
 
 pub trait DocumentPlatformConversionMethodsV0 {
     /// Serializes the document.

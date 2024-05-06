@@ -1,10 +1,10 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::identity::KeyID;
+use crate::identity::identity_public_key::KeyID;
 
 use bincode::{Decode, Encode};
 
@@ -13,13 +13,14 @@ use bincode::{Decode, Encode};
 )]
 #[error("Identity key {public_key_id} has invalid signature")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIdentityKeySignatureError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    public_key_id: KeyID,
+    pub public_key_id: KeyID,
 }
 
 impl InvalidIdentityKeySignatureError {

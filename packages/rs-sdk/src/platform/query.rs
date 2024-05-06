@@ -10,8 +10,9 @@ use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeVoteStatusRequest, KeyRequestType,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
-use dpp::{block::epoch::EpochIndex, prelude::Identifier};
+use dpp::{block::epoch::EpochIndex, platform_value};
 use drive::query::DriveQuery;
+use platform_value::Identifier;
 use rs_dapi_client::transport::TransportRequest;
 
 use crate::{error::Error, platform::document_query::DocumentQuery};

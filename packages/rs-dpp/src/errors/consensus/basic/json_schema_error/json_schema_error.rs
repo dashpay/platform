@@ -1,6 +1,6 @@
-use crate::consensus::basic::json_schema_error::json_schema_error_data::JsonSchemaErrorData;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::json_schema_error::json_schema_error_data::JsonSchemaErrorData;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use jsonschema::ValidationError;
@@ -12,18 +12,19 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[error("JsonSchemaError: {error_summary}, path: {instance_path}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct JsonSchemaError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    error_summary: String,
-    keyword: String,
-    instance_path: String,
-    schema_path: String,
-    params: Value,
-    property_name: String,
+    pub error_summary: String,
+    pub keyword: String,
+    pub instance_path: String,
+    pub schema_path: String,
+    pub params: Value,
+    pub property_name: String,
 }
 
 impl<'a> From<ValidationError<'a>> for JsonSchemaError {

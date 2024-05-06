@@ -96,7 +96,7 @@ mod tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_document;
-    use dpp::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {

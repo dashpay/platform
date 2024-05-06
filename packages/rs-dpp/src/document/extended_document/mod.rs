@@ -8,7 +8,7 @@ pub(crate) mod v0;
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
 use crate::data_contract::DataContract;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 

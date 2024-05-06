@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

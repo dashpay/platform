@@ -5,7 +5,7 @@ mod types;
 mod value_conversion;
 mod version;
 
-use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use crate::identity::identity_public_key::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 
 use std::convert::TryFrom;
 
@@ -16,17 +16,17 @@ use platform_value::{BinaryData, Value};
 
 use crate::errors::ProtocolError;
 
-use crate::identity::contract_bounds::ContractBounds;
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use platform_serialization_derive::PlatformSignable;
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
-use crate::state_transition::public_key_in_creation::accessors::{
+use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
 };
-use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyInCreationMethodsV0;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::methods::IdentityPublicKeyInCreationMethodsV0;
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
@@ -34,6 +34,7 @@ pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
     Default, Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq,
 )]
 #[serde(rename_all = "camelCase")]
+#[ferment_macro::export]
 pub struct IdentityPublicKeyInCreationV0 {
     pub id: KeyID,
     #[serde(rename = "type")]

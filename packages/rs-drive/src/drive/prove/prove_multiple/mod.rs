@@ -4,7 +4,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 mod v0;

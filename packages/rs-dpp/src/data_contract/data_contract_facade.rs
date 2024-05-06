@@ -1,16 +1,15 @@
 use crate::data_contract::{DataContract, DataContractFactory};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
-use crate::prelude::Identifier;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use crate::util::entropy_generator::EntropyGenerator;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Value;
-
+use platform_value::Identifier;
 /// # Data Contract Facade
 ///
 /// This module acts as a simplified, high-level interface to a more complex

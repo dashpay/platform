@@ -35,13 +35,13 @@
 //! for removed data from the state.
 //!
 
-use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
-use crate::consensus::fee::fee_error::FeeError;
+use crate::errors::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+use crate::errors::consensus::fee::fee_error::FeeError;
 
 use crate::fee::fee_result::refunds::FeeRefunds;
 use crate::fee::fee_result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
-use crate::fee::Credits;
-use crate::ProtocolError;
+use crate::balances::credits::Credits;
+use crate::errors::ProtocolError;
 use platform_value::Identifier;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;

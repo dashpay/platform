@@ -1,7 +1,7 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use crate::identity::KeyID;
+use crate::identity::identity_public_key::KeyID;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("Identity Public Key #{public_key_index} is disabled")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IdentityPublicKeyIsDisabledError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    public_key_index: KeyID,
+    pub public_key_index: KeyID,
 }
 
 impl IdentityPublicKeyIsDisabledError {

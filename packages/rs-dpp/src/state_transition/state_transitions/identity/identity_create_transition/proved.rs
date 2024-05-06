@@ -1,6 +1,6 @@
 use crate::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
-use crate::prelude::AssetLockProof;
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
 use crate::ProtocolError;
 
 impl OptionallyAssetLockProved for IdentityCreateTransition {

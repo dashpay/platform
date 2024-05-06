@@ -2,8 +2,8 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::identity::core_script::CoreScript;
 
 use bincode::{Decode, Encode};
@@ -13,8 +13,9 @@ use bincode::{Decode, Encode};
 )]
 #[error("Output script must be either p2pkh or p2sh")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
-    output_script: CoreScript,
+    pub output_script: CoreScript,
 }
 
 /*

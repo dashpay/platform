@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,14 +10,15 @@ use thiserror::Error;
 )]
 #[error("Data Contract Id must be {}, got {}", bs58::encode(expected_id).into_string(), bs58::encode(invalid_id).into_string())]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidDataContractIdError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    expected_id: Vec<u8>,
-    invalid_id: Vec<u8>,
+    pub expected_id: Vec<u8>,
+    pub invalid_id: Vec<u8>,
 }
 
 impl InvalidDataContractIdError {

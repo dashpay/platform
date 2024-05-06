@@ -1,6 +1,6 @@
 use crate::balances::credits::{Creditable, MAX_CREDITS};
-use crate::fee::{Credits, SignedCredits};
-use crate::ProtocolError;
+use crate::balances::credits::{Credits, SignedCredits};
+use crate::errors::ProtocolError;
 
 /// The outcome of verifying credits
 #[derive(Copy, Clone, Debug)]

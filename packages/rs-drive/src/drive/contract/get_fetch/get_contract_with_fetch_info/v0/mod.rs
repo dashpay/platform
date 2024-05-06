@@ -7,7 +7,7 @@ use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalcula
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::sync::Arc;
 

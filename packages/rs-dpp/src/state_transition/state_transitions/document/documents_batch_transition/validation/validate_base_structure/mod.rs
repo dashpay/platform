@@ -1,4 +1,4 @@
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;

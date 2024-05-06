@@ -1,6 +1,7 @@
 use crate::version::FeatureVersion;
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct SystemDataContractVersions {
     pub withdrawals: FeatureVersion,
     pub dpns: FeatureVersion,

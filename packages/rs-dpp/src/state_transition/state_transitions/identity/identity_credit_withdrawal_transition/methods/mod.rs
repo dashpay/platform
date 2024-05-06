@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use platform_version::version::FeatureVersion;
 pub use v0::*;
 
@@ -8,9 +8,9 @@ use crate::identity::signer::Signer;
 use crate::identity::Identity;
 
 use crate::identity::core_script::CoreScript;
-use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use crate::state_transition::StateTransition;
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use crate::withdrawal::Pooling;
 use crate::ProtocolError;
 

@@ -1,19 +1,19 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0Getters};
 use crate::identity::signer::Signer;
-use crate::identity::SecurityLevel;
-use crate::prelude::IdentityPublicKey;
-use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
-use crate::state_transition::documents_batch_transition::document_transition::{
+use crate::identity::identity_public_key::SecurityLevel;
+use crate::identity::identity_public_key::IdentityPublicKey;
+use crate::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_create_transition::DocumentCreateTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::{
     DocumentReplaceTransition, DocumentTransition,
 };
-use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use crate::state_transition::documents_batch_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
 use crate::state_transition::StateTransition;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
 impl DocumentsBatchTransitionAccessorsV0 for DocumentsBatchTransitionV0 {

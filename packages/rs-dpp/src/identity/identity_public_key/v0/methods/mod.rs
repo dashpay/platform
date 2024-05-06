@@ -1,8 +1,8 @@
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::identity::KeyType;
+use crate::identity::identity_public_key::KeyType;
 use crate::util::hash::ripemd160_sha256;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use anyhow::anyhow;
 use dashcore::hashes::Hash;
 use dashcore::PublicKey as ECDSAPublicKey;

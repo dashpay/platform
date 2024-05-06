@@ -1,9 +1,8 @@
 use std::fmt::Debug;
 
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 
-use crate::prelude::Identifier;
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 
 use crate::state_transition::StateTransitionType;
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes};

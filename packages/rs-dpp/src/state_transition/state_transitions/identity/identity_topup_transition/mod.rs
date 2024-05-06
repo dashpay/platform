@@ -12,8 +12,8 @@ mod version;
 
 use fields::*;
 
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0Signable;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::ProtocolError;
@@ -45,6 +45,7 @@ use serde::{Deserialize, Serialize};
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_top_up_state_transition"
 )]
+#[ferment_macro::export]
 pub enum IdentityTopUpTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityTopUpTransitionV0),

@@ -18,6 +18,7 @@ pub mod property_names {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
+#[ferment_macro::export]
 pub struct DataContractInSerializationFormatV0 {
     /// A unique identifier for the data contract.
     pub id: Identifier,

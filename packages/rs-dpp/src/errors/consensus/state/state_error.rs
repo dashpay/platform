@@ -3,37 +3,38 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
-use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
-use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use crate::errors::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use crate::errors::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
+use crate::errors::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 #[cfg(feature = "state-transition-validation")]
-use crate::consensus::state::data_trigger::DataTriggerError;
-use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
-use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
-use crate::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
-use crate::consensus::state::document::document_timestamp_window_violation_error::DocumentTimestampWindowViolationError;
-use crate::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
-use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
-use crate::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
-use crate::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
-use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
-use crate::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
-use crate::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
-use crate::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
-use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
-use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
-use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
-use crate::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
-use crate::consensus::state::identity::{
-    IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
-};
-use crate::consensus::ConsensusError;
-use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
-use crate::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
+use crate::errors::consensus::state::data_trigger::DataTriggerError;
+use crate::errors::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
+use crate::errors::consensus::state::document::document_not_found_error::DocumentNotFoundError;
+use crate::errors::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
+use crate::errors::consensus::state::document::document_timestamp_window_violation_error::DocumentTimestampWindowViolationError;
+use crate::errors::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
+use crate::errors::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
+use crate::errors::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
+use crate::errors::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
+use crate::errors::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
+use crate::errors::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
+use crate::errors::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
+use crate::errors::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
+use crate::errors::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
+use crate::errors::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use crate::errors::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
+use crate::errors::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
+use crate::errors::consensus::state::identity::identity_already_exists_error::IdentityAlreadyExistsError;
+use crate::errors::consensus::state::identity::identity_insufficient_balance_error::IdentityInsufficientBalanceError;
+use crate::errors::consensus::ConsensusError;
+use crate::errors::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use crate::errors::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
 
-use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
+// use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
+use crate::errors::consensus::state::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
 #[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
+#[ferment_macro::export]
 pub enum StateError {
     /*
 

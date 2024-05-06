@@ -12,8 +12,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::state_transition::documents_batch_transition::document_base_transition::property_names;
-use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::property_names;
+use platform_value::Identifier;
+use crate::{data_contract::DataContract, errors::ProtocolError};
 
 #[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(
@@ -27,6 +28,7 @@ use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Iden
     "document_type_name",
     "data_contract_id"
 )]
+#[ferment_macro::export]
 pub struct DocumentBaseTransitionV0 {
     /// The document ID
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$id"))]

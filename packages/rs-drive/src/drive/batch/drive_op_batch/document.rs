@@ -16,7 +16,7 @@ use dpp::prelude::Identifier;
 
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;

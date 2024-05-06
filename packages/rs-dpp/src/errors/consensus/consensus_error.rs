@@ -3,13 +3,13 @@ use bincode;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-use crate::consensus::state::state_error::StateError;
+use crate::errors::consensus::state::state_error::StateError;
 
-use crate::consensus::fee::fee_error::FeeError;
-use crate::consensus::signature::SignatureError;
+use crate::errors::consensus::fee::fee_error::FeeError;
+use crate::errors::consensus::signature::SignatureError;
 
 #[cfg(test)]
-use crate::consensus::test_consensus_error::TestConsensusError;
+use crate::errors::consensus::test_consensus_error::TestConsensusError;
 
 use crate::errors::consensus::basic::BasicError;
 
@@ -20,6 +20,7 @@ use crate::errors::consensus::basic::BasicError;
 )]
 #[platform_serialize(limit = 2000)]
 #[error(transparent)]
+#[ferment_macro::export]
 pub enum ConsensusError {
     /*
 

@@ -1,10 +1,10 @@
-use crate::identity::KeyType;
+use crate::identity::identity_public_key::KeyType;
 
 use serde::{Deserialize, Serialize};
 
 use crate::validation::SimpleConsensusValidationResult;
-use crate::version::PlatformVersion;
-use crate::{BlsModule, ProtocolError};
+use platform_version::version::PlatformVersion;
+use crate::{BlsModule, errors::ProtocolError};
 use platform_value::Value;
 
 pub trait Signable {

@@ -16,7 +16,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::BTreeMap;
 use std::fmt;
 
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 
 use crate::document::document_methods::{
@@ -24,12 +24,12 @@ use crate::document::document_methods::{
 };
 
 use crate::identity::TimestampMillis;
-use crate::prelude::Identifier;
 use crate::prelude::Revision;
 
 /// Documents contain the data that goes into data contracts.
 #[derive(Clone, Debug, PartialEq, Default)]
 #[cfg_attr(feature = "document-serde-conversion", derive(Serialize, Deserialize))]
+#[ferment_macro::export]
 pub struct DocumentV0 {
     /// The unique document ID.
     #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$id"))]

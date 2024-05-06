@@ -4,6 +4,7 @@ use crate::DPPError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Default)]
 #[error("Asset Lock transaction output not found")]
+#[ferment_macro::export]
 pub struct AssetLockOutputNotFoundError {}
 
 impl AssetLockOutputNotFoundError {

@@ -1,6 +1,6 @@
 use crate::identity::Identity;
-use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
-
+use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::LATEST_PLATFORM_VERSION;
 /// Versions
 impl Identity {
     /// Returns the default FeatureVersion for a given platform version.

@@ -4,10 +4,10 @@ use platform_value::Bytes32;
 use platform_version::version::PlatformVersion;
 
 use crate::document::Document;
-use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::DocumentTransition;
 
-use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 
 pub fn get_document_transitions_fixture<'a>(
     documents: impl IntoIterator<

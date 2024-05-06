@@ -1,16 +1,15 @@
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 
 use crate::{
-    prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
 
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::IdentityUpdate;
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 
 impl From<IdentityUpdateTransitionV0> for StateTransition {
     fn from(value: IdentityUpdateTransitionV0) -> Self {

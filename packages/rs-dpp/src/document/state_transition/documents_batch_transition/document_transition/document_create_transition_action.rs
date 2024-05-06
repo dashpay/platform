@@ -5,7 +5,7 @@ use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 use crate::document::Document;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

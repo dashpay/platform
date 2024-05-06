@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use dashcore::Txid;
@@ -11,6 +11,7 @@ use thiserror::Error;
 )]
 #[error("`Instant Lock transaction {instant_lock_transaction_id:?} and Asset lock transaction {asset_lock_transaction_id:?} mismatch`")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IdentityAssetLockProofLockedTransactionMismatchError {
     /*
 
@@ -19,10 +20,10 @@ pub struct IdentityAssetLockProofLockedTransactionMismatchError {
     */
     #[platform_serialize(with_serde)]
     #[bincode(with_serde)]
-    instant_lock_transaction_id: Txid,
+    pub instant_lock_transaction_id: Txid,
     #[platform_serialize(with_serde)]
     #[bincode(with_serde)]
-    asset_lock_transaction_id: Txid,
+    pub asset_lock_transaction_id: Txid,
 }
 
 impl IdentityAssetLockProofLockedTransactionMismatchError {

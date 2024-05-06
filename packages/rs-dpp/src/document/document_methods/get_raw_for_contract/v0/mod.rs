@@ -3,8 +3,8 @@ use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::document_methods::DocumentGetRawForDocumentTypeV0;
 use crate::document::DocumentV0Getters;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 
 pub trait DocumentGetRawForContractV0: DocumentV0Getters + DocumentGetRawForDocumentTypeV0 {
     /// Return a value given the path to its key and the document type for a contract.

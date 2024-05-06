@@ -5,11 +5,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 
 use crate::error::Error;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 use crate::drive::verify::RootHash;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 use std::iter::FromIterator;
 

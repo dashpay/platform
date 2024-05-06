@@ -19,8 +19,9 @@ use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
+use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::prelude::{DataContract, Identifier, Identity};
+use dpp::identity::Identity;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
@@ -32,10 +33,12 @@ use drive::drive::identity::key::fetch::{
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::DriveQuery;
+use platform_value::Identifier;
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use std::sync::Arc;
+use dpp::platform_value;
 
 use crate::verify::verify_tenderdash_proof;
 

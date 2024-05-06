@@ -1,7 +1,7 @@
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::prelude::DataContract;
+use crate::data_contract::DataContract;
 use crate::version::PlatformVersionCurrentVersion;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

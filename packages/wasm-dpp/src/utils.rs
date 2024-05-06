@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use anyhow::{anyhow, bail, Context};
-use dpp::{consensus::ConsensusError, ProtocolError};
+use dpp::{consensus::ConsensusError, errors::ProtocolError};
 
 use dpp::platform_value::Value;
 use dpp::serialization::PlatformDeserializable;

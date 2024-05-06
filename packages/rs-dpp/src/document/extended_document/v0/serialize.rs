@@ -1,8 +1,8 @@
 use crate::document::Document;
 
-use crate::prelude::DataContract;
+use crate::data_contract::DataContract;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 
@@ -17,7 +17,7 @@ use crate::serialization::{
     PlatformDeserializableWithBytesLenFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 use integer_encoding::{VarInt, VarIntReader};
 

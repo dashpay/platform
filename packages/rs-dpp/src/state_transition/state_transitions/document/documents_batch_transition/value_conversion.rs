@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 
 use platform_value::Value;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
-use crate::state_transition::documents_batch_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
-use crate::state_transition::state_transitions::documents_batch_transition::fields::*;
+use crate::state_transition::state_transitions::document::documents_batch_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;

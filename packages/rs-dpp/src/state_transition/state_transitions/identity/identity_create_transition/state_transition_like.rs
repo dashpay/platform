@@ -1,6 +1,6 @@
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for IdentityCreateTransition {

@@ -1,5 +1,5 @@
 use crate::validation::SimpleConsensusValidationResult;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use dashcore::Transaction;
 use platform_version::version::PlatformVersion;
 

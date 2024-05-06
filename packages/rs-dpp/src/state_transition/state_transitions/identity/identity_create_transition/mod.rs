@@ -10,8 +10,8 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0Signable;
+use crate::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::ProtocolError;
@@ -46,6 +46,7 @@ pub type IdentityCreateTransitionLatest = IdentityCreateTransitionV0;
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_create_state_transition"
 )]
+#[ferment_macro::export]
 pub enum IdentityCreateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityCreateTransitionV0),

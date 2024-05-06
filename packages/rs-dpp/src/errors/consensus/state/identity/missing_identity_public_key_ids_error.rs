@@ -1,7 +1,7 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use crate::identity::KeyID;
+use crate::identity::identity_public_key::KeyID;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("Identity Public Key with Ids {} do not exist", ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", "))]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct MissingIdentityPublicKeyIdsError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    ids: Vec<KeyID>,
+    pub ids: Vec<KeyID>,
 }
 
 impl MissingIdentityPublicKeyIdsError {

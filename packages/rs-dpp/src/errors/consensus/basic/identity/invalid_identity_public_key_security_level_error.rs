@@ -1,10 +1,10 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::identity::{KeyID, Purpose, SecurityLevel};
+use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
 
 use bincode::{Decode, Encode};
 
@@ -13,16 +13,17 @@ use bincode::{Decode, Encode};
 )]
 #[error("Invalid identity public key {public_key_id:?} security level: purpose {purpose:?} allows only for {allowed_security_levels:?} security levels, but got {security_level:?}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIdentityPublicKeySecurityLevelError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    public_key_id: KeyID,
-    purpose: Purpose,
-    security_level: SecurityLevel,
-    allowed_security_levels: String,
+    pub public_key_id: KeyID,
+    pub purpose: Purpose,
+    pub security_level: SecurityLevel,
+    pub allowed_security_levels: String,
 }
 
 impl InvalidIdentityPublicKeySecurityLevelError {

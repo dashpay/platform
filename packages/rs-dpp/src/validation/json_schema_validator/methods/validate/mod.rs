@@ -1,5 +1,5 @@
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use crate::ProtocolError;
 use serde_json::Value as JsonValue;
 

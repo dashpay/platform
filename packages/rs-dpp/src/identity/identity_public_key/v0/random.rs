@@ -1,10 +1,10 @@
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::identity::KeyType::ECDSA_SECP256K1;
-use crate::identity::Purpose::AUTHENTICATION;
-use crate::identity::SecurityLevel::{CRITICAL, HIGH, MASTER};
-use crate::identity::{KeyCount, KeyID, KeyType, Purpose, SecurityLevel};
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::identity::identity_public_key::KeyType::ECDSA_SECP256K1;
+use crate::identity::identity_public_key::Purpose::AUTHENTICATION;
+use crate::identity::identity_public_key::SecurityLevel::{CRITICAL, HIGH, MASTER};
+use crate::identity::identity_public_key::{KeyCount, KeyID, KeyType, Purpose, SecurityLevel};
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use platform_value::BinaryData;
 use rand::rngs::StdRng;
 use rand::Rng;

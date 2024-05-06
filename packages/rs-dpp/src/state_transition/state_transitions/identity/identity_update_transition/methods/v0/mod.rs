@@ -1,10 +1,11 @@
 use platform_version::version::PlatformVersion;
 
 use crate::identity::signer::Signer;
-use crate::identity::{Identity, IdentityPublicKey};
+use crate::identity::Identity;
+use crate::identity::identity_public_key::IdentityPublicKey;
 use crate::state_transition::StateTransition;
-use crate::version::FeatureVersion;
-use crate::{identity::KeyID, state_transition::StateTransitionType, ProtocolError};
+use platform_version::version::FeatureVersion;
+use crate::{identity::identity_public_key::KeyID, state_transition::StateTransitionType, errors::ProtocolError};
 
 pub trait IdentityUpdateTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]

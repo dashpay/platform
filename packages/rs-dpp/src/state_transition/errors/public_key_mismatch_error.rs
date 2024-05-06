@@ -1,12 +1,13 @@
 use thiserror::Error;
 
-use crate::identity::IdentityPublicKey;
-use crate::ProtocolError;
+use crate::identity::identity_public_key::IdentityPublicKey;
+use crate::errors::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Public key mismatched")]
+#[ferment_macro::export]
 pub struct PublicKeyMismatchError {
-    public_key: IdentityPublicKey,
+    pub public_key: IdentityPublicKey,
 }
 
 impl PublicKeyMismatchError {

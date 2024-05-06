@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -12,14 +12,15 @@ use bincode::{Decode, Encode};
 )]
 #[error("All or none of unique compound properties must be set for '{index_name}' index of '{document_type}' document")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidCompoundIndexError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_type: String,
-    index_name: String,
+    pub document_type: String,
+    pub index_name: String,
 }
 
 impl InvalidCompoundIndexError {

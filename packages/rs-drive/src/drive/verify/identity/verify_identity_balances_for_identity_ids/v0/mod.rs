@@ -2,7 +2,7 @@ use crate::drive::Drive;
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 use crate::drive::verify::RootHash;
 

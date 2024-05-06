@@ -1,6 +1,7 @@
-use crate::identity::contract_bounds::ContractBounds;
-use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+use crate::identity::{identity_public_key::{KeyID, KeyType, SecurityLevel}};
+use crate::identity::identity_public_key::Purpose;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_value::BinaryData;
 
 /// Trait providing getters for `IdentityPublicKeyInCreationV0`.

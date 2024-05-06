@@ -48,7 +48,7 @@ use dpp::data_contract::document_type::{DocumentPropertyType, DocumentType, Docu
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 /// Converts SQL values to CBOR.
 fn sql_value_to_platform_value(sql_value: ast::Value) -> Option<Value> {

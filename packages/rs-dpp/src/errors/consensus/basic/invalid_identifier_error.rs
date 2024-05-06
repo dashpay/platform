@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,14 +10,15 @@ use thiserror::Error;
 )]
 #[error("Invalid {identifier_name}: {message}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIdentifierError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    identifier_name: String,
-    message: String,
+    pub identifier_name: String,
+    pub message: String,
 }
 
 impl InvalidIdentifierError {

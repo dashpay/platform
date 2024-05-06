@@ -8,7 +8,7 @@ mod tests {
         PlatformSerializableWithPlatformVersion,
     };
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
     use platform_version::version::LATEST_PLATFORM_VERSION;
 
     #[test]

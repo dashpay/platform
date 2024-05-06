@@ -1,27 +1,28 @@
 use platform_value::{Bytes32, Value};
 use platform_version::TryFromPlatformVersioned;
 
-use crate::consensus::basic::decode::SerializedObjectParsingError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::decode::SerializedObjectParsingError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 
 use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
-use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
-use crate::version::PlatformVersion;
-use crate::{errors::ProtocolError, prelude::Identifier};
+use platform_version::version::PlatformVersion;
+use platform_value::Identifier;
+use crate::errors::ProtocolError;
 
 /// The version 0 implementation of the data contract factory.
 ///

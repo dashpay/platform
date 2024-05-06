@@ -1,5 +1,5 @@
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::document_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 
@@ -51,8 +51,8 @@ pub(super) fn find_duplicates_by_id<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-    use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+    use crate::state_transition::documents_batch_transition::document_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use crate::state_transition::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
     use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
     use crate::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
     use crate::state_transition::documents_batch_transition::document_transition::DocumentCreateTransition;

@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
 
-use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
 
 pub trait DocumentReplaceTransitionV0Methods {
     /// Returns a reference to the `base` field of the `DocumentReplaceTransitionV0`.

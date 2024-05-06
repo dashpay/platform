@@ -20,14 +20,15 @@ use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::identity::KeyID;
-use dpp::prelude::{Identifier, IdentityPublicKey};
+use dpp::identity::identity_public_key::{IdentityPublicKey, KeyID};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
 use drive_proof_verifier::types::{MasternodeProtocolVote, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
+use platform_value::Identifier;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
+use dpp::platform_value;
 
 use super::LimitQuery;
 
@@ -173,7 +174,7 @@ where
 
     /// Fetch multiple objects from the Platform with limit.
     ///
-    /// Fetches up to `limit` objects matching the `query`.    
+    /// Fetches up to `limit` objects matching the `query`.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
     ///
     /// ## Parameters

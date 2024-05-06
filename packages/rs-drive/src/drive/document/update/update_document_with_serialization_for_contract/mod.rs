@@ -11,7 +11,7 @@ use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 use grovedb::TransactionArg;
 use std::borrow::Cow;

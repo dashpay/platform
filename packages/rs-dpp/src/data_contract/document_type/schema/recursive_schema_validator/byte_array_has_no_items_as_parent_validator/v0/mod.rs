@@ -1,7 +1,7 @@
-use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
-use crate::consensus::basic::value_error::ValueError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
+use crate::errors::consensus::basic::value_error::ValueError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 

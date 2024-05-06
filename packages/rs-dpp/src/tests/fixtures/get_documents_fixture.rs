@@ -1,13 +1,15 @@
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use platform_value::{platform_value, Value};
+use platform_value::{platform_value, Identifier, Value};
 
+use crate::data_contract::DataContract;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::document_factory::DocumentFactory;
 use crate::document::Document;
-use crate::version::PlatformVersion;
+use crate::errors::ProtocolError;
+use platform_version::version::PlatformVersion;
 use crate::{prelude::*, tests::utils::generate_random_identifier_struct as gen_owner_id};
 
 #[cfg(feature = "extended-document")]

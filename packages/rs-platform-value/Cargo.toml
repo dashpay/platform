@@ -24,6 +24,7 @@ lazy_static = "1.4.0"
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-version = { path = "../rs-platform-version" }
 indexmap = "2.0.2"
+ferment-macro = { path = "../../../ferment/ferment-macro"}
 
 ### FEATURES #################################################################
 
@@ -31,3 +32,6 @@ indexmap = "2.0.2"
 default = ["std"]
 
 std = ["serde/std"]
+
+#[lib]
+#name = "platform_value"

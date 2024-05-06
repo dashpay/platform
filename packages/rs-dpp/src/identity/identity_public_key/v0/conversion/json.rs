@@ -2,8 +2,8 @@ use crate::identity::identity_public_key::conversion::json::IdentityPublicKeyJso
 use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use crate::identity::identity_public_key::fields::BINARY_DATA_FIELDS;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use platform_value::{ReplacementType, Value};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};

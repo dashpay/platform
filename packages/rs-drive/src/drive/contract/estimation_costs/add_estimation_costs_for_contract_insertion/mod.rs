@@ -5,7 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::DataContract;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;

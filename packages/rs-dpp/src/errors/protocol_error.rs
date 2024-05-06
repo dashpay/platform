@@ -1,30 +1,47 @@
 use thiserror::Error;
 
-use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::consensus::signature::{
+use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::errors::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
-use crate::consensus::ConsensusError;
-use crate::data_contract::errors::*;
-use crate::document::errors::*;
+use crate::errors::consensus::ConsensusError;
+use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::DataContractNotPresentError;
+use crate::data_contract::errors::IdentityNotPresentError;
+use crate::data_contract::errors::InvalidDataContractError;
+use crate::data_contract::errors::InvalidDocumentTypeError;
+use crate::data_contract::errors::StructureError;
+
+use crate::document::errors::DocumentError;
 #[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
-    WrongPublicKeyPurposeError,
-};
-use crate::{
-    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
-    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
-};
+use crate::state_transition::errors::invalid_identity_public_key_type_error::InvalidIdentityPublicKeyTypeError;
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::invalid_signature_public_key_error::InvalidSignaturePublicKeyError;
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::public_key_mismatch_error::PublicKeyMismatchError;
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::public_key_security_level_not_met_error::PublicKeySecurityLevelNotMetError;
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::state_transition_error::StateTransitionError;
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::state_transition_is_not_signed_error::StateTransitionIsNotSignedError;
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::wrong_public_key_purpose_error::WrongPublicKeyPurposeError;
 
-use dashcore::consensus::encode::Error as DashCoreError;
+use crate::errors::non_consensus_error::NonConsensusError;
+use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
+use crate::errors::dpp_init_error::DashPlatformProtocolInitError;
+use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
+use crate::errors::serde_parsing_error::SerdeParsingError;
 
-use crate::version::FeatureVersion;
+//use dashcore::consensus::encode::Error as DashCoreError;
+
+use platform_version::version::FeatureVersion;
 use platform_value::{Error as ValueError, Value};
 use platform_version::error::PlatformVersionError;
 
 #[derive(Error, Debug)]
+#[ferment_macro::export]
 pub enum ProtocolError {
     #[error("Identifier Error: {0}")]
     IdentifierError(String),
@@ -194,7 +211,7 @@ pub enum ProtocolError {
 
     /// Dash core error
     #[error("dash core error: {0}")]
-    DashCoreError(#[from] DashCoreError),
+    DashCoreError(#[from] dashcore::consensus::encode::Error),
 
     #[error("Invalid Identity: {errors:?}")]
     InvalidIdentityError {
@@ -259,3 +276,4 @@ impl From<InvalidVectorSizeError> for ProtocolError {
         Self::InvalidVectorSizeError(err)
     }
 }
+

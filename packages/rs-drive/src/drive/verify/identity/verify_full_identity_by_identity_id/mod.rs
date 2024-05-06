@@ -8,9 +8,9 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-pub use dpp::prelude::Identity;
+pub use dpp::identity::Identity;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Verifies the full identity of a user by their identity ID.

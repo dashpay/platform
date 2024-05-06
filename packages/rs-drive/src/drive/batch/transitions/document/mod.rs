@@ -2,7 +2,7 @@ use crate::drive::batch::DriveOperation;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::platform_value::Identifier;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 mod document_create_transition;
 mod document_delete_transition;

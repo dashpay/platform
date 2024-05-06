@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 use jsonschema::ValidationError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[ferment_macro::export]
 pub enum DashPlatformProtocolInitError {
     #[error(transparent)]
     SchemaDeserializationError(serde_json::Error),

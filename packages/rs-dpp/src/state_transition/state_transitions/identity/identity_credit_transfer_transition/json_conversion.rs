@@ -1,5 +1,5 @@
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use crate::state_transition::state_transitions::identity_credit_transfer_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::fields::*;
 use crate::state_transition::{
     JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
 };

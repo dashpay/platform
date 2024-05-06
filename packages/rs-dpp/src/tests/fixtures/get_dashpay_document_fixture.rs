@@ -1,9 +1,9 @@
 use platform_value::patch::merge;
-use platform_value::{platform_value, BinaryData, Value};
+use platform_value::{platform_value, BinaryData, Identifier, Value};
 
 use crate::document::document_factory::DocumentFactory;
 use crate::document::Document;
-use crate::{prelude::Identifier, tests::utils::generate_random_identifier_struct};
+use crate::tests::utils::generate_random_identifier_struct;
 
 use super::get_dashpay_contract_fixture;
 

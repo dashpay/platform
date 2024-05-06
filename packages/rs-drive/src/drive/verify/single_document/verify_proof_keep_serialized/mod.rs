@@ -6,7 +6,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl SingleDocumentDriveQuery {
     /// Verifies the proof of a document while keeping it serialized.

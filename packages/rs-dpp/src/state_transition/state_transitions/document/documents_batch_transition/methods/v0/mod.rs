@@ -1,10 +1,11 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::identity::signer::Signer;
-use crate::identity::{IdentityPublicKey, SecurityLevel};
-use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::document_transition::{
+use crate::identity::identity_public_key::SecurityLevel;
+use crate::identity::identity_public_key::IdentityPublicKey;
+use crate::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 use crate::state_transition::StateTransition;

@@ -8,17 +8,19 @@
 //! and unlocking dash on the payment chain.
 //!
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use integer_encoding::VarInt;
 use std::convert::TryFrom;
 
 /// Credits type
 
+#[ferment_macro::export]
 pub type Credits = u64;
 
 /// Signed Credits type is used for internal computations and total credits
 /// balance verification
 
+#[ferment_macro::export]
 pub type SignedCredits = i64;
 
 /// Maximum value of credits

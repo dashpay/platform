@@ -1,6 +1,6 @@
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for IdentityCreditWithdrawalTransition {

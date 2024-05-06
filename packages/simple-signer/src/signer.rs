@@ -9,7 +9,7 @@ use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
-use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
+use dpp::{bls_signatures, ed25519_dalek, errors::ProtocolError};
 use std::collections::HashMap;
 
 /// This simple signer is only to be used in tests

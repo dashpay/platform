@@ -1,12 +1,12 @@
-use crate::identity::contract_bounds::ContractBounds;
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::identity::KeyType;
-use crate::identity::Purpose;
-use crate::identity::SecurityLevel;
-use crate::identity::{KeyID, TimestampMillis};
+use crate::identity::identity_public_key::KeyType;
+use crate::identity::identity_public_key::Purpose;
+use crate::identity::identity_public_key::SecurityLevel;
+use crate::identity::identity_public_key::{KeyID, TimestampMillis};
 use platform_value::BinaryData;
 
 impl IdentityPublicKeyGettersV0 for IdentityPublicKeyV0 {

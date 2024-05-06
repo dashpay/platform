@@ -1,8 +1,8 @@
 use crate::identity::TimestampMillis;
 use crate::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 use crate::validation::block_time_window::validation_result::TimeWindowValidationResult;
-use crate::version::PlatformVersion;
-use crate::NonConsensusError;
+use platform_version::version::PlatformVersion;
+use crate::errors::NonConsensusError;
 
 pub mod v0;
 

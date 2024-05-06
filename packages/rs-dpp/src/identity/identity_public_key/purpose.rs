@@ -1,4 +1,4 @@
-use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, SYSTEM, VOTING, WITHDRAW};
+use crate::identity::identity_public_key::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, SYSTEM, VOTING, WITHDRAW};
 use anyhow::bail;
 use bincode::{Decode, Encode};
 #[cfg(feature = "cbor")]
@@ -23,6 +23,7 @@ use std::convert::TryFrom;
     Default,
     strum::EnumIter,
 )]
+#[ferment_macro::export]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     #[default]

@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod tests {
 
-    use dpp::prelude::*;
-
     use crate::common::identities::create_test_identity;
     use crate::error::drive::DriveError;
     use crate::error::Error;

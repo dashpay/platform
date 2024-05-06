@@ -13,7 +13,7 @@ use crate::metadata::Metadata;
 use crate::prelude::Revision;
 
 use crate::util::hash::hash_double_to_vec;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,

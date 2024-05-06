@@ -45,7 +45,7 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Adds a document to primary storage.

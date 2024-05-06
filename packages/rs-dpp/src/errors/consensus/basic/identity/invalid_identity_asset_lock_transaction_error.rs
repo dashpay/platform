@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -9,13 +9,14 @@ use bincode::{Decode, Encode};
 #[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[error("Invalid asset lock transaction: {message}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIdentityAssetLockTransactionError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    message: String,
+    pub message: String,
 }
 
 impl InvalidIdentityAssetLockTransactionError {

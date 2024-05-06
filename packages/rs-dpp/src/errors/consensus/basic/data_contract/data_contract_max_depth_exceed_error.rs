@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,14 +10,15 @@ use thiserror::Error;
 )]
 #[error("JSON Schema depth is greater than {max_depth:?}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DataContractMaxDepthExceedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    schema_depth: usize,
-    max_depth: usize,
+    pub schema_depth: usize,
+    pub max_depth: usize,
 }
 
 impl DataContractMaxDepthExceedError {

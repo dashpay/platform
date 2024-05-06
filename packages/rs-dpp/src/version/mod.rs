@@ -1,8 +1,11 @@
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use lazy_static::lazy_static;
 pub use platform_version::error::PlatformVersionError;
-pub use platform_version::version::*;
-pub use platform_version::*;
+// pub use platform_version::version::*;
+// pub use platform_version::*;
+// pub use platform_version::version::*;
+// pub use platform_version::*;
+pub use platform_version::version::{FeatureVersion, FeatureVersionBounds, PlatformVersion};
 use std::sync::RwLock;
 
 lazy_static! {

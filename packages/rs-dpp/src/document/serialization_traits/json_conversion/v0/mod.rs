@@ -1,5 +1,5 @@
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use serde::Deserialize;

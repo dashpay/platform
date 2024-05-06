@@ -2,7 +2,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 

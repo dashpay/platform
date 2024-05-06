@@ -1,6 +1,7 @@
 use crate::version::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciVersion {
     pub structs: DriveAbciStructureVersions,
     pub methods: DriveAbciMethodVersions,
@@ -9,6 +10,7 @@ pub struct DriveAbciVersion {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
     pub base_query_structure: FeatureVersion,
@@ -20,6 +22,7 @@ pub struct DriveAbciQueryVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciQueryIdentityVersions {
     pub identity: FeatureVersionBounds,
     pub identities: FeatureVersionBounds,
@@ -31,6 +34,7 @@ pub struct DriveAbciQueryIdentityVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciQueryDataContractVersions {
     pub data_contract: FeatureVersionBounds,
     pub data_contract_history: FeatureVersionBounds,
@@ -38,6 +42,7 @@ pub struct DriveAbciQueryDataContractVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciQuerySystemVersions {
     pub version_upgrade_state: FeatureVersionBounds,
     pub version_upgrade_vote_status: FeatureVersionBounds,
@@ -45,6 +50,7 @@ pub struct DriveAbciQuerySystemVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciStructureVersions {
     pub platform_state_structure: FeatureVersion,
     pub platform_state_for_saving_structure: FeatureVersion,
@@ -54,6 +60,7 @@ pub struct DriveAbciStructureVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciMethodVersions {
     pub engine: DriveAbciEngineMethodVersions,
     pub initialization: DriveAbciInitializationMethodVersions,
@@ -73,6 +80,7 @@ pub struct DriveAbciMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub process_state_transition: FeatureVersion,
@@ -80,12 +88,14 @@ pub struct DriveAbciValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciPlatformStateStorageMethodVersions {
     pub fetch_platform_state: FeatureVersion,
     pub store_platform_state: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub structure: FeatureVersion,
     pub state: FeatureVersion,
@@ -100,12 +110,14 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciValidationDataTriggerAndBindingVersions {
     pub bindings: FeatureVersion,
     pub triggers: DriveAbciValidationDataTriggerVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciValidationDataTriggerVersions {
     pub create_contact_request_data_trigger: FeatureVersion,
     pub create_domain_data_trigger: FeatureVersion,
@@ -117,6 +129,7 @@ pub struct DriveAbciValidationDataTriggerVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciStateTransitionValidationVersion {
     pub structure: FeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
@@ -125,6 +138,7 @@ pub struct DriveAbciStateTransitionValidationVersion {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciStateTransitionValidationVersions {
     pub common_validation_methods: DriveAbciStateTransitionCommonValidationVersions,
     pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
@@ -138,6 +152,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub asset_locks: DriveAbciAssetLockValidationVersions,
     pub validate_identity_public_key_contract_bounds: FeatureVersion,
@@ -148,11 +163,13 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciAssetLockValidationVersions {
     pub fetch_asset_lock_transaction_output_sync: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciEngineMethodVersions {
     pub init_chain: FeatureVersion,
     pub check_tx: FeatureVersion,
@@ -161,6 +178,7 @@ pub struct DriveAbciEngineMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciCoreBasedUpdatesMethodVersions {
     pub update_core_info: FeatureVersion,
     pub update_masternode_list: FeatureVersion,
@@ -169,6 +187,7 @@ pub struct DriveAbciCoreBasedUpdatesMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
     pub get_voter_identity_key: FeatureVersion,
     pub get_operator_identity_keys: FeatureVersion,
@@ -187,23 +206,27 @@ pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciInitializationMethodVersions {
     pub initial_core_height: FeatureVersion,
     pub create_genesis_state: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciBlockFeeProcessingMethodVersions {
     pub add_process_epoch_change_operations: FeatureVersion,
     pub process_block_fees: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciCoreSubsidyMethodVersions {
     pub epoch_core_reward_credits_for_distribution: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciCoreChainLockMethodVersionsAndConstants {
     pub choose_quorum: FeatureVersion,
     pub verify_chain_lock: FeatureVersion,
@@ -214,12 +237,14 @@ pub struct DriveAbciCoreChainLockMethodVersionsAndConstants {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciFeePoolInwardsDistributionMethodVersions {
     pub add_distribute_block_fees_into_pools_operations: FeatureVersion,
     pub add_distribute_storage_fee_to_epochs_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciFeePoolOutwardsDistributionMethodVersions {
     pub add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: FeatureVersion,
     pub add_epoch_pool_to_proposers_payout_operations: FeatureVersion,
@@ -228,17 +253,20 @@ pub struct DriveAbciFeePoolOutwardsDistributionMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciEpochMethodVersions {
     pub gather_epoch_info: FeatureVersion,
     pub get_genesis_time: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciBlockStartMethodVersions {
     pub clear_drive_block_cache: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciBlockEndMethodVersions {
     pub update_state_cache: FeatureVersion,
     pub update_drive_cache: FeatureVersion,
@@ -246,6 +274,7 @@ pub struct DriveAbciBlockEndMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub build_untied_withdrawal_transactions_from_documents: FeatureVersion,
     pub dequeue_and_build_unsigned_withdrawal_transactions: FeatureVersion,
@@ -256,11 +285,13 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciProtocolUpgradeMethodVersions {
     pub check_for_desired_protocol_upgrade: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciStateTransitionProcessingMethodVersions {
     pub execute_event: FeatureVersion,
     pub process_raw_state_transitions: FeatureVersion,

@@ -1,8 +1,8 @@
 use thiserror::Error;
 
-use crate::consensus::signature::signature_error::SignatureError;
-use crate::consensus::ConsensusError;
-use crate::identity::KeyID;
+use crate::errors::consensus::signature::signature_error::SignatureError;
+use crate::errors::consensus::ConsensusError;
+use crate::identity::identity_public_key::KeyID;
 
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -14,13 +14,14 @@ use bincode::{Decode, Encode};
 )]
 #[error("Public key {public_key_id} doesn't exist")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct MissingPublicKeyError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    public_key_id: KeyID,
+    pub public_key_id: KeyID,
 }
 
 impl MissingPublicKeyError {

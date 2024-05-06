@@ -1,6 +1,6 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

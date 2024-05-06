@@ -1,26 +1,28 @@
-use crate::consensus::basic::decode::ProtocolVersionParsingError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::decode::ProtocolVersionParsingError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use integer_encoding::VarInt;
 use platform_version::version::FeatureVersion;
-use serde_json::{Map, Number, Value as JsonValue};
+use serde_json::{Map, Number, Value};
+// use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::errors::ProtocolError;
 
 pub fn parse_protocol_version(
     protocol_bytes: &[u8],
-    json_map: &mut Map<String, JsonValue>,
+    json_map: &mut Map<String, Value>,
 ) -> Result<(), ProtocolError> {
     let protocol_version = get_protocol_version(protocol_bytes)?;
 
     json_map.insert(
         String::from("$protocolVersion"),
-        JsonValue::Number(Number::from(protocol_version)),
+        Value::Number(Number::from(protocol_version)),
     );
     Ok(())
 }
 
 /// A protocol version
+#[ferment_macro::export]
 pub type ProtocolVersion = u32;
 
 pub fn get_protocol_version(version_bytes: &[u8]) -> Result<ProtocolVersion, ProtocolError> {

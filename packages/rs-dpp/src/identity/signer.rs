@@ -1,5 +1,5 @@
-use crate::prelude::IdentityPublicKey;
-use crate::ProtocolError;
+use crate::identity::identity_public_key::IdentityPublicKey;
+use crate::errors::ProtocolError;
 use platform_value::BinaryData;
 
 pub trait Signer: Sync {

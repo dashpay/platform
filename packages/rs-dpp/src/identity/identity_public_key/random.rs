@@ -1,8 +1,8 @@
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
-use crate::identity::{IdentityPublicKey, KeyCount, KeyID};
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::identity::identity_public_key::{IdentityPublicKey, KeyCount, KeyID};
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 
 use rand::rngs::StdRng;
 use rand::SeedableRng;

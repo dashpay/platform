@@ -5,6 +5,7 @@ use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
+#[ferment_macro::export]
 pub enum StateTransitionProofResult {
     VerifiedDataContract(DataContract),
     VerifiedIdentity(Identity),

@@ -14,11 +14,12 @@ use rand::Rng;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode::de::read::Reader;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
-pub struct CoreScript(DashcoreScript);
+// #[ferment_macro::export]
+pub struct CoreScript(pub DashcoreScript);
 
 impl CoreScript {
     pub fn new(script: DashcoreScript) -> Self {

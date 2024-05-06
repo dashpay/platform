@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,13 +10,14 @@ use thiserror::Error;
 )]
 #[error("Identity cannot contain more than {max_items} public keys")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct MaxIdentityPublicKeyLimitReachedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    max_items: usize,
+    pub max_items: usize,
 }
 
 impl MaxIdentityPublicKeyLimitReachedError {

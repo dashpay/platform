@@ -13,7 +13,7 @@ use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::{check_validation_result_with_data, ProtocolError};
+use dpp::{check_validation_result_with_data, errors::ProtocolError};
 use dapi_grpc::Message;
 use dapi_grpc::platform::v0::get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry;
 

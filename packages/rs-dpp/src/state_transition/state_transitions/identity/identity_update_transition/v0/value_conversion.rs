@@ -1,12 +1,12 @@
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
+use crate::{state_transition::StateTransitionFieldTypes, errors::ProtocolError};
 
-use crate::state_transition::identity_update_transition::fields::*;
-use crate::state_transition::identity_update_transition::v0::{
+use crate::state_transition::state_transitions::identity::identity_update_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::{
     remove_integer_list_or_default, IdentityUpdateTransitionV0,
 };
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_version::version::PlatformVersion;

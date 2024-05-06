@@ -1,9 +1,9 @@
-use crate::consensus::basic::identity::{
+use crate::errors::consensus::basic::identity::{
     IdentityAssetLockTransactionOutputNotFoundError, InvalidIdentityAssetLockTransactionError,
     InvalidIdentityAssetLockTransactionOutputError,
 };
 use crate::validation::SimpleConsensusValidationResult;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::Transaction;
 

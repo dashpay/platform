@@ -1,8 +1,8 @@
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::Document;
 use crate::identity::Identity;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_value::{Bytes32, Identifier};
 use rand::prelude::StdRng;

@@ -8,7 +8,7 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
 use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionAction {
     fn into_high_level_drive_operations<'a>(

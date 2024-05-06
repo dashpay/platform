@@ -1,5 +1,5 @@
 use crate::data_contract::JsonValue;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 mod v0;

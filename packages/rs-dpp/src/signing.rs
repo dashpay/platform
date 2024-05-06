@@ -1,12 +1,12 @@
 #[cfg(feature = "message-signature-verification")]
-use crate::consensus::signature::{
+use crate::errors::consensus::signature::{
     BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
 };
-use crate::identity::KeyType;
+use crate::identity::identity_public_key::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
-use crate::{BlsModule, ProtocolError};
+use crate::{BlsModule, errors::ProtocolError};
 use dashcore::signer;
 
 impl PlatformMessageSignable for &[u8] {

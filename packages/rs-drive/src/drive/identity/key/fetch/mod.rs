@@ -38,14 +38,14 @@ use dpp::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost
 use dpp::fee::Credits;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::identity::KeyID;
+use dpp::identity::identity_public_key::KeyID;
 
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::identity::{Purpose, SecurityLevel};
+use dpp::identity::identity_public_key::{Purpose, SecurityLevel};
 #[cfg(feature = "full")]
 use dpp::prelude::IdentityPublicKey;
 use dpp::serialization::PlatformDeserializable;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 use crate::drive::identity::identity_contract_info_group_path_key_purpose_vec;
 use crate::drive::identity::key::fetch::KeyRequestType::{

@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::identity::IdentityPublicKey;
-use crate::ProtocolError;
+use crate::identity::identity_public_key::IdentityPublicKey;
+use crate::errors::ProtocolError;
 pub use v0::*;
 
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKey {

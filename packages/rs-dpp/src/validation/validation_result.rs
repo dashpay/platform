@@ -1,5 +1,5 @@
 use crate::errors::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use std::fmt::Debug;
 
 #[macro_export]

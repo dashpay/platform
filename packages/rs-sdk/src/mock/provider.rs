@@ -3,11 +3,12 @@
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use dpp::platform_value;
 
-use dpp::prelude::{DataContract, Identifier};
+use dpp::data_contract::DataContract;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
-
+use platform_value::Identifier;
 use crate::core_client::CoreClient;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};

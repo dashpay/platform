@@ -8,7 +8,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::IdentityPublicKey;
 
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
     fn into_high_level_drive_operations<'a>(

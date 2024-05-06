@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,14 +10,15 @@ use thiserror::Error;
 )]
 #[error("Document with type {document_type} has badly constructed index '{index_path}'. Existing properties in the indices should be defined in the beginning of it.")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DataContractInvalidIndexDefinitionUpdateError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_type: String,
-    index_path: String,
+    pub document_type: String,
+    pub index_path: String,
 }
 
 impl DataContractInvalidIndexDefinitionUpdateError {

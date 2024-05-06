@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -12,17 +12,18 @@ use bincode::{Decode, Encode};
 )]
 #[error("Indexed property '{property_name}' for '{document_type}' document has an invalid constraint '{constraint_name}', reason: '{reason}'")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIndexedPropertyConstraintError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_type: String,
-    index_name: String,
-    property_name: String,
-    constraint_name: String,
-    reason: String,
+    pub document_type: String,
+    pub index_name: String,
+    pub property_name: String,
+    pub constraint_name: String,
+    pub reason: String,
 }
 
 impl InvalidIndexedPropertyConstraintError {

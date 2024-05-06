@@ -1,7 +1,9 @@
 use std::{ops::Deref, sync::Arc};
+use dpp::platform_value;
 
 use crate::error::ContextProviderError;
-use dpp::prelude::{DataContract, Identifier};
+use dpp::data_contract::DataContract;
+use platform_value::Identifier;
 use hex::ToHex;
 
 /// Interface between the Sdk and state of the application.

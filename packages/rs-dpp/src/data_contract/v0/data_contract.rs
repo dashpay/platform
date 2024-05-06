@@ -19,29 +19,30 @@ use crate::metadata::Metadata;
 /// Additionally, `DataContractV0` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
 #[derive(Debug, Clone, PartialEq)]
+#[ferment_macro::export]
 pub struct DataContractV0 {
     /// A unique identifier for the data contract.
     /// This field must always present in all versions.
-    pub(crate) id: Identifier,
+    pub id: Identifier,
 
     /// The version of this data contract.
-    pub(crate) version: u32,
+    pub version: u32,
 
     /// The identifier of the contract owner.
-    pub(crate) owner_id: Identifier,
+    pub owner_id: Identifier,
 
     /// A mapping of document names to their corresponding document types.
-    pub(crate) document_types: BTreeMap<DocumentName, DocumentType>,
+    pub document_types: BTreeMap<DocumentName, DocumentType>,
 
     // TODO: Move metadata from here
     /// Optional metadata associated with the contract.
-    pub(crate) metadata: Option<Metadata>,
+    pub metadata: Option<Metadata>,
 
     /// Internal configuration for the contract.
-    pub(crate) config: DataContractConfig,
+    pub config: DataContractConfig,
 
     /// Shared subschemas to reuse across documents (see $defs)
-    pub(crate) schema_defs: Option<BTreeMap<DefinitionName, Value>>,
+    pub schema_defs: Option<BTreeMap<DefinitionName, Value>>,
 }
 
 //

@@ -1,6 +1,6 @@
 use crate::identity::conversion::json::IdentityJsonConversionMethodsV0;
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
-use crate::identity::{identity_public_key, IdentityV0, IDENTIFIER_FIELDS_RAW_OBJECT};
+use crate::identity::{identity_public_key, v0::IdentityV0, IDENTIFIER_FIELDS_RAW_OBJECT};
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
 use serde_json::Value as JsonValue;

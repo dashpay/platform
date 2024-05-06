@@ -1,5 +1,5 @@
 use crate::serialization::ValueConvertible;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 
 pub trait IdentityPlatformValueConversionMethodsV0<'a>: ValueConvertible<'a> {

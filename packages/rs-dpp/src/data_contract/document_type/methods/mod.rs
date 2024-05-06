@@ -14,8 +14,8 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
 use crate::document::INITIAL_REVISION;
 use crate::prelude::Revision;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 
 use platform_value::{Identifier, Value};
 

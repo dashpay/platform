@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -12,15 +12,16 @@ use bincode::{Decode, Encode};
 )]
 #[error("Pattern '{pattern}' at '{path}' is not not compatible with Re2: {message}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IncompatibleRe2PatternError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    pattern: String,
-    path: String,
-    message: String,
+    pub pattern: String,
+    pub path: String,
+    pub message: String,
 }
 
 impl IncompatibleRe2PatternError {

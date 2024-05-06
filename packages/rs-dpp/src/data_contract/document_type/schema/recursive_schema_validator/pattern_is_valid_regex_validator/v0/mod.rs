@@ -1,4 +1,4 @@
-use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
+use crate::errors::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 use regex::Regex;

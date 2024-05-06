@@ -1,6 +1,6 @@
 use crate::identity::state_transition::AssetLockProved;
-use crate::prelude::AssetLockProof;
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::ProtocolError;
 
 impl AssetLockProved for IdentityTopUpTransitionV0 {

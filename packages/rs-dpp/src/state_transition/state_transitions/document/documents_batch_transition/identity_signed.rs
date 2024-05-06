@@ -1,5 +1,6 @@
-use crate::identity::{KeyID, SecurityLevel};
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use crate::identity::identity_public_key::security_level::SecurityLevel;
+use crate::identity::identity_public_key::KeyID;
+use crate::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for DocumentsBatchTransition {

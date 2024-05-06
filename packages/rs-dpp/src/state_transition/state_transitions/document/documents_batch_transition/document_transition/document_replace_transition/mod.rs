@@ -9,13 +9,14 @@ use derive_more::{Display, From};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
-pub use v0::*;
+pub use v0::{DocumentFromReplaceTransitionV0, DocumentReplaceTransitionV0};
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[ferment_macro::export]
 pub enum DocumentReplaceTransition {
     #[display(fmt = "V0({})", "_0")]
     V0(DocumentReplaceTransitionV0),

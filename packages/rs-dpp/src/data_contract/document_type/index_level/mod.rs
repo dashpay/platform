@@ -1,19 +1,20 @@
-use crate::consensus::basic::data_contract::DuplicateIndexError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::data_contract::DuplicateIndexError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq, Clone)]
+#[ferment_macro::export]
 pub struct IndexLevel {
     /// the lower index levels from this level
-    sub_index_levels: BTreeMap<String, IndexLevel>,
+    pub sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
-    has_index_with_uniqueness: Option<bool>,
+    pub has_index_with_uniqueness: Option<bool>,
     /// unique level identifier
-    level_identifier: u64,
+    pub level_identifier: u64,
 }
 
 impl IndexLevel {

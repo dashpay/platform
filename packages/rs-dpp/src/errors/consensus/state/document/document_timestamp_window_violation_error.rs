@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,17 +11,18 @@ use thiserror::Error;
 )]
 #[error("Document {document_id} {timestamp_name} timestamp {timestamp} are out of block time window from {time_window_start} and {time_window_end}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentTimestampWindowViolationError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    timestamp_name: String,
-    document_id: Identifier,
-    timestamp: i64,
-    time_window_start: i64,
-    time_window_end: i64,
+    pub timestamp_name: String,
+    pub document_id: Identifier,
+    pub timestamp: i64,
+    pub time_window_start: i64,
+    pub time_window_end: i64,
 }
 
 impl DocumentTimestampWindowViolationError {

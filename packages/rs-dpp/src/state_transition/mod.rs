@@ -11,9 +11,9 @@ use dashcore::signer;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 mod abstract_state_transition;
-use crate::{BlsModule, ProtocolError};
+use crate::{BlsModule, errors::protocol_error::ProtocolError};
 
-mod state_transition_types;
+pub mod state_transition_types;
 
 pub mod state_transition_factory;
 
@@ -29,27 +29,26 @@ mod traits;
 
 pub use traits::*;
 
-use crate::consensus::signature::{
+use crate::errors::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
     PublicKeyIsDisabledError, SignatureError,
 };
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
-use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use crate::prelude::AssetLockProof;
-pub use state_transitions::*;
+use crate::identity::identity_public_key::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 
 use crate::serialization::Signable;
-use crate::state_transition::data_contract_create_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
 };
-use crate::state_transition::data_contract_update_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionSignable,
 };
-use crate::state_transition::documents_batch_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionSignable,
 };
 #[cfg(any(
@@ -62,19 +61,19 @@ use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     StateTransitionIsNotSignedError,
 };
-use crate::state_transition::identity_create_transition::{
+use crate::state_transition::state_transitions::identity::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
 };
-use crate::state_transition::identity_credit_transfer_transition::{
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::{
     IdentityCreditTransferTransition, IdentityCreditTransferTransitionSignable,
 };
-use crate::state_transition::identity_credit_withdrawal_transition::{
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionSignable,
 };
-use crate::state_transition::identity_topup_transition::{
+use crate::state_transition::state_transitions::identity::identity_topup_transition::{
     IdentityTopUpTransition, IdentityTopUpTransitionSignable,
 };
-use crate::state_transition::identity_update_transition::{
+use crate::state_transition::state_transitions::identity::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
 use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -235,6 +234,7 @@ macro_rules! call_static_method {
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_serialize(limit = 100000)]
+#[ferment_macro::export]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),

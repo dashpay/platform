@@ -1,23 +1,23 @@
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
 
 use platform_value::Bytes32;
 
-use crate::{data_contract::DataContract, identity::KeyID, NonConsensusError, ProtocolError};
-
+use crate::{data_contract::DataContract, errors::NonConsensusError, errors::ProtocolError};
+use crate::identity::identity_public_key::KeyID;
 use crate::serialization::Signable;
 
-use crate::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
+use crate::errors::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
 use crate::data_contract::accessors::v0::DataContractV0Setters;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::PartialIdentity;
-use crate::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
 
 use crate::state_transition::StateTransition;
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
     fn new_from_data_contract<S: Signer>(

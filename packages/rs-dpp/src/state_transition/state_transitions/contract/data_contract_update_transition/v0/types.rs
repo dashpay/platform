@@ -1,4 +1,4 @@
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransitionV0;
 use crate::state_transition::state_transitions::common_fields::property_names::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };

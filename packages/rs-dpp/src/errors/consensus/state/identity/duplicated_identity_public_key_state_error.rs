@@ -1,7 +1,7 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use crate::identity::KeyID;
+use crate::identity::identity_public_key::KeyID;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("Duplicated public keys {duplicated_public_key_ids:?} found")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DuplicatedIdentityPublicKeyStateError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    duplicated_public_key_ids: Vec<KeyID>,
+    pub duplicated_public_key_ids: Vec<KeyID>,
 }
 
 impl DuplicatedIdentityPublicKeyStateError {

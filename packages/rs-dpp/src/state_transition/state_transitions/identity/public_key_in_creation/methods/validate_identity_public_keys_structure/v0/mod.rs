@@ -1,18 +1,18 @@
-use crate::consensus::basic::identity::{
+use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityPublicKeySecurityLevelError,
 };
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
-use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
-use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
+use crate::errors::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
+use crate::errors::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 
-use crate::consensus::state::state_error::StateError;
-use crate::identity::{Purpose, SecurityLevel};
+use crate::errors::consensus::state::state_error::StateError;
+use crate::identity::identity_public_key::{Purpose, SecurityLevel};
 
-use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;

@@ -11,7 +11,7 @@ use crate::drive::batch::drive_op_batch::finalize_task::{
 };
 use crate::error::drive::DriveError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::{Borrow, Cow};

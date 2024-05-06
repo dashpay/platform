@@ -1,10 +1,11 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use thiserror::Error;
 
-use crate::prelude::{Identifier, Revision};
+use crate::prelude::Revision;
 
 use bincode::{Decode, Encode};
 
@@ -13,14 +14,15 @@ use bincode::{Decode, Encode};
 )]
 #[error("Identity {identity_id} has invalid revision. The current revision is {current_revision}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIdentityRevisionError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    identity_id: Identifier,
-    current_revision: Revision,
+    pub identity_id: Identifier,
+    pub current_revision: Revision,
 }
 
 impl InvalidIdentityRevisionError {

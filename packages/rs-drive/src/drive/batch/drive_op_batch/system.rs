@@ -6,7 +6,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;

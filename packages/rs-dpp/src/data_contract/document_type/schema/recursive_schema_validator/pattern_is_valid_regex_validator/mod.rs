@@ -1,5 +1,5 @@
 use crate::validation::SimpleConsensusValidationResult;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 

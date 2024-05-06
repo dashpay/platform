@@ -103,14 +103,14 @@ pub(super) fn derive_platform_deserialize_struct(
         quote! {
             impl #impl_generics #crate_name::serialization::PlatformDeserializableFromVersionedStructure for #name #ty_generics #where_clause
             {
-                fn versioned_deserialize(bytes: &[u8], platform_version: &#crate_name::version::PlatformVersion) -> Result<Self, #error_type> {
+                fn versioned_deserialize(bytes: &[u8], platform_version: &platform_version::version::PlatformVersion) -> Result<Self, #error_type> {
                     #deserialize_into
                 }
             }
             impl #impl_generics #crate_name::serialization::PlatformLimitDeserializableFromVersionedStructure for #name #ty_generics #where_clause
             {
 
-                fn versioned_limit_deserialize(bytes: &[u8], platform_version: &#crate_name::version::PlatformVersion) -> Result<Self, #error_type> {
+                fn versioned_limit_deserialize(bytes: &[u8], platform_version: &platform_version::version::PlatformVersion) -> Result<Self, #error_type> {
                     #deserialize_into
                 }
             }

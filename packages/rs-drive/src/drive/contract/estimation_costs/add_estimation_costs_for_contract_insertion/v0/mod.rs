@@ -14,7 +14,7 @@ use dpp::data_contract::DataContract;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;

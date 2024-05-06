@@ -18,10 +18,10 @@ use crate::{data_contract::DataContract, errors::ProtocolError};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::{Document, DocumentV0};
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
 use platform_version::version::PlatformVersion;
 
@@ -50,6 +50,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     "updated_at",
     "data"
 )]
+#[ferment_macro::export]
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
@@ -328,8 +329,8 @@ impl DocumentFromCreateTransitionV0 for Document {
 
 #[cfg(test)]
 mod test {
-    use crate::data_contract::data_contract::DataContractV0;
-    use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
+    use crate::data_contract::DataContractV0;
+    use crate::state_transition::state_transitions::document::documents_batch_transition::document_create_transition::DocumentCreateTransition;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::{platform_value, BinaryData, Bytes32, Identifier};
     use platform_version::version::LATEST_PLATFORM_VERSION;

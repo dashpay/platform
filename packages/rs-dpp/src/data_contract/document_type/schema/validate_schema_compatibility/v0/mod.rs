@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
 use crate::data_contract::DocumentName;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use anyhow::Context;
 use itertools::Itertools;
 use json_patch::PatchOperation;

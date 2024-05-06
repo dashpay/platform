@@ -10,7 +10,7 @@ use crate::drive::verify::RootHash;
 
 use dpp::identity::PartialIdentity;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Verifies the identity keys of a user by their identity ID.

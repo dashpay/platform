@@ -3,12 +3,12 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::DocumentTypeRef;
 
-use crate::consensus::basic::document::{InvalidDocumentTypeError, MissingDocumentTypeError};
+use crate::errors::consensus::basic::document::{InvalidDocumentTypeError, MissingDocumentTypeError};
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::document::{property_names, Document, DocumentV0Getters};
 use crate::validation::SimpleConsensusValidationResult;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::ops::Deref;

@@ -10,17 +10,17 @@ mod version;
 
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, Identifier, Value};
 use serde::{Deserialize, Serialize};
 
 use std::convert::{TryFrom, TryInto};
 
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 
 use crate::{
-    identity::KeyID,
-    prelude::{Identifier, Revision, TimestampMillis},
+    identity::identity_public_key::KeyID,
+    prelude::{Revision, TimestampMillis},
     ProtocolError,
 };
 
@@ -35,6 +35,7 @@ use crate::{
 // Instead of inside of bincode_derive
 #[platform_signable(derive_bincode_with_borrowed_vec)]
 #[derive(Default)]
+#[ferment_macro::export]
 pub struct IdentityUpdateTransitionV0 {
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,

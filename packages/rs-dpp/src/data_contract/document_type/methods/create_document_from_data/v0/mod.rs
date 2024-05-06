@@ -3,8 +3,8 @@ use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::{Document, DocumentV0, INITIAL_REVISION};
 use crate::identity::TimestampMillis;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use chrono::Utc;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::{Identifier, ReplacementType, Value};

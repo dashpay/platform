@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -7,13 +7,14 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Data Contract {data_contract_id} expected bounds are not present")]
+#[ferment_macro::export]
 pub struct DataContractBoundsNotPresentError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    data_contract_id: Identifier,
+    pub data_contract_id: Identifier,
 }
 
 impl DataContractBoundsNotPresentError {

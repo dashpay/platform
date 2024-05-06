@@ -1,8 +1,11 @@
-pub use basic_error::*;
-pub use incompatible_protocol_version_error::*;
-pub use unsupported_protocol_version_error::*;
-pub use unsupported_version_error::*;
-
+// pub use basic_error::*;
+// pub use incompatible_protocol_version_error::*;
+// pub use unsupported_protocol_version_error::*;
+// pub use unsupported_version_error::*;
+pub use basic_error::BasicError;
+pub use incompatible_protocol_version_error::IncompatibleProtocolVersionError;
+pub use unsupported_protocol_version_error::UnsupportedProtocolVersionError;
+pub use unsupported_version_error::UnsupportedVersionError;
 pub mod data_contract;
 pub mod decode;
 pub mod document;

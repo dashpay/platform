@@ -4,9 +4,9 @@ pub mod v0;
 use crate::data_contract::created_data_contract::v0::{
     CreatedDataContractInSerializationFormatV0, CreatedDataContractV0,
 };
-use crate::prelude::DataContract;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::data_contract::DataContract;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 
@@ -15,7 +15,7 @@ use crate::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
-use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+use crate::errors::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use platform_value::{Bytes32, Value};
 use platform_version::TryIntoPlatformVersioned;
 

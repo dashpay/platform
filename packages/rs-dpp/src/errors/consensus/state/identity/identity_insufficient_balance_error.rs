@@ -1,10 +1,9 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use thiserror::Error;
-
-use crate::prelude::Identifier;
 
 use bincode::{Decode, Encode};
 
@@ -13,6 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Insufficient identity {identity_id} balance {balance} required {required_balance}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IdentityInsufficientBalanceError {
     /*
 

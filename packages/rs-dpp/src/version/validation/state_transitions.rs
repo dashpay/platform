@@ -1,6 +1,6 @@
-use crate::consensus::basic::UnsupportedVersionError;
+use crate::errors::consensus::basic::UnsupportedVersionError;
 use crate::validation::SimpleConsensusValidationResult;
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl PlatformVersion {
     pub fn validate_contract_version(&self, version: u16) -> SimpleConsensusValidationResult {

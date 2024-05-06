@@ -8,7 +8,7 @@ use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 mod v0;
 

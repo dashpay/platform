@@ -14,14 +14,13 @@ use serde_json::Value as JsonValue;
 use crate::{
     data_contract::DataContract,
     identity::KeyID,
-    prelude::Identifier,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
     Convertible, ProtocolError,
 };
-
+use platform_value::Identifier;
 use super::property_names::*;
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
@@ -78,6 +77,7 @@ pub const U32_FIELDS: [&str; 2] = [
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
+#[ferment_macro::export]
 pub struct DataContractCreateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]

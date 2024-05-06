@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 

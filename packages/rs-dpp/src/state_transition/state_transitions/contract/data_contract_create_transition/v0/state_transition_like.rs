@@ -1,14 +1,9 @@
-use platform_value::BinaryData;
-
-use crate::{
-    prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
-};
-
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
-
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::StateTransitionType::DataContractCreate;
-use crate::version::FeatureVersion;
+
+use platform_value::{BinaryData, Identifier};
+use platform_version::version::FeatureVersion;
 
 impl StateTransitionLike for DataContractCreateTransitionV0 {
     /// Returns ID of the created contract

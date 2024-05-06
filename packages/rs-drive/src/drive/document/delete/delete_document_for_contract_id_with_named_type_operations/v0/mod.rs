@@ -13,7 +13,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Prepares the operations for deleting a document.

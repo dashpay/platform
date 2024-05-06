@@ -8,6 +8,7 @@ use crate::{errors::ProtocolError, prelude::TimestampMillis, util::deserializer:
     Serialize, Deserialize, Encode, Decode, Debug, Default, Clone, Copy, PartialEq, PartialOrd, Eq,
 )]
 #[serde(rename_all = "camelCase")]
+#[ferment_macro::export]
 pub struct Metadata {
     #[serde(default)]
     pub block_height: u64,

@@ -4,9 +4,9 @@ use platform_value::Value;
 
 use crate::ProtocolError;
 
-use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use crate::state_transition::state_transitions::identity_credit_transfer_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
 use crate::serialization::ValueConvertible;

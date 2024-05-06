@@ -7,7 +7,7 @@ use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;

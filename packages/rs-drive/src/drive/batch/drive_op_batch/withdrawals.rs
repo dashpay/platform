@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 

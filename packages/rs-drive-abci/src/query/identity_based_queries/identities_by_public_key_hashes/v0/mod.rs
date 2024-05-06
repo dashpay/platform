@@ -16,7 +16,7 @@ use dpp::platform_value::Bytes20;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::{check_validation_result_with_data, ProtocolError};
+use dpp::{check_validation_result_with_data, errors::ProtocolError};
 
 impl<C> Platform<C> {
     pub(super) fn query_identities_by_public_key_hashes_v0(

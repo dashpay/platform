@@ -5,9 +5,9 @@ use crate::{Error, Sdk};
 
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::PrivateKey;
+use dpp::identity::Identity;
 use dpp::identity::signer::Signer;
-use dpp::prelude::{AssetLockProof, Identity};
-
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};

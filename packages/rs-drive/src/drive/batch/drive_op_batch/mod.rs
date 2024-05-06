@@ -26,7 +26,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 
 use crate::drive::batch::drive_op_batch::finalize_task::{

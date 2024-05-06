@@ -1,12 +1,13 @@
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::core_script::CoreScript;
 use crate::identity::signer::Signer;
-use crate::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use crate::identity::{Identity, identity_public_key::SecurityLevel};
+use crate::identity::identity_public_key::{KeyType, Purpose};
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-use crate::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
-use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 use crate::withdrawal::Pooling;
 

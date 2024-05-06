@@ -2,8 +2,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Compatible version is not defined for protocol version {current_protocol_version}")]
+#[ferment_macro::export]
 pub struct CompatibleProtocolVersionIsNotDefinedError {
-    current_protocol_version: u32,
+    pub current_protocol_version: u32,
 }
 
 impl CompatibleProtocolVersionIsNotDefinedError {

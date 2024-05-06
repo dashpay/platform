@@ -1,6 +1,6 @@
-use crate::state_transition::identity_update_transition::fields::property_names::*;
-use crate::state_transition::identity_update_transition::fields::*;
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::fields::property_names::*;
+use crate::state_transition::state_transitions::identity::identity_update_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::StateTransitionFieldTypes;
 
 impl StateTransitionFieldTypes for IdentityUpdateTransitionV0 {

@@ -5,13 +5,13 @@ use crate::document::property_names;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 use crate::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use crate::document::v0::DocumentV0;
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use ciborium::Value as CborValue;
 use integer_encoding::VarIntWriter;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;

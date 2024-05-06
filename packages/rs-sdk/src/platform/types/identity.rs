@@ -10,8 +10,8 @@ use dapi_grpc::platform::v0::{
     GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest,
     GetIdentityByPublicKeyHashRequest, GetIdentityRequest,
 };
-use dpp::prelude::Identity;
-
+use dpp::platform_value;
+use dpp::identity::Identity;
 use crate::delegate_enum;
 use crate::{
     platform::{proto, Query},
@@ -28,7 +28,7 @@ delegate_enum! {
     (GetIdentityByPublicKeyHash, proto::GetIdentityByPublicKeyHashRequest, proto::GetIdentityByPublicKeyHashResponse)
 }
 
-impl Query<IdentityRequest> for dpp::prelude::Identifier {
+impl Query<IdentityRequest> for platform_value::Identifier {
     fn query(self, prove: bool) -> Result<IdentityRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
@@ -68,7 +68,7 @@ impl Query<IdentityRequest> for PublicKeyHash {
     }
 }
 
-impl Query<GetIdentityBalanceRequest> for dpp::prelude::Identifier {
+impl Query<GetIdentityBalanceRequest> for platform_value::Identifier {
     fn query(self, prove: bool) -> Result<GetIdentityBalanceRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
@@ -85,7 +85,7 @@ impl Query<GetIdentityBalanceRequest> for dpp::prelude::Identifier {
     }
 }
 
-impl Query<GetIdentityBalanceAndRevisionRequest> for dpp::prelude::Identifier {
+impl Query<GetIdentityBalanceAndRevisionRequest> for platform_value::Identifier {
     fn query(self, prove: bool) -> Result<GetIdentityBalanceAndRevisionRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");

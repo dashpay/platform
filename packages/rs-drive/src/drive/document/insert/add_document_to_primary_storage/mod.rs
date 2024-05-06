@@ -14,7 +14,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Adds a document to primary storage.

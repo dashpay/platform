@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("Data Contract {data_contract_id} is not present")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DataContractNotPresentError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    data_contract_id: Identifier,
+    pub data_contract_id: Identifier,
 }
 
 impl DataContractNotPresentError {

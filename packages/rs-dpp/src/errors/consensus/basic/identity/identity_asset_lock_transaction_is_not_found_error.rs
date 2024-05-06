@@ -1,24 +1,25 @@
 use bincode::{Decode, Encode};
 use std::fmt::{Display, Formatter};
 
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IdentityAssetLockTransactionIsNotFoundError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    transaction_id: [u8; 32],
+    pub transaction_id: [u8; 32],
 }
 
 impl Display for IdentityAssetLockTransactionIsNotFoundError {
@@ -47,7 +48,7 @@ impl From<IdentityAssetLockTransactionIsNotFoundError> for ConsensusError {
 
 #[cfg(test)]
 mod test {
-    use crate::consensus::basic::identity::IdentityAssetLockTransactionIsNotFoundError;
+    use crate::errors::consensus::basic::identity::IdentityAssetLockTransactionIsNotFoundError;
 
     #[test]
     pub fn test_message() {

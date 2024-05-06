@@ -5,13 +5,13 @@ use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 
-use crate::consensus::basic::data_contract::{
+use crate::errors::consensus::basic::data_contract::{
     DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
-use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::array::ArrayItemType;
+use crate::errors::consensus::ConsensusError;
+use crate::data_contract::document_type::property::array::ArrayItemType;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
@@ -21,18 +21,18 @@ use crate::data_contract::document_type::schema::{
     traversal_validator, validate_max_depth,
 };
 
-use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+use crate::errors::consensus::basic::BasicError;
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use crate::identity::SecurityLevel;
+use crate::identity::identity_public_key::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
 

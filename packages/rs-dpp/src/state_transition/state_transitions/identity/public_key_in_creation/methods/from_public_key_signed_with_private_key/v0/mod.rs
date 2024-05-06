@@ -1,9 +1,9 @@
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::identity::IdentityPublicKey;
+use crate::identity::identity_public_key::IdentityPublicKey;
 use crate::serialization::PlatformMessageSignable;
-use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::{BlsModule, ProtocolError};
+use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::{BlsModule, errors::ProtocolError};
 
 impl IdentityPublicKeyInCreation {
     pub(super) fn from_public_key_signed_with_private_key_v0(

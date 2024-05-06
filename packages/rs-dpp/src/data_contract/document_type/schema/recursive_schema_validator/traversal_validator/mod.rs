@@ -1,7 +1,7 @@
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use crate::data_contract::document_type::schema::recursive_schema_validator::traversal_validator::v0::SubValidator;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use crate::validation::SimpleConsensusValidationResult;
 
 mod v0;

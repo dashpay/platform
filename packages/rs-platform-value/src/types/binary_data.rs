@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[ferment_macro::export]
 pub struct BinaryData(pub Vec<u8>);
 
 impl Serialize for BinaryData {

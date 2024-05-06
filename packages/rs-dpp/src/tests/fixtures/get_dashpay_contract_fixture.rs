@@ -1,10 +1,11 @@
 use crate::{
-    data_contract::DataContractFactory, prelude::Identifier,
+    data_contract::DataContractFactory,
     tests::utils::generate_random_identifier_struct,
 };
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use data_contracts::SystemDataContract;
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 pub fn get_dashpay_contract_fixture(

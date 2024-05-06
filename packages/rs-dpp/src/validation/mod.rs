@@ -1,14 +1,15 @@
 #[cfg(feature = "validation")]
-pub(crate) use json_schema_validator::JsonSchemaValidator;
+// pub(crate) use json_schema_validator::JsonSchemaValidator;
+pub use json_schema_validator::JsonSchemaValidator;
 
 pub use validation_result::{
     ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
     ValidationResult,
 };
 
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "validation")]
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 #[cfg(feature = "validation")]
 pub mod block_time_window;

@@ -1,9 +1,9 @@
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::state_transition::state_transitions::data_contract_update_transition::fields::*;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::fields::*;
 use crate::state_transition::{
     JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
 };
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use serde_json::Number;
 use serde_json::Value as JsonValue;
 

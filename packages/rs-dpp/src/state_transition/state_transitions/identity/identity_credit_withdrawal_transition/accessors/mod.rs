@@ -5,7 +5,7 @@ use platform_value::Identifier;
 pub use v0::*;
 
 use crate::prelude::Revision;
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use crate::withdrawal::Pooling;
 

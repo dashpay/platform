@@ -1,6 +1,6 @@
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::FeatureVersioned;
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 
 impl FeatureVersioned for DataContractCreateTransition {
     fn feature_version(&self) -> FeatureVersion {

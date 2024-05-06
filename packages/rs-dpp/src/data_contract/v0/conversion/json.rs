@@ -2,8 +2,8 @@ use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 
 use crate::data_contract::v0::DataContractV0;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;

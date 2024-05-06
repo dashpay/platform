@@ -6,7 +6,7 @@ use crate::query::DriveQuery;
 use dpp::block::epoch::Epoch;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
 

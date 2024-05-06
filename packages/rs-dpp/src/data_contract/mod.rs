@@ -17,7 +17,7 @@ mod generate_data_contract;
 pub mod created_data_contract;
 pub mod document_type;
 
-mod v0;
+pub mod v0;
 
 #[cfg(feature = "factories")]
 mod factory;
@@ -35,25 +35,32 @@ pub mod accessors;
 pub mod config;
 pub mod storage_requirements;
 
-pub use v0::*;
+// pub use v0::*;
+// pub use v0::DataContractV0;
+// pub use v0::data_contract::DataContractV0;
 
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
 use crate::util::hash::hash_double_to_vec;
 
-use crate::version::{FeatureVersion, PlatformVersion};
-use crate::ProtocolError;
-use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+use platform_version::version::{FeatureVersion, PlatformVersion};
+use crate::errors::ProtocolError;
+use crate::errors::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
 use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
+use crate::data_contract::v0::data_contract::DataContractV0;
 
-type JsonSchema = JsonValue;
-type DefinitionName = String;
+#[ferment_macro::export]
+pub type JsonSchema = JsonValue;
+#[ferment_macro::export]
+pub type DefinitionName = String;
+#[ferment_macro::export]
 pub type DocumentName = String;
-type PropertyPath = String;
+#[ferment_macro::export]
+pub type PropertyPath = String;
 
 /// Understanding Data Contract versioning
 /// Data contract versioning is both for the code structure and for serialization.
@@ -81,6 +88,7 @@ type PropertyPath = String;
 
 /// Here we use PlatformSerialize, because
 #[derive(Debug, Clone, PartialEq, From, PlatformVersioned)]
+#[ferment_macro::export]
 pub enum DataContract {
     V0(DataContractV0),
 }
@@ -256,7 +264,7 @@ mod tests {
     use crate::tests::fixtures::{
         get_dashpay_contract_fixture, get_dashpay_contract_with_generalized_encryption_key_fixture,
     };
-    use crate::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;
 
     #[test]

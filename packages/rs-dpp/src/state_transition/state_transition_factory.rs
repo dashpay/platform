@@ -1,6 +1,6 @@
-use crate::consensus::basic::decode::SerializedObjectParsingError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::decode::SerializedObjectParsingError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::serialization::PlatformDeserializable;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;

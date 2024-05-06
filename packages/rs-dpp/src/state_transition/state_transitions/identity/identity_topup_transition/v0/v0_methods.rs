@@ -1,19 +1,19 @@
-use crate::{prelude::Identifier, ProtocolError};
+use crate::ProtocolError;
 use dashcore::signer;
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
-use crate::prelude::AssetLockProof;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 
-use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
-use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 
 use crate::serialization::Signable;
-use platform_version::version::PlatformVersion;
 
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransition;
-use crate::version::FeatureVersion;
+use platform_value::Identifier;
+use platform_version::version::{FeatureVersion, PlatformVersion};
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
     #[cfg(feature = "state-transition-signing")]

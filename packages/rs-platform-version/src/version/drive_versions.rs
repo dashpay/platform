@@ -1,6 +1,7 @@
 use crate::version::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVersion {
     pub structure: DriveStructureVersion,
     pub methods: DriveMethodVersions,
@@ -14,6 +15,7 @@ impl DriveVersion {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveMethodVersions {
     pub initialization: DriveInitializationMethodVersions,
     pub credit_pools: DriveCreditPoolMethodVersions,
@@ -35,33 +37,39 @@ pub struct DriveMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DrivePlatformStateMethodVersions {
     pub fetch_platform_state_bytes: FeatureVersion,
     pub store_platform_state_bytes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveStateTransitionMethodVersions {
     pub operations: DriveStateTransitionOperationMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveStateTransitionOperationMethodVersions {
     pub finalization_tasks: FeatureVersion,
     pub contracts: DriveDataContractOperationMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveDataContractOperationMethodVersions {
     pub finalization_tasks: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveProveMethodVersions {
     pub prove_multiple: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVerifyMethodVersions {
     pub contract: DriveVerifyContractMethodVersions,
     pub document: DriveVerifyDocumentMethodVersions,
@@ -72,12 +80,14 @@ pub struct DriveVerifyMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVerifyContractMethodVersions {
     pub verify_contract: FeatureVersion,
     pub verify_contract_history: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVerifyDocumentMethodVersions {
     pub verify_proof: FeatureVersion,
     pub verify_proof_keep_serialized: FeatureVersion,
@@ -85,6 +95,7 @@ pub struct DriveVerifyDocumentMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVerifyIdentityMethodVersions {
     pub verify_full_identities_by_public_key_hashes: FeatureVersion,
     pub verify_full_identity_by_identity_id: FeatureVersion,
@@ -97,6 +108,7 @@ pub struct DriveVerifyIdentityMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVerifySystemMethodVersions {
     pub verify_epoch_infos: FeatureVersion,
     pub verify_upgrade_state: FeatureVersion,
@@ -104,17 +116,20 @@ pub struct DriveVerifySystemMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVerifySingleDocumentMethodVersions {
     pub verify_proof: FeatureVersion,
     pub verify_proof_keep_serialized: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVerifyStateTransitionMethodVersions {
     pub verify_state_transition_was_executed_with_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveGroveMethodVersions {
     pub basic: DriveGroveBasicMethodVersions,
     pub batch: DriveGroveBatchMethodVersions,
@@ -123,6 +138,7 @@ pub struct DriveGroveMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveBalancesMethodVersions {
     pub add_to_system_credits: FeatureVersion,
     pub add_to_system_credits_operations: FeatureVersion,
@@ -132,6 +148,7 @@ pub struct DriveBalancesMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAssetLockMethodVersions {
     pub add_asset_lock_outpoint: FeatureVersion,
     pub add_estimation_costs_for_adding_asset_lock: FeatureVersion,
@@ -139,11 +156,13 @@ pub struct DriveAssetLockMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveFeesMethodVersions {
     pub calculate_fee: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveContractMethodVersions {
     pub prove: DriveContractProveMethodVersions,
     pub apply: DriveContractApplyMethodVersions,
@@ -154,6 +173,7 @@ pub struct DriveContractMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveContractProveMethodVersions {
     pub prove_contract: FeatureVersion,
     pub prove_contract_history: FeatureVersion,
@@ -161,23 +181,27 @@ pub struct DriveContractProveMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveContractApplyMethodVersions {
     pub apply_contract: FeatureVersion,
     pub apply_contract_with_serialization: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveContractInsertMethodVersions {
     pub add_contract_to_storage: FeatureVersion,
     pub insert_contract: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveContractUpdateMethodVersions {
     pub update_contract: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveContractGetMethodVersions {
     pub fetch_contract: FeatureVersion,
     pub fetch_contract_with_history: FeatureVersion,
@@ -187,6 +211,7 @@ pub struct DriveContractGetMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveContractQueryMethodVersions {
     pub fetch_contract_query: FeatureVersion,
     pub fetch_contract_with_history_latest_query: FeatureVersion,
@@ -195,17 +220,20 @@ pub struct DriveContractQueryMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveContractCostsMethodVersions {
     pub add_estimation_costs_for_contract_insertion: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DrivePlatformSystemMethodVersions {
     pub protocol_version: DriveSystemProtocolVersionMethodVersions,
     pub estimation_costs: DriveSystemEstimationCostsMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveOperationsMethodVersion {
     pub rollback_transaction: FeatureVersion,
     pub drop_cache: FeatureVersion,
@@ -217,23 +245,27 @@ pub struct DriveOperationsMethodVersion {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveBatchOperationsMethodVersion {
     pub convert_drive_operations_to_grove_operations: FeatureVersion,
     pub apply_drive_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveSystemProtocolVersionMethodVersions {
     pub fetch_next_protocol_version: FeatureVersion,
     pub set_next_protocol_version_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveSystemEstimationCostsMethodVersions {
     pub for_total_system_credits_update: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveDocumentMethodVersions {
     pub query: DriveDocumentQueryMethodVersions,
     pub delete: DriveDocumentDeleteMethodVersions,
@@ -244,17 +276,20 @@ pub struct DriveDocumentMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveDocumentQueryMethodVersions {
     pub query_documents: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveDocumentEstimationCostsMethodVersions {
     pub add_estimation_costs_for_add_document_to_primary_storage: FeatureVersion,
     pub stateless_delete_of_non_tree_for_costs: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveDocumentInsertMethodVersions {
     pub add_document: FeatureVersion,
     pub add_document_for_contract: FeatureVersion,
@@ -267,6 +302,7 @@ pub struct DriveDocumentInsertMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveDocumentUpdateMethodVersions {
     pub add_update_multiple_documents_operations: FeatureVersion,
     pub update_document_for_contract: FeatureVersion,
@@ -278,6 +314,7 @@ pub struct DriveDocumentUpdateMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveDocumentDeleteMethodVersions {
     pub add_estimation_costs_for_remove_document_to_primary_storage: FeatureVersion,
     pub delete_document_for_contract: FeatureVersion,
@@ -293,6 +330,7 @@ pub struct DriveDocumentDeleteMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveDocumentIndexUniquenessMethodVersions {
     pub validate_document_uniqueness: FeatureVersion,
     pub validate_document_create_transition_action_uniqueness: FeatureVersion,
@@ -301,6 +339,7 @@ pub struct DriveDocumentIndexUniquenessMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveGroveBasicMethodVersions {
     pub grove_insert: FeatureVersion,
     pub grove_insert_empty_tree: FeatureVersion,
@@ -323,6 +362,7 @@ pub struct DriveGroveBasicMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveGroveBatchMethodVersions {
     pub batch_insert_empty_tree: FeatureVersion,
     pub batch_insert_empty_tree_if_not_exists: FeatureVersion,
@@ -337,6 +377,7 @@ pub struct DriveGroveBatchMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveGroveApplyMethodVersions {
     pub grove_apply_operation: FeatureVersion,
     pub grove_apply_batch: FeatureVersion,
@@ -346,16 +387,19 @@ pub struct DriveGroveApplyMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveGroveCostMethodVersions {
     pub grove_batch_operations_costs: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveInitializationMethodVersions {
     pub create_initial_state_structure: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveCreditPoolMethodVersions {
     pub epochs: DriveCreditPoolEpochsMethodVersions,
     pub pending_epoch_refunds: DriveCreditPoolPendingEpochRefundsMethodVersions,
@@ -363,6 +407,7 @@ pub struct DriveCreditPoolMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveCreditPoolEpochsMethodVersions {
     pub get_epochs_infos: FeatureVersion,
     pub prove_epochs_infos: FeatureVersion,
@@ -382,6 +427,7 @@ pub struct DriveCreditPoolEpochsMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveCreditPoolPendingEpochRefundsMethodVersions {
     pub add_delete_pending_epoch_refunds_except_specified: FeatureVersion,
     pub fetch_and_add_pending_epoch_refunds_to_collection: FeatureVersion,
@@ -390,11 +436,13 @@ pub struct DriveCreditPoolPendingEpochRefundsMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
     pub get_storage_fees_from_distribution_pool: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveProtocolUpgradeVersions {
     pub clear_version_information: FeatureVersion,
     pub change_to_new_version_and_clear_version_information: FeatureVersion,
@@ -407,6 +455,7 @@ pub struct DriveProtocolUpgradeVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveStructureVersion {
     pub document_indexes: FeatureVersionBounds,
     pub identity_indexes: FeatureVersionBounds,
@@ -414,6 +463,7 @@ pub struct DriveStructureVersion {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityMethodVersions {
     pub fetch: DriveIdentityFetchMethodVersions,
     pub prove: DriveIdentityProveMethodVersions,
@@ -426,41 +476,48 @@ pub struct DriveIdentityMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityWithdrawalMethodVersions {
     pub document: DriveIdentityWithdrawalDocumentMethodVersions,
     pub transaction: DriveIdentityWithdrawalTransactionMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityWithdrawalDocumentMethodVersions {
     pub fetch_oldest_withdrawal_documents_by_status: FeatureVersion,
     pub find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityWithdrawalTransactionMethodVersions {
     pub index: DriveIdentityWithdrawalTransactionIndexMethodVersions,
     pub queue: DriveIdentityWithdrawalTransactionQueueMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityWithdrawalTransactionIndexMethodVersions {
     pub fetch_next_withdrawal_transaction_index: FeatureVersion,
     pub add_update_next_withdrawal_transaction_index_operation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
     pub add_enqueue_untied_withdrawal_transaction_operations: FeatureVersion,
     pub dequeue_untied_withdrawal_transactions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityContractInfoMethodVersions {
     pub add_potential_contract_info_for_contract_bounded_key: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_authentication_keys_security_level_in_key_reference_tree: FeatureVersion,
     pub for_balances: FeatureVersion,
@@ -475,6 +532,7 @@ pub struct DriveIdentityCostEstimationMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityFetchMethodVersions {
     pub public_key_hashes: DriveIdentityFetchPublicKeyHashesMethodVersions,
     pub attributes: DriveIdentityFetchAttributesMethodVersions,
@@ -483,6 +541,7 @@ pub struct DriveIdentityFetchMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityFetchPublicKeyHashesMethodVersions {
     pub fetch_full_identities_by_unique_public_key_hashes: FeatureVersion,
     pub fetch_full_identity_by_unique_public_key_hash: FeatureVersion,
@@ -497,6 +556,7 @@ pub struct DriveIdentityFetchPublicKeyHashesMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityFetchAttributesMethodVersions {
     pub revision: FeatureVersion,
     pub balance: FeatureVersion,
@@ -505,12 +565,14 @@ pub struct DriveIdentityFetchAttributesMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityFetchFullIdentityMethodVersions {
     pub fetch_full_identity: OptionalFeatureVersion,
     pub fetch_full_identities: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityFetchPartialIdentityMethodVersions {
     pub fetch_identity_balance_with_keys: FeatureVersion,
     pub fetch_identity_balance_with_keys_and_revision: FeatureVersion,
@@ -518,6 +580,7 @@ pub struct DriveIdentityFetchPartialIdentityMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityProveMethodVersions {
     pub full_identity: FeatureVersion,
     pub full_identities: FeatureVersion,
@@ -528,6 +591,7 @@ pub struct DriveIdentityProveMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityKeysMethodVersions {
     pub fetch: DriveIdentityKeysFetchMethodVersions,
     pub prove: DriveIdentityKeysProveMethodVersions,
@@ -536,6 +600,7 @@ pub struct DriveIdentityKeysMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityKeysFetchMethodVersions {
     pub fetch_all_current_identity_keys: FeatureVersion,
     pub fetch_all_identity_keys: FeatureVersion,
@@ -544,12 +609,14 @@ pub struct DriveIdentityKeysFetchMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityKeysProveMethodVersions {
     pub prove_identities_all_keys: FeatureVersion,
     pub prove_identity_keys: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityKeysInsertMethodVersions {
     pub create_key_tree_with_keys: FeatureVersion,
     pub create_new_identity_key_query_trees: FeatureVersion,
@@ -561,6 +628,7 @@ pub struct DriveIdentityKeysInsertMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityKeyHashesToIdentityInsertMethodVersions {
     pub add_estimation_costs_for_insert_non_unique_public_key_hash_reference: FeatureVersion,
     pub add_estimation_costs_for_insert_unique_public_key_hash_reference: FeatureVersion,
@@ -571,11 +639,13 @@ pub struct DriveIdentityKeyHashesToIdentityInsertMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityInsertMethodVersions {
     pub add_new_identity: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveIdentityUpdateMethodVersions {
     pub update_identity_revision: FeatureVersion,
     pub update_identity_negative_credit_operation: FeatureVersion,
@@ -594,6 +664,7 @@ pub struct DriveIdentityUpdateMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveEstimatedCostsMethodVersions {
     pub add_estimation_costs_for_levels_up_to_contract: FeatureVersion,
     pub add_estimation_costs_for_levels_up_to_contract_document_type_excluded: FeatureVersion,

@@ -3,11 +3,9 @@ use dashcore::block::Version;
 use dashcore::hashes::Hash;
 use dashcore::{Block, BlockHash, CompactTarget, Header, TxMerkleNode};
 use getrandom::getrandom;
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 #[cfg(test)]
 use serde_json::Value as JsonValue;
-
-use crate::prelude::Identifier;
 
 #[cfg(test)]
 #[macro_export]

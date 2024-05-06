@@ -2,7 +2,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::Error;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use std::sync::Arc;

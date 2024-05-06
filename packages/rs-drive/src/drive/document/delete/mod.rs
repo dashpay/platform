@@ -103,7 +103,7 @@ mod tests {
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {

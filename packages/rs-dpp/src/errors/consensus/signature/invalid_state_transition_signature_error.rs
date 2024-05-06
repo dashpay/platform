@@ -1,5 +1,5 @@
-use crate::consensus::signature::signature_error::SignatureError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::signature::signature_error::SignatureError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -19,6 +19,7 @@ use thiserror::Error;
 )]
 #[error("Invalid State Transition signature")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidStateTransitionSignatureError;
 
 /*

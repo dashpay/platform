@@ -8,7 +8,7 @@ use crate::state_transition_action::identity::identity_create::{
 };
 use dpp::block::epoch::Epoch;
 use dpp::prelude::Identity;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
     fn into_high_level_drive_operations<'a>(

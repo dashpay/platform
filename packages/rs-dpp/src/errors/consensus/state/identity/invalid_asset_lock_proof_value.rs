@@ -2,9 +2,9 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
-use crate::consensus::state::state_error::StateError;
+use crate::errors::consensus::state::state_error::StateError;
 use bincode::{Decode, Encode};
 
 #[derive(
@@ -12,14 +12,15 @@ use bincode::{Decode, Encode};
 )]
 #[error("Asset lock value {value:?} must be higher than minimal value of {min_value:?}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidAssetLockProofValueError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    value: u64,
-    min_value: u64,
+    pub value: u64,
+    pub min_value: u64,
 }
 
 impl InvalidAssetLockProofValueError {

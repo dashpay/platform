@@ -5,7 +5,7 @@ use crate::data_contract::config::{
     DEFAULT_CONTRACT_MUTABILITY,
 };
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
+#[ferment_macro::export]
 pub struct DataContractConfigV0 {
     /// Can the contract ever be deleted. If the contract is deleted, so should be all
     /// documents associated with it. TODO: There should also be a way to "stop" the contract -

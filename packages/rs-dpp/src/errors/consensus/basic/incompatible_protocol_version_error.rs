@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,14 +10,15 @@ use thiserror::Error;
 )]
 #[error("Protocol version {parsed_protocol_version:?} is not supported. Minimal supported protocol version is {minimal_protocol_version:?}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IncompatibleProtocolVersionError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    parsed_protocol_version: u32,
-    minimal_protocol_version: u32,
+    pub parsed_protocol_version: u32,
+    pub minimal_protocol_version: u32,
 }
 
 impl IncompatibleProtocolVersionError {

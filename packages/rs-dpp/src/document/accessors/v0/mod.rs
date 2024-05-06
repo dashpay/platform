@@ -5,7 +5,7 @@ use platform_value::Value;
 use std::collections::BTreeMap;
 
 use crate::identity::TimestampMillis;
-use crate::prelude::Identifier;
+use platform_value::Identifier;
 use crate::prelude::Revision;
 
 pub trait DocumentV0Getters {

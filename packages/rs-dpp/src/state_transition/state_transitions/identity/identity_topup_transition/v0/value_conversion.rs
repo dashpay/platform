@@ -1,14 +1,14 @@
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
-use platform_value::{IntegerReplacementType, ReplacementType, Value};
+use platform_value::{Identifier, IntegerReplacementType, ReplacementType, Value};
 
-use crate::{prelude::Identifier, state_transition::StateTransitionFieldTypes, ProtocolError};
+use crate::{state_transition::StateTransitionFieldTypes, errors::ProtocolError};
 
-use crate::prelude::AssetLockProof;
+use crate::state_transition::AssetLockProof;
 
-use crate::state_transition::identity_topup_transition::fields::*;
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_version::version::PlatformVersion;

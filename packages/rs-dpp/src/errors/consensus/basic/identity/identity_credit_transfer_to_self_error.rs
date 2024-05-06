@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -19,6 +19,7 @@ use thiserror::Error;
 )]
 #[error("Credits transfer recipient must be another identity")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IdentityCreditTransferToSelfError {}
 
 impl IdentityCreditTransferToSelfError {}

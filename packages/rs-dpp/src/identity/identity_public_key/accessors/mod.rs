@@ -1,11 +1,8 @@
-use crate::identity::contract_bounds::ContractBounds;
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
-use crate::identity::KeyType;
-use crate::identity::Purpose;
-use crate::identity::SecurityLevel;
-use crate::identity::{IdentityPublicKey, KeyID, TimestampMillis};
+use crate::identity::identity_public_key::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use platform_value::BinaryData;
 
 pub mod v0;

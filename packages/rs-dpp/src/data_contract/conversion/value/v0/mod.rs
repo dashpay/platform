@@ -1,5 +1,5 @@
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 
 pub trait DataContractValueConversionMethodsV0 {

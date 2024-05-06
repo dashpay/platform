@@ -1,5 +1,5 @@
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 pub(in crate::document) trait DocumentPlatformSerializationMethodsV0 {

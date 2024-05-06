@@ -17,7 +17,7 @@ use dpp::prelude::DataContract;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;

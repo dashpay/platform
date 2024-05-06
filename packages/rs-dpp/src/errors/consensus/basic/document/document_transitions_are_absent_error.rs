@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 
@@ -11,6 +11,7 @@ use thiserror::Error;
 )]
 #[error("Documents Batch Transition has no document transitions")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentTransitionsAreAbsentError {}
 
 impl Default for DocumentTransitionsAreAbsentError {

@@ -8,11 +8,10 @@ use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
-use crate::prelude::DataContract;
+use crate::data_contract::DataContract;
+use crate::errors::ProtocolError;
 #[cfg(feature = "data-contract-cbor-conversion")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
 use platform_value::{Identifier, ReplacementType};
 use std::fs::File;
 use std::io::BufReader;
@@ -66,7 +65,7 @@ pub fn json_document_to_cbor(
 pub fn json_document_to_contract(
     path: impl AsRef<Path>,
     validate: bool,
-    platform_version: &PlatformVersion,
+    platform_version: &platform_version::version::PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
@@ -81,7 +80,7 @@ pub fn json_document_to_contract(
 pub fn json_document_to_created_contract(
     path: impl AsRef<Path>,
     validate: bool,
-    platform_version: &PlatformVersion,
+    platform_version: &platform_version::version::PlatformVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
     let data_contract = json_document_to_contract(path, validate, platform_version)?;
 
@@ -99,7 +98,7 @@ pub fn json_document_to_contract_with_ids(
     id: Option<Identifier>,
     owner_id: Option<Identifier>,
     validate: bool,
-    platform_version: &PlatformVersion,
+    platform_version: &platform_version::version::PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
@@ -121,7 +120,7 @@ pub fn json_document_to_document(
     path: impl AsRef<Path>,
     owner_id: Option<Identifier>,
     document_type: DocumentTypeRef,
-    _platform_version: &PlatformVersion,
+    _platform_version: &platform_version::version::PlatformVersion,
 ) -> Result<Document, ProtocolError> {
     let mut data = json_document_to_platform_value(path)?;
 

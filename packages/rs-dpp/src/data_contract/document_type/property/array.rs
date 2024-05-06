@@ -1,10 +1,11 @@
 use crate::data_contract::errors::DataContractError;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use integer_encoding::VarInt;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[ferment_macro::export]
 pub enum ArrayItemType {
     Integer,
     Number,

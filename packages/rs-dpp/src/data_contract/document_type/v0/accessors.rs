@@ -7,7 +7,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use platform_value::{Identifier, Value};
 
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use crate::identity::SecurityLevel;
+use crate::identity::identity_public_key::SecurityLevel;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
 

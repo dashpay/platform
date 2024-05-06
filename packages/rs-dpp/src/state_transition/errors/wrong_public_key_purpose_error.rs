@@ -1,13 +1,14 @@
 use thiserror::Error;
 
-use crate::identity::Purpose;
-use crate::ProtocolError;
+use crate::identity::identity_public_key::Purpose;
+use crate::errors::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
+#[ferment_macro::export]
 pub struct WrongPublicKeyPurposeError {
-    public_key_purpose: Purpose,
-    key_purpose_requirement: Purpose,
+    pub public_key_purpose: Purpose,
+    pub key_purpose_requirement: Purpose,
 }
 
 impl WrongPublicKeyPurposeError {

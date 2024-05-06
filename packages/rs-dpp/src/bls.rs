@@ -1,4 +1,4 @@
-use crate::{ProtocolError, PublicKeyValidationError};
+use crate::{errors::ProtocolError, PublicKeyValidationError};
 #[cfg(not(target_arch = "wasm32"))]
 use anyhow::anyhow;
 use bls_signatures::{PrivateKey, PublicKey};

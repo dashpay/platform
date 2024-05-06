@@ -1,5 +1,5 @@
-use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
-use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use crate::errors::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
+use crate::errors::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::validation::SimpleConsensusValidationResult;

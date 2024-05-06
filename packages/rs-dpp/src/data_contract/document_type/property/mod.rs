@@ -5,7 +5,7 @@ use std::io::{BufReader, Read};
 use crate::data_contract::errors::DataContractError;
 
 use crate::prelude::TimestampMillis;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
@@ -22,6 +22,7 @@ pub mod array;
 // It will become versioned and it will be introduced by a new document type version
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[ferment_macro::export]
 pub struct DocumentProperty {
     pub property_type: DocumentPropertyType,
     pub required: bool,
@@ -29,6 +30,7 @@ pub struct DocumentProperty {
 
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[ferment_macro::export]
 pub enum DocumentPropertyType {
     ///Todo decompose integer
     Integer,

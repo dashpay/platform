@@ -51,7 +51,7 @@ mod tests {
     use crate::drive::Drive;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
 
     #[test]
     fn verify_total_credits_structure() {

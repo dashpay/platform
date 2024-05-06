@@ -11,16 +11,17 @@ mod version;
 use bincode::{Decode, Encode};
 use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use platform_serialization_derive::PlatformSignable;
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 use serde::{Deserialize, Serialize};
 
 use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::{
-    identity::{core_script::CoreScript, KeyID},
-    prelude::{Identifier, Revision},
+    identity::core_script::CoreScript,
     withdrawal::Pooling,
     ProtocolError,
 };
+use crate::prelude::Revision;
+use crate::identity::identity_public_key::KeyID;
 
 // TODO: unsafe - we must use actual relay fee from core
 /// Minimal core per byte. Must be a fibonacci number
@@ -37,6 +38,7 @@ pub const MIN_WITHDRAWAL_AMOUNT: u64 =
     serde(rename_all = "camelCase")
 )]
 #[derive(Default)]
+#[ferment_macro::export]
 pub struct IdentityCreditWithdrawalTransitionV0 {
     pub identity_id: Identifier,
     pub amount: u64,

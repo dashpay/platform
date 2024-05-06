@@ -1,12 +1,12 @@
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::DataContract;
-use crate::state_transition::data_contract_update_transition::fields::*;
-use crate::state_transition::data_contract_update_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::fields::*;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     DataContractUpdateTransitionV0, BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS,
 };
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::state_transition::StateTransitionValueConvert;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 use platform_version::version::PlatformVersion;

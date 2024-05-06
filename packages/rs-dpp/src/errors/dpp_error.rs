@@ -4,6 +4,7 @@ use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransaction
 
 #[derive(Error, Debug)]
 #[error("{0}")]
+#[ferment_macro::export]
 pub enum DPPError {
     AssetLockOutputNotFoundError(AssetLockOutputNotFoundError),
     AssetLockTransactionIsNotFoundError(AssetLockTransactionIsNotFoundError),

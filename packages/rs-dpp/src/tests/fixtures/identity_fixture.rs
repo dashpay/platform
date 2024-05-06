@@ -1,14 +1,14 @@
+use crate::errors::ProtocolError;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};
+use crate::identity::{v0::IdentityV0, identity_public_key::{KeyType, Purpose, SecurityLevel}};
+use crate::identity::Identity;
 use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 use serde_json::json;
 
-use crate::prelude::{Identifier, Identity};
 
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 //3bufpwQjL5qsvuP4fmCKgXJrKG852DDMYfi9J6XKqPAT
 //[198, 23, 40, 120, 58, 93, 0, 165, 27, 49, 4, 117, 107, 204,  67, 46, 164, 216, 230, 135, 201, 92, 31, 155, 62, 131, 211, 177, 139, 175, 163, 237]

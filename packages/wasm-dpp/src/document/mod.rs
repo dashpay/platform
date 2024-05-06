@@ -36,7 +36,7 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
-use dpp::{platform_value, ProtocolError};
+use dpp::{platform_value, errors::ProtocolError};
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;

@@ -2,8 +2,8 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 
 use crate::prelude::ExtendedDocument;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use platform_version::version::FeatureVersion;
 
 impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {

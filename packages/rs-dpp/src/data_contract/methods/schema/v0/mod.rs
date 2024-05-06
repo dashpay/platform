@@ -1,5 +1,5 @@
 use crate::data_contract::{DefinitionName, DocumentName};
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

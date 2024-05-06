@@ -18,6 +18,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
     Decode,
     Default,
 )]
+#[ferment_macro::export]
 pub enum StateTransitionType {
     #[default]
     DataContractCreate = 0,

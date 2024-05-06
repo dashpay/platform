@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,15 +11,16 @@ use thiserror::Error;
 )]
 #[error("Provided document {document_id} owner ID {document_owner_id} mismatch with existing {existing_document_owner_id}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentOwnerIdMismatchError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_id: Identifier,
-    document_owner_id: Identifier,
-    existing_document_owner_id: Identifier,
+    pub document_id: Identifier,
+    pub document_owner_id: Identifier,
+    pub existing_document_owner_id: Identifier,
 }
 
 impl DocumentOwnerIdMismatchError {

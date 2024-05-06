@@ -2,13 +2,14 @@ use std::collections::BTreeMap;
 
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo,
+    data_contract::DataContract,
     document::serialization_traits::DocumentCborMethodsV0,
     document::Document,
+    identity::Identity,
     platform_serialization::{
         platform_encode_to_vec, platform_versioned_decode_from_slice, PlatformVersionEncode,
         PlatformVersionedDecode,
     },
-    prelude::{DataContract, Identity},
     serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,

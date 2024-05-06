@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::DocumentTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
 pub use v0::*;
 
 impl DocumentsBatchTransitionAccessorsV0 for DocumentsBatchTransition {

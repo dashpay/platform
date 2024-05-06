@@ -1,13 +1,13 @@
 use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
 use crate::document::{Document, DocumentV0};
 use crate::prelude::TimestampMillis;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use chrono::Utc;
 use platform_value::Value;
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::INITIAL_REVISION;
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 

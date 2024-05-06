@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::prelude::Revision;
 use bincode::{Decode, Encode};
@@ -14,15 +14,16 @@ use thiserror::Error;
     "Document {document_id} has invalid revision {previous_revision:?}. The desired revision is {desired_revision}"
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidDocumentRevisionError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_id: Identifier,
-    previous_revision: Option<Revision>,
-    desired_revision: Revision,
+    pub document_id: Identifier,
+    pub previous_revision: Option<Revision>,
+    pub desired_revision: Revision,
 }
 
 impl InvalidDocumentRevisionError {

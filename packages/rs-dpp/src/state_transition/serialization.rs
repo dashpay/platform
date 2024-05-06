@@ -1,6 +1,6 @@
 use crate::serialization::PlatformDeserializable;
 use crate::state_transition::StateTransition;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 impl StateTransition {
     pub fn deserialize_many(raw_state_transitions: &[Vec<u8>]) -> Result<Vec<Self>, ProtocolError> {
@@ -42,9 +42,9 @@ mod tests {
         get_extended_documents_fixture_with_owner_id_from_contract,
         raw_instant_asset_lock_proof_fixture,
     };
-    use crate::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
     use crate::withdrawal::Pooling;
-    use crate::{NativeBlsModule, ProtocolError};
+    use crate::{NativeBlsModule, errors::protocol_error::ProtocolError};
     use platform_version::version::LATEST_PLATFORM_VERSION;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;

@@ -8,7 +8,7 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Verifies the balance of an identity by their identity ID.

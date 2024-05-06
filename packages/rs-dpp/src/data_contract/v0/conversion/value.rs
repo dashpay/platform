@@ -1,11 +1,11 @@
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::serialized_version::v0::{
     property_names, DataContractInSerializationFormatV0,
 };
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use platform_value::{ReplacementType, Value};
 use platform_version::TryFromPlatformVersioned;
 

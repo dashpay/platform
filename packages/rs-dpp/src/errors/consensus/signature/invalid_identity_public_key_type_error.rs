@@ -1,8 +1,8 @@
 use thiserror::Error;
 
-use crate::consensus::signature::signature_error::SignatureError;
-use crate::consensus::ConsensusError;
-use crate::identity::KeyType;
+use crate::errors::consensus::signature::signature_error::SignatureError;
+use crate::errors::consensus::ConsensusError;
+use crate::identity::identity_public_key::KeyType;
 
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -14,13 +14,14 @@ use bincode::{Decode, Encode};
 )]
 #[error("Unsupported signature type {public_key_type}. Please use ECDSA (0), BLS (1) or ECDSA_HASH160 (2) keys to sign the state transition")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIdentityPublicKeyTypeError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    public_key_type: KeyType,
+    pub public_key_type: KeyType,
 }
 
 impl InvalidIdentityPublicKeyTypeError {

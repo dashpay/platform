@@ -242,7 +242,7 @@ pub(crate) mod tests {
     use dpp::tests::json_document::json_document_to_contract;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
 
     /// Setup Dashpay
     pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, DataContract) {

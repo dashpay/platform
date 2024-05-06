@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,13 +10,14 @@ use thiserror::Error;
 )]
 #[error("Asset Lock Transaction Output with index {output_index} not found")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IdentityAssetLockTransactionOutputNotFoundError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    output_index: usize,
+    pub output_index: usize,
 }
 
 impl IdentityAssetLockTransactionOutputNotFoundError {

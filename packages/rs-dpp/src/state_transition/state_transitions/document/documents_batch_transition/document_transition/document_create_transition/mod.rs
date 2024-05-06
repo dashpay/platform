@@ -5,7 +5,7 @@ mod v0_methods;
 
 use crate::data_contract::DataContract;
 use crate::document::Document;
-use crate::state_transition::documents_batch_transition::document_create_transition::v0::DocumentFromCreateTransitionV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_create_transition::v0::DocumentFromCreateTransitionV0;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
@@ -19,6 +19,7 @@ pub use v0::DocumentCreateTransitionV0;
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[ferment_macro::export]
 pub enum DocumentCreateTransition {
     #[display(fmt = "V0({})", "_0")]
     V0(DocumentCreateTransitionV0),

@@ -1,4 +1,4 @@
-use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::errors::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
@@ -9,8 +9,8 @@ use crate::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_RE
 use chrono::Utc;
 
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 
 use platform_value::{Bytes32, Identifier, Value};
 
@@ -23,7 +23,7 @@ use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::ExtendedDocument;
 use crate::prelude::TimestampMillis;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::documents_batch_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::{
     document_transition::{
         action_type::DocumentTransitionActionType, DocumentCreateTransition,
         DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransition,

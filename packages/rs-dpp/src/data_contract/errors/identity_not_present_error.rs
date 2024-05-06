@@ -1,13 +1,14 @@
 use platform_value::Identifier;
 use thiserror::Error;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 // @append_only
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Identity is not present")]
+#[ferment_macro::export]
 pub struct IdentityNotPresentError {
-    id: Identifier,
+    pub id: Identifier,
 }
 
 impl IdentityNotPresentError {

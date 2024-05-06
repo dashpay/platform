@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,14 +10,15 @@ use thiserror::Error;
 )]
 #[error("Data Contract version must be {expected_version}, go {version}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidDataContractVersionError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    expected_version: u32,
-    version: u32,
+    pub expected_version: u32,
+    pub version: u32,
 }
 
 impl InvalidDataContractVersionError {

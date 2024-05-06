@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail};
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
-use crate::{identifier, ProtocolError};
+use crate::errors::ProtocolError;
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'
@@ -119,7 +119,7 @@ impl JsonSchemaExt for JsonValue {
     fn is_type_of_identifier(&self) -> bool {
         if let JsonValue::Object(ref map) = self {
             if let Some(JsonValue::String(media_type)) = map.get("contentMediaType") {
-                return media_type == identifier::MEDIA_TYPE;
+                return media_type == platform_value::IDENTIFIER_MEDIA_TYPE;
             }
         }
         false

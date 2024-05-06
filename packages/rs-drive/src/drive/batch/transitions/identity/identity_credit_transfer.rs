@@ -5,7 +5,7 @@ use crate::drive::batch::{DriveOperation, IdentityOperationType};
 use crate::error::Error;
 use crate::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 use dpp::block::epoch::Epoch;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityCreditTransferTransitionAction {
     fn into_high_level_drive_operations<'a>(

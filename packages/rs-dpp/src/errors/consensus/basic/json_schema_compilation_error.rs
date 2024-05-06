@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,13 +10,14 @@ use thiserror::Error;
 )]
 #[error("JsonSchema compilation error: {compilation_error}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct JsonSchemaCompilationError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    compilation_error: String,
+    pub compilation_error: String,
 }
 
 impl JsonSchemaCompilationError {

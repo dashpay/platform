@@ -2,8 +2,8 @@ use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::DocumentV0Getters;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 
 pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {

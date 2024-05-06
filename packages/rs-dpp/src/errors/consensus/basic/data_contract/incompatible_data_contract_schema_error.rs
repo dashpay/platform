@@ -1,13 +1,12 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
-use crate::prelude::Identifier;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 
 #[derive(
     Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
@@ -15,12 +14,13 @@ use platform_value::Value;
 #[error("Data Contract updated schema is not backward compatible with one defined in Data Contract wid id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IncompatibleDataContractSchemaError {
-    data_contract_id: Identifier,
-    operation: String,
-    field_path: String,
-    old_schema: Value,
-    new_schema: Value,
+    pub data_contract_id: Identifier,
+    pub operation: String,
+    pub field_path: String,
+    pub old_schema: Value,
+    pub new_schema: Value,
 }
 
 impl IncompatibleDataContractSchemaError {

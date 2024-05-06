@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -12,16 +12,17 @@ use bincode::{Decode, Encode};
 )]
 #[error("'{property_name}' property of '{document_type}' document has an invalid type '{property_type}' and cannot be use as an index")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIndexPropertyTypeError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_type: String,
-    index_name: String,
-    property_name: String,
-    property_type: String,
+    pub document_type: String,
+    pub index_name: String,
+    pub property_name: String,
+    pub property_type: String,
 }
 
 impl InvalidIndexPropertyTypeError {

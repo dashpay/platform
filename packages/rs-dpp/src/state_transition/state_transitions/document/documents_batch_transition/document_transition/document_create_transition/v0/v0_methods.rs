@@ -1,7 +1,7 @@
 use crate::identity::TimestampMillis;
 
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::DocumentCreateTransitionV0;
 
 use platform_value::Value;
 

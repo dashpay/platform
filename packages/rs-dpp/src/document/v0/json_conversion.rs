@@ -4,7 +4,7 @@ use crate::document::serialization_traits::{
 };
 use crate::document::DocumentV0;
 use crate::util::json_value::JsonValueExt;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use serde::Deserialize;

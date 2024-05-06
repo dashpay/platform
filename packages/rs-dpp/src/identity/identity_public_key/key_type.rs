@@ -16,9 +16,9 @@ use crate::fee::default_costs::KnownCostItem::{
     VerifySignatureBLS12_381, VerifySignatureBip13ScriptHash, VerifySignatureEcdsaHash160,
     VerifySignatureEcdsaSecp256k1, VerifySignatureEddsa25519Hash160,
 };
-use crate::fee::Credits;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::balances::credits::Credits;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -43,6 +43,7 @@ use std::convert::TryFrom;
     Default,
     strum::EnumIter,
 )]
+#[ferment_macro::export]
 pub enum KeyType {
     #[default]
     ECDSA_SECP256K1 = 0,

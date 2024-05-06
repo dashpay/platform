@@ -1,7 +1,7 @@
 use crate::identity::v0::IdentityV0;
-use crate::identity::{Identity, IdentityPublicKey, KeyCount};
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::identity::{Identity, identity_public_key::{IdentityPublicKey, KeyCount}};
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use rand::prelude::StdRng;
 use std::iter::FromIterator;
 

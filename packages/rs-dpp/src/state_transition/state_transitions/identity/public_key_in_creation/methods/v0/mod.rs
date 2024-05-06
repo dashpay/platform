@@ -1,6 +1,6 @@
-use crate::identity::{IdentityPublicKey, SecurityLevel};
+use crate::identity::identity_public_key::{IdentityPublicKey, SecurityLevel};
 
-use crate::state_transition::public_key_in_creation::accessors::{
+use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
 };
 

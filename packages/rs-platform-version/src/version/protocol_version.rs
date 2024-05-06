@@ -11,10 +11,13 @@ use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
 use crate::version::mocks::TEST_BYTES;
 use crate::version::v1::PLATFORM_V1;
 
+#[ferment_macro::export]
 pub type FeatureVersion = u16;
+#[ferment_macro::export]
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct FeatureVersionBounds {
     pub min_version: FeatureVersion,
     pub max_version: FeatureVersion,
@@ -29,17 +32,20 @@ impl FeatureVersionBounds {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct AbciStructureVersion {
     pub extended_block_info: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct PlatformArchitectureVersion {
     pub data_contract_factory_structure_version: FeatureVersion,
     pub document_factory_structure_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug)]
+#[ferment_macro::export]
 pub struct PlatformVersion {
     pub protocol_version: u32,
     pub identity: FeatureVersionBounds,

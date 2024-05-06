@@ -5,8 +5,8 @@ use bincode::{Decode, Encode};
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::fields::property_names::{DATA_CONTRACT, ENTROPY};
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};
 

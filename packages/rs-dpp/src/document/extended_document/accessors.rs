@@ -4,7 +4,7 @@ use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::{Bytes32, Identifier, Value};
 use std::collections::BTreeMap;
 

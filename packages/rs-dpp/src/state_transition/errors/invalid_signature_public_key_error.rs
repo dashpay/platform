@@ -1,10 +1,11 @@
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid signature public key")]
+#[ferment_macro::export]
 pub struct InvalidSignaturePublicKeyError {
-    public_key: Vec<u8>,
+    pub public_key: Vec<u8>,
 }
 
 impl InvalidSignaturePublicKeyError {

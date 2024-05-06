@@ -1,10 +1,10 @@
-use crate::consensus::basic::json_schema_error::JsonSchemaError;
-use crate::consensus::basic::value_error::ValueError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::fee::fee_error::FeeError;
-use crate::consensus::signature::SignatureError;
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::json_schema_error::JsonSchemaError;
+use crate::errors::consensus::basic::value_error::ValueError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::fee::fee_error::FeeError;
+use crate::errors::consensus::signature::SignatureError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 
 pub fn get_schema_error(

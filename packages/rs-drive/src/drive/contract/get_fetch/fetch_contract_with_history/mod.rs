@@ -3,7 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::DataContract;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -95,7 +95,7 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{platform_value, ValueMapHelper};
     use dpp::tests::fixtures::get_data_contract_fixture;
-    use dpp::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
 
     struct TestData {
         data_contract: DataContract,

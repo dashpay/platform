@@ -1,14 +1,15 @@
-use crate::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::errors::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 use thiserror::Error;
 
 // @append_only
 #[derive(Error, Debug)]
 #[error("Invalid Data Contract: {errors:?}")]
+#[ferment_macro::export]
 pub struct InvalidDataContractError {
     pub errors: Vec<ConsensusError>,
-    raw_data_contract: Value,
+    pub raw_data_contract: Value,
 }
 
 impl InvalidDataContractError {

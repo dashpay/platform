@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::serialized_version::v0::property_names as contract_property_names;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::{Value, ValueMapHelper};
 
 pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =

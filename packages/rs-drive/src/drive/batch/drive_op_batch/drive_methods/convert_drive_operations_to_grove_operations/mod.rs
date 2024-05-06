@@ -6,7 +6,7 @@ use crate::error::Error;
 
 use dpp::block::block_info::BlockInfo;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 use grovedb::TransactionArg;
 

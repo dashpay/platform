@@ -1,20 +1,21 @@
-pub use compatible_protocol_version_is_not_defined_error::*;
-pub use dpp_error::*;
-pub use dpp_init_error::*;
-pub use invalid_vector_size_error::*;
-pub use non_consensus_error::*;
-pub use protocol_error::*;
-pub use public_key_validation_error::*;
-pub use serde_parsing_error::*;
+pub use compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
+pub use dpp_error::DPPError;
+pub use dpp_init_error::DashPlatformProtocolInitError;
+pub use invalid_vector_size_error::InvalidVectorSizeError;
+pub use non_consensus_error::NonConsensusError;
+pub use non_consensus_error::object_names::STATE_TRANSITION;
+pub use protocol_error::ProtocolError;
+pub use public_key_validation_error::PublicKeyValidationError;
+pub use serde_parsing_error::SerdeParsingError;
 
-mod compatible_protocol_version_is_not_defined_error;
+pub mod compatible_protocol_version_is_not_defined_error;
 pub mod consensus;
-mod dpp_init_error;
-mod invalid_vector_size_error;
-mod non_consensus_error;
-mod public_key_validation_error;
-mod serde_parsing_error;
+pub mod dpp_init_error;
+pub mod invalid_vector_size_error;
+pub mod non_consensus_error;
+pub mod public_key_validation_error;
+pub mod serde_parsing_error;
 
 pub mod protocol_error;
 
-mod dpp_error;
+pub mod dpp_error;

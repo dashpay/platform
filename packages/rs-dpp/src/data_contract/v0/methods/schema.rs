@@ -4,7 +4,7 @@ use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DefinitionName, DocumentName};
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

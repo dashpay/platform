@@ -5,7 +5,7 @@ use crate::document::property_names::{CREATED_AT, UPDATED_AT};
 
 use crate::prelude::Revision;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -13,7 +13,7 @@ use crate::document::serialization_traits::deserialize::v0::DocumentPlatformDese
 use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::v0::DocumentV0;
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use byteorder::{BigEndian, ReadBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
 

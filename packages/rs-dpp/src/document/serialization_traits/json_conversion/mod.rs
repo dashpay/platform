@@ -3,7 +3,7 @@ mod v0;
 pub use v0::*;
 
 use crate::document::{Document, DocumentV0};
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use serde::Deserialize;

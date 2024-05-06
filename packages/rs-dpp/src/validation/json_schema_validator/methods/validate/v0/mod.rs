@@ -1,4 +1,4 @@
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::ProtocolError;
 

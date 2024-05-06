@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use serde_json::{Map, Value as JsonValue};
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 mod convert;
 pub use convert::FieldType;
 

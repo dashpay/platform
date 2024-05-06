@@ -2,22 +2,23 @@ use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockPr
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::state_transition::AssetLockProved;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::identity::{IdentityV0, TimestampMillis};
+use crate::identity::{v0::IdentityV0, TimestampMillis};
 
-use crate::identity::{Identity, IdentityPublicKey, KeyID};
+use crate::identity::Identity;
+use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 use dashcore::{InstantLock, Transaction};
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
-use crate::consensus::basic::decode::SerializedObjectParsingError;
+use crate::errors::consensus::basic::decode::SerializedObjectParsingError;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::accessors::IdentityGettersV0;
 
@@ -28,32 +29,32 @@ use crate::prelude::Revision;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::version::PlatformVersion;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
+use platform_version::version::PlatformVersion;
 use crate::withdrawal::Pooling;
 #[cfg(any(
     all(feature = "identity-serialization", feature = "client"),

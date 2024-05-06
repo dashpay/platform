@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::query::DriveQuery;
 use dpp::document::Document;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl<'a> DriveQuery<'a> {
     /// Verifies a proof for a collection of documents.

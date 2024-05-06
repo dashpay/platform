@@ -8,7 +8,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::sync::Arc;
 
@@ -194,7 +194,7 @@ mod tests {
     use dpp::prelude::Identifier;
     use dpp::tests::json_document::json_document_to_contract;
 
-    use dpp::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
     use std::sync::Arc;
 
     #[test]

@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
+use crate::{state_transition::StateTransitionFieldTypes, errors::ProtocolError};
 
-use crate::state_transition::identity_credit_transfer_transition::fields::*;
-use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_version::version::PlatformVersion;

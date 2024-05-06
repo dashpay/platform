@@ -1,8 +1,8 @@
 use crate::identity::signer::Signer;
 use crate::identity::Identity;
-use crate::prelude::AssetLockProof;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::state_transition::{StateTransition, StateTransitionType};
-use crate::{BlsModule, ProtocolError};
+use crate::{BlsModule, errors::ProtocolError};
 use platform_version::version::PlatformVersion;
 
 pub trait IdentityCreateTransitionMethodsV0 {

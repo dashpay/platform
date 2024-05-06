@@ -1,5 +1,5 @@
-use crate::fee::Credits;
-use crate::ProtocolError;
+use crate::balances::credits::Credits;
+use crate::errors::ProtocolError;
 
 pub const RATIO: u64 = 1000;
 

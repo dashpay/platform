@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -12,6 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Credit transfer amount {amount} must be greater or equal to {min_amount}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIdentityCreditTransferAmountError {
     /*
 

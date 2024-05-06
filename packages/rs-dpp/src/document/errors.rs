@@ -6,9 +6,10 @@ use crate::errors::consensus::ConsensusError;
 use crate::document::accessors::v0::DocumentV0Getters;
 use crate::document::Document;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::DocumentTransition;
 
 #[derive(Error, Debug)]
+#[ferment_macro::export]
 pub enum DocumentError {
     #[cfg(feature = "state-transitions")]
     #[error("Document already exists")]

@@ -1,10 +1,10 @@
-use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName};
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_value::{Identifier, Value};
@@ -12,7 +12,7 @@ use platform_version::TryFromPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
 
-pub(in crate::data_contract) mod v0;
+pub mod v0;
 
 pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
 
@@ -22,6 +22,7 @@ pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
     derive(Serialize, Deserialize),
     serde(tag = "$format_version")
 )]
+#[ferment_macro::export]
 pub enum DataContractInSerializationFormat {
     #[cfg_attr(feature = "data-contract-serde-conversion", serde(rename = "0"))]
     V0(DataContractInSerializationFormatV0),

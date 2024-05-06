@@ -22,7 +22,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Removes indices for an index level and recurses.

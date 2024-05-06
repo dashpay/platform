@@ -1,11 +1,9 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use thiserror::Error;
-
-use crate::prelude::Identifier;
-
 use bincode::{Decode, Encode};
 
 #[derive(
@@ -13,14 +11,15 @@ use bincode::{Decode, Encode};
 )]
 #[error("Data Contract {data_contract_id} doesn't define document with the type {document_type}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidDocumentTypeError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_type: String,
-    data_contract_id: Identifier,
+    pub document_type: String,
+    pub data_contract_id: Identifier,
 }
 
 impl InvalidDocumentTypeError {

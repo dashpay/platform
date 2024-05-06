@@ -10,7 +10,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
 use crate::drive::batch::drive_op_batch::finalize_task::{

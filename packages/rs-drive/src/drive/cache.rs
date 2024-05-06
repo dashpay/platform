@@ -196,7 +196,7 @@ mod tests {
     mod get {
         use super::*;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-        use dpp::version::PlatformVersion;
+        use platform_version::version::PlatformVersion;
 
         #[test]
         fn test_get_from_global_cache_when_block_cache_is_not_requested() {

@@ -10,10 +10,11 @@ use crate::error::Error;
 use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{IdentityPublicKey, IdentityV0, KeyID};
-pub use dpp::prelude::{Identity, Revision};
+use dpp::identity::{identity_public_key::IdentityPublicKey, v0::IdentityV0, identity_public_key::KeyID};
+pub use dpp::prelude::Revision;
+pub use dpp::identity::Identity;
 use dpp::serialization::PlatformDeserializable;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 

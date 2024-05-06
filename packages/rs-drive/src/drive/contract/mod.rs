@@ -93,7 +93,7 @@ mod tests {
 
     use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec};
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
 
     fn setup_deep_nested_50_contract() -> (Drive, DataContract) {
         let drive: Drive = setup_drive_with_initial_state_structure();

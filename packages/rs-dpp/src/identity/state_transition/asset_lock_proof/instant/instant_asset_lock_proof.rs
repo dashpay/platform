@@ -12,18 +12,19 @@ use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::prelude::Identifier;
+use platform_value::Identifier;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash_double;
 use crate::validation::SimpleConsensusValidationResult;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 /// Instant Asset Lock Proof is a part of Identity Create and Identity Topup
 /// transitions. It is a proof that specific output of dash is locked in credits
 /// pull and the transitions can mint credits and populate identity's balance.
 /// To prove that the output is locked, an Instant Lock is provided.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[ferment_macro::export]
 pub struct InstantAssetLockProof {
     /// The transaction's Instant Lock
     pub instant_lock: InstantLock,

@@ -9,9 +9,9 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::dashcore::consensus::Decodable;
 use dpp::dashcore::{Address, InstantLock, MerkleBlock, OutPoint, Transaction, Txid};
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-use dpp::prelude::AssetLockProof;
 
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use std::time::Duration;

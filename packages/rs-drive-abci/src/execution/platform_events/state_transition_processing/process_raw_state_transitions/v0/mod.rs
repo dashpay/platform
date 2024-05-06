@@ -10,7 +10,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
-use dpp::{dashcore, ProtocolError};
+use dpp::{dashcore, errors::ProtocolError};
 
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::state_transitions_processing_result::{

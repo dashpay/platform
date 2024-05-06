@@ -109,7 +109,7 @@ use crate::common::encode::encode_u64;
 use crate::drive::config::DriveConfig;
 use crate::error::Error::GroveDB;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
 

@@ -17,10 +17,10 @@ use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransition;
-use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
-
+use crate::{data_contract::DataContract, errors::ProtocolError};
+use crate::identity::identity_public_key::KeyID;
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
@@ -28,6 +28,7 @@ use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
     serde(rename_all = "camelCase")
 )]
 
+#[ferment_macro::export]
 pub struct DataContractUpdateTransitionV0 {
     pub data_contract: DataContractInSerializationFormat,
     #[platform_signable(exclude_from_sig_hash)]

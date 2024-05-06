@@ -8,14 +8,14 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::identity::KeyID;
+use crate::identity::identity_public_key::KeyID;
 
-use crate::prelude::{Identifier, Revision};
+use crate::prelude::Revision;
 
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[platform_serialize(unversioned)]
 #[derive(Default)]
+#[ferment_macro::export]
 pub struct IdentityCreditTransferTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,

@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,14 +11,15 @@ use thiserror::Error;
 )]
 #[error("Can't update Data Contract {data_contract_id} config: {additional_message}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DataContractConfigUpdateError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    data_contract_id: Identifier,
-    additional_message: String,
+    pub data_contract_id: Identifier,
+    pub additional_message: String,
 }
 
 impl DataContractConfigUpdateError {

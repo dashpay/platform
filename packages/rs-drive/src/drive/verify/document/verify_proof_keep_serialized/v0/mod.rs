@@ -4,7 +4,7 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveQuery;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::GroveDb;
 
 impl<'a> DriveQuery<'a> {

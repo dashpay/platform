@@ -9,7 +9,7 @@ use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalcula
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use grovedb_costs::{
     cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost,

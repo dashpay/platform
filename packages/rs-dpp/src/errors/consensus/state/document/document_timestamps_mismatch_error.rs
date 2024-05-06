@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("Document {document_id} createdAt and updatedAt timestamps are not equal")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentTimestampsMismatchError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_id: Identifier,
+    pub document_id: Identifier,
 }
 
 impl DocumentTimestampsMismatchError {

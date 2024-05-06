@@ -1,6 +1,6 @@
-use crate::consensus::fee::fee_error::FeeError;
-use crate::consensus::ConsensusError;
-use crate::fee::Credits;
+use crate::errors::consensus::fee::fee_error::FeeError;
+use crate::errors::consensus::ConsensusError;
+use crate::balances::credits::Credits;
 use thiserror::Error;
 
 use crate::errors::ProtocolError;
@@ -13,14 +13,15 @@ use bincode::{Decode, Encode};
 )]
 #[error("Current credits balance {balance} is not enough to pay {fee} fee")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct BalanceIsNotEnoughError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    balance: Credits,
-    fee: Credits,
+    pub balance: Credits,
+    pub fee: Credits,
 }
 
 impl BalanceIsNotEnoughError {

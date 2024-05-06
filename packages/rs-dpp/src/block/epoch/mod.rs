@@ -1,4 +1,4 @@
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 

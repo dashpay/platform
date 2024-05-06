@@ -1,5 +1,6 @@
-use crate::identity::{KeyID, SecurityLevel};
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::identity::identity_public_key::SecurityLevel;
+use crate::identity::identity_public_key::KeyID;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for IdentityCreditTransferTransition {

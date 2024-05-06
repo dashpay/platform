@@ -4,7 +4,7 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::{PathQuery, TransactionArg};
 use itertools::{Either, Itertools};
 

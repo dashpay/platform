@@ -1,6 +1,6 @@
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::FeatureVersioned;
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 
 impl FeatureVersioned for IdentityTopUpTransition {
     fn feature_version(&self) -> FeatureVersion {

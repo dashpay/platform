@@ -10,16 +10,12 @@ use dapi_grpc::platform::v0::{
     get_documents_request::{get_documents_request_v0::Start, GetDocumentsRequestV0},
     GetDocumentsRequest,
 };
-use dpp::{
-    data_contract::{
-        accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
-    },
-    document::Document,
-    platform_value::{platform_value, Value},
-    prelude::{DataContract, Identifier},
-};
+use dpp::{data_contract::{
+    accessors::v0::DataContractV0Getters, DataContract, document_type::accessors::DocumentTypeV0Getters,
+}, document::Document, platform_value::{platform_value, Value}, platform_value};
 use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::{types::Documents, FromProof};
+use platform_value::Identifier;
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
 };

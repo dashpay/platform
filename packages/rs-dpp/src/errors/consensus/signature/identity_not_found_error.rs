@@ -1,8 +1,8 @@
 use thiserror::Error;
 
-use crate::consensus::signature::signature_error::SignatureError;
-use crate::consensus::ConsensusError;
-use crate::prelude::Identifier;
+use crate::errors::consensus::signature::signature_error::SignatureError;
+use crate::errors::consensus::ConsensusError;
+use platform_value::Identifier;
 
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -14,13 +14,14 @@ use bincode::{Decode, Encode};
 )]
 #[error("Identity {identity_id} not found")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IdentityNotFoundError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    identity_id: Identifier,
+    pub identity_id: Identifier,
 }
 
 impl IdentityNotFoundError {

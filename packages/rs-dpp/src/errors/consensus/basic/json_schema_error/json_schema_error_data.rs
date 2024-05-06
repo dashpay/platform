@@ -7,6 +7,7 @@ use std::fmt::Write;
 use std::ops::Deref;
 
 #[derive(Debug, Serialize, Default, Deserialize)]
+#[ferment_macro::export]
 pub struct JsonSchemaErrorData {
     /*
 

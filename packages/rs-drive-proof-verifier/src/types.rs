@@ -8,15 +8,10 @@
 use std::collections::BTreeMap;
 
 pub use dpp::version::ProtocolVersionVoteCount;
-use dpp::{
-    block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
-    dashcore::ProTxHash,
-    document::Document,
-    identity::KeyID,
-    prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
-    util::deserializer::ProtocolVersion,
-};
-
+use dpp::{block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo}, dashcore::ProTxHash, document::Document, identity::identity_public_key::KeyID, platform_value, prelude::Revision, util::deserializer::ProtocolVersion};
+use dpp::data_contract::DataContract;
+use dpp::identity::identity_public_key::IdentityPublicKey;
+use platform_value::Identifier;
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
 /// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects

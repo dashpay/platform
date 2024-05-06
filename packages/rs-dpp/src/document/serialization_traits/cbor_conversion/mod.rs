@@ -3,8 +3,8 @@ mod v0;
 use crate::document::{Document, DocumentV0};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitFeatureVersionOutcome;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use ciborium::Value as CborValue;
 pub use v0::*;
 

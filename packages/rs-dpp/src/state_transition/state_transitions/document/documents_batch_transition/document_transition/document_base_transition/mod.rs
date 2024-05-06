@@ -4,7 +4,7 @@ pub mod v0;
 mod v0_methods;
 
 use crate::data_contract::DataContract;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
 use crate::ProtocolError;
@@ -22,6 +22,7 @@ use std::collections::BTreeMap;
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[ferment_macro::export]
 pub enum DocumentBaseTransition {
     #[display(fmt = "V0({})", "_0")]
     V0(DocumentBaseTransitionV0),

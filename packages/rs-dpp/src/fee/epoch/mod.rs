@@ -39,7 +39,7 @@ pub mod distribution;
 
 /// Epoch index type
 use crate::block::epoch::EpochIndex;
-use crate::fee::{Credits, SignedCredits};
+use crate::balances::credits::{Credits, SignedCredits};
 
 /// Genesis epoch index
 //todo move to dpp

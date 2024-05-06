@@ -7,7 +7,7 @@ use crate::error::Error;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 
-use dpp::identifier::Identifier;
+use dpp::platform_value::Identifier;
 use dpp::platform_value::Value;
 use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;

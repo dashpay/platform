@@ -3,11 +3,11 @@ mod v0;
 pub use v0::*;
 
 use crate::identity::Identity;
-use crate::prelude::AssetLockProof;
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::StateTransition;
-use crate::version::FeatureVersion;
+use platform_version::version::FeatureVersion;
 use crate::ProtocolError;
 
 use platform_version::version::PlatformVersion;

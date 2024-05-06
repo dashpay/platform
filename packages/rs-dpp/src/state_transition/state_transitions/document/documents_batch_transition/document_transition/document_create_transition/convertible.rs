@@ -1,13 +1,13 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::prelude::DataContract;
-use crate::state_transition::data_contract_update_transition::IDENTIFIER_FIELDS;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
-use crate::state_transition::documents_batch_transition::document_create_transition::v0::BINARY_FIELDS;
-use crate::state_transition::documents_batch_transition::document_create_transition::{
+use crate::data_contract::DataContract;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::IDENTIFIER_FIELDS;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::DocumentTransitionObjectLike;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::v0::BINARY_FIELDS;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::{
     DocumentCreateTransition, DocumentCreateTransitionV0,
 };
-use crate::state_transition::documents_batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
+use crate::state_transition::state_transitions::document::documents_batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,

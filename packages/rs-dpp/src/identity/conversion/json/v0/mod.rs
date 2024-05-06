@@ -1,4 +1,4 @@
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use serde_json::Value as JsonValue;
 
 pub trait IdentityJsonConversionMethodsV0 {

@@ -4,7 +4,7 @@ mod v0;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 pub use v0::*;
 

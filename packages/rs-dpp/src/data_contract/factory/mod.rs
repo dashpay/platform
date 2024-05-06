@@ -4,16 +4,16 @@ use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
 
 use crate::util::entropy_generator::EntropyGenerator;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
 use crate::data_contract::config::DataContractConfig;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 pub use v0::DataContractFactoryV0;
 
 /// # Data Contract Factory

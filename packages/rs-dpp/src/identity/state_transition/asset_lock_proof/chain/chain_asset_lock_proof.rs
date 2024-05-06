@@ -4,7 +4,8 @@ use std::convert::TryFrom;
 use std::io;
 
 use crate::util::hash::hash_double;
-use crate::{identifier::Identifier, ProtocolError};
+use platform_value::Identifier;
+use crate::errors::ProtocolError;
 pub use bincode::{Decode, Encode};
 use dashcore::OutPoint;
 
@@ -14,6 +15,7 @@ use dashcore::OutPoint;
 /// To prove that the output is locked, a height where transaction was chain locked is provided.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[ferment_macro::export]
 pub struct ChainAssetLockProof {
     /// Core height on which the asset lock transaction was chain locked or higher
     pub core_chain_locked_height: u32,

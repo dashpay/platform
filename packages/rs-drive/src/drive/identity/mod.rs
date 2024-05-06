@@ -38,7 +38,7 @@ use crate::drive::object_size_info::DriveKeyInfo;
 use crate::drive::RootTree;
 
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::identity::{KeyID, Purpose, SecurityLevel};
+use dpp::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
 
 #[cfg(feature = "full")]
 /// Everything related to withdrawals

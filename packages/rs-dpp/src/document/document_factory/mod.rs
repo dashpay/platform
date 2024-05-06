@@ -2,8 +2,8 @@ mod v0;
 
 use crate::data_contract::DataContract;
 
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use derive_more::From;
 use platform_value::{Bytes32, Identifier, Value};
 
@@ -12,7 +12,7 @@ use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::documents_batch_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::{
     document_transition::action_type::DocumentTransitionActionType, DocumentsBatchTransition,
 };
 use crate::util::entropy_generator::EntropyGenerator;

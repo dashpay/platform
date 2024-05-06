@@ -17,7 +17,7 @@ use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Removes the document from primary storage.

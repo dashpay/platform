@@ -1,5 +1,5 @@
-use crate::consensus::signature::signature_error::SignatureError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::signature::signature_error::SignatureError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -20,8 +20,9 @@ use bincode::{Decode, Encode};
 )]
 #[error("ecdsa signing error {message}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct BasicECDSAError {
-    message: String,
+    pub message: String,
 }
 
 /*

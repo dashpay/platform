@@ -3,8 +3,8 @@ use crate::document::Document;
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-use crate::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition};
-use crate::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::{DocumentDeleteTransition};
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
 
 impl DocumentDeleteTransition {
     pub fn from_document(

@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,14 +10,15 @@ use thiserror::Error;
 )]
 #[error("State transition size {actual_size_kbytes} KB is more than maximum {max_size_kbytes} KB")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct StateTransitionMaxSizeExceededError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    actual_size_kbytes: usize,
-    max_size_kbytes: usize,
+    pub actual_size_kbytes: usize,
+    pub max_size_kbytes: usize,
 }
 
 impl StateTransitionMaxSizeExceededError {

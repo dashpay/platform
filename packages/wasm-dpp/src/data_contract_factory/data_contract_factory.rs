@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use dpp::data_contract::created_data_contract::CreatedDataContract;
-use dpp::{data_contract::DataContractFactory, platform_value, prelude::Identifier, ProtocolError};
+use dpp::{data_contract::DataContractFactory, platform_value, prelude::Identifier, errors::ProtocolError};
 use wasm_bindgen::prelude::*;
 
 use crate::entropy_generator::ExternalEntropyGenerator;

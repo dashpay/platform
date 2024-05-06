@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Eq)]
+#[ferment_macro::export]
 pub enum OrderBy {
     #[serde(rename = "asc")]
     Asc,
@@ -10,7 +11,7 @@ pub enum OrderBy {
 
 use crate::data_contract::errors::{DataContractError, StructureError};
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use anyhow::anyhow;
 
 use platform_value::{Value, ValueMap};
@@ -21,6 +22,7 @@ pub mod random_index;
 
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[ferment_macro::export]
 pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
@@ -54,6 +56,7 @@ impl Index {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[ferment_macro::export]
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,

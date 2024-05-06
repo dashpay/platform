@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
-use crate::consensus::signature::{
+use crate::errors::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
 
@@ -11,9 +11,8 @@ use crate::state_transition::errors::WrongPublicKeyPurposeError;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::state_transition::StateTransitionLike;
 
-use crate::{
-    identity::{IdentityPublicKey, KeyID, Purpose, SecurityLevel},
-    prelude::*,
+use crate::{errors::ProtocolError,
+    identity::identity_public_key::{IdentityPublicKey, KeyID, Purpose, SecurityLevel},
 };
 
 pub trait StateTransitionIdentitySigned: StateTransitionLike {

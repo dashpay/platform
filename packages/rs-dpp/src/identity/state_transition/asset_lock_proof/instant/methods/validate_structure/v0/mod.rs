@@ -1,8 +1,8 @@
 use platform_version::version::PlatformVersion;
-use crate::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
+use crate::errors::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
 use crate::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use crate::validation::SimpleConsensusValidationResult;
 
 pub fn validate_instant_asset_lock_proof_structure_v0(

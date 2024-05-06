@@ -13,19 +13,18 @@ use std::convert::TryFrom;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::Identity;
-use crate::prelude::Identifier;
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::state_transition::AssetLockProved;
-use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
-use crate::version::PlatformVersion;
+use crate::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreationSignable;
+use platform_version::version::PlatformVersion;
 use crate::ProtocolError;
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
@@ -40,6 +39,7 @@ use crate::ProtocolError;
 // Instead of inside of bincode_derive
 #[platform_signable(derive_bincode_with_borrowed_vec)]
 #[derive(Default)]
+#[ferment_macro::export]
 pub struct IdentityCreateTransitionV0 {
     // When signing, we don't sign the signatures for keys
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]

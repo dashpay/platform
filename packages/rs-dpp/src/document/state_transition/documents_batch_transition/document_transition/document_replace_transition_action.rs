@@ -3,7 +3,7 @@ use crate::document::document_transition::DocumentReplaceTransition;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

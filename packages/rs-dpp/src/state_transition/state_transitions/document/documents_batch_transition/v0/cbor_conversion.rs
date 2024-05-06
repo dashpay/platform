@@ -10,7 +10,7 @@ use crate::state_transition::documents_batch_transition::{
 };
 use crate::state_transition::{FeatureVersioned, StateTransitionCborConvert, StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use anyhow::Context;
 use ciborium::Value as CborValue;
 use std::convert::TryInto;

@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -20,6 +20,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Invalid instant lock proof signature")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidInstantAssetLockProofSignatureError;
 
 /*

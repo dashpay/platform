@@ -4,13 +4,14 @@ pub use v0::*;
 
 use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
-use crate::identity::{KeyID, PartialIdentity};
-use crate::state_transition::data_contract_update_transition::{
+use crate::identity::PartialIdentity;
+use crate::identity::identity_public_key::KeyID;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
 };
 use crate::state_transition::StateTransition;
-use crate::version::FeatureVersion;
-use crate::ProtocolError;
+use platform_version::version::FeatureVersion;
+use crate::errors::ProtocolError;
 
 use platform_version::version::PlatformVersion;
 

@@ -1,5 +1,5 @@
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::state_transition::state_transitions::identity_topup_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::fields::*;
 use crate::state_transition::{
     JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
 };

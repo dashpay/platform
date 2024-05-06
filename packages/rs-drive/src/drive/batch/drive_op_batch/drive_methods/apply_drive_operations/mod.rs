@@ -11,7 +11,7 @@ use grovedb::TransactionArg;
 
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.

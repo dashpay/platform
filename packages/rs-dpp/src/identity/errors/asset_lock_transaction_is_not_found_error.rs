@@ -5,8 +5,9 @@ use crate::DPPError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Asset Lock transaction {transaction_id:?} is not found")]
+#[ferment_macro::export]
 pub struct AssetLockTransactionIsNotFoundError {
-    transaction_id: Txid,
+    pub transaction_id: Txid,
 }
 
 impl AssetLockTransactionIsNotFoundError {
@@ -24,3 +25,4 @@ impl From<AssetLockTransactionIsNotFoundError> for DPPError {
         Self::AssetLockTransactionIsNotFoundError(error)
     }
 }
+

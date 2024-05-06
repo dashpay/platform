@@ -2,12 +2,13 @@ use thiserror::Error;
 
 use crate::data_contract::DataContract;
 
-use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::errors::json_schema_error::JsonSchemaError;
+use crate::errors::consensus::basic::document::InvalidDocumentTypeError;
+use crate::data_contract::errors::JsonSchemaError;
 use crate::errors::consensus::ConsensusError;
 
 // @append_only
 #[derive(Error, Debug)]
+#[ferment_macro::export]
 pub enum DataContractError {
     #[error("Data Contract already exists")]
     DataContractAlreadyExistsError,

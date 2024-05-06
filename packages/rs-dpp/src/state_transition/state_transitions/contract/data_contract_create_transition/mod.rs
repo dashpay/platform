@@ -6,7 +6,7 @@ mod json_conversion;
 pub mod methods;
 mod serialize;
 mod state_transition_like;
-mod v0;
+pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -15,8 +15,8 @@ use fields::*;
 
 use crate::data_contract::DataContract;
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::identity::state_transition::OptionallyAssetLockProved;
-pub use v0::*;
+pub use v0::{DataContractCreateTransitionV0, DataContractCreateTransitionV0Signable};
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
@@ -53,6 +53,7 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.contract_create_state_transition"
 )]
+#[ferment_macro::export]
 pub enum DataContractCreateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(DataContractCreateTransitionV0),

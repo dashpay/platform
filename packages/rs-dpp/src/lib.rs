@@ -10,7 +10,8 @@ pub use dashcore;
 
 #[cfg(feature = "client")]
 pub use dash_platform_protocol::DashPlatformProtocol;
-pub use errors::*;
+// pub use errors::*;
+pub use errors::{CompatibleProtocolVersionIsNotDefinedError, DPPError, DashPlatformProtocolInitError, InvalidVectorSizeError, NonConsensusError, ProtocolError, PublicKeyValidationError, SerdeParsingError};
 
 pub mod data_contract;
 pub mod document;
@@ -52,17 +53,18 @@ pub use async_trait;
 pub use bls::*;
 
 pub mod prelude {
-    pub use crate::data_contract::DataContract;
+    // pub use crate::data_contract::DataContract;
     #[cfg(feature = "extended-document")]
     pub use crate::document::ExtendedDocument;
-    pub use crate::errors::ProtocolError;
-    pub use crate::identifier::Identifier;
-    pub use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-    pub use crate::identity::Identity;
-    pub use crate::identity::IdentityPublicKey;
+    // pub use crate::errors::ProtocolError;
+    // pub use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+    // pub use crate::identity::Identity;
+    // pub use crate::identity::identity_public_key::IdentityPublicKey;
     #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
+    #[ferment_macro::export]
     pub type TimestampMillis = u64;
+    #[ferment_macro::export]
     pub type Revision = u64;
 }
 

@@ -15,8 +15,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
 
 mod property_names {
     pub const REVISION: &str = "$revision";
@@ -36,6 +36,7 @@ mod property_names {
     "updated_at",
     "data"
 )]
+#[ferment_macro::export]
 pub struct DocumentReplaceTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,

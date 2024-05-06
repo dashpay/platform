@@ -1,6 +1,6 @@
-use crate::identity::IdentityPublicKey;
-use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
-use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
+use crate::identity::identity_public_key::IdentityPublicKey;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -28,6 +28,7 @@ mod version;
     derive(Serialize, Deserialize),
     serde(tag = "$version")
 )]
+#[ferment_macro::export]
 pub enum IdentityPublicKeyInCreation {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityPublicKeyInCreationV0),

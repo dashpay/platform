@@ -2,7 +2,7 @@ mod v0;
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use platform_value::Bytes32;
 pub use v0::*;
 

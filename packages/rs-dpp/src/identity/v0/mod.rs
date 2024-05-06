@@ -9,10 +9,12 @@ use std::hash::{Hash, Hasher};
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
+use crate::identity::PartialIdentity;
+use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
 use crate::prelude::Revision;
 
-use crate::{errors::ProtocolError, identifier::Identifier};
+use platform_value::Identifier;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
@@ -24,6 +26,7 @@ use bincode::{Decode, Encode};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[ferment_macro::export]
 pub struct IdentityV0 {
     pub id: Identifier,
     #[cfg_attr(
@@ -43,7 +46,7 @@ impl Hash for IdentityV0 {
 
 mod public_key_serialization {
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use crate::identity::{IdentityPublicKey, KeyID};
+    use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
     use serde::ser::SerializeSeq;
     use serde::{Deserialize, Serializer};
     use std::collections::BTreeMap;

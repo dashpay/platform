@@ -2,7 +2,7 @@ pub mod v0;
 
 use crate::block::epoch::EpochIndex;
 use crate::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
-use crate::protocol_error::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

@@ -1,9 +1,9 @@
 mod v0;
 
-use crate::identity::IdentityPublicKey;
+use crate::identity::identity_public_key::IdentityPublicKey;
 
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::{BlsModule, ProtocolError};
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::{BlsModule, errors::ProtocolError};
 use platform_version::version::PlatformVersion;
 
 impl IdentityPublicKeyInCreation {

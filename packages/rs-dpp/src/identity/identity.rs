@@ -1,12 +1,12 @@
 use crate::identity::v0::IdentityV0;
-use crate::identity::{IdentityPublicKey, KeyID};
+use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
 use crate::prelude::Revision;
 
 use crate::serialization::PlatformSerializable;
 use crate::util::hash;
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -30,6 +30,7 @@ use std::collections::{BTreeMap, BTreeSet};
     derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
     platform_serialize(limit = 15000, unversioned)
 )]
+#[ferment_macro::export]
 pub enum Identity {
     #[cfg_attr(feature = "identity-serde-conversion", serde(rename = "0"))]
     V0(IdentityV0),
@@ -37,6 +38,7 @@ pub enum Identity {
 
 /// An identity struct that represent partially set/loaded identity data.
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[ferment_macro::export]
 pub struct PartialIdentity {
     pub id: Identifier,
     pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,

@@ -6,12 +6,13 @@
 //!
 //!
 extern crate core;
+extern crate ferment_macro;
 
 pub mod btreemap_extensions;
 pub mod converter;
 pub mod display;
 mod eq;
-mod error;
+pub mod error;
 mod index;
 mod inner_array_value;
 pub mod inner_value;
@@ -22,14 +23,15 @@ mod pointer;
 mod replace;
 pub mod string_encoding;
 pub mod system_bytes;
-mod types;
-mod value_map;
+pub mod types;
+pub mod value_map;
 mod value_serialization;
 
 pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
 use std::collections::BTreeMap;
 
+#[ferment_macro::export]
 pub type Hash256 = [u8; 32];
 
 pub use btreemap_extensions::btreemap_field_replacement::{
@@ -49,6 +51,7 @@ pub use patch::{patch, Patch};
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, PartialOrd, Encode, Decode)]
+// #[ferment_macro::export]
 pub enum Value {
     /// A u128 integer
     U128(u128),
@@ -118,7 +121,7 @@ pub enum Value {
     /// An array
     Array(Vec<Value>),
 
-    /// A map
+    ///// A map
     Map(ValueMap),
 }
 
@@ -1335,8 +1338,8 @@ implfrom! {
     Array(&[Value]),
     Array(Vec<Value>),
 
-    Map(&[(Value, Value)]),
-    Map(Vec<(Value, Value)>),
+    // Map(&[(Value, Value)]),
+    // Map(Vec<(Value, Value)>),
 }
 
 impl<const N: usize> From<[(Value, Value); N]> for Value {

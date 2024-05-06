@@ -26,7 +26,7 @@ use crate::identity::IdentityWasm;
 use dpp::identity::core_script::CoreScript;
 use dpp::prelude::Revision;
 use dpp::withdrawal::Pooling;
-use dpp::NonConsensusError;
+use dpp::errors::NonConsensusError;
 use serde::Deserialize;
 
 #[derive(Clone)]

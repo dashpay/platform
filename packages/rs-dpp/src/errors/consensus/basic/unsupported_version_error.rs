@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,15 +11,16 @@ use thiserror::Error;
 )]
 #[error("version {received_version:?} is not supported. Supported versions are {min_version:?} to {max_version:?}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct UnsupportedVersionError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    received_version: u16,
-    min_version: u16,
-    max_version: u16,
+    pub received_version: u16,
+    pub min_version: u16,
+    pub max_version: u16,
 }
 
 impl UnsupportedVersionError {

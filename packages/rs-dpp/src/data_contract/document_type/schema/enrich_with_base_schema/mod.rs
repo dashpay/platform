@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 

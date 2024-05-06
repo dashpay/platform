@@ -4,13 +4,13 @@ use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 
-use dpp::prelude::DataContract;
+use dpp::data_contract::DataContract;
 use std::collections::BTreeMap;
 
 use crate::common::decode;
 use crate::error::drive::DriveError;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::GroveDb;
 
 impl Drive {

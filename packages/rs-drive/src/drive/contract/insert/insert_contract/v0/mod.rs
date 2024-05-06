@@ -15,7 +15,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};

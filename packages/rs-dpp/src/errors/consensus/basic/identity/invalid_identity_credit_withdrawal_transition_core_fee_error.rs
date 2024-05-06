@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -12,14 +12,15 @@ use bincode::{Decode, Encode};
 )]
 #[error("Core fee per byte {core_fee_per_byte:?} must be part of fibonacci sequence and not less than {min_core_fee_per_byte:?}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    core_fee_per_byte: u32,
-    min_core_fee_per_byte: u32,
+    pub core_fee_per_byte: u32,
+    pub min_core_fee_per_byte: u32,
 }
 
 impl InvalidIdentityCreditWithdrawalTransitionCoreFeeError {

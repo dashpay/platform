@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -12,13 +12,14 @@ use thiserror::Error;
     "Asset Lock output {output_index} has invalid public key hash. Must be 20 length bytes hash"
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidAssetLockTransactionOutputReturnSizeError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    output_index: usize,
+    pub output_index: usize,
 }
 
 impl InvalidAssetLockTransactionOutputReturnSizeError {

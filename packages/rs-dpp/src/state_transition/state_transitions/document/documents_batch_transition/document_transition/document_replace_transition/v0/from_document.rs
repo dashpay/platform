@@ -3,8 +3,8 @@ use crate::data_contract::document_type::{DocumentTypeRef};
 use crate::document::{Document, DocumentV0Getters};
 use crate::document::errors::DocumentError;
 use crate::ProtocolError;
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
 
 impl DocumentReplaceTransitionV0 {
     pub(crate) fn from_document(

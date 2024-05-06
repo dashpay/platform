@@ -5,10 +5,7 @@ use anyhow::{anyhow, bail};
 use serde::de::DeserializeOwned;
 use serde_json::{Number, Value as JsonValue};
 
-use crate::{
-    errors::ProtocolError,
-    identifier::{self},
-};
+use crate::errors::ProtocolError;
 
 use super::json_path::{JsonPath, JsonPathLiteral, JsonPathStep};
 
@@ -383,7 +380,7 @@ impl JsonValueExt for JsonValue {
 fn identifier_filter(value: &JsonValue) -> bool {
     if let JsonValue::Object(object) = value {
         if let Some(JsonValue::String(media_type)) = object.get(PROPERTY_CONTENT_MEDIA_TYPE) {
-            return media_type == identifier::MEDIA_TYPE;
+            return media_type == platform_value::IDENTIFIER_MEDIA_TYPE;
         }
     }
     false

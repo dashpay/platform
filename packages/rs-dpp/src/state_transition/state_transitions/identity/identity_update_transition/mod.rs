@@ -11,9 +11,9 @@ mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::state_transition::identity_update_transition::fields::property_names::ADD_PUBLIC_KEYS_SIGNATURE;
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0Signable;
+use crate::state_transition::state_transitions::identity::identity_update_transition::fields::property_names::ADD_PUBLIC_KEYS_SIGNATURE;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use fields::*;
 
@@ -47,6 +47,7 @@ use serde::{Deserialize, Serialize};
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_update_state_transition"
 )]
+#[ferment_macro::export]
 pub enum IdentityUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityUpdateTransitionV0),

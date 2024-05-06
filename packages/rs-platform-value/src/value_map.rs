@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
+#[ferment_macro::export]
 pub type ValueMap = Vec<(Value, Value)>;
 
 pub trait ValueMapHelper {

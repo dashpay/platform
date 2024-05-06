@@ -1,5 +1,5 @@
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 
 pub trait IdentityCborConversionMethodsV0 {
     /// Converts the identity to a cbor buffer

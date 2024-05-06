@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -12,14 +12,15 @@ use bincode::{Decode, Encode};
 )]
 #[error("Core chain locked height {proof_core_chain_locked_height:?} must be higher than block {transaction_height:?} with Asset Lock transaction")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidAssetLockProofTransactionHeightError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    proof_core_chain_locked_height: u32,
-    transaction_height: Option<u32>,
+    pub proof_core_chain_locked_height: u32,
+    pub transaction_height: Option<u32>,
 }
 
 impl InvalidAssetLockProofTransactionHeightError {

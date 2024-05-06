@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::array::ArrayItemType;
+use crate::data_contract::document_type::property::array::ArrayItemType;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 

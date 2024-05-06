@@ -3,8 +3,8 @@ mod v0;
 pub use v0::*;
 
 use crate::document::{Document, DocumentV0};
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 use std::collections::BTreeMap;
 
