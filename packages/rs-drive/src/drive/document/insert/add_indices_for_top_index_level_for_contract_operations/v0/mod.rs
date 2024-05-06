@@ -54,8 +54,8 @@ impl Drive {
 
         // we need to construct the path for documents on the contract
         // the path is
-        //  * Document andDataContract root tree
-        //  *DataContract ID recovered from document
+        //  * Document and DataContract root tree
+        //  * DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
         let contract_document_type_path = contract_document_type_path_vec(
             document_and_contract_info.contract.id_ref().as_bytes(),

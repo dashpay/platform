@@ -170,7 +170,7 @@ impl Drive {
 
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
         // fourth we need to store a reference to the document for each index
-        for index in document_type.indices() {
+        for index in document_type.indexes() {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created

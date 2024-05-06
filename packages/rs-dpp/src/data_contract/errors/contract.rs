@@ -27,6 +27,9 @@ pub enum DataContractError {
     #[error("field requirement unmet: {0}")]
     FieldRequirementUnmet(String),
 
+    #[error("regex error: {0}")]
+    RegexError(String),
+
     #[error("key wrong type error: {0}")]
     KeyWrongType(String),
 
@@ -74,7 +77,7 @@ pub enum DataContractError {
     #[error("Corrupted Serialization: {0}")]
     CorruptedSerialization(String),
 
-    #[error("Corrupted Code Execution: {0}")]
+    #[error("Json schema error: {0}")]
     JsonSchema(JsonSchemaError),
 }
 

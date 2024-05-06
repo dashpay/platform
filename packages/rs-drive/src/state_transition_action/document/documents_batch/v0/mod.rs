@@ -2,6 +2,7 @@ use dpp::fee::Credits;
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::identifier::Identifier;
 use dpp::prelude::UserFeeIncrease;
+use dpp::ProtocolError;
 use crate::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
 
 /// action v0
@@ -16,20 +17,51 @@ pub struct DocumentsBatchTransitionActionV0 {
 }
 
 impl DocumentsBatchTransitionActionV0 {
-    pub(super) fn all_purchases_amount(&self) -> Option<Credits> {
-        let (total, any_purchases) = self
+    pub(super) fn all_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError> {
+        let (total, any_purchases): (Option<Credits>, bool) = self
             .transitions
             .iter()
             .filter_map(|transition| match transition {
                 DocumentTransitionAction::PurchaseAction(purchase) => Some(purchase.price()),
                 _ => None,
             })
-            .fold((0, false), |(acc, _), price| (acc + price, true));
+            .fold((None, false), |(acc, _), price| {
+                match acc {
+                    Some(acc_val) => acc_val.checked_add(price).map_or((None, true), |sum| (Some(sum), true)),
+                    None => (Some(price), true),
+                }
+            });
 
-        if any_purchases {
-            Some(total) // Return the sum as Some(Credits) if there were any purchases
-        } else {
-            None // Return None if no purchases were found
+        match (total, any_purchases) {
+            (Some(total), _) => Ok(Some(total)),
+            (None, true) => Err(ProtocolError::Overflow("overflow in all purchases amount")), // Overflow occurred
+            _ => Ok(None), // No purchases were found
+        }
+    }
+
+    fn all_conflicting_index_collateral_voting_funds(&self) -> Result<Option<Credits>, ProtocolError> {
+        let (total, any_voting_funds): (Option<Credits>, bool) = self
+            .transitions
+            .iter()
+            .filter_map(|transition| match transition {
+                DocumentTransitionAction::CreateAction(document_create_transition_action) => {
+                    document_create_transition_action.prefunded_voting_balances().values().try_fold(0u64, |acc, &val| {
+                        acc.checked_add(val)
+                    })
+                },
+                _ => None,
+            })
+            .fold((None, false), |(acc, _), price| {
+                match acc {
+                    Some(acc_val) => acc_val.checked_add(price).map_or((None, true), |sum| (Some(sum), true)),
+                    None => (Some(price), true),
+                }
+            });
+
+        match (total, any_voting_funds) {
+            (Some(total), _) => Ok(Some(total)),
+            (None, true) => Err(ProtocolError::Overflow("overflow in all voting funds amount")), // Overflow occurred
+            _ => Ok(None),
         }
     }
 }

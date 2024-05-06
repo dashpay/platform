@@ -60,7 +60,7 @@ impl Drive {
         } = request;
 
         let validation_results = document_type
-            .indices()
+            .indexes()
             .iter()
             .filter_map(|index| {
                 if !index.unique {

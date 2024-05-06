@@ -27,7 +27,7 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         self.schema
     }
 
-    fn indices(&self) -> &BTreeMap<String, Index> {
+    fn indexes(&self) -> &BTreeMap<String, Index> {
         &self.indices
     }
 

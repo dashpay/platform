@@ -95,6 +95,7 @@ mod prove;
 #[cfg(feature = "verify")]
 pub mod verify;
 mod votes;
+mod pre_funded_specialized_balances;
 
 #[cfg(feature = "server")]
 use crate::drive::cache::DriveCache;
@@ -116,13 +117,13 @@ pub struct Drive {
 // is at the top of the tree in order to reduce proof size
 // the most import tree is theDataContract Documents tree
 
-//                                   DataContract_Documents 64
-//                      /                                            \
-//             Identities 32                                       Balances 96
-//             /        \                                  /                         \
-//   Token_Balances 16    Pools 48      WithdrawalTransactions 80                       Votes  112
-//       /      \                                /                              /                \
-//     NUPKH->I 8 UPKH->I 24    SpentAssetLockTransactions 72           Misc 104                  Versions 120
+//                                                      DataContract_Documents 64
+//                                 /                                                                         \
+//                       Identities 32                                                                        Balances 96
+//             /                            \                                              /                                               \
+//   Token_Balances 16                    Pools 48                    WithdrawalTransactions 80                                        Votes  112
+//       /      \                           /                                      /                                                    /                          \
+//     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40          SpentAssetLockTransactions 72                             Misc 104                          Versions 120
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -139,13 +140,16 @@ pub enum RootTree {
     NonUniquePublicKeyKeyHashesToIdentities = 8, // NUPKH->I
     /// Pools
     Pools = 48,
+    /// PreFundedSpecializedBalances are balances that can fund specific state transitions that match
+    /// predefined criteria
+    PreFundedSpecializedBalances = 40,
     /// Spent Asset Lock Transactions
     SpentAssetLockTransactions = 72,
     /// Misc
     Misc = 104,
     /// Asset Unlock Transactions
     WithdrawalTransactions = 80,
-    /// Balances
+    /// Balances (For identities)
     Balances = 96,
     /// Token Balances
     TokenBalances = 16,
@@ -182,6 +186,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::UniquePublicKeyHashesToIdentities => &[24],
             RootTree::SpentAssetLockTransactions => &[72],
             RootTree::Pools => &[48],
+            RootTree::PreFundedSpecializedBalances => &[40],
             RootTree::Misc => &[104],
             RootTree::WithdrawalTransactions => &[80],
             RootTree::Balances => &[96],

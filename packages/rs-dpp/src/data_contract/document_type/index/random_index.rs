@@ -8,11 +8,11 @@ use rand::Rng;
 impl Index {
     pub fn random<I, T>(
         field_names: &[String],
-        existing_indices: &I,
+        existing_indices: I,
         rng: &mut StdRng,
     ) -> Result<Self, ProtocolError>
         where
-            I: IntoIterator<Item = T>, // T is the type of elements in the collection
+            I: Clone + IntoIterator<Item = T>, // T is the type of elements in the collection
             T: Borrow<Index>,          // Assuming Index is the type stored in the collection
     {
         let index_name = format!("index_{}", rng.gen::<u16>());
@@ -36,7 +36,7 @@ impl Index {
                 })
                 .collect::<Vec<_>>();
 
-            if !existing_indices
+            if !existing_indices.clone()
                 .into_iter()
                 .any(|index| index.borrow().properties == properties)
             {

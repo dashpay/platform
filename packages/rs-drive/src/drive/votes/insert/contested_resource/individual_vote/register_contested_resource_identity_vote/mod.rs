@@ -11,11 +11,8 @@ use dpp::fee::fee_result::FeeResult;
 
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::identifier::Identifier;
-use dpp::prelude::IdentityNonce;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
-use dpp::voting::ContestedDocumentResourceVote;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 impl Drive {

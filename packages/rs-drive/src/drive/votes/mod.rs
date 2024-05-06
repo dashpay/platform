@@ -138,14 +138,7 @@ impl TreePath for ContestedDocumentResourceVote {
             )));
         }
         let document_type = contract.document_type_for_name(&vote_poll.document_type_name)?;
-        let index = document_type
-            .indices()
-            .iter()
-            .find(|index| &index.name == &vote_poll.index_name)
-            .ok_or(ProtocolError::VoteError(format!(
-                "votes index name {} not found",
-                &vote_poll.index_name
-            )))?;
+        let index = document_type.indexes().get(&vote_poll.index_name).ok_or(ProtocolError::UnknownContestedIndexResolution(format!("no index named {} for document type {} on contract with id {}", &vote_poll.index_name, document_type.name(), contract.id())))?;
         let mut path = contract_document_type_path(
             &vote_poll.contract_id.as_bytes(),
             &vote_poll.document_type_name,

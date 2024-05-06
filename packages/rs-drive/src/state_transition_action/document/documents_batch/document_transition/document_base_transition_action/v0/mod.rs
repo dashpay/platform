@@ -2,6 +2,7 @@
 pub mod transformer;
 
 use std::sync::Arc;
+use dpp::data_contract::document_type::DocumentTypeRef;
 
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
@@ -26,6 +27,7 @@ pub struct DocumentBaseTransitionActionV0 {
 pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// The document Id
     fn id(&self) -> Identifier;
+    fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError>;
 
     /// Is a field required on the document type?
     fn document_type_field_is_required(&self, field: &str) -> Result<bool, ProtocolError>;

@@ -21,7 +21,7 @@ pub trait DocumentTypeV0Getters {
     fn schema_owned(self) -> Value;
 
     /// Returns the indices of the document type.
-    fn indices(&self) -> &BTreeMap<String, Index>;
+    fn indexes(&self) -> &BTreeMap<String, Index>;
 
     /// Returns the index structure of the document type.
     fn index_structure(&self) -> &IndexLevel;

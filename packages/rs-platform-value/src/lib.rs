@@ -1282,11 +1282,11 @@ macro_rules! implfrom {
 macro_rules! impltryinto {
     ($($t:ty),+ $(,)?) => {
         $(
-            impl TryInto<$t> for Value {
+            impl TryFrom<Value> for $t {
                 type Error = Error;
                 #[inline]
-                fn try_into(self) -> Result<$t, Self::Error> {
-                    self.to_integer()
+                fn try_from(value: Value) -> Result<Self, Self::Error> {
+                    value.to_integer()
                 }
             }
         )+
@@ -1493,19 +1493,18 @@ impl From<&[&str]> for Value {
         )
     }
 }
-
-impl TryInto<Vec<u8>> for Value {
+impl TryFrom<Value> for Vec<u8> {
     type Error = Error;
 
-    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        self.to_bytes()
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        value.into_bytes()
     }
 }
 
-impl TryInto<String> for Value {
+impl TryFrom<Value> for String {
     type Error = Error;
 
-    fn try_into(self) -> Result<String, Self::Error> {
-        self.into_text()
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        value.into_text()
     }
 }

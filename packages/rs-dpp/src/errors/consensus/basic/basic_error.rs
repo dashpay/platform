@@ -66,6 +66,7 @@ use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::basic::{
     json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
 };
+use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use crate::data_contract::errors::DataContractError;
 
@@ -372,6 +373,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidDocumentTypeNameError(InvalidDocumentTypeNameError),
+
+    #[error(transparent)]
+    OverflowError(OverflowError),
 }
 
 impl From<BasicError> for ConsensusError {

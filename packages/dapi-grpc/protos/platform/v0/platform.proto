@@ -37,6 +37,7 @@ service Platform {
   rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
   rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
   rpc getContestedResourceVoteStatus(GetContestedResourceVoteStatusRequest) returns (GetContestedResourceVoteStatusResponse);
+  rpc getPreFundedSpecializedBalances(GetPreFundedSpecializedBalancesRequest) returns (GetPreFundedSpecializedBalancesResponse);
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
 }
 
@@ -724,6 +725,30 @@ message GetContestedResourceVoteStatusResponse {
     GetContestedResourceVoteStatusResponseV0 v0 = 1;
   }
 }
+
+message GetPreFundedSpecializedBalancesRequest {
+
+  message GetPreFundedSpecializedBalancesRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetPreFundedSpecializedBalancesRequestV0 v0 = 1; }
+}
+
+message GetPreFundedSpecializedBalancesResponse {
+
+  message GetPreFundedSpecializedBalancesResponseV0 {
+    oneof result {
+      uint64 balance = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetPreFundedSpecializedBalancesResponseV0 v0 = 1; }
+}
+
 
 message GetPathElementsRequest {
   message GetPathElementsRequestV0 {

@@ -219,7 +219,7 @@ mod test {
         )
         .unwrap();
 
-        let indices = document_type.indices();
+        let indices = document_type.indexes();
 
         assert_eq!(indices.len(), 2);
 

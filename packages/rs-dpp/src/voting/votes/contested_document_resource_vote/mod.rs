@@ -9,7 +9,6 @@ use crate::ProtocolError;
 
 mod v0;
 mod accessors;
-mod methods;
 
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(

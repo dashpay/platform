@@ -237,7 +237,7 @@ impl DocumentTypeV0 {
         let mut indices = BTreeMap::new();
 
         for _ in 0..index_count {
-            match Index::random(&ten_field_names, &indices.values(), rng) {
+            match Index::random(&ten_field_names, indices.values(), rng) {
                 Ok(index) => {
                     indices.insert(index.name.clone(), index);
                 },
@@ -557,7 +557,7 @@ impl DocumentTypeV0 {
         let mut indices = BTreeMap::new();
 
         for _ in 0..index_count {
-            match Index::random(&ten_field_names, &indices.values(), rng) {
+            match Index::random(&ten_field_names, indices.values(), rng) {
                 Ok(index) => {
                     indices.insert(index.name.clone(), index);
                 },

@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Drive Initialization
 
 use grovedb_path::SubtreePath;
@@ -124,7 +95,7 @@ impl Drive {
             drive_version,
         )?;
 
-        //Row 3 (5/8 taken)
+        //Row 3 (6/8 taken)
 
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
@@ -138,6 +109,15 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::UniquePublicKeyHashesToIdentities as u8],
+            transaction,
+            None,
+            &mut drive_operations,
+            drive_version,
+        )?;
+
+        self.grove_insert_empty_sum_tree(
+            SubtreePath::empty(),
+            &[RootTree::PreFundedSpecializedBalances as u8],
             transaction,
             None,
             &mut drive_operations,
@@ -194,6 +174,9 @@ impl Drive {
 
         // For Versioning via forks
         Drive::add_initial_fork_update_structure_operations(&mut batch);
+        
+        // Pre funded specialized balances tree
+        Drive::add_initial_pre_funded_specialized_balances_operations(&mut batch);
 
         // For the votes tree structure
         Drive::add_initial_vote_tree_main_structure_operations(&mut batch, platform_version)?;

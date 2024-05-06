@@ -557,6 +557,9 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
             | StateTransition::IdentityUpdate(_) => {
                 self.validate_simple_pre_check_minimum_balance(identity, platform_version)
             }
+            StateTransition::MasternodeVote(_) => {
+                // We validate that amount set aside still has funds
+            }
             StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
                 Ok(SimpleConsensusValidationResult::new())
             }
@@ -572,6 +575,7 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
                 | StateTransition::DataContractUpdate(_)
                 | StateTransition::DocumentsBatch(_)
                 | StateTransition::IdentityUpdate(_)
+                | StateTransition::MasternodeVote(_)
         )
     }
 }

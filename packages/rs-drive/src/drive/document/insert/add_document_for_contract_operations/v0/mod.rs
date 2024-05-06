@@ -62,7 +62,7 @@ impl Drive {
                 .document_info
                 .is_document_size();
 
-        // 3. Document is exists in the storage
+        // 3. Document exists in storage
         let is_update = could_be_update
             && self.grove_has_raw(
                 primary_key_path.as_ref().into(),

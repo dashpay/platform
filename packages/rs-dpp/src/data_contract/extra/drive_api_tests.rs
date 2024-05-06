@@ -128,7 +128,7 @@ mod test {
             let document_type = data_contract
                 .document_type_for_name(expect.document_name)
                 .unwrap();
-            assert_eq!(expect.indexes.len(), document_type.indices().len());
+            assert_eq!(expect.indexes.len(), document_type.indexes().len());
         }
     }
 
@@ -174,7 +174,7 @@ mod test {
             .document_types
             .get("contactInfo")
             .unwrap()
-            .indices();
+            .indexes();
         assert_eq!(contact_info_indices.len(), 2);
         assert!(contact_info_indices[0].unique);
         assert!(!contact_info_indices[1].unique);

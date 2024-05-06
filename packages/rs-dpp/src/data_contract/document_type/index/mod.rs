@@ -18,6 +18,7 @@ use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVot
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use std::{collections::BTreeMap, convert::TryFrom};
+use crate::data_contract::errors::DataContractError::RegexError;
 
 pub mod random_index;
 
@@ -42,9 +43,65 @@ impl TryFrom<u8> for ContestedIndexResolution {
 }
 
 #[repr(u8)]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum ContestedIndexFieldMatch {
-    Regex(String),
+    Regex(regex::Regex),
+    PositiveIntegerMatch(u128),
+    All,
+}
+
+impl Clone for ContestedIndexFieldMatch {
+    fn clone(&self) -> Self {
+        match self { Regex(regex) => {
+            Regex(regex::Regex::new(regex.as_str()).unwrap())
+        }
+            ContestedIndexFieldMatch::All => ContestedIndexFieldMatch::All,
+            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => ContestedIndexFieldMatch::PositiveIntegerMatch(*int)
+        }
+    }
+}
+
+impl PartialEq for ContestedIndexFieldMatch {
+    fn eq(&self, other: &Self) -> bool {
+        match self { Regex(regex) => {
+            match other { Regex(other_regex) => {
+                regex.as_str() == other_regex.as_str()
+            }
+                _ => false
+            }
+        }
+            ContestedIndexFieldMatch::All => {
+                match other { ContestedIndexFieldMatch::All => true,
+                    _ => false
+                }
+            }
+            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
+                match other { ContestedIndexFieldMatch::PositiveIntegerMatch(other_int) => int == other_int,
+                    _ => false
+                }
+            }
+        }
+    }
+}
+
+impl Eq for ContestedIndexFieldMatch {}
+
+impl ContestedIndexFieldMatch {
+    pub fn matches(&self, value: &Value) -> bool {
+        match self { Regex(regex) => {
+            if let Some(string) = value.as_str() {
+                regex.is_match(string)
+            } else {
+                false
+            }
+            
+        }
+            ContestedIndexFieldMatch::All => true,
+            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
+                value.as_integer::<u128>().map(|i| i == *int).unwrap_or(false)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,7 +117,7 @@ impl Default for ContestedIndexInformation {
         ContestedIndexInformation {
             contested_field_temp_replacement_name: "".to_string(),
             contested_field_name: "".to_string(),
-            field_match: Regex(String::new()),
+            field_match: ContestedIndexFieldMatch::All, //by default always contest
             resolution: ContestedIndexResolution::MasternodeVote,
         }
     }
@@ -268,7 +325,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                         match contested_key {
                             "regexPattern" => {
                                 let regex = contested_value.to_str()?.to_owned();
-                                contested_index_information.field_match = Regex(regex);
+                                contested_index_information.field_match = Regex(regex::Regex::new(&regex).map_err(|e| RegexError(format!("invalid field match regex: {}", e.to_string())))?);
                             }
                             "name" => {
                                 let field = contested_value.to_str()?.to_owned();

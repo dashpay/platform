@@ -22,6 +22,7 @@ pub trait ValueMapHelper {
     fn remove_optional_key_if_null(&mut self, search_key: &str);
     fn remove_optional_key_if_empty_array(&mut self, search_key: &str);
     fn remove_optional_key_value(&mut self, search_key_value: &Value) -> Option<Value>;
+    fn from_btree_map<K: Into<Value> + Ord, V: Into<Value>>(btree_map: BTreeMap<K, V>) -> Self;
 }
 
 impl ValueMapHelper for ValueMap {
@@ -214,6 +215,9 @@ impl ValueMapHelper for ValueMap {
             .position(|(key, _)| search_key_value == key)
             .map(|pos| self.remove(pos).1)
     }
+    fn from_btree_map<K: Into<Value> + Ord, V: Into<Value>>(btree_map: BTreeMap<K, V>) -> Self {
+        btree_map.into_iter().map(|(k, v)| (k.into(), v.into())).collect()
+    }
 }
 
 impl Value {
@@ -349,8 +353,8 @@ impl Value {
         map: &'a ValueMap,
         sort_key: &str,
     ) -> Result<IndexMap<String, &'a Value>, Error>
-    where
-        T: TryFrom<i128>
+        where
+            T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
