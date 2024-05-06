@@ -217,13 +217,13 @@ The `restart` command is used to restart a node with the default or specified co
 
 ```
 USAGE
-  $ dashmate restart [--config <value>] [-v] [-p]
+  $ dashmate restart [--config <value>] [-v] [-p] [-s]
 
 FLAGS
-  -p, --platform    restart only platform
-  -v, --verbose     use verbose mode for output
-  --config=<value>  configuration name to use
-
+  -p, --platform        restart only platform
+  -s, --safe            wait for dkg before stop
+  -v, --verbose         use verbose mode for output
+      --config=<value>  configuration name to use
 ```
 
 ### Show node status
@@ -410,11 +410,15 @@ The `group restart` command is used to restart group nodes belonging to the defa
 
 ```
 USAGE
-  $ dashmate group restart [-v] [--group <value>]
+  $ dashmate group restart [--group <value>] [-v] [-s]
 
 FLAGS
-  -v, --verbose    use verbose mode for output
-  --group=<value>  group name to use
+  -s, --safe           wait for dkg before stop
+  -v, --verbose        use verbose mode for output
+      --group=<value>  group name to use
+
+DESCRIPTION
+  Restart group nodes
 ```
 
 #### Show group status
