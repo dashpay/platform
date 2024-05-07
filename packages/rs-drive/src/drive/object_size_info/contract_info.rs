@@ -1,7 +1,16 @@
 use crate::drive::contract::DataContractFetchInfo;
+use crate::drive::Drive;
+use crate::error::document::DocumentError;
+use crate::error::Error;
+use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
+use dpp::ProtocolError;
+use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 
 /// Represents various forms of accessing or representing a data contract.
@@ -26,6 +35,45 @@ pub enum DataContractInfo<'a> {
     /// An owned version of a data contract. This variant is used when full ownership
     /// and possibly mutability of the data contract is necessary.
     OwnedDataContract(DataContract),
+}
+
+impl<'a> DataContractInfo<'a> {
+    /// Resolve the data contract info into an object that contains the data contract
+    pub(crate) fn resolve(
+        self,
+        drive: &Drive,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<DataContractResolvedInfo<'a>, Error> {
+        match self {
+            DataContractInfo::DataContractId(contract_id) => {
+                let contract_fetch_info = drive
+                    .get_contract_with_fetch_info_and_add_to_operations(
+                        contract_id.into_buffer(),
+                        Some(&block_info.epoch),
+                        true,
+                        transaction,
+                        drive_operations,
+                        platform_version,
+                    )?
+                    .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
+                Ok(DataContractResolvedInfo::DataContractFetchInfo(
+                    contract_fetch_info,
+                ))
+            }
+            DataContractInfo::DataContractFetchInfo(contract_fetch_info) => Ok(
+                DataContractResolvedInfo::DataContractFetchInfo(contract_fetch_info),
+            ),
+            DataContractInfo::BorrowedDataContract(contract) => {
+                Ok(DataContractResolvedInfo::BorrowedDataContract(contract))
+            }
+            DataContractInfo::OwnedDataContract(contract) => {
+                Ok(DataContractResolvedInfo::OwnedDataContract(contract))
+            }
+        }
+    }
 }
 
 /// Contains resolved data contract information, typically used after initial
@@ -67,4 +115,19 @@ pub enum DocumentTypeInfo<'a> {
 
     /// References a document type that has already been resolved through `DocumentTypeRef`.
     DocumentTypeRef(DocumentTypeRef<'a>),
+}
+
+impl<'a> DocumentTypeInfo<'a> {
+    /// Resolve the data contract info into an object that contains the data contract
+    pub fn resolve(self, contract: &'a DataContract) -> Result<DocumentTypeRef<'a>, ProtocolError> {
+        match self {
+            DocumentTypeInfo::DocumentTypeName(document_type_name) => contract
+                .document_type_for_name(document_type_name.as_str())
+                .map_err(ProtocolError::DataContractError),
+            DocumentTypeInfo::DocumentTypeNameAsStr(document_type_name) => contract
+                .document_type_for_name(document_type_name)
+                .map_err(ProtocolError::DataContractError),
+            DocumentTypeInfo::DocumentTypeRef(document_type_ref) => Ok(document_type_ref),
+        }
+    }
 }

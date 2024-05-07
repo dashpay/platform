@@ -2,18 +2,15 @@ use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefInfo};
 use crate::drive::object_size_info::{
-    DataContractInfo, DataContractResolvedInfo, DocumentAndContractInfo, DocumentTypeInfo,
-    OwnedDocumentInfo,
+    DataContractInfo, DocumentAndContractInfo, DocumentTypeInfo, OwnedDocumentInfo,
 };
 use crate::drive::Drive;
-use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 
@@ -58,12 +55,30 @@ pub enum DocumentOperationType<'a> {
     AddDocument {
         /// The document and contract info, also may contain the owner_id
         owned_document_info: OwnedDocumentInfo<'a>,
-        /// DataContract
+        /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
         /// Should we override the document if one already exists?
         override_document: bool,
+    },
+    /// Updates a document and returns the associated fee.
+    UpdateDocument {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+    },
+    /// Deletes a document
+    DeleteDocument {
+        /// The document id
+        document_id: Identifier,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
     },
     /// Convenience method to add a withdrawal document.
     AddWithdrawalDocument {
@@ -74,52 +89,6 @@ pub enum DocumentOperationType<'a> {
     MultipleDocumentOperationsForSameContractDocumentType {
         /// The document operations
         document_operations: DocumentOperationsForContractDocumentType<'a>,
-    },
-    /// Deletes a document
-    DeleteDocument {
-        /// The document id
-        document_id: Identifier,
-        /// Data Contract info
-        contract_info: DataContractInfo<'a>,
-        /// Document type
-        document_type_info: DocumentTypeInfo<'a>,
-    },
-    /// Updates a serialized document and returns the associated fee.
-    UpdateSerializedDocumentForContract {
-        /// The serialized document
-        serialized_document: &'a [u8],
-        /// The contract
-        contract: &'a DataContract,
-        /// The name of the document type
-        document_type_name: &'a str,
-        /// The owner id, if none is specified will try to recover from serialized document
-        owner_id: Option<[u8; 32]>,
-        /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<Cow<'a, StorageFlags>>,
-    },
-    /// Updates a document and returns the associated fee.
-    UpdateDocument {
-        /// The document and contract info, also may contain the owner_id
-        owned_document_info: OwnedDocumentInfo<'a>,
-        /// DataContract
-        contract_id: Identifier,
-        /// Document type
-        document_type_name: Cow<'a, String>,
-    },
-    /// Updates a document and returns the associated fee.
-    UpdateDocumentForContract {
-        /// The document to update
-        document: &'a Document,
-        /// The document in pre-serialized form
-        serialized_document: &'a [u8],
-        /// The contract
-        contract: &'a DataContract,
-        /// The name of the document type
-        document_type_name: &'a str,
-        /// The owner id, if none is specified will try to recover from serialized document
-        owner_id: Option<[u8; 32]>,
-        /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<Cow<'a, StorageFlags>>,
     },
 }
 
@@ -142,42 +111,15 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 override_document,
             } => {
                 let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-                let contract_resolved_info = match contract_info {
-                    DataContractInfo::DataContractId(contract_id) => {
-                        let contract_fetch_info = drive
-                            .get_contract_with_fetch_info_and_add_to_operations(
-                                contract_id.into_buffer(),
-                                Some(&block_info.epoch),
-                                true,
-                                transaction,
-                                &mut drive_operations,
-                                platform_version,
-                            )?
-                            .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
-                        DataContractResolvedInfo::DataContractFetchInfo(contract_fetch_info)
-                    }
-                    DataContractInfo::DataContractFetchInfo(contract_fetch_info) => {
-                        DataContractResolvedInfo::DataContractFetchInfo(contract_fetch_info)
-                    }
-                    DataContractInfo::BorrowedDataContract(contract) => {
-                        DataContractResolvedInfo::BorrowedDataContract(contract)
-                    }
-                    DataContractInfo::OwnedDataContract(contract) => {
-                        DataContractResolvedInfo::OwnedDataContract(contract)
-                    }
-                };
-
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
                 let contract = contract_resolved_info.as_ref();
-
-                let document_type = match document_type_info {
-                    DocumentTypeInfo::DocumentTypeName(document_type_name) => contract
-                        .document_type_for_name(document_type_name.as_str())
-                        .map_err(ProtocolError::DataContractError)?,
-                    DocumentTypeInfo::DocumentTypeNameAsStr(document_type_name) => contract
-                        .document_type_for_name(document_type_name)
-                        .map_err(ProtocolError::DataContractError)?,
-                    DocumentTypeInfo::DocumentTypeRef(document_type_ref) => document_type_ref,
-                };
+                let document_type = document_type_info.resolve(contract)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
@@ -220,120 +162,59 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     platform_version,
                 )
             }
+            DocumentOperationType::UpdateDocument {
+                owned_document_info,
+                contract_info,
+                document_type_info,
+            } => {
+                let mut drive_operations = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                let mut operations = drive.update_document_for_contract_operations(
+                    document_and_contract_info,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
+            }
             DocumentOperationType::DeleteDocument {
                 document_id,
                 contract_info,
                 document_type_info,
             } => {
                 let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-                let contract_resolved_info = match contract_info {
-                    DataContractInfo::DataContractId(contract_id) => {
-                        let contract_fetch_info = drive
-                            .get_contract_with_fetch_info_and_add_to_operations(
-                                contract_id.into_buffer(),
-                                Some(&block_info.epoch),
-                                true,
-                                transaction,
-                                &mut drive_operations,
-                                platform_version,
-                            )?
-                            .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
-                        DataContractResolvedInfo::DataContractFetchInfo(contract_fetch_info)
-                    }
-                    DataContractInfo::DataContractFetchInfo(contract_fetch_info) => {
-                        DataContractResolvedInfo::DataContractFetchInfo(contract_fetch_info)
-                    }
-                    DataContractInfo::BorrowedDataContract(contract) => {
-                        DataContractResolvedInfo::BorrowedDataContract(contract)
-                    }
-                    DataContractInfo::OwnedDataContract(contract) => {
-                        DataContractResolvedInfo::OwnedDataContract(contract)
-                    }
-                };
-
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
                 let contract = contract_resolved_info.as_ref();
-
-                let document_type = match document_type_info {
-                    DocumentTypeInfo::DocumentTypeName(document_type_name) => contract
-                        .document_type_for_name(document_type_name.as_str())
-                        .map_err(ProtocolError::DataContractError)?,
-                    DocumentTypeInfo::DocumentTypeNameAsStr(document_type_name) => contract
-                        .document_type_for_name(document_type_name)
-                        .map_err(ProtocolError::DataContractError)?,
-                    DocumentTypeInfo::DocumentTypeRef(document_type_ref) => document_type_ref,
-                };
+                let document_type = document_type_info.resolve(contract)?;
 
                 drive.delete_document_for_contract_operations(
                     document_id,
                     contract,
                     document_type,
                     None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                )
-            }
-            DocumentOperationType::UpdateSerializedDocumentForContract {
-                serialized_document,
-                contract,
-                document_type_name,
-                owner_id,
-                storage_flags,
-            } => {
-                let document_type = contract
-                    .document_type_for_name(document_type_name)
-                    .map_err(ProtocolError::DataContractError)?;
-
-                let document =
-                    Document::from_bytes(serialized_document, document_type, platform_version)?;
-
-                let document_info =
-                    DocumentRefAndSerialization((&document, serialized_document, storage_flags));
-
-                let document_and_contract_info = DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info,
-                        owner_id,
-                    },
-                    contract,
-                    document_type,
-                };
-                drive.update_document_for_contract_operations(
-                    document_and_contract_info,
-                    block_info,
-                    &mut None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                )
-            }
-            DocumentOperationType::UpdateDocumentForContract {
-                document,
-                serialized_document,
-                contract,
-                document_type_name,
-                owner_id,
-                storage_flags,
-            } => {
-                let document_info =
-                    DocumentRefAndSerialization((document, serialized_document, storage_flags));
-
-                let document_type = contract
-                    .document_type_for_name(document_type_name)
-                    .map_err(ProtocolError::DataContractError)?;
-
-                let document_and_contract_info = DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info,
-                        owner_id,
-                    },
-                    contract,
-                    document_type,
-                };
-                drive.update_document_for_contract_operations(
-                    document_and_contract_info,
-                    block_info,
-                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
@@ -409,45 +290,6 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                         }
                     }
                 }
-                Ok(drive_operations)
-            }
-            DocumentOperationType::UpdateDocument {
-                owned_document_info,
-                contract_id,
-                document_type_name,
-            } => {
-                let mut drive_operations = vec![];
-                let contract_fetch_info = drive
-                    .get_contract_with_fetch_info_and_add_to_operations(
-                        contract_id.into_buffer(),
-                        Some(&block_info.epoch),
-                        true,
-                        transaction,
-                        &mut drive_operations,
-                        platform_version,
-                    )?
-                    .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
-
-                let contract = &contract_fetch_info.contract;
-
-                let document_type = contract
-                    .document_type_for_name(document_type_name.as_str())
-                    .map_err(ProtocolError::DataContractError)?;
-
-                let document_and_contract_info = DocumentAndContractInfo {
-                    owned_document_info,
-                    contract,
-                    document_type,
-                };
-                let mut operations = drive.update_document_for_contract_operations(
-                    document_and_contract_info,
-                    block_info,
-                    &mut None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                )?;
-                drive_operations.append(&mut operations);
                 Ok(drive_operations)
             }
         }

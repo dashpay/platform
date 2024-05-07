@@ -3,7 +3,7 @@ use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation};
 use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
-use crate::drive::object_size_info::OwnedDocumentInfo;
+use crate::drive::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
@@ -23,6 +23,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentUpdatePriceTransitionA
         let data_contract_id = self.base().data_contract_id();
         let document_type_name = self.base().document_type_name().clone();
         let identity_contract_nonce = self.base().identity_contract_nonce();
+        let fetch_info = self.base().data_contract_fetch_info();
         let document = self.document_owned();
 
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
@@ -38,8 +39,8 @@ impl DriveHighLevelDocumentOperationConverter for DocumentUpdatePriceTransitionA
                     document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
                     owner_id: Some(owner_id.into_buffer()),
                 },
-                contract_id: data_contract_id,
-                document_type_name: Cow::Owned(document_type_name),
+                contract_info: DataContractInfo::DataContractFetchInfo(fetch_info),
+                document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
             }),
         ])
     }
