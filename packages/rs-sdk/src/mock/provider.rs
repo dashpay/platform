@@ -24,7 +24,7 @@ pub struct GrpcContextProvider {
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
     ///
     /// We use [Arc] as we have circular dependencies between Sdk and ContextProvider.
-    sdk: Option<Arc<Sdk>>,
+    sdk: Option<Sdk>,
 
     /// Data contracts cache.
     ///
@@ -53,7 +53,7 @@ impl GrpcContextProvider {
     ///
     /// Sdk can be set later with [`GrpcContextProvider::set_sdk`].
     pub fn new(
-        sdk: Option<Arc<Sdk>>,
+        sdk: Option<Sdk>,
         core_ip: &str,
         core_port: u16,
         core_user: &str,
@@ -78,7 +78,7 @@ impl GrpcContextProvider {
     ///
     /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
-    pub fn set_sdk(&mut self, sdk: Option<Arc<Sdk>>) {
+    pub fn set_sdk(&mut self, sdk: Option<Sdk>) {
         self.sdk = sdk;
     }
     /// Set the directory where to store dumped data.
