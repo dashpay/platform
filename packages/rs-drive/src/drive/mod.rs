@@ -89,7 +89,7 @@ mod open;
 mod operations;
 #[cfg(feature = "server")]
 mod platform_state;
-mod pre_funded_specialized_balances;
+mod prefunded_specialized_balances;
 #[cfg(feature = "server")]
 mod prove;
 /// Contains a set of useful grovedb proof verification functions

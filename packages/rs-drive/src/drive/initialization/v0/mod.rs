@@ -176,7 +176,7 @@ impl Drive {
         Drive::add_initial_fork_update_structure_operations(&mut batch);
 
         // Pre funded specialized balances tree
-        Drive::add_initial_pre_funded_specialized_balances_operations(&mut batch);
+        Drive::add_initial_prefunded_specialized_balances_operations(&mut batch);
 
         // For the votes tree structure
         Drive::add_initial_vote_tree_main_structure_operations(&mut batch, platform_version)?;

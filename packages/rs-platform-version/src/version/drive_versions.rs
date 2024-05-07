@@ -18,6 +18,7 @@ pub struct DriveMethodVersions {
     pub initialization: DriveInitializationMethodVersions,
     pub credit_pools: DriveCreditPoolMethodVersions,
     pub protocol_upgrade: DriveProtocolUpgradeVersions,
+    pub prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions,
     pub balances: DriveBalancesMethodVersions,
     pub document: DriveDocumentMethodVersions,
     pub vote: DriveVoteMethodVersions,
@@ -132,6 +133,14 @@ pub struct DriveGroveMethodVersions {
     pub batch: DriveGroveBatchMethodVersions,
     pub apply: DriveGroveApplyMethodVersions,
     pub costs: DriveGroveCostMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DrivePrefundedSpecializedMethodVersions {
+    pub add_prefunded_specialized_balance: FeatureVersion,
+    pub add_prefunded_specialized_balance_operations: FeatureVersion,
+    pub deduct_from_prefunded_specialized_balance: FeatureVersion,
+    pub deduct_from_prefunded_specialized_balance_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
