@@ -1,21 +1,31 @@
-pub mod contested_document_resource_vote;
+pub mod resource_vote;
 
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
-use crate::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
+use crate::voting::votes::resource_vote::ResourceVote;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "vote-serialization")]
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+#[cfg(feature = "vote-serialization")]
+use bincode::{Decode, Encode};
+#[cfg(feature = "vote-serialization")]
+use crate::ProtocolError;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(
+feature = "vote-serialization",
+derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
+platform_serialize(limit = 15000, unversioned)
+)]
 pub enum Vote {
-    ContestedDocumentResourceVote(ContestedDocumentResourceVote),
+    ResourceVote(ResourceVote),
 }
 
 impl Default for Vote {
     fn default() -> Self {
-        Vote::ContestedDocumentResourceVote(ContestedDocumentResourceVote::default())
+        Vote::ResourceVote(ResourceVote::default())
     }
 }

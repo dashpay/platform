@@ -20,7 +20,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         match vote {
-            Vote::ContestedDocumentResourceVote(contested_document_resource_vote_type) => self
+            Vote::ResourceVote(contested_document_resource_vote_type) => self
                 .register_contested_resource_identity_vote(
                     voter_pro_tx_hash,
                     contested_document_resource_vote_type,
@@ -44,7 +44,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match vote {
-            Vote::ContestedDocumentResourceVote(contested_document_resource_vote_type) => self
+            Vote::ResourceVote(contested_document_resource_vote_type) => self
                 .register_contested_resource_identity_vote_operations(
                     voter_pro_tx_hash,
                     contested_document_resource_vote_type,

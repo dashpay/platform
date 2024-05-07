@@ -64,6 +64,8 @@ mod index_uniqueness;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
+mod insert_contested;
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod update;

@@ -239,7 +239,7 @@ mod tests {
     //
     //     let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
     //     drive
-    //         .add_document_for_contract(
+    //         .add_contested_document_for_contract(
     //             DocumentAndContractInfo {
     //                 owned_document_info: OwnedDocumentInfo {
     //                     document_info: DocumentInfo::DocumentRefInfo((&document, storage_flags)),

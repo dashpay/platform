@@ -3,7 +3,7 @@ use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation};
 use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
-use crate::drive::object_size_info::OwnedDocumentInfo;
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
@@ -38,7 +38,15 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                 contract_id: data_contract_id.into_buffer(),
                 nonce: identity_contract_nonce,
             }),
-            DocumentOperation(DocumentOperationType::AddDocument {
+            DocumentOperation(DocumentOperationType::AddDocumentForContract {
+                document_and_contract_info: DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
+                        owner_id: Some(owner_id.into_buffer()),
+                    },
+                    contract: &(),
+                    document_type: (),
+                },
                 owned_document_info: OwnedDocumentInfo {
                     document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
                     owner_id: Some(owner_id.into_buffer()),

@@ -79,7 +79,7 @@ mod test {
         let mut rng = rand::thread_rng();
         let transition = MasternodeVoteTransitionV0 {
             pro_tx_hash: Identifier::random(),
-            vote: Vote::ContestedDocumentResourceVote(ContestedDocumentResourceVote {
+            vote: Vote::ResourceVote(ContestedDocumentResourceVote {
                 vote_poll: ContestedDocumentResourceVotePoll {
                     contract_id: Default::default(),
                     document_type_name: "hello".to_string(),

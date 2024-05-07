@@ -9,7 +9,7 @@ use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
-    /// any votes poll should be closed.
+    /// any vote polls should be closed.
     pub(super) fn add_vote_poll_end_date_query_v0(
         &self,
         contract_id: Vote,

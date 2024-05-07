@@ -1,5 +1,5 @@
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
-use crate::voting::votes::contested_document_resource_vote::v0::ContestedDocumentResourceVoteV0;
+use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
 use crate::ProtocolError;
 use derive_more::From;
 #[cfg(feature = "vote-serialization")]
@@ -21,13 +21,13 @@ mod v0;
     derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
     platform_serialize(limit = 15000, unversioned)
 )]
-pub enum ContestedDocumentResourceVote {
+pub enum ResourceVote {
     #[cfg_attr(feature = "vote-serde-conversion", serde(rename = "0"))]
-    V0(ContestedDocumentResourceVoteV0),
+    V0(ResourceVoteV0),
 }
 
-impl Default for ContestedDocumentResourceVote {
+impl Default for ResourceVote {
     fn default() -> Self {
-        Self::V0(ContestedDocumentResourceVoteV0::default())
+        Self::V0(ResourceVoteV0::default())
     }
 }

@@ -77,6 +77,19 @@ pub enum DocumentOperationType<'a> {
         /// Should we override the document if one already exists?
         override_document: bool,
     },
+    /// Adds a contested document to a contract matching the desired info.
+    /// A contested document is a document that is trying to a acquire a
+    /// unique index that has a conflict resolution mechanism
+    AddContestedDocument {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        ///DataContract
+        contract_id: Identifier,
+        /// Document type
+        document_type_name: Cow<'a, String>,
+        /// Should we override the document if one already exists?
+        override_document: bool,
+    },
     /// Adds a withdrawal document.
     AddWithdrawalDocument {
         /// The document and contract info, also may contain the owner_id
@@ -238,6 +251,47 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     document_type,
                 };
                 let mut operations = drive.add_document_for_contract_operations(
+                    document_and_contract_info,
+                    override_document,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
+            }
+            DocumentOperationType::AddContestedDocument {
+                owned_document_info,
+                contract_id,
+                document_type_name,
+                override_document,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_fetch_info = drive
+                    .get_contract_with_fetch_info_and_add_to_operations(
+                        contract_id.into_buffer(),
+                        Some(&block_info.epoch),
+                        true,
+                        transaction,
+                        &mut drive_operations,
+                        platform_version,
+                    )?
+                    .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
+
+                let contract = &contract_fetch_info.contract;
+
+                let document_type = contract
+                    .document_type_for_name(document_type_name.as_str())
+                    .map_err(ProtocolError::DataContractError)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                let mut operations = drive.add_contested_document_for_contract_operations(
                     document_and_contract_info,
                     override_document,
                     block_info,

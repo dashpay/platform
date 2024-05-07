@@ -12,14 +12,14 @@ use dpp::fee::fee_result::FeeResult;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
+use dpp::voting::votes::resource_vote::ResourceVote;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 impl Drive {
     pub fn register_contested_resource_identity_vote(
         &self,
         voter_pro_tx_hash: [u8; 32],
-        vote: ContestedDocumentResourceVote,
+        vote: ResourceVote,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -51,7 +51,7 @@ impl Drive {
     pub fn register_contested_resource_identity_vote_operations(
         &self,
         voter_pro_tx_hash: [u8; 32],
-        vote: ContestedDocumentResourceVote,
+        vote: ResourceVote,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
