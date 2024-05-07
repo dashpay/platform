@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -28,7 +29,7 @@ impl Drive {
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     pub(in crate::drive::document) fn remove_document_from_primary_storage(
         &self,
-        document_id: [u8; 32],
+        document_id: Identifier,
         document_type: DocumentTypeRef,
         contract_documents_primary_key_path: [&[u8]; 5],
         estimated_costs_only_with_layer_info: &mut Option<

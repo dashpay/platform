@@ -12,6 +12,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::identifier::Identifier;
 
 use dpp::version::PlatformVersion;
 
@@ -20,7 +21,7 @@ impl Drive {
     #[inline(always)]
     pub(super) fn delete_document_for_contract_with_named_type_operations_v0(
         &self,
-        document_id: [u8; 32],
+        document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,

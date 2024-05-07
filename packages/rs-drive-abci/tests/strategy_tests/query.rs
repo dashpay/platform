@@ -20,7 +20,7 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use strategy_tests::frequency::Frequency;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
