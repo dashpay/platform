@@ -684,7 +684,7 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
-        let sdk=     match self.addresses {
+        let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
                 let dapi = DapiClient::new(addresses, self.settings);
