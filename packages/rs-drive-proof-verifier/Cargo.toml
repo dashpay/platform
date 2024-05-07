@@ -1,6 +1,6 @@
 [package]
 name = "drive-proof-verifier"
-version = "1.0.0-dev.10"
+version = "1.0.0-dev.12"
 edition = "2021"
 rust-version = "1.76"
 
@@ -13,7 +13,7 @@ json = ["dep:serde_json"]
 
 [dependencies]
 
-thiserror = { version = "1.0.58" }
+thiserror = { version = "1.0.59" }
 dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",

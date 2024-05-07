@@ -97,6 +97,19 @@ pub enum StorageFlags {
     MultiEpochOwned(BaseEpoch, BTreeMap<EpochIndex, BytesAddedInEpoch>, OwnerId),
 }
 
+#[cfg(any(feature = "server", feature = "verify"))]
+/// MergingOwnersStrategy decides which owner to keep during a merge
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum MergingOwnersStrategy {
+    #[default]
+    /// Raise an issue that owners of nodes are different
+    RaiseIssue,
+    /// Use the original owner id
+    UseOurs,
+    /// Use the new owner id
+    UseTheirs,
+}
+
 #[cfg(feature = "server")]
 impl StorageFlags {
     /// Create new single epoch storage flags
@@ -107,18 +120,29 @@ impl StorageFlags {
         }
     }
 
-    fn combine_owner_id<'a>(&'a self, rhs: &'a Self) -> Result<Option<&'a OwnerId>, Error> {
+    fn combine_owner_id<'a>(
+        &'a self,
+        rhs: &'a Self,
+        merging_owners_strategy: MergingOwnersStrategy,
+    ) -> Result<Option<&'a OwnerId>, Error> {
         if let Some(our_owner_id) = self.owner_id() {
             if let Some(other_owner_id) = rhs.owner_id() {
                 if our_owner_id != other_owner_id {
-                    return Err(Error::StorageFlags(
-                        StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
-                            "can not merge from different owners",
-                        ),
-                    ));
+                    match merging_owners_strategy {
+                        MergingOwnersStrategy::RaiseIssue => Err(Error::StorageFlags(
+                            StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
+                                "can not merge from different owners",
+                            ),
+                        )),
+                        MergingOwnersStrategy::UseOurs => Ok(Some(our_owner_id)),
+                        MergingOwnersStrategy::UseTheirs => Ok(Some(other_owner_id)),
+                    }
+                } else {
+                    Ok(Some(our_owner_id))
                 }
+            } else {
+                Ok(Some(our_owner_id))
             }
-            Ok(Some(our_owner_id))
         } else if let Some(other_owner_id) = rhs.owner_id() {
             Ok(Some(other_owner_id))
         } else {
@@ -152,9 +176,13 @@ impl StorageFlags {
         }
     }
 
-    fn combine_same_base_epoch(&self, rhs: Self) -> Result<Self, Error> {
+    fn combine_same_base_epoch(
+        &self,
+        rhs: Self,
+        merging_owners_strategy: MergingOwnersStrategy,
+    ) -> Result<Self, Error> {
         let base_epoch = *self.base_epoch();
-        let owner_id = self.combine_owner_id(&rhs)?;
+        let owner_id = self.combine_owner_id(&rhs, merging_owners_strategy)?;
         let other_epoch_bytes = self.combine_non_base_epoch_bytes(&rhs);
 
         match (owner_id, other_epoch_bytes) {
@@ -167,10 +195,15 @@ impl StorageFlags {
         }
     }
 
-    fn combine_with_higher_base_epoch(&self, rhs: Self, added_bytes: u32) -> Result<Self, Error> {
+    fn combine_with_higher_base_epoch(
+        &self,
+        rhs: Self,
+        added_bytes: u32,
+        merging_owners_strategy: MergingOwnersStrategy,
+    ) -> Result<Self, Error> {
         let base_epoch = *self.base_epoch();
         let epoch_with_adding_bytes = rhs.base_epoch();
-        let owner_id = self.combine_owner_id(&rhs)?;
+        let owner_id = self.combine_owner_id(&rhs, merging_owners_strategy)?;
         let mut other_epoch_bytes = self.combine_non_base_epoch_bytes(&rhs).unwrap_or_default();
         let original_value = other_epoch_bytes.remove(epoch_with_adding_bytes);
         match original_value {
@@ -190,12 +223,13 @@ impl StorageFlags {
         self,
         rhs: Self,
         removed_bytes: &StorageRemovedBytes,
+        merging_owners_strategy: MergingOwnersStrategy,
     ) -> Result<Self, Error> {
         if matches!(&self, &SingleEpoch(_) | &SingleEpochOwned(..)) {
             return Ok(self);
         }
         let base_epoch = *self.base_epoch();
-        let owner_id = self.combine_owner_id(&rhs)?;
+        let owner_id = self.combine_owner_id(&rhs, merging_owners_strategy)?;
         let mut other_epoch_bytes = self.combine_non_base_epoch_bytes(&rhs).unwrap_or_default();
         if let SectionedStorageRemoval(sectioned_bytes_by_identifier) = removed_bytes {
             if sectioned_bytes_by_identifier.len() > 1 {
@@ -246,10 +280,13 @@ impl StorageFlags {
         ours: Option<Self>,
         theirs: Self,
         added_bytes: u32,
+        merging_owners_strategy: MergingOwnersStrategy,
     ) -> Result<Self, Error> {
         match ours {
             None => Ok(theirs),
-            Some(ours) => Ok(ours.combine_added_bytes(theirs, added_bytes)?),
+            Some(ours) => {
+                Ok(ours.combine_added_bytes(theirs, added_bytes, merging_owners_strategy)?)
+            }
         }
     }
 
@@ -258,18 +295,28 @@ impl StorageFlags {
         ours: Option<Self>,
         theirs: Self,
         removed_bytes: &StorageRemovedBytes,
+        merging_owners_strategy: MergingOwnersStrategy,
     ) -> Result<Self, Error> {
         match ours {
             None => Ok(theirs),
-            Some(ours) => Ok(ours.combine_removed_bytes(theirs, removed_bytes)?),
+            Some(ours) => {
+                Ok(ours.combine_removed_bytes(theirs, removed_bytes, merging_owners_strategy)?)
+            }
         }
     }
 
     /// Combine added bytes
-    pub fn combine_added_bytes(self, rhs: Self, added_bytes: u32) -> Result<Self, Error> {
+    pub fn combine_added_bytes(
+        self,
+        rhs: Self,
+        added_bytes: u32,
+        merging_owners_strategy: MergingOwnersStrategy,
+    ) -> Result<Self, Error> {
         match self.base_epoch().cmp(rhs.base_epoch()) {
-            Ordering::Equal => self.combine_same_base_epoch(rhs),
-            Ordering::Less => self.combine_with_higher_base_epoch(rhs, added_bytes),
+            Ordering::Equal => self.combine_same_base_epoch(rhs, merging_owners_strategy),
+            Ordering::Less => {
+                self.combine_with_higher_base_epoch(rhs, added_bytes, merging_owners_strategy)
+            }
             Ordering::Greater => Err(Error::StorageFlags(
                 StorageFlagsError::MergingStorageFlagsWithDifferentBaseEpoch(
                     "can not merge with new item in older base epoch",
@@ -283,10 +330,15 @@ impl StorageFlags {
         self,
         rhs: Self,
         removed_bytes: &StorageRemovedBytes,
+        merging_owners_strategy: MergingOwnersStrategy,
     ) -> Result<Self, Error> {
         match self.base_epoch().cmp(rhs.base_epoch()) {
-            Ordering::Equal => self.combine_same_base_epoch(rhs),
-            Ordering::Less => self.combine_with_higher_base_epoch_remove_bytes(rhs, removed_bytes),
+            Ordering::Equal => self.combine_same_base_epoch(rhs, merging_owners_strategy),
+            Ordering::Less => self.combine_with_higher_base_epoch_remove_bytes(
+                rhs,
+                removed_bytes,
+                merging_owners_strategy,
+            ),
             Ordering::Greater => Err(Error::StorageFlags(
                 StorageFlagsError::MergingStorageFlagsWithDifferentBaseEpoch(
                     "can not merge with new item in older base epoch",

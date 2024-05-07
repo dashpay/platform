@@ -39,7 +39,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 18] = [
+    const VERSIONED_REQUESTS: [&str; 19] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -58,10 +58,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetProtocolVersionUpgradeStateRequest",
         "GetProtocolVersionUpgradeVoteStatusRequest",
         "GetPathElementsRequest",
+        "GetIdentitiesContractKeysRequest",
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 19] = [
+    const VERSIONED_RESPONSES: [&str; 20] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -81,6 +82,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetProtocolVersionUpgradeStateResponse",
         "GetProtocolVersionUpgradeVoteStatusResponse",
         "GetPathElementsResponse",
+        "GetIdentitiesContractKeysResponse",
     ];
 
     // Derive VersionedGrpcMessage on requests

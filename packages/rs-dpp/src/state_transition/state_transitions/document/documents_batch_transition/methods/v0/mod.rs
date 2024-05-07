@@ -2,6 +2,7 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transition-signing")]
 use crate::document::Document;
+use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
@@ -49,7 +50,67 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
-        update_feature_version: Option<FeatureVersion>,
+        replace_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_document_deletion_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        delete_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_document_transfer_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        recipient_owner_id: Identifier,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        transfer_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_document_update_price_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        price: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        update_price_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_document_purchase_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        new_owner_id: Identifier,
+        price: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        purchase_feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
 
@@ -94,4 +155,6 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     fn set_transitions(&mut self, transitions: Vec<DocumentTransition>);
 
     fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityNonce);
+
+    fn all_purchases_amount(&self) -> Option<Credits>;
 }

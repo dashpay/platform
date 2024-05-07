@@ -37,7 +37,8 @@ pub enum DocumentAction {
         DocumentFieldFillSize,
     ),
     DocumentActionDelete,
-    DocumentActionReplace,
+    DocumentActionReplaceRandom,
+    DocumentActionTransferRandom,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -320,6 +321,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                                 name_str,
                                 schema,
                                 None,
+                                true,
                                 true,
                                 true,
                                 validate,

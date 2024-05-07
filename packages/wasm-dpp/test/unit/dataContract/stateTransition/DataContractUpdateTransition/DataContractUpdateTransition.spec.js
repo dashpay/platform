@@ -65,7 +65,7 @@ describe('DataContractUpdateTransition', () => {
     it('should return serialized State Transition', () => {
       const result = stateTransition.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(2358);
+      expect(result).to.have.lengthOf(2359);
     });
 
     it('should be able to restore contract config from bytes', () => {

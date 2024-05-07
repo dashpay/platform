@@ -1374,5 +1374,356 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<HashMap<&'static str, Compatibility
                     ],
                 },
             ),
+            (
+                "documentsMutable",
+                CompatibilityRules {
+                    allow_addition: false,
+                    allow_removal: false,
+                    allow_replacement_callback: FALSE_CALLBACK.clone(),
+                    subschema_levels_depth: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({}),
+                            json!({ "documentsMutable": false }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/documentsMutable".to_string(),
+                                value: json!(false),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "documentsMutable": false }),
+                            json!({}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/documentsMutable".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "documentsMutable": false }),
+                            json!({ "documentsMutable": true }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/documentsMutable".to_string(),
+                                value: json!(true),
+                            })),
+                        )
+                            .into(),
+                    ],
+                },
+            ),
+            (
+                "documentsKeepHistory",
+                CompatibilityRules {
+                    allow_addition: false,
+                    allow_removal: false,
+                    allow_replacement_callback: FALSE_CALLBACK.clone(),
+                    subschema_levels_depth: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({}),
+                            json!({ "documentsKeepHistory": false }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/documentsKeepHistory".to_string(),
+                                value: json!(false),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "documentsKeepHistory": false }),
+                            json!({}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/documentsKeepHistory".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "documentsKeepHistory": false }),
+                            json!({ "documentsKeepHistory": true }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/documentsKeepHistory".to_string(),
+                                value: json!(true),
+                            })),
+                        )
+                            .into(),
+                    ],
+                },
+            ),
+            (
+                "canBeDeleted",
+                CompatibilityRules {
+                    allow_addition: false,
+                    allow_removal: false,
+                    allow_replacement_callback: FALSE_CALLBACK.clone(),
+                    subschema_levels_depth: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({}),
+                            json!({ "canBeDeleted": false }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/canBeDeleted".to_string(),
+                                value: json!(false),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "canBeDeleted": false }),
+                            json!({}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/canBeDeleted".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "canBeDeleted": false }),
+                            json!({ "canBeDeleted": true }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/canBeDeleted".to_string(),
+                                value: json!(true),
+                            })),
+                        )
+                            .into(),
+                    ],
+                },
+            ),
+            (
+                "transferable",
+                CompatibilityRules {
+                    allow_addition: false,
+                    allow_removal: false,
+                    allow_replacement_callback: FALSE_CALLBACK.clone(),
+                    subschema_levels_depth: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({}),
+                            json!({ "transferable": 1 }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/transferable".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "transferable": 1 }),
+                            json!({}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/transferable".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "transferable": 0 }),
+                            json!({ "transferable": 1 }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/transferable".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                    ],
+                },
+            ),
+            (
+                "tradeMode",
+                CompatibilityRules {
+                    allow_addition: false,
+                    allow_removal: false,
+                    allow_replacement_callback: FALSE_CALLBACK.clone(),
+                    subschema_levels_depth: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({}),
+                            json!({ "tradeMode": 1 }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/tradeMode".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "tradeMode": 1 }),
+                            json!({}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/tradeMode".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "tradeMode": 0 }),
+                            json!({ "tradeMode": 1 }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/tradeMode".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                    ],
+                },
+            ),
+            (
+                "creationRestrictionMode",
+                CompatibilityRules {
+                    allow_addition: false,
+                    allow_removal: false,
+                    allow_replacement_callback: FALSE_CALLBACK.clone(),
+                    subschema_levels_depth: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({}),
+                            json!({ "creationRestrictionMode": 1 }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/creationRestrictionMode".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "creationRestrictionMode": 1 }),
+                            json!({}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/creationRestrictionMode".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "creationRestrictionMode": 0 }),
+                            json!({ "creationRestrictionMode": 1 }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/creationRestrictionMode".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                    ],
+                },
+            ),
+            (
+                "requiresIdentityEncryptionBoundedKey",
+                CompatibilityRules {
+                    allow_addition: false,
+                    allow_removal: false,
+                    allow_replacement_callback: FALSE_CALLBACK.clone(),
+                    subschema_levels_depth: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({}),
+                            json!({ "requiresIdentityEncryptionBoundedKey": 1 }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/requiresIdentityEncryptionBoundedKey".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "requiresIdentityEncryptionBoundedKey": 1 }),
+                            json!({}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/requiresIdentityEncryptionBoundedKey".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "requiresIdentityEncryptionBoundedKey": 0 }),
+                            json!({ "requiresIdentityEncryptionBoundedKey": 1 }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/requiresIdentityEncryptionBoundedKey".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                    ],
+                },
+            ),
+            (
+                "requiresIdentityDecryptionBoundedKey",
+                CompatibilityRules {
+                    allow_addition: false,
+                    allow_removal: false,
+                    allow_replacement_callback: FALSE_CALLBACK.clone(),
+                    subschema_levels_depth: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({}),
+                            json!({ "requiresIdentityDecryptionBoundedKey": 1 }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/requiresIdentityDecryptionBoundedKey".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "requiresIdentityDecryptionBoundedKey": 1 }),
+                            json!({}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/requiresIdentityDecryptionBoundedKey".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "requiresIdentityDecryptionBoundedKey": 0 }),
+                            json!({ "requiresIdentityDecryptionBoundedKey": 1 }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/requiresIdentityDecryptionBoundedKey".to_string(),
+                                value: json!(1),
+                            })),
+                        )
+                            .into(),
+                    ],
+                },
+            ),
+            (
+                "signatureSecurityLevelRequirement",
+                CompatibilityRules {
+                    allow_addition: false,
+                    allow_removal: false,
+                    allow_replacement_callback: FALSE_CALLBACK.clone(),
+                    subschema_levels_depth: None,
+                    inner: None,
+                    #[cfg(any(test, feature = "examples"))]
+                    examples: vec![
+                        (
+                            json!({}),
+                            json!({ "signatureSecurityLevelRequirement": false }),
+                            Some(JsonSchemaChange::Add(AddOperation {
+                                path: "/signatureSecurityLevelRequirement".to_string(),
+                                value: json!(false),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "signatureSecurityLevelRequirement": false }),
+                            json!({}),
+                            Some(JsonSchemaChange::Remove(RemoveOperation {
+                                path: "/signatureSecurityLevelRequirement".to_string(),
+                            })),
+                        )
+                            .into(),
+                        (
+                            json!({ "signatureSecurityLevelRequirement": false }),
+                            json!({ "signatureSecurityLevelRequirement": true }),
+                            Some(JsonSchemaChange::Replace(ReplaceOperation {
+                                path: "/signatureSecurityLevelRequirement".to_string(),
+                                value: json!(true),
+                            })),
+                        )
+                            .into(),
+                    ],
+                },
+            ),
         ])
     });

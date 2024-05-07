@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
-const getStatus = require('../../transport/FixtureTransport/methods/getStatus');
+const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
+const getBlockchainStatus = require('../../transport/FixtureTransport/methods/getBlockchainStatus');
 
 class TransportMock extends EventEmitter {
   constructor(sinon, transactionStreamMock) {
@@ -21,11 +22,12 @@ class TransportMock extends EventEmitter {
         nonce: 351770,
       });
     this.subscribeToBlocks = sinon.stub();
-    this.getIdentitiesByPublicKeyHashes = sinon.stub().returns([]);
+    this.getIdentityByPublicKeyHash = sinon.stub()
+      .rejects(new NotFoundError('Identity not found', {}, null));
     this.sendTransaction = sinon.stub();
     this.getTransaction = sinon.stub();
     this.getBlockHeaderByHash = sinon.stub();
-    this.getStatus = sinon.stub().resolves(getStatus.call(this));
+    this.getBlockchainStatus = sinon.stub().resolves(getBlockchainStatus.call(this));
 
     const provider = new EventEmitter();
     provider.stop = sinon.stub().callsFake(() => {

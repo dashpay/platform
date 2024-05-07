@@ -7,6 +7,9 @@ pub enum DocumentTransitionActionType {
     Create, //the entropy used
     Replace,
     Delete,
+    Transfer,
+    Purchase,
+    UpdatePrice,
     IgnoreWhileBumpingRevision,
 }
 
@@ -20,6 +23,9 @@ impl TransitionActionTypeGetter for DocumentTransition {
             DocumentTransition::Create(_) => DocumentTransitionActionType::Create,
             DocumentTransition::Delete(_) => DocumentTransitionActionType::Delete,
             DocumentTransition::Replace(_) => DocumentTransitionActionType::Replace,
+            DocumentTransition::Transfer(_) => DocumentTransitionActionType::Transfer,
+            DocumentTransition::UpdatePrice(_) => DocumentTransitionActionType::UpdatePrice,
+            DocumentTransition::Purchase(_) => DocumentTransitionActionType::Purchase,
         }
     }
 }
@@ -32,6 +38,7 @@ impl TryFrom<&str> for DocumentTransitionActionType {
             "create" => Ok(DocumentTransitionActionType::Create),
             "replace" => Ok(DocumentTransitionActionType::Replace),
             "delete" => Ok(DocumentTransitionActionType::Delete),
+            "transfer" => Ok(DocumentTransitionActionType::Transfer),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown action type {action_type}"
             ))),

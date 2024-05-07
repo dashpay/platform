@@ -39,6 +39,7 @@ pub mod asset_lock;
 pub mod balances;
 pub mod block;
 pub mod fee;
+pub mod nft;
 pub mod serialization;
 #[cfg(any(
     feature = "message-signing",

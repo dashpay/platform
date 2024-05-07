@@ -28,9 +28,21 @@ impl DocumentTypeV0 {
                     Ok(bytes)
                 }
             }
-            "$createdAt" | "$updatedAt" => DocumentPropertyType::encode_date_timestamp(
+            "$createdAt" | "$updatedAt" | "$transferredAt" => {
+                Ok(DocumentPropertyType::encode_date_timestamp(
+                    value.to_integer().map_err(ProtocolError::ValueError)?,
+                ))
+            }
+            "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
+                Ok(DocumentPropertyType::encode_u64(
+                    value.to_integer().map_err(ProtocolError::ValueError)?,
+                ))
+            }
+            "$createdAtCoreBlockHeight"
+            | "$updatedAtCoreBlockHeight"
+            | "$transferredAtCoreBlockHeight" => Ok(DocumentPropertyType::encode_u32(
                 value.to_integer().map_err(ProtocolError::ValueError)?,
-            ),
+            )),
             _ => {
                 let property = self.flattened_properties.get(key).ok_or_else(|| {
                     DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties.keys().join(" | "), self.name))

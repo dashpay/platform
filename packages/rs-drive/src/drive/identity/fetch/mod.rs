@@ -35,6 +35,8 @@ use std::collections::BTreeMap;
 #[cfg(feature = "server")]
 mod balance;
 #[cfg(feature = "server")]
+mod contract_keys;
+#[cfg(feature = "server")]
 mod fetch_by_public_key_hashes;
 #[cfg(feature = "server")]
 mod full_identity;
@@ -87,7 +89,14 @@ impl Drive {
         };
         let (result_items, _) = self
             .grove
-            .query_raw(&path_query, true, true, QueryElementResultType, transaction)
+            .query_raw(
+                &path_query,
+                true,
+                true,
+                true,
+                QueryElementResultType,
+                transaction,
+            )
             .unwrap()
             .map_err(Error::GroveDB)?;
 
@@ -117,6 +126,7 @@ impl Drive {
             .grove
             .query_raw(
                 &path_query,
+                true,
                 true,
                 true,
                 QueryKeyElementPairResultType,

@@ -35,10 +35,13 @@ impl Drive {
             allow_original,
             created_at: document.created_at(),
             updated_at: document.updated_at(),
+            transferred_at: document.transferred_at(),
             created_at_block_height: document.created_at_block_height(),
             updated_at_block_height: document.updated_at_block_height(),
+            transferred_at_block_height: document.transferred_at_block_height(),
             created_at_core_block_height: document.created_at_core_block_height(),
             updated_at_core_block_height: document.updated_at_core_block_height(),
+            transferred_at_core_block_height: document.transferred_at_core_block_height(),
             data: document.properties(),
         };
         self.validate_uniqueness_of_data(request, transaction, platform_version)

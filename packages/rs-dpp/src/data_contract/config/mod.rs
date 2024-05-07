@@ -117,6 +117,12 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         }
     }
 
+    fn documents_can_be_deleted_contract_default(&self) -> bool {
+        match self {
+            DataContractConfig::V0(v0) => v0.documents_can_be_deleted_contract_default,
+        }
+    }
+
     /// Encryption key storage requirements
     fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
         match self {
@@ -154,6 +160,12 @@ impl DataContractConfigSettersV0 for DataContractConfig {
     fn set_documents_keep_history_contract_default(&mut self, value: bool) {
         match self {
             DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default = value,
+        }
+    }
+
+    fn set_documents_can_be_deleted_contract_default(&mut self, value: bool) {
+        match self {
+            DataContractConfig::V0(v0) => v0.documents_can_be_deleted_contract_default = value,
         }
     }
 

@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn test_invalid_document_id() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let request = GetDocumentsRequestV0 {
             data_contract_id: vec![0; 8],
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_not_found_in_documents_request() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let data_contract_id = vec![0; 32];
 
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_absent_document_type() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -263,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_invalid_where_clause() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_invalid_order_by_clause() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_invalid_start_at_clause() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_invalid_start_after_clause() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -383,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_invalid_limit() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_documents_not_found() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -447,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_documents_absence_proof() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, version) = setup_platform(false);
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);

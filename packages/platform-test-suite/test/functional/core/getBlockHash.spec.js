@@ -9,7 +9,7 @@ describe('Core', () => {
       client = createClientWithoutWallet();
 
       ({ chain: { blocksCount: lastBlockHeight } } = await client
-        .getDAPIClient().core.getStatus());
+        .getDAPIClient().core.getBlockchainStatus());
     });
 
     after(async () => {

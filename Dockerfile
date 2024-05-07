@@ -232,9 +232,11 @@ LABEL description="Drive ABCI Rust"
 RUN apk add --no-cache libgcc libstdc++
 
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
+ENV REJECTIONS_PATH=/var/log/dash/rejected
 
 RUN mkdir -p /var/log/dash \
-    /var/lib/dash/rs-drive-abci/db
+    /var/lib/dash/rs-drive-abci/db \
+    ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
 COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env

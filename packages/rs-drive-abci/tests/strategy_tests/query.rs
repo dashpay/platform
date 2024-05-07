@@ -1,9 +1,8 @@
 use crate::strategy::StrategyRandomness;
-use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::GetIdentitiesByPublicKeyHashesRequestV0;
-use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response::PublicKeyHashIdentityEntry;
+use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::{
-    get_identities_by_public_key_hashes_request, get_identities_by_public_key_hashes_response,
-    GetIdentitiesByPublicKeyHashesRequest, Proof,
+    get_identity_by_public_key_hash_request, get_identity_by_public_key_hash_response,
+    GetIdentityByPublicKeyHashRequest, Proof,
 };
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -114,7 +113,7 @@ impl<'a> ProofVerification<'a> {
                         e,
                         format!("Malformed signature data: {}", hex::encode(self.signature)),
                     ),
-                )
+                );
             }
         };
         tracing::trace!(
@@ -231,88 +230,63 @@ impl QueryStrategy {
 
             let prove: bool = rng.gen();
 
-            let request = GetIdentitiesByPublicKeyHashesRequest {
-                version: Some(get_identities_by_public_key_hashes_request::Version::V0(
-                    GetIdentitiesByPublicKeyHashesRequestV0 {
-                        public_key_hashes: public_key_hashes
-                            .keys()
-                            .map(|hash| hash.to_vec())
-                            .collect(),
-                        prove,
-                    },
-                )),
-            };
-            let query_validation_result = abci_app
-                .platform
-                .query_identities_by_public_key_hashes(request, &platform_state, platform_version)
-                .expect("expected to run query");
+            for (key_hash, expected_identity) in public_key_hashes {
+                let request = GetIdentityByPublicKeyHashRequest {
+                    version: Some(get_identity_by_public_key_hash_request::Version::V0(
+                        GetIdentityByPublicKeyHashRequestV0 {
+                            public_key_hash: key_hash.to_vec(),
+                            prove,
+                        },
+                    )),
+                };
 
-            assert!(
-                query_validation_result.errors.is_empty(),
-                "{:?}",
-                query_validation_result.errors
-            );
+                let query_validation_result = abci_app
+                    .platform
+                    .query_identity_by_public_key_hash(request, &platform_state, platform_version)
+                    .expect("expected to run query");
 
-            let response = query_validation_result
-                .into_data()
-                .expect("expected data on query_validation_result");
+                assert!(
+                    query_validation_result.errors.is_empty(),
+                    "{:?}",
+                    query_validation_result.errors
+                );
 
-            let versioned_result = response.version.expect("expected a result");
-            match versioned_result {
-                get_identities_by_public_key_hashes_response::Version::V0(v0) => {
-                    let result = v0.result.expect("expected a result");
+                let response = query_validation_result
+                    .into_data()
+                    .expect("expected data on query_validation_result");
 
-                    match result {
-                get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Proof(proof) => {
-                    let (proof_root_hash, identities): (
-                        RootHash,
-                        HashMap<[u8; 20], Option<Identity>>,
-                    ) = Drive::verify_full_identities_by_public_key_hashes(
-                        &proof.grovedb_proof,
-                        public_key_hashes
-                            .keys()
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .as_slice(),
-                        platform_version,
-                    )
-                    .expect("expected to verify proof");
-                    let identities: HashMap<[u8; 20], PartialIdentity> = identities
-                        .into_iter()
-                        .map(|(k, v)| {
-                            (
-                                k,
-                                v.expect("expect an identity")
-                                    .into_partial_identity_info_no_balance(),
-                            )
-                        })
-                        .collect();
-                    assert_eq!(proof_verification.app_hash, &proof_root_hash);
-                    assert!(proof_verification
-                        .verify_proof(&proof_root_hash, proof)
-                        .is_valid());
-                    assert_eq!(identities, public_key_hashes);
-                }
-                get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Identities(data) => {
-                    let identities_returned = data
-                        .identity_entries
-                        .into_iter()
-                        .map(|entry| {
-                            let PublicKeyHashIdentityEntry{  value, .. } = entry;
-                            Identity::deserialize_from_bytes(&value.expect("expected a value"))
-                                .expect("expected to deserialize identity")
-                                .id()
-                        })
-                        .collect::<HashSet<_>>();
-                    assert_eq!(
-                        identities_returned,
-                        public_key_hashes
-                            .values()
-                            .map(|partial_identity| partial_identity.id)
-                            .collect()
-                    );
-                }
-            }
+                let versioned_result = response.version.expect("expected a result");
+                match versioned_result {
+                    get_identity_by_public_key_hash_response::Version::V0(v0) => {
+                        let result = v0.result.expect("expected a result");
+
+                        match result {
+                            get_identity_by_public_key_hash_response::get_identity_by_public_key_hash_response_v0::Result::Proof(proof) => {
+                                let (proof_root_hash, identity): (
+                                    RootHash,
+                                    Option<Identity>,
+                                ) = Drive::verify_full_identity_by_public_key_hash(
+                                    &proof.grovedb_proof,
+                                    key_hash,
+                                    platform_version,
+                                )
+                                    .expect("expected to verify proof");
+                                let identity = identity.expect("expected an identity")
+                                    .into_partial_identity_info_no_balance();
+                                assert_eq!(proof_verification.app_hash, &proof_root_hash);
+                                assert!(proof_verification
+                                    .verify_proof(&proof_root_hash, proof)
+                                    .is_valid());
+                                assert_eq!(identity, expected_identity);
+                            }
+                            get_identity_by_public_key_hash_response::get_identity_by_public_key_hash_response_v0::Result::Identity(data) => {
+                                let identity_id = Identity::deserialize_from_bytes(&data)
+                                    .expect("expected to deserialize identity").id();
+
+                                assert_eq!(identity_id, expected_identity.id);
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -37,12 +37,16 @@ impl Drive {
             allow_original: true,
             created_at: document_replace_transition.created_at(),
             updated_at: document_replace_transition.updated_at(),
+            transferred_at: document_replace_transition.transferred_at(),
             created_at_block_height: document_replace_transition.created_at_block_height(),
             updated_at_block_height: document_replace_transition.updated_at_block_height(),
+            transferred_at_block_height: document_replace_transition.transferred_at_block_height(),
             created_at_core_block_height: document_replace_transition
                 .created_at_core_block_height(),
             updated_at_core_block_height: document_replace_transition
                 .updated_at_core_block_height(),
+            transferred_at_core_block_height: document_replace_transition
+                .transferred_at_core_block_height(),
             data: document_replace_transition.data(),
         };
         self.validate_uniqueness_of_data(request, transaction, platform_version)

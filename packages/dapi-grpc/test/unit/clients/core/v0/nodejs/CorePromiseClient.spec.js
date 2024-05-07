@@ -11,7 +11,8 @@ describe('CorePromiseClient', () => {
 
     corePromiseClient = new CorePromiseClient('https://localhost/');
     corePromiseClient.client = {
-      getStatus: this.sinon.stub().resolves(response),
+      getBlockchainStatus: this.sinon.stub().resolves(response),
+      getMasternodeStatus: this.sinon.stub().resolves(response),
       getBlock: this.sinon.stub().resolves(response),
       broadcastTransaction: this.sinon.stub().resolves(response),
       getTransaction: this.sinon.stub().resolves(response),
@@ -20,17 +21,37 @@ describe('CorePromiseClient', () => {
     };
   });
 
-  describe('#getStatus', () => {
-    it('should return status', async () => {
-      const result = await corePromiseClient.getStatus(request);
+  describe('#getBlockchainStatus', () => {
+    it('should return core chain status', async () => {
+      const result = await corePromiseClient.getBlockchainStatus(request);
 
       expect(result).to.equal(response);
-      expect(corePromiseClient.client.getStatus).to.be.calledOnceWith(request);
+      expect(corePromiseClient.client.getBlockchainStatus).to.be.calledOnceWith(request);
     });
 
     it('should throw an error when metadata is not an object', async () => {
       try {
-        corePromiseClient.getStatus({}, 'metadata');
+        corePromiseClient.getBlockchainStatus({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#getMasternodeStatus', () => {
+    it('should return masternode status', async () => {
+      const result = await corePromiseClient.getMasternodeStatus(request);
+
+      expect(result).to.equal(response);
+      expect(corePromiseClient.client.getMasternodeStatus)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        corePromiseClient.getMasternodeStatus({}, 'metadata');
 
         expect.fail('Error was not thrown');
       } catch (e) {

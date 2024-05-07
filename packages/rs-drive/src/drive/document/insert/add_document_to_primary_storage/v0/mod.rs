@@ -142,7 +142,7 @@ impl Drive {
                 drive_operations,
                 drive_version,
             )?;
-            let encoded_time = DocumentPropertyType::encode_unsigned_integer(block_info.time_ms)?;
+            let encoded_time = DocumentPropertyType::encode_date_timestamp(block_info.time_ms);
             let path_key_element_info = match &document_and_contract_info
                 .owned_document_info
                 .document_info

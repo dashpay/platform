@@ -10,6 +10,7 @@ mod delegate;
 mod document_query;
 mod fetch;
 mod fetch_many;
+mod identities_contract_keys_query;
 mod query;
 pub mod transition;
 pub mod types;

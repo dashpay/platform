@@ -194,14 +194,6 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
-    platform_proto::GetIdentitiesByPublicKeyHashesRequest,
-    platform_proto::GetIdentitiesByPublicKeyHashesResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_identities_by_public_key_hashes
-);
-
-impl_transport_request_grpc!(
     platform_proto::GetIdentityByPublicKeyHashRequest,
     platform_proto::GetIdentityByPublicKeyHashResponse,
     PlatformGrpcClient,
@@ -239,6 +231,14 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_identity_balance_and_revision
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesContractKeysRequest,
+    platform_proto::GetIdentitiesContractKeysResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_contract_keys
 );
 
 impl_transport_request_grpc!(
@@ -292,11 +292,11 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
-    core_proto::GetStatusRequest,
-    core_proto::GetStatusResponse,
+    core_proto::GetBlockchainStatusRequest,
+    core_proto::GetBlockchainStatusResponse,
     CoreGrpcClient,
     RequestSettings::default(),
-    get_status
+    get_blockchain_status
 );
 
 impl_transport_request_grpc!(
