@@ -18,54 +18,54 @@ pub enum QuerySyntaxError {
 
     /// We asked for nothing
     #[error("no query items error: {0}")]
-    NoQueryItems(&'static str),
+    NoQueryItems(String),
     ///DataContract not found error
     #[error("contract not found error: {0}")]
-    DataContractNotFound(&'static str),
+    DataContractNotFound(String),
     /// Document type not found error
     #[error("document type not found error: {0}")]
-    DocumentTypeNotFound(&'static str),
+    DocumentTypeNotFound(String),
 
     /// Duplicate non groupable clause on same field error
     #[error("duplicate non groupable clause on same field error: {0}")]
-    DuplicateNonGroupableClauseSameField(&'static str),
+    DuplicateNonGroupableClauseSameField(String),
     /// Multiple in clauses error
     #[error("multiple in clauses error: {0}")]
-    MultipleInClauses(&'static str),
+    MultipleInClauses(String),
     /// Multiple range clauses error
     #[error("multiple range clauses error: {0}")]
-    MultipleRangeClauses(&'static str),
+    MultipleRangeClauses(String),
     /// Range clauses not groupable error
     #[error("range clauses not groupable error: {0}")]
-    RangeClausesNotGroupable(&'static str),
+    RangeClausesNotGroupable(String),
 
     /// Invalid between clause error
     #[error("invalid BETWEEN clause error: {0}")]
-    InvalidBetweenClause(&'static str),
+    InvalidBetweenClause(String),
     /// Invalid in clause error
     #[error("invalid IN clause error: {0}")]
     InvalidInClause(String),
     /// Invalid starts with clause error
     #[error("invalid STARTSWITH clause error: {0}")]
-    InvalidStartsWithClause(&'static str),
+    InvalidStartsWithClause(String),
 
     /// Invalid where clause order error
     #[error("invalid where clause order error: {0}")]
-    InvalidWhereClauseOrder(&'static str),
+    InvalidWhereClauseOrder(String),
     /// Invalid where clause components error
     #[error("invalid where clause components error: {0}")]
-    InvalidWhereClauseComponents(&'static str),
+    InvalidWhereClauseComponents(String),
 
     /// Invalid orderBy properties error
     #[error("invalid order by properties error: {0}")]
-    InvalidOrderByProperties(&'static str),
+    InvalidOrderByProperties(String),
     /// Invalid orderBy properties order error
     #[error("invalid order by properties order error: {0}")]
-    InvalidOrderByPropertiesOrder(&'static str),
+    InvalidOrderByPropertiesOrder(String),
 
     /// Invalid contract id error
     #[error("invalid contract id error: {0}")]
-    InvalidContractId(&'static str),
+    InvalidContractId(String),
     /// Query for a key has an invalid parameter
     #[error("query invalid key parameter error: {0}")]
     InvalidKeyParameter(String),
@@ -77,59 +77,59 @@ pub enum QuerySyntaxError {
     InvalidParameter(String),
     /// Query invalid format for where clause error
     #[error("query invalid format for where clause error: {0}")]
-    InvalidFormatWhereClause(&'static str),
+    InvalidFormatWhereClause(String),
 
     /// Conflicting conditions error
     #[error("conflicting conditions error: {0}")]
-    ConflictingConditions(&'static str),
+    ConflictingConditions(String),
 
     /// Duplicate start conditions error
     #[error("duplicate start conditions error: {0}")]
-    DuplicateStartConditions(&'static str),
+    DuplicateStartConditions(String),
     /// Start document not found error
     #[error("start document not found error: {0}")]
-    StartDocumentNotFound(&'static str),
+    StartDocumentNotFound(String),
 
     /// Invalid document type error
     #[error("invalid document type error: {0}")]
-    InvalidDocumentType(&'static str),
+    InvalidDocumentType(String),
 
     /// Where clause on non indexed property error
     #[error("where clause on non indexed property error: {0}")]
-    WhereClauseOnNonIndexedProperty(&'static str),
+    WhereClauseOnNonIndexedProperty(String),
     /// Query is too far from index error
     #[error("query is too far from index: {0}")]
-    QueryTooFarFromIndex(&'static str),
+    QueryTooFarFromIndex(String),
     /// Query on document type with no indexes error
     #[error("query on document type with no indexes: {0}")]
-    QueryOnDocumentTypeWithNoIndexes(&'static str),
+    QueryOnDocumentTypeWithNoIndexes(String),
 
     /// Missing order by for range error
     #[error("missing order by for range error: {0}")]
-    MissingOrderByForRange(&'static str),
+    MissingOrderByForRange(String),
 
     /// Range operator not in final index error
     #[error("range operator not in final index error: {0}")]
-    RangeOperatorNotInFinalIndex(&'static str),
+    RangeOperatorNotInFinalIndex(String),
     /// In operator not in final indexes error
     #[error("in operator not in final indexes error: {0}")]
-    InOperatorNotInFinalIndexesIndex(&'static str),
+    InOperatorNotInFinalIndexesIndex(String),
     /// Range operator does not have order by error
     #[error("range operator does not have order by error: {0}")]
-    RangeOperatorDoesNotHaveOrderBy(&'static str),
+    RangeOperatorDoesNotHaveOrderBy(String),
 
     /// Validation error
     #[error("validation error: {0}")]
-    Validation(&'static str),
+    Validation(String),
     /// Where condition properties number error
     #[error("where condition properties number error: {0}")]
-    WhereConditionPropertiesNumber(&'static str),
+    WhereConditionPropertiesNumber(String),
 
     /// Starts with illegal string error
     #[error("starts with illegal string error: {0}")]
-    StartsWithIllegalString(&'static str),
+    StartsWithIllegalString(String),
 
     /// Invalid identity prove request error
     #[error("invalid identity prove request error: {0}")]
-    InvalidIdentityProveRequest(&'static str),
+    InvalidIdentityProveRequest(String),
 }

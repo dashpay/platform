@@ -199,7 +199,7 @@ impl Drive {
                 platform_version,
             )?
             .ok_or(Error::Query(QuerySyntaxError::DataContractNotFound(
-                "contract not found",
+                "contract not found".to_string(),
             )))?;
         let document_type = contract
             .contract
