@@ -42,8 +42,8 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
+use rand::seq::SliceRandom;
 use rand::Rng;
-use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -413,7 +413,7 @@ impl Strategy {
         ) {
             Ok(transitions) => transitions,
             Err(e) => {
-                error!("identity_state_transitions_for_block error: {}", e);
+                tracing::error!("identity_state_transitions_for_block error: {}", e);
                 return (vec![], finalize_block_operations, vec![]);
             }
         };
@@ -1202,7 +1202,7 @@ impl Strategy {
                         ) {
                             Ok(contract_factory) => contract_factory,
                             Err(e) => {
-                                error!("Failed to get DataContractFactory while creating random contract: {e}");
+                                tracing::error!("Failed to get DataContractFactory while creating random contract: {e}");
                                 continue;
                             }
                         };
@@ -1210,8 +1210,9 @@ impl Strategy {
                         // Create `count` ContractCreate transitions and push to operations vec
                         for _ in 0..count {
                             // Get the contract owner_id from a random current_identity and identity nonce
-                            let identity_num = rng.gen_range(0..current_identities.len());
-                            let identity = current_identities.get(identity_num).unwrap().clone();
+                            let identity = current_identities
+                                .choose(rng)
+                                .expect("Expected to get an identity for ContractCreate");
                             let identity_nonce =
                                 identity_nonce_counter.entry(identity.id()).or_default();
                             *identity_nonce += 1;
@@ -1243,7 +1244,7 @@ impl Strategy {
                                                 ))
                                             }
                                             Err(e) => {
-                                                error!(
+                                                tracing::error!(
                                                     "Error generating random document type: {:?}",
                                                     e
                                                 );
@@ -1262,7 +1263,7 @@ impl Strategy {
                             ) {
                                 Ok(contract) => contract,
                                 Err(e) => {
-                                    error!("Failed to create random data contract: {e}");
+                                    tracing::error!("Failed to create random data contract: {e}");
                                     continue;
                                 }
                             };
@@ -1272,7 +1273,9 @@ impl Strategy {
                             {
                                 Ok(transition) => transition,
                                 Err(e) => {
-                                    error!("Failed to create ContractCreate transition: {e}");
+                                    tracing::error!(
+                                        "Failed to create ContractCreate transition: {e}"
+                                    );
                                     continue;
                                 }
                             };
@@ -1294,7 +1297,7 @@ impl Strategy {
                                     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>,
                                 >,
                             ) {
-                                error!("Error signing state transition: {:?}", e);
+                                tracing::error!("Error signing state transition: {:?}", e);
                             }
 
                             operations.push(state_transition);
@@ -1328,7 +1331,13 @@ impl Strategy {
                                         );
                                         contract_ref.increment_version();
 
-                                        let identity = &current_identities[0];
+                                        let identity = current_identities
+                                            .iter()
+                                            .find(|identity| {
+                                                identity.id() == contract_ref.owner_id()
+                                            })
+                                            .or_else(|| current_identities.choose(rng)).expect("Expected to get an identity for DataContractUpdate");
+
                                         let identity_contract_nonce = contract_nonce_counter
                                             .entry((identity.id(), contract_ref.id()))
                                             .or_default();
@@ -1337,7 +1346,7 @@ impl Strategy {
                                         // Prepare the DataContractUpdateTransition with the updated contract_ref
                                         match DataContractUpdateTransition::try_from_platform_versioned((DataContract::V0(contract_ref.clone()), *identity_contract_nonce), platform_version) {
                                             Ok(data_contract_update_transition) => {
-                                                let identity_public_key = current_identities[0]
+                                                let identity_public_key = identity
                                                     .get_first_public_key_matching(
                                                         Purpose::AUTHENTICATION,
                                                         HashSet::from([SecurityLevel::CRITICAL]),
@@ -1357,15 +1366,18 @@ impl Strategy {
 
                                                 operations.push(state_transition);
                                             },
-                                            Err(e) => error!("Error converting data contract to update transition: {:?}", e),
+                                            Err(e) => tracing::error!("Error converting data contract to update transition: {:?}", e),
                                         }
                                     }
                                     Err(e) => {
-                                        error!("Error generating random document type: {:?}", e)
+                                        tracing::error!(
+                                            "Error generating random document type: {:?}",
+                                            e
+                                        )
                                     }
                                 }
                             } else {
-                                // Handle the case where the contract is not found in known_contracts
+                                tracing::error!("Contract not found in known_contracts");
                             }
                         }
                     }
