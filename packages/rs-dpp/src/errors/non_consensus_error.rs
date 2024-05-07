@@ -1,18 +1,18 @@
 // use platform_value::Error as ValueError;
-use thiserror::Error;
-use platform_value::Error as PlatformValueError;
+use thiserror::Error as ThisError;
+use platform_value::Error;
 use platform_version::version::FeatureVersion;
 use crate::errors::dpp_error::DPPError;
 use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
 use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
 use crate::errors::serde_parsing_error::SerdeParsingError;
 
-#[derive(Debug, Error)]
+#[derive(Debug, ThisError)]
 #[ferment_macro::export]
 pub enum NonConsensusError {
     /// Value error
     #[error("value error: {0}")]
-    ValueError(#[from] PlatformValueError),
+    ValueError(#[from] Error),
     /// Platform expected some specific versions
     #[error("non consensus unknown version on {method}, received: {received}")]
     UnknownVersionMismatch {

@@ -1,4 +1,4 @@
-use thiserror::Error;
+use thiserror::Error as ThisError;
 
 use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::errors::consensus::signature::{
@@ -37,10 +37,10 @@ use crate::errors::serde_parsing_error::SerdeParsingError;
 //use dashcore::consensus::encode::Error as DashCoreError;
 
 use platform_version::version::FeatureVersion;
-use platform_value::{Error as ValueError, Value};
+use platform_value::{Error, Value};
 use platform_version::error::PlatformVersionError;
 
-#[derive(Error, Debug)]
+#[derive(ThisError, Debug)]
 #[ferment_macro::export]
 pub enum ProtocolError {
     #[error("Identifier Error: {0}")]
@@ -199,7 +199,7 @@ pub enum ProtocolError {
 
     /// Value error
     #[error("value error: {0}")]
-    ValueError(#[from] ValueError),
+    ValueError(#[from] Error),
 
     /// Value error
     #[error("platform serialization error: {0}")]
