@@ -139,7 +139,7 @@ describe('Testnet Fullnode', function main() {
       const task = restartNodeTask(config);
 
       await task.run({
-        isVerbose: true
+        isVerbose: true,
       });
 
       await assertServiceRunning(config, 'core');
@@ -158,7 +158,7 @@ describe('Testnet Fullnode', function main() {
       const task = stopNodeTask(config);
 
       await task.run({
-        isVerbose: true
+        isVerbose: true,
       });
 
       await assertServiceRunning(config, 'core', false);
