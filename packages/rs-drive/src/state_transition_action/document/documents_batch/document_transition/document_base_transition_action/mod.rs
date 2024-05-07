@@ -3,11 +3,10 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::Identifier;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::prelude::IdentityNonce;
 use dpp::ProtocolError;
 use std::sync::Arc;
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contract::errors::DataContractError;
 
 /// transformer module
 pub mod transformer;
@@ -30,7 +29,7 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
             DocumentBaseTransitionAction::V0(v0) => v0.id,
         }
     }
-    
+
     fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError> {
         Ok(self
             .data_contract_fetch_info()
@@ -39,10 +38,7 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
     }
 
     fn document_type_field_is_required(&self, field: &str) -> Result<bool, ProtocolError> {
-        Ok(self
-            .document_type()?
-            .required_fields()
-            .contains(field))
+        Ok(self.document_type()?.required_fields().contains(field))
     }
 
     fn document_type_name(&self) -> &String {

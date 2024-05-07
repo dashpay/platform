@@ -65,12 +65,12 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransition {
             DocumentCreateTransition::V0(v0) => &mut v0.prefunded_voting_balances,
         }
     }
-    
+
     fn add_prefunded_voting_balance(&mut self, index_name: String, amount: Credits) {
         match self {
             DocumentCreateTransition::V0(v0) => {
                 v0.prefunded_voting_balances.insert(index_name, amount);
-            },
+            }
         }
     }
 

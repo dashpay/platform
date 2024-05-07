@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::{Identifier, IdentityNonce};
+use dpp::voting::votes::contested_document_resource_vote::accessors::v0::ContestedDocumentResourceVoteGettersV0;
 use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

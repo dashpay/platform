@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
@@ -8,6 +7,7 @@ use crate::data_contract::document_type::index_level::IndexType::{
 use crate::data_contract::document_type::Index;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -108,9 +108,9 @@ impl IndexLevel {
         document_type_name: &str, // TODO: We shouldn't pass document type, it's only for errors
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
-        where
-            I: IntoIterator<Item = T>, // T is the type of elements in the collection
-            T: Borrow<Index>,          // Assuming Index is the type stored in the collection
+    where
+        I: IntoIterator<Item = T>, // T is the type of elements in the collection
+        T: Borrow<Index>,          // Assuming Index is the type stored in the collection
     {
         match platform_version
             .dpp
@@ -132,9 +132,9 @@ impl IndexLevel {
         indices: I,
         document_type_name: &str,
     ) -> Result<Self, ProtocolError>
-        where
-            I: IntoIterator<Item = T>, // T is the type of elements in the collection
-            T: Borrow<Index>,          // Assuming Index is the type stored in the collection
+    where
+        I: IntoIterator<Item = T>, // T is the type of elements in the collection
+        T: Borrow<Index>,          // Assuming Index is the type stored in the collection
     {
         let mut index_level = IndexLevel {
             sub_index_levels: Default::default(),

@@ -54,12 +54,12 @@ mod test {
 
     use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
     use crate::voting::resource_vote::ResourceVote;
+    use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use crate::voting::votes::Vote;
     use crate::voting::ContestedDocumentResourceVote;
     use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;
-    use crate::voting::votes::Vote;
-    use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
     fn test_masternode_vote_transition<
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,

@@ -174,7 +174,7 @@ impl Drive {
 
         // For Versioning via forks
         Drive::add_initial_fork_update_structure_operations(&mut batch);
-        
+
         // Pre funded specialized balances tree
         Drive::add_initial_pre_funded_specialized_balances_operations(&mut batch);
 

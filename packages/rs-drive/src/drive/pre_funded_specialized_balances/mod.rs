@@ -1,6 +1,6 @@
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 pub const PREFUNDED_BALANCES_FOR_VOTING: [u8; 1] = [128];
 

@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use platform_value::{Identifier, Value};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use platform_value::{Identifier, Value};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq)]
 #[cfg_attr(

@@ -33,7 +33,9 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
         }
     }
 
-    fn all_conflicting_index_collateral_voting_funds(&self) -> Result<Option<Credits>, ProtocolError> {
+    fn all_conflicting_index_collateral_voting_funds(
+        &self,
+    ) -> Result<Option<Credits>, ProtocolError> {
         match self {
             DocumentsBatchTransition::V0(v0) => v0.all_conflicting_index_collateral_voting_funds(),
         }

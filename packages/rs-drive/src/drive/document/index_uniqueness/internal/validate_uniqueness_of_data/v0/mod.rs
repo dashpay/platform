@@ -61,10 +61,10 @@ impl Drive {
 
         let validation_results = document_type
             .indexes()
-            .iter()
+            .values()
             .filter_map(|index| {
                 if !index.unique {
-                    // if a index is not unique there is no issue
+                    // if an index is not unique there is no issue
                     None
                 } else {
                     let where_queries = index

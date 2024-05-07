@@ -23,13 +23,13 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
+use crate::fee::Credits;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
 use platform_version::version::PlatformVersion;
-use crate::fee::Credits;
 
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::documents_batch_transition;
@@ -66,7 +66,10 @@ pub struct DocumentCreateTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
 
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$prefundedVotingBalances"))]
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$prefundedVotingBalances")
+    )]
     /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)
     /// This is a map of index names to the amount we want to prefund them for
@@ -92,7 +95,8 @@ impl DocumentCreateTransitionV0 {
             entropy: map
                 .remove_hash256_bytes(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?,
-            prefunded_voting_balances: map.remove_map_as_btree_map(property_names::PREFUNDED_VOTING_BALANCES)?,
+            prefunded_voting_balances: map
+                .remove_map_as_btree_map(property_names::PREFUNDED_VOTING_BALANCES)?,
             data: map,
         })
     }
@@ -107,7 +111,9 @@ impl DocumentCreateTransitionV0 {
 
         transition_base_map.insert(
             property_names::PREFUNDED_VOTING_BALANCES.to_string(),
-            Value::Map(ValueMap::from_btree_map(self.prefunded_voting_balances.clone())),
+            Value::Map(ValueMap::from_btree_map(
+                self.prefunded_voting_balances.clone(),
+            )),
         );
 
         transition_base_map.extend(self.data.clone());

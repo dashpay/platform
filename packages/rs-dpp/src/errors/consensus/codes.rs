@@ -152,7 +152,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidStateTransitionTypeError { .. } => 10600,
             Self::MissingStateTransitionTypeError { .. } => 10601,
             Self::StateTransitionMaxSizeExceededError { .. } => 10602,
-            
+
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,
         }

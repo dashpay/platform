@@ -9,8 +9,8 @@ use dpp::ProtocolError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::Index;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::Index;
 use dpp::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
     TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
@@ -33,7 +33,7 @@ pub struct DocumentCreateTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
     /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)
-    pub prefunded_voting_balances: BTreeMap<Index, Credits>
+    pub prefunded_voting_balances: BTreeMap<Index, Credits>,
 }
 
 /// document create transition action accessors v0
@@ -50,7 +50,7 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     fn data_mut(&mut self) -> &mut BTreeMap<String, Value>;
     /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
-    
+
     /// pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)
     fn prefunded_voting_balances(&self) -> &BTreeMap<Index, Credits>;

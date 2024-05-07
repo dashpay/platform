@@ -1,8 +1,8 @@
 /// transformer
 pub mod transformer;
 
-use std::sync::Arc;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use std::sync::Arc;
 
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;

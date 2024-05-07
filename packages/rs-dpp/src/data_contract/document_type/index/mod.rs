@@ -15,15 +15,16 @@ use anyhow::anyhow;
 
 use crate::data_contract::document_type::ContestedIndexFieldMatch::Regex;
 use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVote;
+use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
+use std::cmp::Ordering;
 use std::{collections::BTreeMap, convert::TryFrom};
-use crate::data_contract::errors::DataContractError::RegexError;
 
 pub mod random_index;
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub enum ContestedIndexResolution {
     MasternodeVote = 0,
 }
@@ -50,36 +51,78 @@ pub enum ContestedIndexFieldMatch {
     All,
 }
 
+impl PartialOrd for ContestedIndexFieldMatch {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        use ContestedIndexFieldMatch::*;
+        match (self, other) {
+            // Comparing two integers
+            (PositiveIntegerMatch(a), PositiveIntegerMatch(b)) => a.partial_cmp(b),
+
+            // Arbitrarily decide that any Regex is less than any PositiveIntegerMatch
+            (Regex(_), PositiveIntegerMatch(_)) => Some(Ordering::Less),
+            (PositiveIntegerMatch(_), Regex(_)) => Some(Ordering::Greater),
+
+            // Comparing Regex with Regex, perhaps based on pattern length
+            (Regex(a), Regex(b)) => a.as_str().len().partial_cmp(&b.as_str().len()),
+
+            // Handling the `All` variant:
+            // All is greater than any other variant
+            (All, All) => Some(Ordering::Equal),
+            (All, _) => Some(Ordering::Greater),
+            (_, All) => Some(Ordering::Less),
+        }
+    }
+}
+
+impl Ord for ContestedIndexFieldMatch {
+    fn cmp(&self, other: &Self) -> Ordering {
+        use ContestedIndexFieldMatch::*;
+        match (self, other) {
+            // Directly compare integers
+            (PositiveIntegerMatch(a), PositiveIntegerMatch(b)) => a.cmp(b),
+
+            // Compare Regex based on pattern string length
+            (Regex(a), Regex(b)) => a.as_str().len().cmp(&b.as_str().len()),
+
+            // Regex is considered less than a positive integer
+            (Regex(_), PositiveIntegerMatch(_)) => Ordering::Less,
+            (PositiveIntegerMatch(_), Regex(_)) => Ordering::Greater,
+
+            // All is always the greatest
+            (All, All) => Ordering::Equal,
+            (All, _) => Ordering::Greater,
+            (_, All) => Ordering::Less,
+        }
+    }
+}
+
 impl Clone for ContestedIndexFieldMatch {
     fn clone(&self) -> Self {
-        match self { Regex(regex) => {
-            Regex(regex::Regex::new(regex.as_str()).unwrap())
-        }
+        match self {
+            Regex(regex) => Regex(regex::Regex::new(regex.as_str()).unwrap()),
             ContestedIndexFieldMatch::All => ContestedIndexFieldMatch::All,
-            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => ContestedIndexFieldMatch::PositiveIntegerMatch(*int)
+            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
+                ContestedIndexFieldMatch::PositiveIntegerMatch(*int)
+            }
         }
     }
 }
 
 impl PartialEq for ContestedIndexFieldMatch {
     fn eq(&self, other: &Self) -> bool {
-        match self { Regex(regex) => {
-            match other { Regex(other_regex) => {
-                regex.as_str() == other_regex.as_str()
-            }
-                _ => false
-            }
-        }
-            ContestedIndexFieldMatch::All => {
-                match other { ContestedIndexFieldMatch::All => true,
-                    _ => false
-                }
-            }
-            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
-                match other { ContestedIndexFieldMatch::PositiveIntegerMatch(other_int) => int == other_int,
-                    _ => false
-                }
-            }
+        match self {
+            Regex(regex) => match other {
+                Regex(other_regex) => regex.as_str() == other_regex.as_str(),
+                _ => false,
+            },
+            ContestedIndexFieldMatch::All => match other {
+                ContestedIndexFieldMatch::All => true,
+                _ => false,
+            },
+            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => match other {
+                ContestedIndexFieldMatch::PositiveIntegerMatch(other_int) => int == other_int,
+                _ => false,
+            },
         }
     }
 }
@@ -88,23 +131,24 @@ impl Eq for ContestedIndexFieldMatch {}
 
 impl ContestedIndexFieldMatch {
     pub fn matches(&self, value: &Value) -> bool {
-        match self { Regex(regex) => {
-            if let Some(string) = value.as_str() {
-                regex.is_match(string)
-            } else {
-                false
+        match self {
+            Regex(regex) => {
+                if let Some(string) = value.as_str() {
+                    regex.is_match(string)
+                } else {
+                    false
+                }
             }
-            
-        }
             ContestedIndexFieldMatch::All => true,
-            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
-                value.as_integer::<u128>().map(|i| i == *int).unwrap_or(false)
-            }
+            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => value
+                .as_integer::<u128>()
+                .map(|i| i == *int)
+                .unwrap_or(false),
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct ContestedIndexInformation {
     pub contested_field_temp_replacement_name: String,
     pub contested_field_name: String,
@@ -124,7 +168,7 @@ impl Default for ContestedIndexInformation {
 }
 
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
@@ -159,7 +203,7 @@ impl Index {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,
@@ -325,7 +369,13 @@ impl TryFrom<&[(Value, Value)]> for Index {
                         match contested_key {
                             "regexPattern" => {
                                 let regex = contested_value.to_str()?.to_owned();
-                                contested_index_information.field_match = Regex(regex::Regex::new(&regex).map_err(|e| RegexError(format!("invalid field match regex: {}", e.to_string())))?);
+                                contested_index_information.field_match =
+                                    Regex(regex::Regex::new(&regex).map_err(|e| {
+                                        RegexError(format!(
+                                            "invalid field match regex: {}",
+                                            e.to_string()
+                                        ))
+                                    })?);
                             }
                             "name" => {
                                 let field = contested_value.to_str()?.to_owned();
@@ -339,11 +389,15 @@ impl TryFrom<&[(Value, Value)]> for Index {
                             "resolution" => {
                                 let resolution_int = contested_value.to_integer::<u8>()?;
                                 contested_index_information.resolution =
-                                    resolution_int.try_into().map_err(|e: ProtocolError| DataContractError::ValueWrongType(e.to_string()))?;
+                                    resolution_int.try_into().map_err(|e: ProtocolError| {
+                                        DataContractError::ValueWrongType(e.to_string())
+                                    })?;
                             }
                             "description" => {}
                             _ => {
-                                return Err(DataContractError::ValueWrongType("unexpected contested key".to_string()));
+                                return Err(DataContractError::ValueWrongType(
+                                    "unexpected contested key".to_string(),
+                                ));
                             }
                         }
                     }

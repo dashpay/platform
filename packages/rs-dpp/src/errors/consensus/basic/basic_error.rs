@@ -60,13 +60,13 @@ use crate::consensus::basic::state_transition::{
 use crate::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
 use crate::consensus::ConsensusError;
 
+use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
 #[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::{
     json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
 };
-use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use crate::data_contract::errors::DataContractError;
 

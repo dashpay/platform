@@ -75,9 +75,20 @@ impl DocumentsBatchTransitionAction {
 
 impl DocumentsBatchTransitionAction {
     /// The sum of all purchases amounts for all purchase transitions in the batch
-    pub fn all_purchases_amount(&self) -> Option<Credits> {
+    pub fn all_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError> {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => v0.all_purchases_amount(),
+        }
+    }
+
+    /// The sum of all conflicting index collateral voting funds for all document create transitions in the batch
+    fn all_conflicting_index_collateral_voting_funds(
+        &self,
+    ) -> Result<Option<Credits>, ProtocolError> {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => {
+                v0.all_conflicting_index_collateral_voting_funds()
+            }
         }
     }
 

@@ -6,7 +6,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 #[derive(
-Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error("Overflow error")]
 #[platform_serialize(unversioned)]
@@ -21,9 +21,7 @@ pub struct OverflowError {
 
 impl OverflowError {
     pub fn new(message: String) -> Self {
-        Self {
-            message
-        }
+        Self { message }
     }
 
     pub fn message(&self) -> &str {

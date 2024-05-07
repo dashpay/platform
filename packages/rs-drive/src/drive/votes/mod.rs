@@ -3,6 +3,7 @@ use crate::drive::RootTree;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
+use dpp::voting::votes::contested_document_resource_vote::accessors::v0::ContestedDocumentResourceVoteGettersV0;
 use dpp::voting::votes::contested_document_resource_vote::ContestedDocumentResourceVote;
 use dpp::ProtocolError;
 
@@ -138,7 +139,14 @@ impl TreePath for ContestedDocumentResourceVote {
             )));
         }
         let document_type = contract.document_type_for_name(&vote_poll.document_type_name)?;
-        let index = document_type.indexes().get(&vote_poll.index_name).ok_or(ProtocolError::UnknownContestedIndexResolution(format!("no index named {} for document type {} on contract with id {}", &vote_poll.index_name, document_type.name(), contract.id())))?;
+        let index = document_type.indexes().get(&vote_poll.index_name).ok_or(
+            ProtocolError::UnknownContestedIndexResolution(format!(
+                "no index named {} for document type {} on contract with id {}",
+                &vote_poll.index_name,
+                document_type.name(),
+                contract.id()
+            )),
+        )?;
         let mut path = contract_document_type_path(
             &vote_poll.contract_id.as_bytes(),
             &vote_poll.document_type_name,

@@ -108,7 +108,7 @@ pub enum ProtocolError {
 
     #[error("Invalid key contract bounds error {0}")]
     InvalidKeyContractBoundsError(String),
-    
+
     #[error("unknown storage key requirements {0}")]
     UnknownStorageKeyRequirements(String),
 

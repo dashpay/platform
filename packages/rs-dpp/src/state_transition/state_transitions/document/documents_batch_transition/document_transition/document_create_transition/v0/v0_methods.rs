@@ -3,8 +3,8 @@ use crate::state_transition::documents_batch_transition::document_create_transit
 
 use platform_value::Value;
 
-use std::collections::BTreeMap;
 use crate::fee::Credits;
+use std::collections::BTreeMap;
 
 pub trait DocumentCreateTransitionV0Methods {
     /// Returns a reference to the `base` field of the `DocumentCreateTransitionV0`.

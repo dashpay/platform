@@ -16,7 +16,7 @@ pub mod invalid_identifier_error;
 pub mod json_schema_compilation_error;
 #[cfg(feature = "json-schema-validation")]
 pub mod json_schema_error;
+pub mod overflow_error;
 pub mod state_transition;
 pub mod unsupported_version_error;
 pub mod value_error;
-pub mod overflow_error;

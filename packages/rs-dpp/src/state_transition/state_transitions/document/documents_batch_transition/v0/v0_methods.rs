@@ -311,11 +311,11 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
                     .as_transition_purchase()
                     .map(|purchase| purchase.price())
             })
-            .fold((None, false), |(acc, _), price| {
-                match acc {
-                    Some(acc_val) => acc_val.checked_add(price).map_or((None, true), |sum| (Some(sum), true)),
-                    None => (Some(price), true),
-                }
+            .fold((None, false), |(acc, _), price| match acc {
+                Some(acc_val) => acc_val
+                    .checked_add(price)
+                    .map_or((None, true), |sum| (Some(sum), true)),
+                None => (Some(price), true),
             });
 
         match (total, any_purchases) {
@@ -325,7 +325,9 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         }
     }
 
-    fn all_conflicting_index_collateral_voting_funds(&self) -> Result<Option<Credits>, ProtocolError> {
+    fn all_conflicting_index_collateral_voting_funds(
+        &self,
+    ) -> Result<Option<Credits>, ProtocolError> {
         let (total, any_voting_funds): (Option<Credits>, bool) = self
             .transitions
             .iter()
@@ -334,21 +336,25 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
                     .as_transition_create()
                     .map(|document_create_transition| {
                         // Safely sum up values to avoid overflow.
-                        document_create_transition.prefunded_voting_balances().values().try_fold(0u64, |acc, &val| {
-                            acc.checked_add(val)
-                        })
-                    }).flatten()
+                        document_create_transition
+                            .prefunded_voting_balances()
+                            .values()
+                            .try_fold(0u64, |acc, &val| acc.checked_add(val))
+                    })
+                    .flatten()
             })
-            .fold((None, false), |(acc, _), price| {
-                match acc {
-                    Some(acc_val) => acc_val.checked_add(price).map_or((None, true), |sum| (Some(sum), true)),
-                    None => (Some(price), true),
-                }
+            .fold((None, false), |(acc, _), price| match acc {
+                Some(acc_val) => acc_val
+                    .checked_add(price)
+                    .map_or((None, true), |sum| (Some(sum), true)),
+                None => (Some(price), true),
             });
 
         match (total, any_voting_funds) {
             (Some(total), _) => Ok(Some(total)),
-            (None, true) => Err(ProtocolError::Overflow("overflow in all voting funds amount")), // Overflow occurred
+            (None, true) => Err(ProtocolError::Overflow(
+                "overflow in all voting funds amount",
+            )), // Overflow occurred
             _ => Ok(None),
         }
     }

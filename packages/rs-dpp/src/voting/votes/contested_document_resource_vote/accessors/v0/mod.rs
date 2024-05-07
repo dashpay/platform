@@ -5,10 +5,10 @@ use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedD
 pub trait ContestedDocumentResourceVoteGettersV0 {
     /// The vote poll
     fn vote_poll(&self) -> &ContestedDocumentResourceVotePoll;
-    
+
     /// The vote poll as owned
     fn vote_poll_owned(self) -> ContestedDocumentResourceVotePoll;
-    
+
     /// The choice made in the vote
     fn resource_vote_choice(&self) -> ResourceVoteChoice;
 }

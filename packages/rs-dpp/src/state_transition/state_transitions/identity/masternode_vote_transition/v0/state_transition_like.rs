@@ -1,12 +1,12 @@
-use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use platform_value::BinaryData;
 
+use crate::prelude::UserFeeIncrease;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
-use crate::prelude::UserFeeIncrease;
 
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;

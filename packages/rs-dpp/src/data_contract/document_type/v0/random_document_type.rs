@@ -240,7 +240,7 @@ impl DocumentTypeV0 {
             match Index::random(&ten_field_names, indices.values(), rng) {
                 Ok(index) => {
                     indices.insert(index.name.clone(), index);
-                },
+                }
                 Err(_) => break,
             }
         }
@@ -560,7 +560,7 @@ impl DocumentTypeV0 {
             match Index::random(&ten_field_names, indices.values(), rng) {
                 Ok(index) => {
                     indices.insert(index.name.clone(), index);
-                },
+                }
                 Err(_) => break,
             }
         }

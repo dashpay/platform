@@ -216,7 +216,10 @@ impl ValueMapHelper for ValueMap {
             .map(|pos| self.remove(pos).1)
     }
     fn from_btree_map<K: Into<Value> + Ord, V: Into<Value>>(btree_map: BTreeMap<K, V>) -> Self {
-        btree_map.into_iter().map(|(k, v)| (k.into(), v.into())).collect()
+        btree_map
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect()
     }
 }
 
@@ -353,8 +356,8 @@ impl Value {
         map: &'a ValueMap,
         sort_key: &str,
     ) -> Result<IndexMap<String, &'a Value>, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
