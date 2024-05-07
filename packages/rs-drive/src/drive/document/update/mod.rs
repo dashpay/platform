@@ -456,7 +456,7 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                document.id().to_buffer(),
+                document.id(),
                 &contract,
                 "profile",
                 BlockInfo::default(),
@@ -1641,7 +1641,7 @@ mod tests {
     ) -> FeeResult {
         drive
             .delete_document_for_contract(
-                person.id.to_buffer(),
+                person.id,
                 contract,
                 "person",
                 block_info,

@@ -10,6 +10,7 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
 
+use dpp::identifier::Identifier;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -30,7 +31,7 @@ impl Drive {
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     pub fn delete_document_for_contract(
         &self,
-        document_id: [u8; 32],
+        document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
         block_info: BlockInfo,
