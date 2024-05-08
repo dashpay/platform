@@ -195,16 +195,6 @@ impl Prometheus {
                 "Duration of ABCI request execution inside Drive per endpoint, in seconds"
             );
 
-            describe_counter!(
-                COUNTER_LAST_HEIGHT,
-                "Last finalized height of platform chain (eg. Tenderdash)"
-            );
-
-            describe_counter!(
-                COUNTER_LAST_HEIGHT,
-                "Last finalized height of platform chain (eg. Tenderdash)"
-            );
-
             describe_histogram!(
                 HISTOGRAM_QUERY_DURATION,
                 metrics::Unit::Seconds,
