@@ -11,6 +11,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::fee::fee_result::FeeResult;
+use dpp::identifier::Identifier;
 
 use dpp::version::PlatformVersion;
 
@@ -33,8 +34,8 @@ impl Drive {
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     pub fn delete_document_for_contract_id(
         &self,
-        document_id: [u8; 32],
-        contract_id: [u8; 32],
+        document_id: Identifier,
+        contract_id: Identifier,
         document_type_name: &str,
         block_info: BlockInfo,
         apply: bool,

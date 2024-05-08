@@ -3,7 +3,7 @@ use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation};
 use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
-use crate::drive::object_size_info::OwnedDocumentInfo;
+use crate::drive::object_size_info::{DocumentTypeInfo, OwnedDocumentInfo};
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
@@ -13,6 +13,7 @@ use std::borrow::Cow;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use dpp::version::PlatformVersion;
+use crate::drive::object_size_info::DataContractInfo::DataContractFetchInfo;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
@@ -22,6 +23,8 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'b>>, Error> {
         let data_contract_id = self.base().data_contract_id();
+
+        let contract_fetch_info = self.base().data_contract_fetch_info();
 
         let document_type_name = self.base().document_type_name().clone();
 
@@ -43,8 +46,8 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                     document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
                     owner_id: Some(owner_id.into_buffer()),
                 },
-                contract_id: data_contract_id,
-                document_type_name: Cow::Owned(document_type_name),
+                contract_info: DataContractFetchInfo(contract_fetch_info),
+                document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
                 override_document: false,
             }),
         ])

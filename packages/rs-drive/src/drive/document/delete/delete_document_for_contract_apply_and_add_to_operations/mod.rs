@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::DataContract;
 
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -29,7 +30,7 @@ impl Drive {
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     pub fn delete_document_for_contract_apply_and_add_to_operations(
         &self,
-        document_id: [u8; 32],
+        document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
         estimated_costs_only_with_layer_info: Option<

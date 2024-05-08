@@ -5,6 +5,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -15,7 +16,7 @@ impl Drive {
     #[inline(always)]
     pub(super) fn delete_document_for_contract_v0(
         &self,
-        document_id: [u8; 32],
+        document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
         block_info: BlockInfo,

@@ -3874,6 +3874,41 @@ const RAW_RUNTIME_STATE =
           ["wrap-ansi", "npm:7.0.0"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:3.26.5", {\
+        "packageLocation": "./.yarn/cache/@oclif-core-npm-3.26.5-02719845fd-4e2aa1a945.zip/node_modules/@oclif/core/",\
+        "packageDependencies": [\
+          ["@oclif/core", "npm:3.26.5"],\
+          ["@types/cli-progress", "npm:3.11.5"],\
+          ["ansi-escapes", "npm:4.3.2"],\
+          ["ansi-styles", "npm:4.3.0"],\
+          ["cardinal", "npm:2.1.1"],\
+          ["chalk", "npm:4.1.2"],\
+          ["clean-stack", "npm:3.0.1"],\
+          ["cli-progress", "npm:3.12.0"],\
+          ["color", "npm:4.2.3"],\
+          ["debug", "virtual:87db25c7c5e6b25bbc12571091cdabc648b79d427ab445d1714ccfdcdfb3265c9de6561ca760cc3de470037cbedf3af4be56ba3b684b3a1c01d4c9c2fd55a741#npm:4.3.4"],\
+          ["ejs", "npm:3.1.10"],\
+          ["get-package-type", "npm:0.1.0"],\
+          ["globby", "npm:11.1.0"],\
+          ["hyperlinker", "npm:1.0.0"],\
+          ["indent-string", "npm:4.0.0"],\
+          ["is-wsl", "npm:2.2.0"],\
+          ["js-yaml", "npm:3.14.1"],\
+          ["minimatch", "npm:9.0.4"],\
+          ["natural-orderby", "npm:2.0.3"],\
+          ["object-treeify", "npm:1.1.33"],\
+          ["password-prompt", "npm:1.1.3"],\
+          ["slice-ansi", "npm:4.0.0"],\
+          ["string-width", "npm:4.2.3"],\
+          ["strip-ansi", "npm:6.0.1"],\
+          ["supports-color", "npm:8.1.1"],\
+          ["supports-hyperlinks", "npm:2.3.0"],\
+          ["widest-line", "npm:3.1.0"],\
+          ["wordwrap", "npm:1.0.0"],\
+          ["wrap-ansi", "npm:7.0.0"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["@oclif/plugin-help", [\
@@ -7635,6 +7670,15 @@ const RAW_RUNTIME_STATE =
           ["color-string", "npm:1.6.0"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:4.2.3", {\
+        "packageLocation": "./.yarn/cache/color-npm-4.2.3-4a23227581-b23f5e500a.zip/node_modules/color/",\
+        "packageDependencies": [\
+          ["color", "npm:4.2.3"],\
+          ["color-convert", "npm:2.0.1"],\
+          ["color-string", "npm:1.9.1"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["color-convert", [\
@@ -7676,6 +7720,15 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/color-string-npm-1.6.0-94ed25c258-27c2365153.zip/node_modules/color-string/",\
         "packageDependencies": [\
           ["color-string", "npm:1.6.0"],\
+          ["color-name", "npm:1.1.4"],\
+          ["simple-swizzle", "npm:0.2.2"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:1.9.1", {\
+        "packageLocation": "./.yarn/cache/color-string-npm-1.9.1-dc020e56be-72aa0b81ee.zip/node_modules/color-string/",\
+        "packageDependencies": [\
+          ["color-string", "npm:1.9.1"],\
           ["color-name", "npm:1.1.4"],\
           ["simple-swizzle", "npm:0.2.2"]\
         ],\
@@ -8410,7 +8463,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
-          ["@oclif/core", "npm:3.10.8"],\
+          ["@oclif/core", "npm:3.26.5"],\
           ["@oclif/plugin-help", "npm:6.0.5"],\
           ["ajv", "npm:8.12.0"],\
           ["ajv-formats", "virtual:e822c5b02ef2b3c5fb9c8d88d5e0ca208365bff76f80510f4ccf9b1de44e2078264bcb00d3cdd5e193c256e9ab81e27c34fcfb1ad3a0e8c1dc8fa0066c78c468#npm:2.1.1"],\
@@ -13813,6 +13866,14 @@ const RAW_RUNTIME_STATE =
           ["brace-expansion", "npm:2.0.1"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:9.0.4", {\
+        "packageLocation": "./.yarn/cache/minimatch-npm-9.0.4-7be5a33efc-4cdc18d112.zip/node_modules/minimatch/",\
+        "packageDependencies": [\
+          ["minimatch", "npm:9.0.4"],\
+          ["brace-expansion", "npm:2.0.1"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["minimist", [\
@@ -15364,6 +15425,15 @@ const RAW_RUNTIME_STATE =
           ["password-prompt", "npm:1.1.2"],\
           ["ansi-escapes", "npm:3.2.0"],\
           ["cross-spawn", "npm:6.0.5"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:1.1.3", {\
+        "packageLocation": "./.yarn/cache/password-prompt-npm-1.1.3-0190666768-1cf7001e66.zip/node_modules/password-prompt/",\
+        "packageDependencies": [\
+          ["password-prompt", "npm:1.1.3"],\
+          ["ansi-escapes", "npm:4.3.2"],\
+          ["cross-spawn", "npm:7.0.3"]\
         ],\
         "linkType": "HARD"\
       }]\
