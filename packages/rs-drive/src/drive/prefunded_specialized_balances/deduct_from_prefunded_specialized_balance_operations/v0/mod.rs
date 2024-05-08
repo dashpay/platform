@@ -29,7 +29,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_total_system_credits_update(
+            Self::add_estimation_costs_for_prefunded_specialized_balance_update(
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;

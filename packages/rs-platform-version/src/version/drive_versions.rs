@@ -141,6 +141,7 @@ pub struct DrivePrefundedSpecializedMethodVersions {
     pub add_prefunded_specialized_balance_operations: FeatureVersion,
     pub deduct_from_prefunded_specialized_balance: FeatureVersion,
     pub deduct_from_prefunded_specialized_balance_operations: FeatureVersion,
+    pub estimated_cost_for_prefunded_specialized_balance_update: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
