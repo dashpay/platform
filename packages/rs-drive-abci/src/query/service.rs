@@ -186,8 +186,11 @@ impl QueryService {
             | Code::ResourceExhausted
             | Code::PermissionDenied
             | Code::Unavailable
+            | Code::Aborted
             | Code::FailedPrecondition
             | Code::OutOfRange
+            | Code::Cancelled
+            | Code::DeadlineExceeded
             | Code::Unauthenticated => {
                 let elapsed_time = response_duration_metric.elapsed().as_secs_f64();
 
@@ -203,13 +206,7 @@ impl QueryService {
                 );
             }
             // System errors
-            Code::Cancelled
-            | Code::Unknown
-            | Code::DeadlineExceeded
-            | Code::Aborted
-            | Code::Unimplemented
-            | Code::Internal
-            | Code::DataLoss => {
+            Code::Unknown | Code::Unimplemented | Code::Internal | Code::DataLoss => {
                 tracing::error!(
                     request = request_debug,
                     endpoint_name,
