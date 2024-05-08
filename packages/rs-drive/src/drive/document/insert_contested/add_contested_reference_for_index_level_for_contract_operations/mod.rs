@@ -51,7 +51,8 @@ impl Drive {
                 drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "add_contested_reference_for_index_level_for_contract_operations".to_string(),
+                method: "add_contested_reference_for_index_level_for_contract_operations"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

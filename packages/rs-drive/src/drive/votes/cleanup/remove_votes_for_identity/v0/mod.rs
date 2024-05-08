@@ -11,10 +11,10 @@ use crate::query::QueryItem;
 use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
+use dpp::voting::votes::Vote;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use grovedb_path::SubtreePath;
-use dpp::voting::votes::Vote;
 
 impl Drive {
     /// We remove vote_choices for an identity when that identity is somehow disabled. Currently there is

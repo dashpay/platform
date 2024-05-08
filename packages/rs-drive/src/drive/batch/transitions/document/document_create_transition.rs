@@ -29,21 +29,22 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
         let document_type_name = self.base().document_type_name().clone();
 
         let identity_contract_nonce = self.base().identity_contract_nonce();
-        
+
         let prefunded_voting_balances = self.prefunded_voting_balances();
 
         let document =
             Document::try_from_owned_create_transition_action(self, owner_id, platform_version)?;
 
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
-        
-        let mut ops = vec![
-            IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
+
+        let mut ops = vec![IdentityOperation(
+            IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id: owner_id.into_buffer(),
                 contract_id: data_contract_id.into_buffer(),
                 nonce: identity_contract_nonce,
-            })];
-        
+            },
+        )];
+
         if prefunded_voting_balances.is_empty() {
             // Just add the document
             ops.push(DocumentOperation(DocumentOperationType::AddDocument {
@@ -61,18 +62,23 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
             ops.push();
             // We add the contested document
             // The contested document resides in a special location in grovedb until a time where the
-            // resolution expires, at that point it either will be moved to 
-            ops.push(DocumentOperation(DocumentOperationType::AddContestedDocument {
-                owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
-                    owner_id: Some(owner_id.into_buffer()),
+            // resolution expires, at that point it either will be moved to
+            ops.push(DocumentOperation(
+                DocumentOperationType::AddContestedDocument {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentOwnedInfo((
+                            document,
+                            Some(Cow::Owned(storage_flags)),
+                        )),
+                        owner_id: Some(owner_id.into_buffer()),
+                    },
+                    contract_info: DataContractFetchInfo(contract_fetch_info),
+                    document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
+                    override_document: false,
                 },
-                contract_info: DataContractFetchInfo(contract_fetch_info),
-                document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
-                override_document: false,
-            }));
+            ));
         }
-        
+
         Ok(ops)
     }
 }

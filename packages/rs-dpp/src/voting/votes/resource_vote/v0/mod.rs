@@ -1,9 +1,9 @@
 use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
-use crate::voting::vote_polls::VotePoll;
 
 #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
 #[cfg_attr(

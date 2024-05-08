@@ -1,7 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::fee::fee_result::FeeResult;
-use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::votes::Vote;
 use grovedb::TransactionArg;

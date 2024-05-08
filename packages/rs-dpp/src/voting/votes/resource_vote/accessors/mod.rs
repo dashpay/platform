@@ -1,5 +1,4 @@
 use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::voting::vote_polls::VotePoll;
 use crate::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use crate::voting::votes::resource_vote::ResourceVote;

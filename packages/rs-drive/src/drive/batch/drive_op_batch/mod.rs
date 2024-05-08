@@ -3,9 +3,9 @@ mod document;
 mod drive_methods;
 mod finalize_task;
 mod identity;
+mod prefunded_specialized_balance;
 mod system;
 mod withdrawals;
-mod prefunded_specialized_balance;
 
 use crate::drive::batch::GroveDbOpBatch;
 
@@ -20,6 +20,7 @@ pub use document::DocumentOperationType;
 pub use document::DocumentOperationsForContractDocumentType;
 pub use document::UpdateOperationInfo;
 pub use identity::IdentityOperationType;
+pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
 pub use system::SystemOperationType;
 pub use withdrawals::WithdrawalOperationType;
 
@@ -35,7 +36,6 @@ use crate::drive::batch::drive_op_batch::finalize_task::{
 };
 use crate::error::drive::DriveError;
 use std::collections::{BTreeMap, HashMap};
-use crate::drive::batch::drive_op_batch::prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
@@ -73,7 +73,7 @@ pub enum DriveOperation<'a> {
     /// An identity operation
     IdentityOperation(IdentityOperationType),
     /// An operation on prefunded balances
-    PrefundedSpecializedBalanceOperationType(PrefundedSpecializedBalanceOperationType),
+    PrefundedSpecializedBalanceOperation(PrefundedSpecializedBalanceOperationType),
     /// A system operation
     SystemOperation(SystemOperationType),
     /// A single low level groveDB operation
@@ -128,14 +128,15 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     transaction,
                     platform_version,
                 ),
-            DriveOperation::PrefundedSpecializedBalanceOperationType(prefunded_balance_operation_type) => prefunded_balance_operation_type
-                .into_low_level_drive_operations(
-                    drive,
-                    estimated_costs_only_with_layer_info,
-                    block_info,
-                    transaction,
-                    platform_version,
-                ),
+            DriveOperation::PrefundedSpecializedBalanceOperation(
+                prefunded_balance_operation_type,
+            ) => prefunded_balance_operation_type.into_low_level_drive_operations(
+                drive,
+                estimated_costs_only_with_layer_info,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             DriveOperation::SystemOperation(system_operation_type) => system_operation_type
                 .into_low_level_drive_operations(
                     drive,
@@ -150,7 +151,6 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                 .into_iter()
                 .map(GroveOperation)
                 .collect()),
-
         }
     }
 }

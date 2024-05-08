@@ -5,14 +5,17 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 
+use crate::drive::prefunded_specialized_balances::{
+    prefunded_specialized_balances_for_voting_path,
+    prefunded_specialized_balances_for_voting_path_vec,
+};
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use dpp::identifier::Identifier;
-use crate::drive::prefunded_specialized_balances::{prefunded_specialized_balances_for_voting_path, prefunded_specialized_balances_for_voting_path_vec};
 
 impl Drive {
     /// The operations to add to the specialized balance
@@ -43,14 +46,21 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
                 &platform_version.drive,
-            )?.ok_or(Error::Drive(DriveError::PrefundedSpecializedBalanceDoesNotExist(
-                format!("trying to deduct from a prefunded specialized balance {} that does not exist", specialized_balance_id),
-            )))?;
+            )?
+            .ok_or(Error::Drive(
+                DriveError::PrefundedSpecializedBalanceDoesNotExist(format!(
+                    "trying to deduct from a prefunded specialized balance {} that does not exist",
+                    specialized_balance_id
+                )),
+            ))?;
         let new_total = previous_credits_in_specialized_balance
             .checked_sub(amount)
-            .ok_or(Error::Drive(DriveError::PrefundedSpecializedBalanceNotEnough(
-                previous_credits_in_specialized_balance, amount
-            )))?;
+            .ok_or(Error::Drive(
+                DriveError::PrefundedSpecializedBalanceNotEnough(
+                    previous_credits_in_specialized_balance,
+                    amount,
+                ),
+            ))?;
         let path_holding_total_credits_vec = prefunded_specialized_balances_for_voting_path_vec();
         let replace_op = GroveDbOp::replace_op(
             path_holding_total_credits_vec,

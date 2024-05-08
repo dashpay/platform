@@ -57,7 +57,8 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "add_contested_document_for_contract_apply_and_add_to_operations".to_string(),
+                method: "add_contested_document_for_contract_apply_and_add_to_operations"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

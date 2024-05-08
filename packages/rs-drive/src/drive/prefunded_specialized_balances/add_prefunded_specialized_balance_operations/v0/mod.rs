@@ -5,14 +5,17 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 
+use crate::drive::prefunded_specialized_balances::{
+    prefunded_specialized_balances_for_voting_path,
+    prefunded_specialized_balances_for_voting_path_vec,
+};
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use dpp::identifier::Identifier;
-use crate::drive::prefunded_specialized_balances::{prefunded_specialized_balances_for_voting_path, prefunded_specialized_balances_for_voting_path_vec};
 
 impl Drive {
     /// The operations to add to the specialized balance
@@ -45,7 +48,8 @@ impl Drive {
                 &platform_version.drive,
             )?;
         let had_previous_balance = previous_credits_in_specialized_balance.is_some();
-        let new_total = previous_credits_in_specialized_balance.unwrap_or_default()
+        let new_total = previous_credits_in_specialized_balance
+            .unwrap_or_default()
             .checked_add(amount)
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
                 "trying to add an amount that would overflow credits",

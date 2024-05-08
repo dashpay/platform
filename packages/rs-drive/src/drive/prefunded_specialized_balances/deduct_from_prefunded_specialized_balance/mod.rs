@@ -4,9 +4,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use dpp::identifier::Identifier;
 
 impl Drive {
     /// Deducts from a prefunded specialized balance
@@ -37,7 +37,12 @@ impl Drive {
             .prefunded_specialized_balances
             .deduct_from_prefunded_specialized_balance
         {
-            0 => self.deduct_from_prefunded_specialized_balance_v0(specialized_balance_id, amount, transaction, platform_version),
+            0 => self.deduct_from_prefunded_specialized_balance_v0(
+                specialized_balance_id,
+                amount,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "deduct_from_prefunded_specialized_balance".to_string(),
                 known_versions: vec![0],

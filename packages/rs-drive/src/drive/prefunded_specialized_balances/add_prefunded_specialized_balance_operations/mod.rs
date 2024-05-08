@@ -1,15 +1,15 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use grovedb::batch::KeyInfoPath;
+use std::collections::HashMap;
 
+use crate::fee::op::LowLevelDriveOperation;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::identifier::Identifier;
-use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
     /// Adds a new prefunded specialized balance
@@ -43,7 +43,13 @@ impl Drive {
             .prefunded_specialized_balances
             .add_prefunded_specialized_balance_operations
         {
-            0 => self.add_prefunded_specialized_balance_operations_v0(specialized_balance_id, amount, estimated_costs_only_with_layer_info, transaction, platform_version),
+            0 => self.add_prefunded_specialized_balance_operations_v0(
+                specialized_balance_id,
+                amount,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_prefunded_specialized_balance_operations".to_string(),
                 known_versions: vec![0],

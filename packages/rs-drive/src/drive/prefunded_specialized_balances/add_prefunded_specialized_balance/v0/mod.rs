@@ -2,9 +2,9 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use dpp::identifier::Identifier;
 
 impl Drive {
     /// Adds a new prefunded specialized balance
