@@ -6,28 +6,35 @@ import wait from '../../util/wait.js';
  * @return {Promise<void>}
  */
 export default async function waitForDKGWindowPass(rpcClient) {
-  const [startBlockCount, startDkgInfo] = await Promise
-    .all([rpcClient.getBlockCount(), rpcClient.quorum('dkginfo')]);
-
-  const { result: startBlock } = startBlockCount;
-  const { result: startNextDKGInfo } = startDkgInfo;
-
-  const { next_dkg: startNextDKG } = startNextDKGInfo;
+  let startBlockCount;
+  let startNextDkg;
 
   let isInDKG = true;
 
-  while (isInDKG) {
-    await wait(10000);
+  do {
+    const [currentBlockCount, currentDkgInfo] = await Promise
+      .all([rpcClient.getBlockCount(), rpcClient.quorum('dkginfo')]);
 
-    const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
+    const { result: blockCount } = currentBlockCount;
+    const { result: dkgInfo } = currentDkgInfo;
+
     const { next_dkg: nextDkg } = dkgInfo;
 
-    const { result: blockchainInfo } = await rpcClient.getBlockchainInfo();
+    if (!startBlockCount) {
+      startBlockCount = blockCount;
+    }
+
+    if (!startNextDkg) {
+      startNextDkg = nextDkg;
+    }
 
     isInDKG = nextDkg <= MIN_BLOCKS_BEFORE_DKG;
 
-    if (isInDKG && blockchainInfo.blocks > startBlock + startNextDKG + 1) {
-      throw new Error(`waitForDKGWindowPass deadline exceeded: dkg did not happen for ${startBlock + nextDkg + 1} ${startNextDKG + 1} blocks`);
+    if (isInDKG && blockCount > startBlockCount + startNextDkg + 1) {
+      throw new Error(`waitForDKGWindowPass deadline exceeded: dkg did not happen for ${startBlockCount + nextDkg + 1} ${startNextDkg + 1} blocks`);
     }
+
+    await wait(10000);
   }
+  while (isInDKG);
 }
