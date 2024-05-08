@@ -124,7 +124,7 @@ pub struct StrategyConfig {
 /// Identities to register on the first block of the strategy
 #[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
 pub struct StartIdentities {
-    pub number_of_identities: u8,
+    pub number_of_identities: u16,
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
     pub extra_keys: KeyMaps,
