@@ -21,7 +21,7 @@ use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::identity::{KeyID, Purpose};
+use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
@@ -142,7 +142,8 @@ where
         let object: BTreeMap<K, Option<Self>> = sdk
             .parse_proof::<<Self as FetchMany<K>>::Request, BTreeMap<K, Option<Self>>>(
                 request, response,
-            )?
+            )
+            .await?
             .unwrap_or_default();
 
         Ok(object)
@@ -227,7 +228,8 @@ impl FetchMany<Identifier> for Document {
 
         // let object: Option<BTreeMap<K,Document>> = sdk
         let documents: BTreeMap<Identifier, Option<Document>> = sdk
-            .parse_proof::<DocumentQuery, Documents>(document_query, response)?
+            .parse_proof::<DocumentQuery, Documents>(document_query, response)
+            .await?
             .unwrap_or_default();
 
         Ok(documents)

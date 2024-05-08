@@ -732,7 +732,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 5081030);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 3810570);
         }
 
         #[test]
@@ -2014,7 +2014,7 @@ mod tests {
 
             assert_eq!(processing_result.aggregated_fees().storage_fee, 0); // There is no storage fee, as there are no indexes that will change
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 5609930);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 4926670);
         }
 
         #[test]
@@ -2205,7 +2205,7 @@ mod tests {
                 Some(14992395)
             );
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 9357180);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 8622720);
 
             let query_sender_results = platform
                 .drive
@@ -2742,7 +2742,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10283900);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 9549440);
 
             let query_sender_results = platform
                 .drive
@@ -3145,7 +3145,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6814950);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 6075290);
 
             let query_sender_results = platform
                 .drive
@@ -3266,11 +3266,11 @@ mod tests {
                     .change(),
                 &BalanceChange::RemoveFromBalance {
                     required_removed_balance: 123579000,
-                    desired_removed_balance: 128673220,
+                    desired_removed_balance: 127933560,
                 }
             );
 
-            let original_creation_cost = 128673220;
+            let original_creation_cost = 127933560;
 
             platform
                 .drive
@@ -3397,7 +3397,7 @@ mod tests {
                 None
             );
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6814950);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 6075290);
 
             let seller_balance = platform
                 .drive
@@ -3408,7 +3408,7 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.1) - 6814950 - 216000 - original_creation_cost
+                dash_to_credits!(0.1) - 6075290 - 216000 - original_creation_cost
             );
 
             let query_sender_results = platform
@@ -3503,7 +3503,7 @@ mod tests {
 
             assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10873700);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10134040);
 
             assert_eq!(
                 processing_result
@@ -3537,7 +3537,7 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.2) - 6814950 - 216000 - original_creation_cost + 22704503
+                dash_to_credits!(0.2) - 6075290 - 216000 - original_creation_cost + 22704503
             );
 
             let buyers_balance = platform
@@ -3547,7 +3547,7 @@ mod tests {
                 .expect("expected that purchaser exists");
 
             // the buyer payed 0.1, but also storage and processing fees
-            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 10873700 - 64611000);
+            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 10134040 - 64611000);
         }
 
         #[test]
@@ -4413,7 +4413,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6814950);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 6075290);
 
             let query_sender_results = platform
                 .drive
