@@ -1,3 +1,4 @@
+use dpp::fee::Credits;
 use crate::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
 use dpp::version::FeatureVersion;
 
@@ -163,4 +164,12 @@ pub enum DriveError {
     /// Error
     #[error("invalid contract history fetch limit: {0}. The limit must be between 1 and {MAX_CONTRACT_HISTORY_FETCH_LIMIT}")]
     InvalidContractHistoryFetchLimit(u16),
+    
+    /// Error
+    #[error("prefunded specialized balance does not exist: {0}")]
+    PrefundedSpecializedBalanceDoesNotExist(String),
+
+    /// Error
+    #[error("prefunded specialized balance does not have enough credits: we have {0}, we want to deduct {1}")]
+    PrefundedSpecializedBalanceNotEnough(Credits, Credits),
 }

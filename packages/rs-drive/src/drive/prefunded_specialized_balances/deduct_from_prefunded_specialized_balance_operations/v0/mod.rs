@@ -1,0 +1,63 @@
+use crate::drive::grove_operations::DirectQueryType;
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fee::op::LowLevelDriveOperation;
+use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+
+use dpp::version::PlatformVersion;
+use grovedb::batch::{GroveDbOp, KeyInfoPath};
+use grovedb::Element::Item;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use integer_encoding::VarInt;
+use std::collections::HashMap;
+use dpp::identifier::Identifier;
+use crate::drive::prefunded_specialized_balances::{prefunded_specialized_balances_for_voting_path, prefunded_specialized_balances_for_voting_path_vec};
+
+impl Drive {
+    /// The operations to add to the specialized balance
+    #[inline(always)]
+    pub(super) fn deduct_from_prefunded_specialized_balance_operations_v0(
+        &self,
+        specialized_balance_id: Identifier,
+        amount: u64,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut drive_operations = vec![];
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_total_system_credits_update(
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+        }
+        let path_holding_specialized_balances = prefunded_specialized_balances_for_voting_path();
+        let previous_credits_in_specialized_balance = self
+            .grove_get_raw_value_u64_from_encoded_var_vec(
+                (&path_holding_specialized_balances).into(),
+                specialized_balance_id.as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?.ok_or(Error::Drive(DriveError::PrefundedSpecializedBalanceDoesNotExist(
+                format!("trying to deduct from a prefunded specialized balance {} that does not exist", specialized_balance_id),
+            )))?;
+        let new_total = previous_credits_in_specialized_balance
+            .checked_sub(amount)
+            .ok_or(Error::Drive(DriveError::PrefundedSpecializedBalanceNotEnough(
+                previous_credits_in_specialized_balance, amount
+            )))?;
+        let path_holding_total_credits_vec = prefunded_specialized_balances_for_voting_path_vec();
+        let replace_op = GroveDbOp::replace_op(
+            path_holding_total_credits_vec,
+            specialized_balance_id.to_vec(),
+            Item(new_total.encode_var_vec(), None),
+        );
+        drive_operations.push(GroveOperation(replace_op));
+        Ok(drive_operations)
+    }
+}
