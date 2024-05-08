@@ -12,6 +12,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
 use dpp::identifier::Identifier;
+use crate::drive::prefunded_specialized_balances::{prefunded_specialized_balances_for_voting_path, prefunded_specialized_balances_for_voting_path_vec};
 
 impl Drive {
     /// The operations to add to the specialized balance
@@ -33,31 +34,37 @@ impl Drive {
                 &platform_version.drive,
             )?;
         }
-        let path_holding_specialized_balances = misc_path();
-        let total_credits_in_platform = self
+        let path_holding_specialized_balances = prefunded_specialized_balances_for_voting_path();
+        let previous_credits_in_specialized_balance = self
             .grove_get_raw_value_u64_from_encoded_var_vec(
-                (&path_holding_total_credits).into(),
-                TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
+                (&path_holding_specialized_balances).into(),
+                specialized_balance_id.as_slice(),
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
                 &mut drive_operations,
                 &platform_version.drive,
-            )?
-            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-                "Credits not found in Platform",
-            )))?;
-        let new_total = total_credits_in_platform
+            )?;
+        let had_previous_balance = previous_credits_in_specialized_balance.is_some();
+        let new_total = previous_credits_in_specialized_balance.unwrap_or_default()
             .checked_add(amount)
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
                 "trying to add an amount that would overflow credits",
             )))?;
-        let path_holding_total_credits_vec = misc_path_vec();
-        let replace_op = GroveDbOp::replace_op(
-            path_holding_total_credits_vec,
-            TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
-            Item(new_total.encode_var_vec(), None),
-        );
-        drive_operations.push(GroveOperation(replace_op));
+        let path_holding_total_credits_vec = prefunded_specialized_balances_for_voting_path_vec();
+        let op = if had_previous_balance {
+            GroveDbOp::replace_op(
+                path_holding_total_credits_vec,
+                specialized_balance_id.to_vec(),
+                Item(new_total.encode_var_vec(), None),
+            )
+        } else {
+            GroveDbOp::insert_op(
+                path_holding_total_credits_vec,
+                specialized_balance_id.to_vec(),
+                Item(new_total.encode_var_vec(), None),
+            )
+        };
+        drive_operations.push(GroveOperation(op));
         Ok(drive_operations)
     }
 }

@@ -9,6 +9,20 @@ use crate::drive::{Drive, RootTree};
 
 pub const PREFUNDED_BALANCES_FOR_VOTING: [u8; 1] = [128];
 
+/// prefunded specialized balances for voting
+pub(crate) fn prefunded_specialized_balances_for_voting_path() -> [&[u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances),
+        &PREFUNDED_BALANCES_FOR_VOTING
+    ]
+}
+
+/// prefunded specialized balances for voting vector
+pub(crate) fn prefunded_specialized_balances_for_voting_path_vec() -> Vec<Vec<u8>> {
+    vec![Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances).to_vec(), PREFUNDED_BALANCES_FOR_VOTING.to_vec()]
+}
+
+
 impl Drive {
     /// Add operations for creating initial prefunded specialized balances state structure
     /// In v1 we will only have the prefunded balances for voting

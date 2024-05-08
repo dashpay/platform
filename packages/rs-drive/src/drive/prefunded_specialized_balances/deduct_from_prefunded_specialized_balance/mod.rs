@@ -6,6 +6,7 @@ use crate::error::Error;
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
+use dpp::identifier::Identifier;
 
 impl Drive {
     /// Deducts from a prefunded specialized balance
@@ -25,6 +26,7 @@ impl Drive {
     /// This function will return an error if the version of Platform is unknown.
     pub fn deduct_from_prefunded_specialized_balance(
         &self,
+        specialized_balance_id: Identifier,
         amount: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -35,7 +37,7 @@ impl Drive {
             .prefunded_specialized_balances
             .deduct_from_prefunded_specialized_balance
         {
-            0 => self.deduct_from_prefunded_specialized_balance_v0(amount, transaction, platform_version),
+            0 => self.deduct_from_prefunded_specialized_balance_v0(specialized_balance_id, amount, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "deduct_from_prefunded_specialized_balance".to_string(),
                 known_versions: vec![0],
