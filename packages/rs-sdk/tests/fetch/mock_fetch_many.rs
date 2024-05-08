@@ -19,7 +19,7 @@ use dpp::{
 /// document.
 #[tokio::test]
 async fn test_mock_document_fetch_many() {
-    let sdk = Sdk::new_mock();
+    let mut sdk = Sdk::new_mock();
     let document_type: DocumentType = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
 

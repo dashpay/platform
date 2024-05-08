@@ -13,6 +13,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::fee::fee_result::FeeResult;
+use dpp::identifier::Identifier;
 
 use dpp::version::PlatformVersion;
 
@@ -22,8 +23,8 @@ impl Drive {
     #[inline(always)]
     pub(super) fn delete_document_for_contract_id_v0(
         &self,
-        document_id: [u8; 32],
-        contract_id: [u8; 32],
+        document_id: Identifier,
+        contract_id: Identifier,
         document_type_name: &str,
         block_info: BlockInfo,
         apply: bool,
@@ -39,7 +40,7 @@ impl Drive {
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
-                contract_id,
+                contract_id.to_buffer(),
                 Some(&block_info.epoch),
                 true,
                 transaction,

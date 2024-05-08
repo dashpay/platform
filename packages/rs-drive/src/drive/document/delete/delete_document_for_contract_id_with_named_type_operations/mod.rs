@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -30,8 +31,8 @@ impl Drive {
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     pub fn delete_document_for_contract_id_with_named_type_operations(
         &self,
-        document_id: [u8; 32],
-        contract_id: [u8; 32],
+        document_id: Identifier,
+        contract_id: Identifier,
         document_type_name: &str,
         epoch: &Epoch,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,

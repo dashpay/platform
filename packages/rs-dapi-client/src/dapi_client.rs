@@ -3,7 +3,7 @@
 use backon::{ExponentialBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::Instrument;
 
@@ -61,9 +61,9 @@ pub trait DapiRequestExecutor {
 }
 
 /// Access point to DAPI.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DapiClient {
-    address_list: RwLock<AddressList>,
+    address_list: Arc<RwLock<AddressList>>,
     settings: RequestSettings,
     pool: ConnectionPool,
     #[cfg(feature = "dump")]
@@ -77,7 +77,7 @@ impl DapiClient {
         let address_count = 3 * address_list.len();
 
         Self {
-            address_list: RwLock::new(address_list),
+            address_list: Arc::new(RwLock::new(address_list)),
             settings,
             pool: ConnectionPool::new(address_count),
             #[cfg(feature = "dump")]

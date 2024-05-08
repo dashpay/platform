@@ -124,7 +124,7 @@ where
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
         let (object, response_metadata): (Option<Self>, ResponseMetadata) =
-            sdk.parse_proof_with_metadata(request, response)?;
+            sdk.parse_proof_with_metadata(request, response).await?;
 
         match object {
             Some(item) => Ok((item.into(), response_metadata)),
@@ -165,7 +165,7 @@ where
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
-        let object: Option<Self> = sdk.parse_proof(request, response)?;
+        let object: Option<Self> = sdk.parse_proof(request, response).await?;
 
         match object {
             Some(item) => Ok(item.into()),

@@ -3,7 +3,7 @@ use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation};
 use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
-use crate::drive::object_size_info::OwnedDocumentInfo;
+use crate::drive::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
@@ -24,6 +24,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentTransferTransitionActi
         let data_contract_id = self.base().data_contract_id();
         let document_type_name = self.base().document_type_name().clone();
         let identity_contract_nonce = self.base().identity_contract_nonce();
+        let contract_fetch_info = self.base().data_contract_fetch_info();
         let document = self.document_owned();
 
         // we are transferring the document so the new storage flags should be on the new owner
@@ -44,8 +45,8 @@ impl DriveHighLevelDocumentOperationConverter for DocumentTransferTransitionActi
                     document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
                     owner_id: Some(new_document_owner_id.into_buffer()),
                 },
-                contract_id: data_contract_id,
-                document_type_name: Cow::Owned(document_type_name),
+                contract_info: DataContractInfo::DataContractFetchInfo(contract_fetch_info),
+                document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
             }),
         ])
     }
