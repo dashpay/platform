@@ -23,7 +23,7 @@ export default async function getConfigurationOutputFromContext(ctx) {
 
   if (ctx.isHP) {
     output += `\n\nPlatform P2P port: ${ctx.config.get('platform.drive.tenderdash.p2p.port')}
-                   Platform HTTP port: ${ctx.config.get('platform.dapi.envoy.http.port')}`;
+                   Platform HTTP port: ${ctx.config.get('platform.gateway.listeners.dapiAndDrive.port')}`;
   }
 
   return output;

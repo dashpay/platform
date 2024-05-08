@@ -262,6 +262,8 @@ fn start_prometheus(config: &PlatformConfig) -> Result<Option<Prometheus>, Strin
         .filter(|s| !s.is_empty());
 
     if let Some(addr) = prometheus_addr {
+        tracing::info!("Expose prometheus metrics on {}", addr);
+
         let addr = url::Url::parse(&addr).map_err(|e| e.to_string())?;
         Ok(Some(Prometheus::new(addr).map_err(|e| e.to_string())?))
     } else {
