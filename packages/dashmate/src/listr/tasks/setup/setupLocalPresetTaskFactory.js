@@ -223,7 +223,11 @@ export default function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.node.key', key);
 
                   config.set('platform.drive.abci.tokioConsole.port', config.get('platform.drive.abci.tokioConsole.port') + (i * 100));
-                  config.set('platform.dapi.envoy.http.port', config.get('platform.dapi.envoy.http.port') + (i * 100));
+                  config.set('platform.drive.abci.metrics.port', config.get('platform.drive.abci.metrics.port') + (i * 100));
+                  config.set('platform.gateway.admin.port', config.get('platform.gateway.admin.port') + (i * 100));
+                  config.set('platform.gateway.listeners.dapiAndDrive.port', config.get('platform.gateway.listeners.dapiAndDrive.port') + (i * 100));
+                  config.set('platform.gateway.metrics.port', config.get('platform.gateway.metrics.port') + (i * 100));
+                  config.set('platform.gateway.rateLimiter.metrics.port', config.get('platform.gateway.rateLimiter.metrics.port') + (i * 100));
                   config.set('platform.drive.tenderdash.p2p.port', config.get('platform.drive.tenderdash.p2p.port') + (i * 100));
                   config.set('platform.drive.tenderdash.rpc.port', config.get('platform.drive.tenderdash.rpc.port') + (i * 100));
                   config.set('platform.drive.tenderdash.pprof.port', config.get('platform.drive.tenderdash.pprof.port') + (i * 100));
