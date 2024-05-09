@@ -1,10 +1,7 @@
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::votes::{
-    vote_contested_resource_tree_path_vec, vote_root_path_vec, CONTESTED_RESOURCE_TREE_KEY,
-    END_DATE_QUERIES_TREE_KEY, IDENTITY_VOTES_TREE_KEY, VOTE_DECISIONS_TREE_KEY,
-};
 use crate::drive::Drive;
+use crate::drive::votes::paths::{CONTESTED_RESOURCE_TREE_KEY, END_DATE_QUERIES_TREE_KEY, IDENTITY_VOTES_TREE_KEY, vote_contested_resource_tree_path_vec, VOTE_DECISIONS_TREE_KEY, vote_root_path_vec};
 use crate::error::Error;
 
 impl Drive {

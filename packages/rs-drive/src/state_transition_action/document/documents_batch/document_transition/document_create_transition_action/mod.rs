@@ -5,7 +5,6 @@ mod v0;
 use derive_more::From;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::Index;
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 

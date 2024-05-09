@@ -2,7 +2,7 @@ use crate::drive::object_size_info::path_key_element_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElementSize, PathKeyRefElement, PathKeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathInfo::{
-    PathFixedSizeIterator, PathIterator, PathWithSizes,
+    PathFixedSizeArray, PathAsVec, PathWithSizes,
 };
 use crate::drive::object_size_info::{KeyElementInfo, PathInfo};
 use crate::error::drive::DriveError;
@@ -33,7 +33,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
         key_element: KeyElementInfo<'a>,
     ) -> Result<Self, Error> {
         match path_info {
-            PathIterator(path) => match key_element {
+            PathAsVec(path) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => {
                     Ok(PathKeyRefElement((path, key, element)))
                 }
@@ -59,7 +59,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
                     PathKeyUnknownElementSize((path_size, key_len, element_size)),
                 ),
             },
-            PathFixedSizeIterator(path) => match key_element {
+            PathFixedSizeArray(path) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => {
                     Ok(PathFixedSizeKeyRefElement((path, key, element)))
                 }

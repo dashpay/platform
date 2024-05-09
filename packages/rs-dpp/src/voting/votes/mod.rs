@@ -9,7 +9,6 @@ use bincode::{Decode, Encode};
 #[cfg(feature = "vote-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq)]

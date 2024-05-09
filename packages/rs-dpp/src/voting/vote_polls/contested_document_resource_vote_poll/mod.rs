@@ -1,10 +1,9 @@
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
-use crate::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use crate::serialization::PlatformSerializable;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value};
-use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]

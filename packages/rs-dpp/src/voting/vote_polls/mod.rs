@@ -3,7 +3,6 @@ use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedD
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::Identifier;
-use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 
 pub mod contested_document_resource_vote_poll;

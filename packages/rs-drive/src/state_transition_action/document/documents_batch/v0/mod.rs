@@ -50,8 +50,7 @@ impl DocumentsBatchTransitionActionV0 {
                 DocumentTransitionAction::CreateAction(document_create_transition_action) => {
                     document_create_transition_action
                         .prefunded_voting_balances()
-                        .values()
-                        .try_fold(0u64, |acc, &val| acc.checked_add(val))
+                        .iter().try_fold(0u64, |acc, &(_, val)| acc.checked_add(val))
                 }
                 _ => None,
             })

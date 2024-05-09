@@ -1,9 +1,7 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::Index;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dpp::ProtocolError;
@@ -92,7 +90,7 @@ impl DocumentCreateTransitionActionV0 {
         let prefunded_voting_balances_by_vote_poll = prefunded_voting_balances
             .into_iter()
             .map(|(index_name, credits)| {
-                let index = document_type_indexes.get(&index_name).ok_or(
+                let index = document_type_indexes.get(index_name).ok_or(
                     ProtocolError::UnknownContestedIndexResolution(format!(
                         "index {} not found on document type {}",
                         index_name.clone(),
@@ -108,7 +106,7 @@ impl DocumentCreateTransitionActionV0 {
                     index_values,
                 };
 
-                Ok((vote_poll, credits))
+                Ok((vote_poll, *credits))
             })
             .collect::<Result<Vec<(ContestedDocumentResourceVotePoll, Credits)>, ProtocolError>>(
             )?;

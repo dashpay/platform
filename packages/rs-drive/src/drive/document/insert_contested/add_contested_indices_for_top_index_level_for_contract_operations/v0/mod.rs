@@ -166,7 +166,7 @@ impl Drive {
                 // This is a stateless operation
                 PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
             } else {
-                PathInfo::PathIterator::<0>(index_path)
+                PathInfo::PathAsVec::<0>(index_path)
             };
 
             // we push the actual value of the index path
