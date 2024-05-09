@@ -218,7 +218,7 @@ export default function registerMasternodeWithCoreWalletFactory(createIpAndPorts
 
       const platformHTTPPort = state.ipAndPorts.platformHTTPPort
         || defaultConfigs.get(ctx.preset)
-          .get('platform.dapi.envoy.http.port');
+          .get('platform.gateway.listeners.dapiAndDrive.port');
 
       let command;
       if (ctx.isHP) {

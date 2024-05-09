@@ -1135,9 +1135,10 @@ impl<'a> DriveQuery<'a> {
                 platform_version,
             )?
             .ok_or(Error::Query(
-                QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                    "query must be for valid indexes",
-                ),
+                QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                    "query must be for valid indexes, valid indexes are: {:?}",
+                    self.document_type.indices()
+                )),
             ))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
             return Err(Error::Query(QuerySyntaxError::QueryTooFarFromIndex(
