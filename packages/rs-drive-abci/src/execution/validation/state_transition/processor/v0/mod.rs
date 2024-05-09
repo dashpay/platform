@@ -443,7 +443,7 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
-            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_) => {
+            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_) | StateTransition::MasternodeVote(_) => {
                 // no basic structure validation
                 Ok(SimpleConsensusValidationResult::new())
             }
@@ -462,7 +462,7 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
     fn has_basic_structure_validation(&self) -> bool {
         !matches!(
             self,
-            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_)
+            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_) | StateTransition::MasternodeVote(_)
         )
     }
 }
@@ -700,6 +700,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                 //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
+                    true,
                     false,
                     tx,
                     execution_context,
@@ -711,6 +712,22 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
                     true,
+                    true,
+                    tx,
+                    execution_context,
+                    platform_version,
+                )?)
+            }
+            StateTransition::MasternodeVote(_) => {
+                //Basic signature verification
+
+                // We do not request the balance because masternodes do not pay for their voting
+                //  themselves
+                
+                Ok(self.validate_state_transition_identity_signed(
+                    drive,
+                    false, 
+                    false,
                     tx,
                     execution_context,
                     platform_version,
@@ -847,6 +864,14 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 execution_context,
                 tx,
             ),
+            StateTransition::MasternodeVote(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                epoch,
+                execution_context,
+                tx,
+            )
         }
     }
 }

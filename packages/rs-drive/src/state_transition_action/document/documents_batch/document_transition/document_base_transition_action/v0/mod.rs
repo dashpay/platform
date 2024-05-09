@@ -9,6 +9,7 @@ use dpp::prelude::IdentityNonce;
 use dpp::ProtocolError;
 
 use crate::drive::contract::DataContractFetchInfo;
+use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 
 #[derive(Debug, Clone)]
 /// document base transition action v0
@@ -27,6 +28,8 @@ pub struct DocumentBaseTransitionActionV0 {
 pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// The document Id
     fn id(&self) -> Identifier;
+    
+    /// The document type
     fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError>;
 
     /// Is a field required on the document type?
@@ -38,6 +41,9 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     fn document_type_name_owned(self) -> String;
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
     fn data_contract_id(&self) -> Identifier;
+    
+    /// A reference to the data contract fetch info that does not clone the Arc
+    fn data_contract_fetch_info_ref(&self) -> &Arc<DataContractFetchInfo>;
     /// Data contract
     fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo>;
     /// Identity contract nonce

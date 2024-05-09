@@ -32,7 +32,7 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
 
     fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError> {
         Ok(self
-            .data_contract_fetch_info()
+            .data_contract_fetch_info_ref()
             .contract
             .document_type_for_name(self.document_type_name())?)
     }
@@ -59,6 +59,11 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
         }
     }
 
+    fn data_contract_fetch_info_ref(&self) -> &Arc<DataContractFetchInfo> {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => &v0.data_contract,
+        }
+    }
     fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo> {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.data_contract.clone(),

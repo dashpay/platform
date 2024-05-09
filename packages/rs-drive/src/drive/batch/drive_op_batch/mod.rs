@@ -6,6 +6,7 @@ mod identity;
 mod prefunded_specialized_balance;
 mod system;
 mod withdrawals;
+mod voting;
 
 use crate::drive::batch::GroveDbOpBatch;
 

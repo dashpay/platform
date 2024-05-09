@@ -4,6 +4,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::document::{Document, DocumentV0};
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
+use std::vec;
 
 use dpp::ProtocolError;
 
@@ -50,6 +51,9 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     fn data_mut(&mut self) -> &mut BTreeMap<String, Value>;
     /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
+    
+    /// Take the prefunded voting balance vec (and replace it with an empty vec).
+    fn take_prefunded_voting_balances(&mut self) -> Vec<(ContestedDocumentResourceVotePoll, Credits)>;
 
     /// pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)

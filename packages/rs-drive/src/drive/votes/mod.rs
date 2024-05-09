@@ -14,11 +14,11 @@ mod setup;
 mod paths;
 
 pub trait TreePath {
-    fn tree_path(&self, contract: &DataContract) -> Result<Vec<&[u8]>, ProtocolError>;
+    fn tree_path<'a>(&'a self, contract: &'a DataContract) -> Result<Vec<&'a [u8]>, ProtocolError>;
 }
 
 impl TreePath for Vote {
-    fn tree_path(&self, contract: &DataContract) -> Result<Vec<&[u8]>, ProtocolError> {
+    fn tree_path<'a>(&'a self, contract: &'a DataContract) -> Result<Vec<&'a [u8]>, ProtocolError> {
         match self {
             Vote::ResourceVote(resource_vote) => resource_vote.tree_path(contract),
         }
@@ -26,7 +26,7 @@ impl TreePath for Vote {
 }
 
 impl TreePath for ResourceVote {
-    fn tree_path(&self, contract: &DataContract) -> Result<Vec<&[u8]>, ProtocolError> {
+    fn tree_path<'a>(&'a self, contract: &'a DataContract) -> Result<Vec<&'a [u8]>, ProtocolError> {
         let vote_poll = self.vote_poll();
 
         match vote_poll {
@@ -39,7 +39,7 @@ impl TreePath for ResourceVote {
                     )));
                 }
                 let document_type = contract
-                    .document_type_for_name(&contested_document_vote_poll.document_type_name)?;
+                    .document_type_borrowed_for_name(&contested_document_vote_poll.document_type_name)?;
                 let index = document_type
                     .indexes()
                     .get(&contested_document_vote_poll.index_name)

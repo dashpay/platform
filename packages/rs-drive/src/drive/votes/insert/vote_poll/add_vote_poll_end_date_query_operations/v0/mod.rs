@@ -2,17 +2,19 @@ use std::collections::HashMap;
 use grovedb::batch::KeyInfoPath;
 use crate::drive::Drive;
 use crate::error::Error;
-use dpp::fee::fee_result::FeeResult;
 use dpp::identity::TimestampMillis;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::batch::key_info::KeyInfo;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
+use dpp::serialization::PlatformSerializable;
 use dpp::voting::vote_polls::VotePoll;
 use platform_version::version::PlatformVersion;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::object_size_info::{DriveKeyInfo, PathInfo};
-use crate::drive::votes::paths::vote_contested_resource_end_date_queries_tree_path_vec;
+use crate::drive::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
+use crate::drive::object_size_info::PathKeyElementInfo::{PathKeyElementSize, PathKeyRefElement};
+use crate::drive::votes::paths::{vote_contested_resource_end_date_queries_at_time_tree_path_vec, vote_contested_resource_end_date_queries_tree_path_vec};
 use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
@@ -31,7 +33,7 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<FeeResult, Error> {
+    ) -> Result<(), Error> {
         
         let storage_flags = creator_identity_id.map(|creator_identity_id| {
             StorageFlags::new_single_epoch(
@@ -62,7 +64,7 @@ impl Drive {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_using_sums: false,
                 is_sum_tree: false,
-                flags_len: storage_flags
+                flags_len: storage_flags.as_ref()
                     .map(|s| s.serialized_size())
                     .unwrap_or_default(),
             }
@@ -70,7 +72,7 @@ impl Drive {
         
         // We check existing operations just because it is possible that we have already inserted the same
         // end data in the documents batch transition
-        self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
+        self.batch_insert_empty_tree_if_not_exists(
             path_key_info.clone(),
             false,
             storage_flags.as_ref(),
@@ -81,14 +83,37 @@ impl Drive {
             &platform_version.drive,
         )?;
         
-        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
-        {
-            Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
-                contract,
-                estimated_costs_only_with_layer_info,
-                drive_version,
-            )?;
-        }
+        let time_path = vote_contested_resource_end_date_queries_at_time_tree_path_vec(end_date);
+        
+        let item = Element::Item(vote_poll.serialize_to_bytes()?, StorageFlags::map_to_some_element_flags(storage_flags.as_ref()));
+
+        let path_key_element_info : PathKeyElementInfo<'_, 0> = if estimated_costs_only_with_layer_info.is_none() {
+            PathKeyRefElement((
+                time_path,
+                &[0],
+                item,
+            ))
+        } else {
+            PathKeyElementSize((
+                KeyInfoPath::from_known_owned_path(time_path),
+                KeyInfo::KnownKey(vec![0u8]),
+                item,
+            ))
+        };
+            
+        self.batch_insert(path_key_element_info, batch_operations, &platform_version.drive)?;
+        
+        Ok(())
+        
+        //todo
+        // if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+        // {
+        //     Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
+        //         contract,
+        //         estimated_costs_only_with_layer_info,
+        //         drive_version,
+        //     )?;
+        // }
 
     }
 }

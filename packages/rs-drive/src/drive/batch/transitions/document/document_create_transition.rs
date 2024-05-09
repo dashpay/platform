@@ -20,7 +20,7 @@ use crate::drive::object_size_info::DataContractInfo::DataContractFetchInfo;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
-        self,
+        mut self,
         epoch: &Epoch,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -33,7 +33,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
 
         let identity_contract_nonce = self.base().identity_contract_nonce();
 
-        let prefunded_voting_balances = self.prefunded_voting_balances();
+        let prefunded_voting_balances = self.take_prefunded_voting_balances();
 
         let document =
             Document::try_from_owned_create_transition_action(self, owner_id, platform_version)?;
@@ -68,7 +68,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                 ops.push(PrefundedSpecializedBalanceOperation(
                     PrefundedSpecializedBalanceOperationType::CreateNewPrefundedBalance {
                         prefunded_specialized_balance_id,
-                        add_balance: *credits,
+                        add_balance: credits,
                     },
                 ));
             }

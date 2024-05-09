@@ -1,3 +1,4 @@
+use dpp::identity::TimestampMillis;
 use crate::drive::RootTree;
 
 /// The votes tree structure looks like this
@@ -73,6 +74,16 @@ pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_tree_pat
     ]
 }
 
+pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_at_time_tree_path_vec(time: TimestampMillis
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
+        vec![END_DATE_QUERIES_TREE_KEY as u8],
+        time.to_be_bytes().to_vec(),
+    ]
+}
+
 pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path<'a>(
 ) -> [&'a [u8]; 3] {
     [
@@ -91,9 +102,9 @@ pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path_
     ]
 }
 
-pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path_for_identity<'a>(
+pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path_for_identity(
     identity_id: &[u8; 32],
-) -> [&'a [u8]; 4] {
+) -> [&[u8]; 4] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes),
         &[CONTESTED_RESOURCE_TREE_KEY as u8],

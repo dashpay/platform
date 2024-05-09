@@ -4,15 +4,18 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 pub mod contested_document_resource_vote_poll;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, From)]
+#[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq, From)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[platform_serialize(unversioned)]
+#[platform_serialize(limit = 100000)]
 pub enum VotePoll {
     ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll),
 }

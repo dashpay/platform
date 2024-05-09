@@ -30,8 +30,9 @@ use dpp::state_transition::documents_batch_transition::document_replace_transiti
 use dpp::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
+use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedPartialIdentity};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity};
 use platform_version::TryIntoPlatformVersioned;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
@@ -351,6 +352,20 @@ impl Drive {
                         },
                     ),
                 ))
+            }
+            StateTransition::MasternodeVote(masternode_vote) => {
+                let pro_tx_hash = masternode_vote.pro_tx_hash();
+                let vote = masternode_vote.vote();
+                // we expect to get an identity that matches the state transition
+                let (root_hash, vote) = Drive::verify_masternode_vote(
+                    proof,
+                    pro_tx_hash.to_buffer(),
+                    vote,
+                    true,
+                    platform_version,
+                )?;
+                let vote = vote.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain actual vote for masternode {} expected to exist because of state transition (masternode vote)", masternode_vote.pro_tx_hash()))))?;
+                Ok((root_hash, VerifiedMasternodeVote(vote)))
             }
         }
     }

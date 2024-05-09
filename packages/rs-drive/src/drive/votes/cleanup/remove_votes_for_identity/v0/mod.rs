@@ -5,16 +5,13 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::drive::grove_operations::BatchDeleteApplyType;
-use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
-use crate::drive::votes::TreePath;
+use crate::drive::votes::paths::{vote_contested_resource_identity_votes_tree_path_for_identity, vote_contested_resource_identity_votes_tree_path_for_identity_vec};
 use crate::query::QueryItem;
 use dpp::prelude::Identifier;
-use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
-use dpp::voting::votes::Vote;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
-use grovedb_path::SubtreePath;
+use grovedb::reference_path::path_from_reference_path_type;
 
 impl Drive {
     /// We remove vote_choices for an identity when that identity is somehow disabled. Currently there is
@@ -35,13 +32,13 @@ impl Drive {
             vote_path,
             SizedQuery::new(
                 Query::new_single_query_item(QueryItem::RangeFull(RangeFull)),
-                Some(512),
+                None, // Todo: there might be an issue if too many votes are removed at the same time
                 None,
             ),
         );
 
         let votes_to_remove_elements = self
-            .grove_get_path_query(
+            .grove_get_raw_path_query(
                 &path_query,
                 transaction,
                 QueryElementResultType,
@@ -55,21 +52,32 @@ impl Drive {
 
         let mut deletion_batch = vec![];
 
+        let vote_path_ref = vote_contested_resource_identity_votes_tree_path_for_identity(
+            identity_id.as_bytes(),
+        );
+
         for vote_to_remove in votes_to_remove_elements {
-            let Element::Item(vote, ..) = vote_to_remove else {
+            let Element::Reference(vote_reference, ..) = vote_to_remove else {
                 return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                    "votes {:?} for identity {} is not an item",
+                    "votes {:?} for identity {} are not a reference",
                     vote_to_remove, identity_id
                 ))));
             };
 
-            let vote = Vote::deserialize_from_bytes(vote.as_slice())?;
+            let mut absolute_path = path_from_reference_path_type(vote_reference, vote_path_ref.as_ref(), None)?;
+            
+            if absolute_path.is_empty() {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(format!("reference to vote for identity {} is empty", identity_id))));
+            }
+            let key = absolute_path.remove(absolute_path.len() - 1);
 
             // we then need to add to the batch the deletion
+            
+            let absolute_path_ref: Vec<_> = absolute_path.iter().map(|a| a.as_slice()).collect();
 
             self.batch_delete(
-                SubtreePath::from(vote.tree_path()),
-                vote.tree_key(),
+                absolute_path_ref.as_slice().into(),
+                key.as_slice(),
                 BatchDeleteApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum: Some((false, false)),
                 },
@@ -79,6 +87,6 @@ impl Drive {
             )?;
         }
 
-        self.Ok(())
+        Ok(())
     }
 }

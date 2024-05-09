@@ -77,6 +77,7 @@ pub struct DriveVerifyMethodVersions {
     pub identity: DriveVerifyIdentityMethodVersions,
     pub single_document: DriveVerifySingleDocumentMethodVersions,
     pub system: DriveVerifySystemMethodVersions,
+    pub voting: DriveVerifyVoteMethodVersions,
     pub state_transition: DriveVerifyStateTransitionMethodVersions,
 }
 
@@ -106,6 +107,11 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_nonce: FeatureVersion,
     pub verify_identity_contract_nonce: FeatureVersion,
     pub verify_identities_contract_keys: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyVoteMethodVersions {
+    pub verify_masternode_vote: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -581,9 +587,11 @@ pub struct DriveIdentityFetchFullIdentityMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityFetchPartialIdentityMethodVersions {
+    pub fetch_identity_revision_with_keys: FeatureVersion,
     pub fetch_identity_balance_with_keys: FeatureVersion,
     pub fetch_identity_balance_with_keys_and_revision: FeatureVersion,
     pub fetch_identity_with_balance: FeatureVersion,
+    pub fetch_identity_keys: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

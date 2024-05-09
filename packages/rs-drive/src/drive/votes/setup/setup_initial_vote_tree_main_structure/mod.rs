@@ -9,6 +9,29 @@ use crate::drive::batch::GroveDbOpBatch;
 use dpp::version::PlatformVersion;
 
 impl Drive {
+
+    /// Initializes the main structure of the vote tree within a GroveDB operation batch. 
+    /// This function is version-controlled to ensure compatibility with different versions of the platform.
+    ///
+    /// # Parameters
+    ///
+    /// - `batch`: A mutable reference to a GroveDbOpBatch, which will accumulate the necessary operations
+    ///   to set up the main vote tree structure.
+    /// - `platform_version`: A reference to the platform version to ensure the correct setup operations
+    ///   are applied based on the specified version.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<(), Error>`, indicating successful setup of the initial vote tree structure
+    /// within the provided batch or an error in case of failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Error` if:
+    /// - The platform version is unknown or unsupported, resulting in a version mismatch error.
+    /// - Specific operations for the given version fail to be added to the batch, potentially due to
+    ///   constraints or issues within the GroveDB operation batch.
+    ///
     pub fn add_initial_vote_tree_main_structure_operations(
         batch: &mut GroveDbOpBatch,
         platform_version: &PlatformVersion,

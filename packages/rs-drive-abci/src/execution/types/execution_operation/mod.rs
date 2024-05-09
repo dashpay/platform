@@ -25,6 +25,14 @@ impl RetrieveIdentityInfo {
         }
     }
 
+    pub fn one_key() -> Self {
+        RetrieveIdentityInfo {
+            query_by_key_id_key_count: 1,
+            request_balance: false,
+            request_revision: false,
+        }
+    }
+
     pub fn one_key_and_balance_and_revision() -> Self {
         RetrieveIdentityInfo {
             query_by_key_id_key_count: 1,
@@ -38,6 +46,14 @@ impl RetrieveIdentityInfo {
             query_by_key_id_key_count: 1,
             request_balance: true,
             request_revision: false,
+        }
+    }
+
+    pub fn one_key_and_revision() -> Self {
+        RetrieveIdentityInfo {
+            query_by_key_id_key_count: 1,
+            request_balance: false,
+            request_revision: true,
         }
     }
 }

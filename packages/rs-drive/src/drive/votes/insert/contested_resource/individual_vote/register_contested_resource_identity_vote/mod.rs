@@ -12,14 +12,43 @@ use dpp::fee::fee_result::FeeResult;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use dpp::voting::votes::resource_vote::ResourceVote;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
 impl Drive {
+
+    /// Registers a vote for a contested resource based on the voter's identifier,
+    /// vote poll, and the specific vote choice.
+    ///
+    /// # Parameters
+    ///
+    /// - `voter_pro_tx_hash`: A 32-byte array representing the ProRegTx hash of the voter.
+    /// - `vote_poll`: The specific contested document resource vote poll context.
+    /// - `vote_choice`: The choice made by the voter on the contested resource.
+    /// - `block_info`: Reference to the block information at the time of the vote.
+    /// - `apply`: Boolean flag indicating whether to apply the vote to the database immediately.
+    /// - `transaction`: Transaction arguments providing context for this operation.
+    /// - `platform_version`: Reference to the platform version against which the operation is executed.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` that, on success, includes the `FeeResult` detailing any fees applied as a result of the vote.
+    /// On failure, it returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Error` if:
+    ///
+    /// - The platform version is unknown or unsupported.
+    /// - There is an issue processing the transaction or applying it to the database.
+    ///
+
     pub fn register_contested_resource_identity_vote(
         &self,
         voter_pro_tx_hash: [u8; 32],
-        vote: ResourceVote,
+        vote_poll: ContestedDocumentResourceVotePoll,
+        vote_choice: ResourceVoteChoice,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -34,7 +63,8 @@ impl Drive {
         {
             0 => self.register_contested_resource_identity_vote_v0(
                 voter_pro_tx_hash,
-                vote,
+                vote_poll,
+                vote_choice,
                 block_info,
                 apply,
                 transaction,
@@ -48,10 +78,37 @@ impl Drive {
         }
     }
 
+    /// Gathers and returns low-level drive operations needed to register a vote for a contested resource,
+    /// considering the voter's identifier, vote poll, and vote choice, optionally estimating costs.
+    ///
+    /// # Parameters
+    ///
+    /// - `voter_pro_tx_hash`: A 32-byte array representing the ProRegTx hash of the voter.
+    /// - `vote_poll`: The specific contested document resource vote poll context.
+    /// - `vote_choice`: The choice made by the voter on the contested resource.
+    /// - `block_info`: Reference to the block information at the time of the vote.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional HashMap that, if provided,
+    ///   will be filled with estimated costs and layer information necessary for processing the vote.
+    /// - `transaction`: Transaction arguments providing context for this operation.
+    /// - `platform_version`: Reference to the platform version against which the operation is executed.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a vector of `LowLevelDriveOperation` detailing the necessary operations
+    /// to execute the vote registration, or an `Error` if the operation cannot be completed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Error` if:
+    ///
+    /// - The platform version is unknown or unsupported.
+    /// - Any low-level drive operation fails due to transaction or database inconsistencies.
+    ///
     pub fn register_contested_resource_identity_vote_operations(
         &self,
         voter_pro_tx_hash: [u8; 32],
-        vote: ResourceVote,
+        vote_poll: ContestedDocumentResourceVotePoll,
+        vote_choice: ResourceVoteChoice,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -68,7 +125,8 @@ impl Drive {
         {
             0 => self.register_contested_resource_identity_vote_operations_v0(
                 voter_pro_tx_hash,
-                vote,
+                vote_poll,
+                vote_choice,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,

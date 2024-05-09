@@ -7,6 +7,7 @@ use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
+use std::mem;
 
 use dpp::document::Document;
 use dpp::fee::Credits;
@@ -59,6 +60,12 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
     fn data_owned(self) -> BTreeMap<String, Value> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.data,
+        }
+    }
+
+    fn take_prefunded_voting_balances(&mut self) -> Vec<(ContestedDocumentResourceVotePoll, Credits)> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => mem::replace(&mut v0.prefunded_voting_balances, vec![]),
         }
     }
 

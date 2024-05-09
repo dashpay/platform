@@ -7,11 +7,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use dpp::fee::fee_result::FeeResult;
-
-use dpp::prelude::{Identifier, TimestampMillis};
+use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+use dpp::block::block_info::BlockInfo;
+use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::VotePoll;
 use crate::fee::op::LowLevelDriveOperation;
 
@@ -20,8 +20,10 @@ impl Drive {
     /// any votes poll should be closed.
     pub fn add_vote_poll_end_date_query_operations(
         &self,
+        creator_identity_id: Option<Identifier>,
         vote_poll: VotePoll,
         end_date: TimestampMillis,
+        block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -29,7 +31,7 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<FeeResult, Error> {
+    ) -> Result<(), Error> {
         match platform_version
             .drive
             .methods
@@ -37,7 +39,7 @@ impl Drive {
             .contested_resource_insert
             .add_vote_poll_end_date_query
         {
-            0 => self.add_vote_poll_end_date_query_operations_v0(vote_poll, end_date, estimated_costs_only_with_layer_info, previous_batch_operations, batch_operations, transaction, platform_version),
+            0 => self.add_vote_poll_end_date_query_operations_v0(creator_identity_id, vote_poll, end_date, block_info, estimated_costs_only_with_layer_info, previous_batch_operations, batch_operations, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_vote_poll_end_date_query_operations".to_string(),
                 known_versions: vec![0],
