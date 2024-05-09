@@ -7,36 +7,25 @@ use crate::consensus::ConsensusError;
 use crate::prelude::Identifier;
 
 use bincode::{Decode, Encode};
-use platform_value::Value;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Data Contract updated schema is not backward compatible with one defined in Data Contract wid id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
+#[error("Data Contract updated schema is not backward compatible with one defined in Data Contract with id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
 )]
 #[platform_serialize(unversioned)]
 pub struct IncompatibleDataContractSchemaError {
     data_contract_id: Identifier,
     operation: String,
     field_path: String,
-    old_schema: Value,
-    new_schema: Value,
 }
 
 impl IncompatibleDataContractSchemaError {
-    pub fn new(
-        data_contract_id: Identifier,
-        operation: String,
-        field_path: String,
-        old_schema: Value,
-        new_schema: Value,
-    ) -> Self {
+    pub fn new(data_contract_id: Identifier, operation: String, field_path: String) -> Self {
         Self {
             data_contract_id,
             operation,
             field_path,
-            old_schema,
-            new_schema,
         }
     }
 
@@ -48,12 +37,6 @@ impl IncompatibleDataContractSchemaError {
     }
     pub fn field_path(&self) -> String {
         self.field_path.clone()
-    }
-    pub fn old_schema(&self) -> Value {
-        self.old_schema.clone()
-    }
-    pub fn new_schema(&self) -> Value {
-        self.new_schema.clone()
     }
 }
 

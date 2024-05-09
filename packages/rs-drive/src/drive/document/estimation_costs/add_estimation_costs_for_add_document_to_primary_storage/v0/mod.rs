@@ -52,6 +52,7 @@ impl Drive {
     /// # Panics
     /// This function will not panic under normal circumstances. However, unexpected behavior may result
     /// from incorrect arguments or unforeseen edge cases.
+    #[inline(always)]
     pub(super) fn add_estimation_costs_for_add_document_to_primary_storage_v0(
         document_and_contract_info: &DocumentAndContractInfo,
         primary_key_path: [&[u8]; 5],

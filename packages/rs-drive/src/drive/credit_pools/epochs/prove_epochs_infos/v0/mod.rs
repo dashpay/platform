@@ -10,7 +10,8 @@ use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use crate::drive::credit_pools::pools_vec_path;
 use crate::error::query::QuerySyntaxError;
 use crate::fee_pools::epochs::epoch_key_constants::{
-    KEY_FEE_MULTIPLIER, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
+    KEY_FEE_MULTIPLIER, KEY_PROTOCOL_VERSION, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
+    KEY_START_TIME,
 };
 use crate::query::QueryItem;
 use dpp::version::PlatformVersion;
@@ -39,6 +40,7 @@ impl Drive {
             KEY_START_BLOCK_HEIGHT.to_vec(),
             KEY_START_BLOCK_CORE_HEIGHT.to_vec(),
             KEY_FEE_MULTIPLIER.to_vec(),
+            KEY_PROTOCOL_VERSION.to_vec(),
         ]);
         let mut query = if ascending {
             Query::new_single_query_item(QueryItem::RangeFrom(
@@ -53,7 +55,8 @@ impl Drive {
         query.set_subquery(subquery);
         let path_query = PathQuery::new(
             pools_vec_path(),
-            SizedQuery::new(query, Some(count * 4), None),
+            // The multiplier must be equal to requested keys count
+            SizedQuery::new(query, Some(count * 5), None),
         );
 
         self.grove_get_proved_path_query(

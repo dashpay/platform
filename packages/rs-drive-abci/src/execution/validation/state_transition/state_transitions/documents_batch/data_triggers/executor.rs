@@ -9,6 +9,7 @@ use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0Getters;
 use crate::error::Error;
+use crate::error::execution::ExecutionError;
 
 pub trait DataTriggerExecutor {
     fn validate_with_data_triggers(
@@ -26,8 +27,18 @@ impl DataTriggerExecutor for DocumentTransitionAction {
         context: &DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error> {
-        let data_contract_id = self.base().data_contract_id();
-        let document_type_name = self.base().document_type_name();
+        let data_contract_id = self
+            .base()
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "expecting action to have a base",
+            )))?
+            .data_contract_id();
+        let document_type_name = self
+            .base()
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "expecting action to have a base",
+            )))?
+            .document_type_name();
         let transition_action = self.action_type();
 
         // Match data triggers by action type, contract ID and document type name

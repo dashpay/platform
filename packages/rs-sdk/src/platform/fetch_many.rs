@@ -5,14 +5,15 @@
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from the platform.
 
-use crate::mock::MockResponse;
 use crate::{
     error::Error,
+    mock::MockResponse,
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetIdentitiesContractKeysRequest, GetIdentityKeysRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
@@ -20,12 +21,11 @@ use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::identity::KeyID;
+use dpp::identity::{KeyID, Purpose};
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
-use drive_proof_verifier::types::{
-    MasternodeProtocolVote, ProtocolVersionVoteCount, RetrievedObjects,
-};
+use dpp::version::ProtocolVersionVoteCount;
+use drive_proof_verifier::types::{MasternodeProtocolVote, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
@@ -37,7 +37,7 @@ use super::LimitQuery;
 /// To fetch multiple objects from the platform, you need to define some query (criteria that fetched objects must match)
 /// and use [FetchMany::fetch_many()] for your object type.
 ///
-/// You can also use conveniance methods:
+/// You can also use convenience methods:
 /// * [FetchMany::fetch_many_by_identifiers()] - to fetch multiple objects by their identifiers,
 /// * [FetchMany::fetch_many_with_limit()] - to fetch not more than `limit` objects.
 ///
@@ -55,18 +55,18 @@ use super::LimitQuery;
 /// * call [DataContract::fetch_many()](FetchMany::fetch_many()) with the query and an instance of [Sdk].
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
+/// use dash_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
 ///
 /// # const SOME_IDENTIFIER_1 : [u8; 32] = [1; 32];
 /// # const SOME_IDENTIFIER_2 : [u8; 32] = [2; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 ///
 /// let id1 = Identifier::new(SOME_IDENTIFIER_1);
 /// let id2 = Identifier::new(SOME_IDENTIFIER_2);
 ///
 /// let query = vec![id1, id2];
 ///
-/// let data_contract = DataContract::fetch_many(&mut sdk, query);
+/// let data_contract = DataContract::fetch_many(&sdk, query);
 /// ```
 #[async_trait::async_trait]
 pub trait FetchMany<K: Ord>
@@ -126,7 +126,7 @@ where
     ///
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
     async fn fetch_many<Q: Query<<Self as FetchMany<K>>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
     ) -> Result<RetrievedObjects<K, Self>, Error> {
         let request = query.query(sdk.prove())?;
@@ -150,7 +150,7 @@ where
 
     /// Fetch multiple objects from the Platform by their identifiers.
     ///
-    /// Conveniance method to fetch multiple objects by their identifiers.
+    /// Convenience method to fetch multiple objects by their identifiers.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
     ///
     /// ## Parameters
@@ -162,7 +162,7 @@ where
     ///
     /// `Vec<Identifier>` must implement [Query] for [Self::Request].
     async fn fetch_by_identifiers<I: IntoIterator<Item = Identifier> + Send>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         identifiers: I,
     ) -> Result<RetrievedObjects<K, Self>, Error>
     where
@@ -183,7 +183,7 @@ where
     /// - `query`: A query parameter implementing [`Query`](crate::platform::query::Query) to specify the data to be retrieved.
     /// - `limit`: Maximum number of objects to fetch.
     async fn fetch_many_with_limit<Q: Query<<Self as FetchMany<K>>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
         limit: u32,
     ) -> Result<RetrievedObjects<K, Self>, Error>
@@ -214,7 +214,7 @@ impl FetchMany<Identifier> for Document {
     // TODO: Refactor to use ContextProvider
     type Request = DocumentQuery;
     async fn fetch_many<Q: Query<<Self as FetchMany<Identifier>>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
     ) -> Result<BTreeMap<Identifier, Option<Self>>, Error> {
         let document_query: DocumentQuery = query.query(sdk.prove())?;
@@ -273,12 +273,12 @@ impl FetchMany<EpochIndex> for ExtendedEpochInfo {
 /// ## Example
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::FetchMany};
+/// use dash_sdk::{Sdk, platform::FetchMany};
 /// use drive_proof_verifier::types::ProtocolVersionVoteCount;
 ///
 /// # tokio_test::block_on(async {
-/// let mut sdk = Sdk::new_mock();
-/// let result = ProtocolVersionVoteCount::fetch_many(&mut sdk, ()).await;
+/// let sdk = Sdk::new_mock();
+/// let result = ProtocolVersionVoteCount::fetch_many(&sdk, ()).await;
 /// # });
 /// ```
 impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {

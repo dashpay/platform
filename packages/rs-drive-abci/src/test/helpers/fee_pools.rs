@@ -47,9 +47,9 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::{DocumentV0, INITIAL_REVISION};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::system_data_contracts::masternode_reward_shares_contract::document_types;
+use dpp::system_data_contracts::masternode_reward_shares_contract::v1::document_types;
 use dpp::version::PlatformVersion;
-use drive::common::identities::create_test_identity_with_rng;
+use drive::common::test_utils::identities::create_test_identity_with_rng;
 use drive::dpp::document::Document;
 use drive::drive::flags::StorageFlags;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -84,6 +84,13 @@ fn create_test_mn_share_document(
         revision: Some(INITIAL_REVISION),
         created_at: None,
         updated_at: None,
+        transferred_at: None,
+        created_at_block_height: None,
+        updated_at_block_height: None,
+        transferred_at_block_height: None,
+        created_at_core_block_height: None,
+        updated_at_core_block_height: None,
+        transferred_at_core_block_height: None,
     }
     .into();
 

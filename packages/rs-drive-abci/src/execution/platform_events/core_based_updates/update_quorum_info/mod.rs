@@ -26,6 +26,7 @@ where
     ///   on success, or an `Error` on failure.
     pub(in crate::execution::platform_events::core_based_updates) fn update_quorum_info(
         &self,
+        platform_state: Option<&PlatformState>,
         block_platform_state: &mut PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
@@ -38,6 +39,7 @@ where
             .update_quorum_info
         {
             0 => self.update_quorum_info_v0(
+                platform_state,
                 block_platform_state,
                 core_block_height,
                 start_from_scratch,

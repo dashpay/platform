@@ -3,7 +3,8 @@ syntax = "proto3";
 package org.dash.platform.dapi.v0;
 
 service Core {
-  rpc getStatus (GetStatusRequest) returns (GetStatusResponse);
+  rpc getBlockchainStatus (GetBlockchainStatusRequest) returns (GetBlockchainStatusResponse);
+  rpc getMasternodeStatus (GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse);
   rpc getBlock (GetBlockRequest) returns (GetBlockResponse);
   rpc broadcastTransaction (BroadcastTransactionRequest) returns (BroadcastTransactionResponse);
   rpc getTransaction (GetTransactionRequest) returns (GetTransactionResponse);
@@ -12,11 +13,11 @@ service Core {
   rpc subscribeToTransactionsWithProofs (TransactionsWithProofsRequest) returns (stream TransactionsWithProofsResponse);
 }
 
-message GetStatusRequest {
+message GetBlockchainStatusRequest {
 
 }
 
-message GetStatusResponse {
+message GetBlockchainStatusResponse {
   message Version {
     uint32 protocol = 1;
     uint32 software = 2;
@@ -47,25 +48,6 @@ message GetStatusResponse {
     double sync_progress = 8;
   }
 
-  message Masternode {
-    enum Status {
-      UNKNOWN = 0;
-      WAITING_FOR_PROTX = 1;
-      POSE_BANNED = 2;
-      REMOVED = 3;
-      OPERATOR_KEY_CHANGED = 4;
-      PROTX_IP_CHANGED = 5;
-      READY = 6;
-      ERROR = 7;
-    }
-
-    Status status = 1;
-    bytes pro_tx_hash = 2;
-    uint32 pose_penalty = 3;
-    bool is_synced = 4;
-    double sync_progress = 5;
-  }
-
   message NetworkFee {
     double relay = 1;
     double incremental = 2;
@@ -81,8 +63,30 @@ message GetStatusResponse {
   Status status = 3;
   double sync_progress = 4;
   Chain chain = 5;
-  Masternode masternode = 6;
   Network network = 7;
+}
+
+message GetMasternodeStatusRequest {
+
+}
+
+message GetMasternodeStatusResponse {
+  enum Status {
+    UNKNOWN = 0;
+    WAITING_FOR_PROTX = 1;
+    POSE_BANNED = 2;
+    REMOVED = 3;
+    OPERATOR_KEY_CHANGED = 4;
+    PROTX_IP_CHANGED = 5;
+    READY = 6;
+    ERROR = 7;
+  }
+
+  Status status = 1;
+  bytes pro_tx_hash = 2;
+  uint32 pose_penalty = 3;
+  bool is_synced = 4;
+  double sync_progress = 5;
 }
 
 message GetBlockRequest {

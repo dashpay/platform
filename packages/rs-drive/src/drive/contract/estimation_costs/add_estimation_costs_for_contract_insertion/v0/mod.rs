@@ -1,4 +1,4 @@
-use crate::drive::contract::paths::contract_keeping_history_storage_path;
+use crate::drive::contract::paths::contract_keeping_history_root_path;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8,
     ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
@@ -24,6 +24,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds the estimation costs for a contract insertion
+    #[inline(always)]
     pub(super) fn add_estimation_costs_for_contract_insertion_v0(
         contract: &DataContract,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -68,7 +69,7 @@ impl Drive {
             let reference_size = DEFAULT_FLOAT_SIZE + 2;
 
             estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_path(contract_keeping_history_storage_path(
+                KeyInfoPath::from_known_path(contract_keeping_history_root_path(
                     contract.id_ref().as_bytes(),
                 )),
                 EstimatedLayerInformation {

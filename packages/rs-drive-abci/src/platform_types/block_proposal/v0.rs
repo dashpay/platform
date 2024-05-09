@@ -1,8 +1,13 @@
 use crate::abci::AbciError;
 use crate::error::Error;
+use dpp::dashcore::bls_sig_utils::BLSSignature;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{BlockHash, ChainLock};
+use dpp::platform_value::Bytes32;
 use std::fmt;
 use tenderdash_abci::proto::abci::{RequestPrepareProposal, RequestProcessProposal};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use tenderdash_abci::proto::types::CoreChainLock;
 use tenderdash_abci::proto::version::Consensus;
 
 /// The block proposal is the combination of information that a proposer will propose,
@@ -20,6 +25,8 @@ pub struct BlockProposal<'a> {
     pub block_time_ms: u64,
     /// Block height of the core chain
     pub core_chain_locked_height: u32,
+    /// Potential update core chain lock
+    pub core_chain_lock_update: Option<ChainLock>,
     /// The proposed app version
     pub proposed_app_version: u64,
     /// Block proposer's proTxHash
@@ -133,6 +140,7 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
             height: *height as u64,
             round: *round as u32,
             core_chain_locked_height: *core_chain_locked_height,
+            core_chain_lock_update: None, //there is no need to verify a chain lock we are proposing
             proposed_app_version: *proposed_app_version,
             proposer_pro_tx_hash,
             validator_set_quorum_hash,
@@ -157,7 +165,7 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
             time,
             next_validators_hash: _,
             core_chain_locked_height,
-            core_chain_lock_update: _,
+            core_chain_lock_update,
             proposer_pro_tx_hash,
             proposed_app_version,
             version,
@@ -207,12 +215,36 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
             )
             .into());
         }
+
+        let core_chain_lock_update = core_chain_lock_update
+            .as_ref()
+            .map(|core_chain_lock| {
+                let CoreChainLock {
+                    core_block_height,
+                    core_block_hash,
+                    signature,
+                } = core_chain_lock;
+
+                let block_hash: Bytes32 = Bytes32::from_vec(core_block_hash.clone())?;
+
+                let signature: [u8; 96] = signature.clone().try_into().map_err(|_| {
+                    AbciError::BadRequest("core chain lock signature not 96 bytes".to_string())
+                })?;
+
+                Ok::<dpp::dashcore::ChainLock, Error>(ChainLock {
+                    block_height: *core_block_height,
+                    block_hash: BlockHash::from_byte_array(block_hash.0),
+                    signature: BLSSignature::from(signature),
+                })
+            })
+            .transpose()?;
         Ok(Self {
             consensus_versions,
             block_hash: Some(block_hash),
             height: *height as u64,
             round: *round as u32,
             core_chain_locked_height: *core_chain_locked_height,
+            core_chain_lock_update,
             proposed_app_version: *proposed_app_version,
             proposer_pro_tx_hash,
             validator_set_quorum_hash,

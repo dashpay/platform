@@ -5,7 +5,8 @@ use crate::consensus::ConsensusError;
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 
-pub fn byte_array_has_no_items_as_parent_validator_v0(
+#[inline(always)]
+pub(super) fn byte_array_has_no_items_as_parent_validator_v0(
     path: &str,
     key: &str,
     parent: &Value,

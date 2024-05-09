@@ -19,6 +19,7 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Deletes a document and returns the associated fee.
     /// The contract CBOR is given instead of the contract itself.
+    #[inline(always)]
     pub(super) fn delete_document_for_contract_id_v0(
         &self,
         document_id: [u8; 32],

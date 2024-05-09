@@ -4,6 +4,7 @@ use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
 
+use crate::consensus::basic::decode::DecodingError;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use array::ArrayItemType;
@@ -14,21 +15,21 @@ use platform_value::Value;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub mod array;
 
 // This struct will be changed in future to support more validation logic and serialization
 // It will become versioned and it will be introduced by a new document type version
 // @append_only
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct DocumentProperty {
     pub property_type: DocumentPropertyType,
     pub required: bool,
 }
 
 // @append_only
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum DocumentPropertyType {
     ///Todo decompose integer
     Integer,
@@ -44,14 +45,16 @@ pub enum DocumentPropertyType {
 }
 
 impl DocumentPropertyType {
-    pub fn try_from_name(name: &str) -> Result<Self, ProtocolError> {
+    pub fn try_from_name(name: &str) -> Result<Self, DataContractError> {
         match name {
             "integer" => Ok(DocumentPropertyType::Integer),
             "number" => Ok(DocumentPropertyType::Number),
             "boolean" => Ok(DocumentPropertyType::Boolean),
             "date" => Ok(DocumentPropertyType::Date),
             "identifier" => Ok(DocumentPropertyType::Identifier),
-            _ => Err(DataContractError::ValueWrongType("invalid type").into()),
+            _ => Err(DataContractError::ValueWrongType(
+                "invalid type".to_string(),
+            )),
         }
     }
 
@@ -363,20 +366,20 @@ impl DocumentPropertyType {
         }
     }
 
-    fn read_varint_value(buf: &mut BufReader<&[u8]>) -> Result<Vec<u8>, ProtocolError> {
+    fn read_varint_value(buf: &mut BufReader<&[u8]>) -> Result<Vec<u8>, DataContractError> {
         let bytes: usize = buf.read_varint().map_err(|_| {
-            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                "error reading varint length from serialized document",
-            ))
+            DataContractError::CorruptedSerialization(
+                "error reading varint length from serialized document".to_string(),
+            )
         })?;
         if bytes == 0 {
             Ok(vec![])
         } else {
             let mut value: Vec<u8> = vec![0u8; bytes];
             buf.read_exact(&mut value).map_err(|_| {
-                ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                    "error reading varint from serialized document",
-                ))
+                DataContractError::CorruptedSerialization(
+                    "error reading varint from serialized document".to_string(),
+                )
             })?;
             Ok(value)
         }
@@ -388,7 +391,7 @@ impl DocumentPropertyType {
         &self,
         buf: &mut BufReader<&[u8]>,
         required: bool,
-    ) -> Result<(Option<Value>, bool), ProtocolError> {
+    ) -> Result<(Option<Value>, bool), DataContractError> {
         if !required {
             let marker = buf.read_u8().ok();
             match marker {
@@ -401,33 +404,33 @@ impl DocumentPropertyType {
             DocumentPropertyType::String(_, _) => {
                 let bytes = Self::read_varint_value(buf)?;
                 let string = String::from_utf8(bytes).map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                        "error reading string from serialized document",
-                    ))
+                    DataContractError::CorruptedSerialization(
+                        "error reading string from serialized document".to_string(),
+                    )
                 })?;
                 Ok((Some(Value::Text(string)), false))
             }
             DocumentPropertyType::Date | DocumentPropertyType::Number => {
                 let date = buf.read_f64::<BigEndian>().map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                        "error reading date/number from serialized document",
-                    ))
+                    DataContractError::CorruptedSerialization(
+                        "error reading date/number from serialized document".to_string(),
+                    )
                 })?;
                 Ok((Some(Value::Float(date)), false))
             }
             DocumentPropertyType::Integer => {
                 let integer = buf.read_i64::<BigEndian>().map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                        "error reading integer from serialized document",
-                    ))
+                    DataContractError::CorruptedSerialization(
+                        "error reading integer from serialized document".to_string(),
+                    )
                 })?;
                 Ok((Some(Value::I64(integer)), false))
             }
             DocumentPropertyType::Boolean => {
                 let value = buf.read_u8().map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                        "error reading bool from serialized document",
-                    ))
+                    DataContractError::CorruptedSerialization(
+                        "error reading bool from serialized document".to_string(),
+                    )
                 })?;
                 match value {
                     0 => Ok((Some(Value::Bool(false)), false)),
@@ -441,9 +444,10 @@ impl DocumentPropertyType {
                         let len = *min as usize;
                         let mut bytes = vec![0; len];
                         buf.read_exact(&mut bytes).map_err(|_| {
-                            ProtocolError::DecodingError(
-                                "error reading 32 byte non main identifier".to_string(),
-                            )
+                            DataContractError::DecodingContractError(DecodingError::new(format!(
+                                "expected to read {} bytes (min size for byte array)",
+                                len
+                            )))
                         })?;
                         // To save space we use predefined types for most popular blob sizes
                         // so we don't need to store the size of the blob
@@ -464,9 +468,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::Identifier => {
                 let mut id = [0; 32];
                 buf.read_exact(&mut id).map_err(|_| {
-                    ProtocolError::DecodingError(
-                        "error reading 32 byte non main identifier".to_string(),
-                    )
+                    DataContractError::DecodingContractError(DecodingError::new(
+                        "expected to read 32 bytes (identifier)".to_string(),
+                    ))
                 })?;
                 //dbg!(hex::encode(&id));
                 Ok((Some(Value::Identifier(id)), false))
@@ -474,15 +478,15 @@ impl DocumentPropertyType {
 
             DocumentPropertyType::Object(inner_fields) => {
                 let object_byte_len: usize = buf.read_varint().map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                        "error reading varint of object length",
-                    ))
+                    DataContractError::CorruptedSerialization(
+                        "error reading varint of object length".to_string(),
+                    )
                 })?;
                 let mut object_bytes = vec![0u8; object_byte_len];
                 buf.read_exact(&mut object_bytes).map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                        "error reading object bytes",
-                    ))
+                    DataContractError::CorruptedSerialization(
+                        "error reading object bytes".to_string(),
+                    )
                 })?;
                 // Wrap the bytes in a BufReader
                 let mut object_buf_reader = BufReader::new(&object_bytes[..]);
@@ -492,10 +496,8 @@ impl DocumentPropertyType {
                     .filter_map(|(key, field)| {
                         if finished_buffer {
                             return if field.required {
-                                Some(Err(ProtocolError::DataContractError(
-                                    DataContractError::CorruptedSerialization(
-                                        "required field after finished buffer in object",
-                                    ),
+                                Some(Err(DataContractError::CorruptedSerialization(
+                                    "required field after finished buffer in object".to_string(),
                                 )))
                             } else {
                                 None
@@ -516,20 +518,18 @@ impl DocumentPropertyType {
                             Err(e) => Some(Err(e)),
                         }
                     })
-                    .collect::<Result<Vec<(Value, Value)>, ProtocolError>>()?;
+                    .collect::<Result<Vec<(Value, Value)>, DataContractError>>()?;
                 if values.is_empty() {
                     Ok((None, false))
                 } else {
                     Ok((Some(Value::Map(values)), false))
                 }
             }
-            DocumentPropertyType::Array(_array_field_type) => {
-                Err(ProtocolError::DataContractError(
-                    DataContractError::Unsupported("serialization of arrays not yet supported"),
-                ))
-            }
-            DocumentPropertyType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
-                DataContractError::Unsupported("serialization of arrays not yet supported"),
+            DocumentPropertyType::Array(_array_field_type) => Err(DataContractError::Unsupported(
+                "serialization of arrays not yet supported".to_string(),
+            )),
+            DocumentPropertyType::VariableTypeArray(_) => Err(DataContractError::Unsupported(
+                "serialization of variable type arrays not yet supported".to_string(),
             )),
         }
     }
@@ -550,7 +550,7 @@ impl DocumentPropertyType {
                     r_vec.extend(vec);
                     Ok(r_vec)
                 } else {
-                    Err(get_field_type_matching_error())
+                    Err(get_field_type_matching_error().into())
                 }
             }
             DocumentPropertyType::Date => {
@@ -640,7 +640,7 @@ impl DocumentPropertyType {
                     len_prepended_vec.append(&mut r_vec);
                     Ok(len_prepended_vec)
                 } else {
-                    Err(get_field_type_matching_error())
+                    Err(get_field_type_matching_error().into())
                 }
             }
             DocumentPropertyType::Array(array_field_type) => {
@@ -655,12 +655,12 @@ impl DocumentPropertyType {
                     })?;
                     Ok(r_vec)
                 } else {
-                    Err(get_field_type_matching_error())
+                    Err(get_field_type_matching_error().into())
                 }
             }
             DocumentPropertyType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
                 DataContractError::Unsupported(
-                    "serialization of variable type arrays not yet supported",
+                    "serialization of variable type arrays not yet supported".to_string(),
                 ),
             )),
         }
@@ -726,7 +726,7 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Object(inner_fields) => {
                 let Some(value_map) = value.as_map() else {
-                    return Err(get_field_type_matching_error());
+                    return Err(get_field_type_matching_error().into());
                 };
                 let value_map = Value::map_ref_into_btree_string_map(value_map)?;
                 let mut r_vec = vec![];
@@ -768,12 +768,14 @@ impl DocumentPropertyType {
                     })?;
                     Ok(r_vec)
                 } else {
-                    Err(get_field_type_matching_error())
+                    Err(get_field_type_matching_error().into())
                 }
             }
 
             DocumentPropertyType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
-                DataContractError::Unsupported("serialization of arrays not yet supported"),
+                DataContractError::Unsupported(
+                    "serialization of arrays not yet supported".to_string(),
+                ),
             )),
         };
     }
@@ -794,13 +796,13 @@ impl DocumentPropertyType {
                     Ok(vec)
                 }
             }
-            DocumentPropertyType::Date => DocumentPropertyType::encode_date_timestamp(
+            DocumentPropertyType::Date => Ok(DocumentPropertyType::encode_date_timestamp(
                 value.to_integer().map_err(ProtocolError::ValueError)?,
-            ),
+            )),
             DocumentPropertyType::Integer => {
                 let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
 
-                DocumentPropertyType::encode_signed_integer(value_as_i64)
+                Ok(DocumentPropertyType::encode_i64(value_as_i64))
             }
             DocumentPropertyType::Number => Ok(Self::encode_float(
                 value.to_float().map_err(ProtocolError::ValueError)?,
@@ -821,13 +823,13 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Object(_) => Err(ProtocolError::DataContractError(
                 DataContractError::EncodingDataStructureNotSupported(
-                    "we should never try encoding an object",
+                    "we should never try encoding an object".to_string(),
                 ),
             )),
             DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
                 Err(ProtocolError::DataContractError(
                     DataContractError::EncodingDataStructureNotSupported(
-                        "we should never try encoding an array",
+                        "we should never try encoding an array".to_string(),
                     ),
                 ))
             }
@@ -835,60 +837,59 @@ impl DocumentPropertyType {
     }
 
     // Given a field type and a value this function chooses and executes the right encoding method
-    pub fn value_from_string(&self, str: &str) -> Result<Value, ProtocolError> {
+    pub fn value_from_string(&self, str: &str) -> Result<Value, DataContractError> {
         match self {
             DocumentPropertyType::String(min, max) => {
                 if let Some(min) = min {
                     if str.len() < *min as usize {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::FieldRequirementUnmet("string is too small"),
+                        return Err(DataContractError::FieldRequirementUnmet(
+                            "string is too small".to_string(),
                         ));
                     }
                 }
                 if let Some(max) = max {
                     if str.len() > *max as usize {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::FieldRequirementUnmet("string is too big"),
+                        return Err(DataContractError::FieldRequirementUnmet(
+                            "string is too big".to_string(),
                         ));
                     }
                 }
                 Ok(Value::Text(str.to_string()))
             }
             DocumentPropertyType::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
-                ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                    "value is not an integer from string",
-                ))
+                DataContractError::ValueWrongType("value is not an integer from string".to_string())
             }),
             DocumentPropertyType::Number | DocumentPropertyType::Date => {
                 str.parse::<f64>().map(Value::Float).map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                        "value is not a float from string",
-                    ))
+                    DataContractError::ValueWrongType(
+                        "value is not a float from string".to_string(),
+                    )
                 })
             }
             DocumentPropertyType::ByteArray(min, max) => {
                 if let Some(min) = min {
                     if str.len() / 2 < *min as usize {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::FieldRequirementUnmet("byte array is too small"),
+                        return Err(DataContractError::FieldRequirementUnmet(
+                            "byte array is too small".to_string(),
                         ));
                     }
                 }
                 if let Some(max) = max {
                     if str.len() / 2 > *max as usize {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::FieldRequirementUnmet("byte array is too big"),
+                        return Err(DataContractError::FieldRequirementUnmet(
+                            "byte array is too big".to_string(),
                         ));
                     }
                 }
                 Ok(Value::Bytes(hex::decode(str).map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::ValueDecodingError(
-                        "could not parse hex bytes",
-                    ))
+                    DataContractError::ValueDecodingError("could not parse hex bytes".to_string())
                 })?))
             }
             DocumentPropertyType::Identifier => Ok(Value::Identifier(
-                Value::Text(str.to_owned()).to_identifier()?.into_buffer(),
+                Value::Text(str.to_owned())
+                    .to_identifier()
+                    .map_err(|e| DataContractError::ValueDecodingError(format!("{:?}", e)))?
+                    .into_buffer(),
             )),
             DocumentPropertyType::Boolean => {
                 if str.to_lowercase().as_str() == "true" {
@@ -896,33 +897,29 @@ impl DocumentPropertyType {
                 } else if str.to_lowercase().as_str() == "false" {
                     Ok(Value::Bool(false))
                 } else {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::ValueDecodingError(
-                            "could not parse a boolean to a value",
-                        ),
+                    Err(DataContractError::ValueDecodingError(
+                        "could not parse a boolean to a value".to_string(),
                     ))
                 }
             }
-            DocumentPropertyType::Object(_) => Err(ProtocolError::DataContractError(
-                DataContractError::EncodingDataStructureNotSupported(
-                    "we should never try encoding an object",
-                ),
-            )),
+            DocumentPropertyType::Object(_) => {
+                Err(DataContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding an object".to_string(),
+                ))
+            }
             DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                Err(ProtocolError::DataContractError(
-                    DataContractError::EncodingDataStructureNotSupported(
-                        "we should never try encoding an array",
-                    ),
+                Err(DataContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding an array".to_string(),
                 ))
             }
         }
     }
 
-    pub fn encode_date_timestamp(val: TimestampMillis) -> Result<Vec<u8>, ProtocolError> {
-        Self::encode_unsigned_integer(val)
+    pub fn encode_date_timestamp(val: TimestampMillis) -> Vec<u8> {
+        Self::encode_u64(val)
     }
 
-    pub fn encode_unsigned_integer(val: u64) -> Result<Vec<u8>, ProtocolError> {
+    pub fn encode_u64(val: u64) -> Vec<u8> {
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
 
@@ -944,10 +941,35 @@ impl DocumentPropertyType {
         // change was uniform across all elements
         wtr[0] ^= 0b1000_0000;
 
-        Ok(wtr)
+        wtr
     }
 
-    pub fn encode_signed_integer(val: i64) -> Result<Vec<u8>, ProtocolError> {
+    pub fn encode_u32(val: u32) -> Vec<u8> {
+        // Positive integers are represented in binary with the signed bit set to 0
+        // Negative integers are represented in 2's complement form
+
+        // Encode the integer in big endian form
+        // This ensures that most significant bits are compared first
+        // a bigger positive number would be greater than a smaller one
+        // and a bigger negative number would be greater than a smaller one
+        // maintains sort order for each domain
+        let mut wtr = vec![];
+        wtr.write_u32::<BigEndian>(val).unwrap();
+
+        // Flip the sign bit
+        // to deal with interaction between the domains
+        // 2's complement values have the sign bit set to 1
+        // this makes them greater than the positive domain in terms of sort order
+        // to fix this, we just flip the sign bit
+        // so positive integers have the high bit and negative integers have the low bit
+        // the relative order of elements in each domain is still maintained, as the
+        // change was uniform across all elements
+        wtr[0] ^= 0b1000_0000;
+
+        wtr
+    }
+
+    pub fn encode_i64(val: i64) -> Vec<u8> {
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
 
@@ -969,7 +991,7 @@ impl DocumentPropertyType {
         // change was uniform across all elements
         wtr[0] ^= 0b1000_0000;
 
-        Ok(wtr)
+        wtr
     }
 
     pub fn encode_float(val: f64) -> Vec<u8> {
@@ -1012,8 +1034,8 @@ impl DocumentPropertyType {
     }
 }
 
-fn get_field_type_matching_error() -> ProtocolError {
-    ProtocolError::DataContractError(DataContractError::ValueWrongType(
-        "document field type doesn't match document value",
-    ))
+fn get_field_type_matching_error() -> DataContractError {
+    DataContractError::ValueWrongType(
+        "document field type doesn't match document value".to_string(),
+    )
 }

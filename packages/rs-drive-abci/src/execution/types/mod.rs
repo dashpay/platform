@@ -22,3 +22,6 @@ pub(in crate::execution) mod storage_fee_distribution_outcome;
 pub(in crate::execution) mod unpaid_epoch;
 /// A structure representing the outcome of updating a masternode list in the state
 pub(in crate::execution) mod update_state_masternode_list_outcome;
+
+/// A container for the state transitions
+pub(in crate::execution) mod state_transition_container;

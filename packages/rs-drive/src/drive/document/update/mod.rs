@@ -34,31 +34,23 @@
 
 // Module: add_update_multiple_documents_operations
 // This module contains functionality for adding operations to update multiple documents
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod add_update_multiple_documents_operations;
-#[cfg(feature = "full")]
-pub use add_update_multiple_documents_operations::*;
 
 // Module: update_document_for_contract
 // This module contains functionality for updating a document for a given contract
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod update_document_for_contract;
-#[cfg(feature = "full")]
-pub use update_document_for_contract::*;
 
 // Module: update_document_for_contract_id
 // This module contains functionality for updating a document associated with a given contract id
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod update_document_for_contract_id;
-#[cfg(feature = "full")]
-pub use update_document_for_contract_id::*;
 
 // Module: update_document_with_serialization_for_contract
 // This module contains functionality for updating a document (with serialization) for a contract
 mod internal;
 mod update_document_with_serialization_for_contract;
-
-pub use update_document_with_serialization_for_contract::*;
 
 #[cfg(test)]
 mod tests {
@@ -84,10 +76,10 @@ mod tests {
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
 
+    use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveQuery;
     use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
-    use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -118,6 +110,8 @@ mod tests {
             .create_document_from_data(
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
+                random(),
+                random(),
                 random(),
                 platform_version,
             )
@@ -193,6 +187,8 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
+                random(),
+                random(),
                 platform_version,
             )
             .expect("should create document");
@@ -227,7 +223,7 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -287,6 +283,8 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
+                random(),
+                random(),
                 platform_version,
             )
             .expect("should create document");
@@ -327,7 +325,7 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -395,6 +393,8 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
+                random(),
+                random(),
                 platform_version,
             )
             .expect("should create document");
@@ -435,7 +435,7 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -921,7 +921,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1236
+            //Explanation for 1237
 
             //todo
             1238
@@ -940,13 +940,13 @@ mod tests {
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 224
+            // Value -> 223
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   118 for item serialized bytes (verified above)
+            //   117 for item serialized bytes (verified above)
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1089,7 +1089,7 @@ mod tests {
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 962
+            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 963
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1224,7 +1224,7 @@ mod tests {
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 1012
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1392,7 +1392,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1238
+            //Explanation for 1237
 
             //todo
             1238
@@ -1417,7 +1417,7 @@ mod tests {
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   117 for item serialized bytes
+            //   116 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1832,11 +1832,10 @@ mod tests {
             }
         });
 
-        let factory = DataContractFactory::new(1, Some(Box::new(TestEntropyGenerator::new())))
-            .expect("expected to create factory");
+        let factory = DataContractFactory::new(1).expect("expected to create factory");
 
         let contract = factory
-            .create_with_value_config(owner_id, documents, None, None)
+            .create_with_value_config(owner_id, 0, documents, None, None)
             .expect("data in fixture should be correct")
             .data_contract_owned();
 

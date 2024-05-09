@@ -177,7 +177,11 @@ impl Drive {
         );
 
         // In Pools: initialize the pools with epochs
-        add_create_fee_pool_trees_operations(&mut batch, self.config.epochs_per_era)?;
+        add_create_fee_pool_trees_operations(
+            &mut batch,
+            self.config.epochs_per_era,
+            platform_version.protocol_version,
+        )?;
 
         // In Withdrawals
         add_initial_withdrawal_state_structure_operations(&mut batch);
@@ -191,7 +195,7 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::drive::RootTree;

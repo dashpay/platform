@@ -201,7 +201,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
     await expectValidationError(result, DuplicateUniqueIndexError, 4);
     const errors = result.getErrors();
     const [error] = result.getErrors();
-    expect(error.getCode()).to.equal(4009);
+    expect(error.getCode()).to.equal(40105);
 
     expect(errors.map((e) => e.getDocumentId())).to.have.deep.members([
       documentTransitionsJs[3].getId().toBuffer(),

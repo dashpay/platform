@@ -7,6 +7,8 @@
 
 use std::collections::BTreeMap;
 
+use dpp::prelude::IdentityNonce;
+pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     dashcore::ProTxHash,
@@ -15,11 +17,12 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
+use drive::grovedb::Element;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
 /// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
-/// from a server using [`FetchMany`](rs_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
+/// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
 /// using [`FromProof`](crate::FromProof).
 ///
 /// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
@@ -42,10 +45,24 @@ pub type DataContractHistory = BTreeMap<u64, DataContract>;
 /// If data contract is not found, it is represented as `None`.
 pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 
+/// Multiple grovedb elements.
+///
+/// Mapping between the key id and associated elements.
+/// If element is not found, it is represented as `None`.
+pub type Elements = RetrievedObjects<Vec<u8>, Element>;
+
 /// Identity balance.
 pub type IdentityBalance = u64;
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
+
+/// An identity nonce
+#[derive(Debug)]
+pub struct IdentityNonceFetcher(pub IdentityNonce);
+
+/// An identity contract nonce
+#[derive(Debug)]
+pub struct IdentityContractNonceFetcher(pub IdentityNonce);
 
 /// Public keys belonging to some identity.
 ///
@@ -57,12 +74,6 @@ pub type Documents = RetrievedObjects<Identifier, Document>;
 
 /// Collection of epoch information
 pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
-
-/// Number of votes for a protocol version upgrade.
-///
-/// Number of votes for a protocol version upgrade, returned by [ProtocolVersionVoteCount::fetch_many()].
-/// See [ProtocolVersionUpgrades].
-pub type ProtocolVersionVoteCount = u64;
 
 /// Results of protocol version upgrade voting.
 ///

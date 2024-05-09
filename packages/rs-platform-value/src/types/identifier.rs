@@ -8,6 +8,7 @@ use std::fmt;
 
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
 
 use crate::string_encoding::Encoding;
@@ -180,6 +181,18 @@ impl Identifier {
         Ok(Identifier::new(bytes.try_into().unwrap()))
     }
 
+    pub fn from_vec(vec: Vec<u8>) -> Result<Identifier, Error> {
+        if vec.len() != 32 {
+            return Err(Error::ByteLengthNot32BytesError(String::from(
+                "Identifier must be 32 bytes long",
+            )));
+        }
+
+        // Since we checked that vector size is 32, we can use unwrap
+        Ok(Identifier::new(vec.try_into().unwrap()))
+    }
+
+    #[cfg(feature = "json")]
     pub fn to_json_value_vec(&self) -> Vec<JsonValue> {
         self.to_buffer()
             .iter()

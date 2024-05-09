@@ -105,7 +105,7 @@ mod test {
             PlatformVersion::first(),
         )
         .expect("expected traversal validator to succeed");
-        let consensus_error = result.errors.get(0).expect("the error should be returned");
+        let consensus_error = result.errors.first().expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
@@ -114,7 +114,7 @@ mod test {
                     err.pattern(),
                     "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
                 );
-                assert_eq!(consensus_error.code(), 1009);
+                assert_eq!(consensus_error.code(), 10202);
             }
             _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }
@@ -145,7 +145,7 @@ mod test {
             PlatformVersion::first(),
         )
         .expect("expected traversal validator to exist for first protocol version");
-        let consensus_error = result.errors.get(0).expect("the error should be returned");
+        let consensus_error = result.errors.first().expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
@@ -157,7 +157,7 @@ mod test {
                     err.pattern(),
                     "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
                 );
-                assert_eq!(consensus_error.code(), 1009);
+                assert_eq!(consensus_error.code(), 10202);
             }
             _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }
@@ -175,7 +175,7 @@ mod test {
             PlatformVersion::first(),
         )
         .expect("expected traversal validator to exist for first protocol version");
-        let consensus_error = result.errors.get(0).expect("the error should be returned");
+        let consensus_error = result.errors.first().expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
@@ -187,7 +187,7 @@ mod test {
                     err.pattern(),
                     "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
                 );
-                assert_eq!(consensus_error.code(), 1009);
+                assert_eq!(consensus_error.code(), 10202);
             }
             _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }

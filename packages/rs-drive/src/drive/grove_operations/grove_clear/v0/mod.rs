@@ -3,7 +3,6 @@ use crate::error::Error;
 use grovedb::operations::delete::ClearOptions;
 use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
-use tracing::Level;
 
 impl Drive {
     /// Pushes the `OperationCost` of deleting an element in groveDB to `drive_operations`.
@@ -19,7 +18,7 @@ impl Drive {
         };
 
         #[cfg(feature = "grovedb_operations_logging")]
-        let maybe_params_for_logs = if tracing::event_enabled!(target: "drive_grovedb_operations", Level::TRACE)
+        let maybe_params_for_logs = if tracing::event_enabled!(target: "drive_grovedb_operations", tracing::Level::TRACE)
         {
             let root_hash = self
                 .grove
@@ -33,6 +32,7 @@ impl Drive {
         };
 
         // we will always return true if there is no error when we don't check for subtrees
+        #[allow(clippy::let_and_return)] // due to feature below; we must allow this lint here
         let result = self
             .grove
             .clear_subtree(path, Some(options), transaction)
@@ -40,7 +40,7 @@ impl Drive {
             .map(|_| ());
 
         #[cfg(feature = "grovedb_operations_logging")]
-        if tracing::event_enabled!(target: "drive_grovedb_operations", Level::TRACE)
+        if tracing::event_enabled!(target: "drive_grovedb_operations", tracing::Level::TRACE)
             && result.is_ok()
         {
             let root_hash = self

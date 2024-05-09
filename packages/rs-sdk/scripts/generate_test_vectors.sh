@@ -20,11 +20,7 @@ CARGO_DIR="$(realpath "$(dirname "$0")/..")"
 
 pushd "$CARGO_DIR"
 
-if [ -z "$1" ]; then
-    rm -f "${CARGO_DIR}"/tests/vectors/*
-fi
-
-cargo test -p rs-sdk \
+cargo test -p dash-sdk \
     --no-default-features \
     --features generate-test-vectors \
     "$1"

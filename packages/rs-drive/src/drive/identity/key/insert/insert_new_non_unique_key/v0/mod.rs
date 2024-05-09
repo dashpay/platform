@@ -63,7 +63,7 @@ impl Drive {
         if with_searchable_inner_references
             && matches!(
                 identity_key.purpose(),
-                Purpose::AUTHENTICATION | Purpose::WITHDRAW
+                Purpose::AUTHENTICATION | Purpose::TRANSFER
             )
         {
             self.insert_key_searchable_references_operations(

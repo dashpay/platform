@@ -14,27 +14,9 @@ use dpp::{
         PlatformSerializableWithPlatformVersion,
     },
 };
-
-use rs_dapi_client::mock::Key;
 use serde::{Deserialize, Serialize};
 
 use super::MockDashPlatformSdk;
-
-/// Trait implemented by objects that can be used as requests in mock expectations.
-pub trait MockRequest {
-    /// Format the object as a key that will be used to match the request with the expectation.
-    ///
-    /// ## Panics
-    ///
-    /// Can panic on errors.
-    fn mock_key(&self) -> Key;
-}
-
-impl<T: serde::Serialize> MockRequest for T {
-    fn mock_key(&self) -> Key {
-        Key::new(self)
-    }
-}
 
 /// Trait implemented by objects that can be used in mock expectation responses.
 ///
@@ -169,14 +151,46 @@ impl MockResponse for Document {
 
 impl MockResponse for drive_proof_verifier::types::IdentityBalance {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        (*self).to_le_bytes().to_vec()
+        (*self).to_be_bytes().to_vec()
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        Self::from_le_bytes(buf.try_into().expect("balance should be 8 bytes"))
+        Self::from_be_bytes(buf.try_into().expect("balance should be 8 bytes"))
+    }
+}
+
+impl MockResponse for drive_proof_verifier::types::IdentityNonceFetcher {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        (self.0).to_be_bytes().to_vec()
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        drive_proof_verifier::types::IdentityNonceFetcher(u64::from_be_bytes(
+            buf.try_into()
+                .expect("identity contract nonce should be should be 8 bytes"),
+        ))
+    }
+}
+
+impl MockResponse for drive_proof_verifier::types::IdentityContractNonceFetcher {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        (self.0).to_be_bytes().to_vec()
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        drive_proof_verifier::types::IdentityContractNonceFetcher(u64::from_be_bytes(
+            buf.try_into()
+                .expect("identity contract nonce should be should be 8 bytes"),
+        ))
     }
 }
 

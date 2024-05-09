@@ -19,7 +19,6 @@ pub struct ToObject {
     pub revision: u32,
     pub signature: Option<Vec<u8>>,
     pub signature_public_key_id: KeyID,
-    pub public_keys_disabled_at: Option<u64>,
     pub public_keys_to_add: Option<Vec<IdentityPublicKeyInCreation>>,
     pub public_key_ids_to_disable: Option<Vec<KeyID>>,
     pub identity_id: Identifier,
@@ -45,8 +44,6 @@ pub fn to_object_struct(
         }
         to_object.signature = signature;
     }
-
-    to_object.public_keys_disabled_at = transition.public_keys_disabled_at();
 
     let public_keys_to_add = transition.public_keys_to_add();
     if !public_keys_to_add.is_empty() {

@@ -11,11 +11,13 @@ use super::get_dpns_data_contract_fixture;
 
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
+use crate::prelude::IdentityNonce;
 use crate::util::strings::convert_to_homograph_safe_chars;
 
 pub struct ParentDocumentOptions {
     pub label: String,
     pub owner_id: Identifier,
+    pub identity_nonce: IdentityNonce,
 }
 
 impl Default for ParentDocumentOptions {
@@ -23,6 +25,7 @@ impl Default for ParentDocumentOptions {
         Self {
             label: String::from("Parent"),
             owner_id: generate_random_identifier_struct(),
+            identity_nonce: 0,
         }
     }
 }
@@ -31,7 +34,11 @@ pub fn get_dpns_parent_document_fixture(
     options: ParentDocumentOptions,
     protocol_version: u32,
 ) -> Document {
-    let data_contract = get_dpns_data_contract_fixture(Some(options.owner_id), protocol_version);
+    let data_contract = get_dpns_data_contract_fixture(
+        Some(options.owner_id),
+        options.identity_nonce,
+        protocol_version,
+    );
     let document_factory =
         DocumentFactory::new(protocol_version).expect("expected to get document factory");
     let mut pre_order_salt = [0u8; 32];
@@ -79,7 +86,11 @@ pub fn get_dpns_parent_extended_document_fixture(
     options: ParentDocumentOptions,
     protocol_version: u32,
 ) -> ExtendedDocument {
-    let data_contract = get_dpns_data_contract_fixture(Some(options.owner_id), protocol_version);
+    let data_contract = get_dpns_data_contract_fixture(
+        Some(options.owner_id),
+        options.identity_nonce,
+        protocol_version,
+    );
     let document_factory =
         DocumentFactory::new(protocol_version).expect("expected to get document factory");
     let mut pre_order_salt = [0u8; 32];

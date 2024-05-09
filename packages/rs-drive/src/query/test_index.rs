@@ -1,4 +1,4 @@
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use dpp::data_contract::document_type::DocumentType;
@@ -84,7 +84,9 @@ mod tests {
             None,
             false,
             false,
+            false,
             true,
+            &mut vec![],
             platform_version,
         )
         .expect("expected to create a document type")
@@ -93,7 +95,7 @@ mod tests {
     #[test]
     fn test_find_best_index() {
         let document_type = construct_indexed_document_type();
-        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
 
         let platform_version = PlatformVersion::latest();
 
@@ -134,13 +136,13 @@ mod tests {
         let index = query
             .find_best_index(platform_version)
             .expect("expected to find index");
-        assert_eq!(index, document_type.indices().get(0).unwrap());
+        assert_eq!(index, document_type.indices().first().unwrap());
     }
 
     #[test]
     fn test_find_best_index_error() {
         let document_type = construct_indexed_document_type();
-        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
 
         let platform_version = PlatformVersion::latest();
 

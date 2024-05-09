@@ -30,7 +30,7 @@ where
                 IdentityPublicKeyV0 {
                     id: 1,
                     key_type: KeyType::ECDSA_HASH160,
-                    purpose: Purpose::WITHDRAW,
+                    purpose: Purpose::TRANSFER,
                     security_level: SecurityLevel::CRITICAL,
                     read_only: true,
                     data: BinaryData::new(operator_payout_address.to_vec()),

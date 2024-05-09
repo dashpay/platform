@@ -1,12 +1,11 @@
 use crate::data_contract::{DataContract, DataContractFactory};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, IdentityNonce};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::util::entropy_generator::EntropyGenerator;
 
 use crate::ProtocolError;
 use platform_value::Value;
@@ -29,12 +28,9 @@ pub struct DataContractFacade {
 }
 
 impl DataContractFacade {
-    pub fn new(
-        protocol_version: u32,
-        entropy_generator: Option<Box<dyn EntropyGenerator>>,
-    ) -> Result<Self, ProtocolError> {
+    pub fn new(protocol_version: u32) -> Result<Self, ProtocolError> {
         Ok(Self {
-            factory: DataContractFactory::new(protocol_version, entropy_generator)?,
+            factory: DataContractFactory::new(protocol_version)?,
         })
     }
 
@@ -42,15 +38,22 @@ impl DataContractFacade {
     pub fn create(
         &self,
         owner_id: Identifier,
+        identity_nonce: IdentityNonce,
         documents: Value,
         config: Option<Value>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
-        self.factory
-            .create_with_value_config(owner_id, documents, config, definitions)
+        self.factory.create_with_value_config(
+            owner_id,
+            identity_nonce,
+            documents,
+            config,
+            definitions,
+        )
     }
 
     /// Create Data Contract from plain object
+    #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_object(
         &self,
         raw_data_contract: Value,
@@ -61,6 +64,7 @@ impl DataContractFacade {
     }
 
     /// Create Data Contract from buffer
+    #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
@@ -84,8 +88,9 @@ impl DataContractFacade {
     pub fn create_data_contract_update_transition(
         &self,
         data_contract: DataContract,
+        identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         self.factory
-            .create_data_contract_update_transition(data_contract)
+            .create_data_contract_update_transition(data_contract, identity_contract_nonce)
     }
 }

@@ -8,6 +8,7 @@ export default class CoreService {
   constructor(config, rpcClient, dockerContainer) {
     this.config = config;
     this.rpcClient = rpcClient;
+    rpcClient.setTimeout(240 * 1000);
     this.dockerContainer = dockerContainer;
   }
 

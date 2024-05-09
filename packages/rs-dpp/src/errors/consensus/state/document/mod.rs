@@ -1,4 +1,6 @@
 pub mod document_already_present_error;
+pub mod document_incorrect_purchase_price_error;
+pub mod document_not_for_sale_error;
 pub mod document_not_found_error;
 pub mod document_owner_id_mismatch_error;
 pub mod document_timestamp_window_violation_error;

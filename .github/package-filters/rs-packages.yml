@@ -14,6 +14,10 @@ dpns-contract: &dpns-contract
   - .github/workflows/tests*
   - packages/dpns-contract/**
 
+json-schema-compatibility-validator: &json-schema-compatibility-validator
+  - .github/workflows/tests*
+  - packages/rs-json-schema-compatibility-validator/**
+
 dpp: &dpp
   - .github/workflows/tests*
   - packages/rs-dpp/**
@@ -21,6 +25,7 @@ dpp: &dpp
   - *masternode-reward-shares-contract
   - *dpns-contract
   - *withdrawals-contract
+  - *json-schema-compatibility-validator
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**
@@ -54,7 +59,7 @@ rs-dapi-client: &dapi_client
   - packages/rs-dapi-client/**
   - *dapi_grpc
 
-rs-sdk:
+dash-sdk:
   - .github/workflows/tests*
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**

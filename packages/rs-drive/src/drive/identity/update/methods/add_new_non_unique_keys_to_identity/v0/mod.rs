@@ -12,7 +12,8 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Add new non unique keys to an identity
-    pub fn add_new_non_unique_keys_to_identity_v0(
+    #[inline(always)]
+    pub(super) fn add_new_non_unique_keys_to_identity_v0(
         &self,
         identity_id: [u8; 32],
         keys_to_add: Vec<IdentityPublicKey>,

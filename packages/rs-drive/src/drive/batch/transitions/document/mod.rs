@@ -6,8 +6,11 @@ use dpp::version::PlatformVersion;
 
 mod document_create_transition;
 mod document_delete_transition;
+mod document_purchase_transition;
+mod document_replace_transition;
+mod document_transfer_transition;
 mod document_transition;
-mod document_update_transition;
+mod document_update_price_transition;
 mod documents_batch_transition;
 
 /// A converter that will get High Level Drive Operations from State transitions

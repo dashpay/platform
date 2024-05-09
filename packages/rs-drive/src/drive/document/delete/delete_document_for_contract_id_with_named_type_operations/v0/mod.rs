@@ -17,6 +17,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
+    #[inline(always)]
     pub(super) fn delete_document_for_contract_id_with_named_type_operations_v0(
         &self,
         document_id: [u8; 32],

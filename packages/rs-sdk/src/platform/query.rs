@@ -3,6 +3,7 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use std::fmt::Debug;
 
+use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
     AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
@@ -42,18 +43,18 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// or [FetchMany](crate::platform::FetchMany) trait:
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+/// use dash_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 /// let query = Identifier::new(SOME_IDENTIFIER);
-/// let identity = Identity::fetch(&mut sdk, query);
+/// let identity = Identity::fetch(&sdk, query);
 /// ```
 ///
 /// As [Identifier](crate::platform::Identifier) implements [Query], the `query` variable in the code
 /// above can be used as a parameter for [Fetch::fetch()](crate::platform::Fetch::fetch())
 /// and [FetchMany::fetch_many()](crate::platform::FetchMany::fetch_many()) methods.
-pub trait Query<T: TransportRequest>: Send + Debug + Clone {
+pub trait Query<T: TransportRequest + Mockable>: Send + Debug + Clone {
     /// Converts the current instance into an instance of the `TransportRequest` type.
     ///
     /// This method takes ownership of the instance upon which it's called (hence `self`), and attempts to perform the conversion.
@@ -113,6 +114,27 @@ impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
     }
 }
 
+impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64)> {
+    fn query(self, prove: bool) -> Result<proto::GetDataContractHistoryRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let (id, start_at_ms) = self.query;
+
+        Ok(proto::GetDataContractHistoryRequest {
+            version: Some(proto::get_data_contract_history_request::Version::V0(
+                proto::get_data_contract_history_request::GetDataContractHistoryRequestV0 {
+                    id: id.to_vec(),
+                    limit: self.limit,
+                    offset: None,
+                    start_at_ms,
+                    prove,
+                },
+            )),
+        })
+    }
+}
+
 impl Query<proto::GetIdentityKeysRequest> for Identifier {
     /// Get all keys for an identity with provided identifier.
     fn query(self, prove: bool) -> Result<proto::GetIdentityKeysRequest, Error> {
@@ -154,17 +176,17 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
 /// ## Example
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::{Query, LimitQuery, Identifier, FetchMany, Identity}};
+/// use dash_sdk::{Sdk, platform::{Query, LimitQuery, Identifier, FetchMany, Identity}};
 /// use drive_proof_verifier::types::ExtendedEpochInfos;
 /// use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 /// let query = LimitQuery {
 ///    query: 1,
 ///    limit: Some(10),
 /// };
-/// let epoch = ExtendedEpochInfo::fetch_many(&mut sdk, query);
+/// let epoch = ExtendedEpochInfo::fetch_many(&sdk, query);
 /// ```
 #[derive(Debug, Clone)]
 pub struct LimitQuery<Q> {
@@ -201,7 +223,11 @@ impl<E: Into<EpochQuery> + Clone + Debug + Send> Query<GetEpochsInfoRequest> for
 
 impl Query<GetEpochsInfoRequest> for EpochIndex {
     fn query(self, prove: bool) -> Result<GetEpochsInfoRequest, Error> {
-        LimitQuery::from(self).query(prove)
+        LimitQuery {
+            query: self,
+            limit: Some(1),
+        }
+        .query(prove)
     }
 }
 
@@ -237,14 +263,14 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
     }
 }
 
-/// Conveniance method that allows direct use of a ProTxHash
+/// Convenience method that allows direct use of a ProTxHash
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         Some(self).query(prove)
     }
 }
 
-/// Conveniance method that allows direct use of a ProTxHash
+/// Convenience method that allows direct use of a ProTxHash
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash> {
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         LimitQuery {

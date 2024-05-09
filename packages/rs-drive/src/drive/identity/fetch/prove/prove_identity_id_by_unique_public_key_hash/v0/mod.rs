@@ -61,9 +61,7 @@ mod tests {
             .find(|public_key| public_key.key_type().is_unique_key_type())
             .expect("expected a unique key")
             .hash()
-            .expect("expected to hash data")
-            .try_into()
-            .expect("expected to be 20 bytes");
+            .expect("expected to hash data");
 
         let proof = drive
             .prove_identity_id_by_unique_public_key_hash_v0(

@@ -1,12 +1,13 @@
 use std::convert::{TryFrom, TryInto};
-use std::io;
 
 use dashcore::consensus::{deserialize, Encodable};
 use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 
+#[cfg(feature = "validation")]
 use crate::identity::state_transition::asset_lock_proof::instant::methods;
+#[cfg(feature = "validation")]
 use platform_version::version::PlatformVersion;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
@@ -15,7 +16,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::prelude::Identifier;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::hash::hash;
+use crate::util::hash::hash_double;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 
@@ -26,11 +28,11 @@ use crate::ProtocolError;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstantAssetLockProof {
     /// The transaction's Instant Lock
-    instant_lock: InstantLock,
+    pub instant_lock: InstantLock,
     /// Asset Lock Special Transaction
-    transaction: Transaction,
+    pub transaction: Transaction,
     /// Index of the output in the transaction payload
-    output_index: u32,
+    pub output_index: u32,
 }
 
 impl Serialize for InstantAssetLockProof {
@@ -129,11 +131,9 @@ impl InstantAssetLockProof {
             ProtocolError::IdentifierError(String::from("No output at a given index"))
         })?;
 
-        let output_vec: Vec<u8> = outpoint
-            .try_into()
-            .map_err(|e: io::Error| ProtocolError::EncodingError(e.to_string()))?;
+        let outpoint_bytes: [u8; 36] = outpoint.into();
 
-        let hash = hash(output_vec);
+        let hash = hash_double(outpoint_bytes.as_slice());
 
         Ok(Identifier::new(hash))
     }

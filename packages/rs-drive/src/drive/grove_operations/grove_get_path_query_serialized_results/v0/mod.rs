@@ -16,7 +16,7 @@ impl Drive {
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let CostContext { value, cost } =
             self.grove
-                .query_item_value(path_query, transaction.is_some(), true, transaction);
+                .query_item_value(path_query, transaction.is_some(), true, true, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

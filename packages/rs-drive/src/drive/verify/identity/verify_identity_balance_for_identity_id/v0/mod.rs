@@ -7,8 +7,6 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-pub use dpp::prelude::{Identity, Revision};
-
 use grovedb::GroveDb;
 
 impl Drive {

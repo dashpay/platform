@@ -7,10 +7,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::utils::WithJsError;
 use crate::{
-    buffer::Buffer,
-    errors::{from_dpp_err, RustConversionError},
-    identifier::IdentifierWrapper,
-    with_js_error,
+    buffer::Buffer, errors::RustConversionError, identifier::IdentifierWrapper, with_js_error,
 };
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::platform_value::string_encoding;
@@ -137,8 +134,7 @@ impl ChainAssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name=createIdentifier)]
-    pub fn create_identifier(&self) -> Result<IdentifierWrapper, JsValue> {
-        let identifier = self.0.create_identifier().map_err(from_dpp_err)?;
-        Ok(identifier.into())
+    pub fn create_identifier(&self) -> IdentifierWrapper {
+        self.0.create_identifier().into()
     }
 }

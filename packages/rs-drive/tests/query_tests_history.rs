@@ -30,52 +30,52 @@
 //! Query Tests History
 //!
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::borrow::Cow;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::collections::{BTreeMap, HashMap};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::fmt::{Debug, Formatter};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::option::Option::None;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::document::Document;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use rand::seq::SliceRandom;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use rand::{Rng, SeedableRng};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use serde_json::json;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::common;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::tests::helpers::setup::setup_drive;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::batch::GroveDbOpBatch;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::config::DriveConfig;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::flags::StorageFlags;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::Drive;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::error::{query::QuerySyntaxError, Error};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::query::DriveQuery;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -86,10 +86,10 @@ use dpp::document::DocumentV0Getters;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Person {
@@ -104,7 +104,7 @@ struct Person {
     age: u8,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl Debug for Person {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Person")
@@ -119,7 +119,7 @@ impl Debug for Person {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl Person {
     fn random_people_for_block_times(
         count: usize,
@@ -180,7 +180,7 @@ impl Person {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Sets up the `family-contract-with-history` contract to test queries on.
 pub fn setup(
     count: usize,
@@ -267,14 +267,14 @@ pub fn setup(
     (drive, contract)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_setup() {
     let range_inserts = vec![0, 2];
     setup(10, Some(range_inserts), 73509);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_query_historical() {
     let (drive, contract) = setup(10, None, 73509);
@@ -291,8 +291,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            102, 136, 207, 211, 64, 180, 182, 231, 135, 104, 94, 128, 232, 166, 229, 141, 193, 34,
-            150, 114, 64, 54, 125, 7, 88, 34, 175, 191, 184, 19, 0, 80
+            163, 151, 181, 112, 234, 184, 171, 83, 83, 105, 116, 97, 25, 160, 197, 58, 81, 214,
+            243, 144, 11, 91, 223, 83, 71, 99, 170, 203, 145, 244, 137, 134,
         ]
     );
 
@@ -1655,8 +1655,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            167, 173, 50, 226, 194, 111, 161, 168, 48, 247, 9, 139, 1, 108, 131, 162, 190, 115,
-            218, 47, 154, 236, 223, 8, 43, 17, 147, 206, 255, 237, 64, 109
+            212, 52, 34, 33, 150, 181, 101, 7, 122, 203, 197, 177, 146, 225, 160, 186, 49, 229, 70,
+            206, 170, 180, 253, 90, 90, 188, 107, 108, 162, 216, 195, 81
         ]
     );
 }

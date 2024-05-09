@@ -3,7 +3,6 @@ use dpp::identity::KeyID;
 use dpp::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
-    util::json_value::JsonValueExt,
     ProtocolError,
 };
 use js_sys::Array;
@@ -23,7 +22,7 @@ use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     buffer::Buffer,
     identifier::IdentifierWrapper,
-    utils::{Inner, IntoWasm, WithJsError},
+    utils::{IntoWasm, WithJsError},
     IdentityPublicKeyWasm,
 };
 
@@ -126,6 +125,11 @@ impl DocumentsBatchTransitionWasm {
         self.0.set_transitions(transitions);
 
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name=setIdentityContractNonce)]
+    pub fn set_identity_contract_nonce(&mut self, nonce: u32) {
+        self.0.set_identity_contract_nonce(nonce as u64);
     }
 
     // #[wasm_bindgen(js_name=toJSON)]

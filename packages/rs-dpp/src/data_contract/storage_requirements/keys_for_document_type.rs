@@ -1,3 +1,6 @@
+use crate::consensus::basic::data_contract::UnknownStorageKeyRequirementsError;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use serde_repr::*;
@@ -20,10 +23,12 @@ impl TryFrom<u8> for StorageKeyRequirements {
             0 => Ok(Self::Unique),
             1 => Ok(Self::Multiple),
             2 => Ok(Self::MultipleReferenceToLatest),
-            value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
-                "unrecognized storage key requirements: {}",
-                value
-            ))),
+            value => Err(ProtocolError::ConsensusError(
+                ConsensusError::BasicError(BasicError::UnknownStorageKeyRequirementsError(
+                    UnknownStorageKeyRequirementsError::new(vec![0, 1, 3], value.into()),
+                ))
+                .into(),
+            )),
         }
     }
 }
@@ -35,10 +40,12 @@ impl TryFrom<i128> for StorageKeyRequirements {
             0 => Ok(Self::Unique),
             1 => Ok(Self::Multiple),
             2 => Ok(Self::MultipleReferenceToLatest),
-            value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
-                "unrecognized storage key requirements: {}",
-                value
-            ))),
+            value => Err(ProtocolError::ConsensusError(
+                ConsensusError::BasicError(BasicError::UnknownStorageKeyRequirementsError(
+                    UnknownStorageKeyRequirementsError::new(vec![0, 1, 3], value),
+                ))
+                .into(),
+            )),
         }
     }
 }

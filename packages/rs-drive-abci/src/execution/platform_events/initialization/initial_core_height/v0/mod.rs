@@ -44,7 +44,7 @@ where
         let v20_fork = fork_info.height.unwrap();
 
         if let Some(requested) = requested {
-            let best = self.core_rpc.get_best_chain_lock()?.core_block_height;
+            let best = self.core_rpc.get_best_chain_lock()?.block_height;
 
             tracing::trace!(
                 requested,

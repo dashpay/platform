@@ -25,6 +25,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes indices for the top index level and calls for lower levels.
+    #[inline(always)]
     pub(super) fn remove_indices_for_top_index_level_for_contract_operations_v0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,

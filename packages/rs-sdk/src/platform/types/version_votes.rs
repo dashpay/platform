@@ -26,7 +26,7 @@ pub trait MasternodeProtocolVoteEx<K: Ord> {
     /// - [MasternodeProtocolVote::fetch_many()]
     /// - [MasternodeProtocolVote::fetch_many_with_limit()]
     async fn fetch_votes(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         start_protxhash: Option<ProTxHash>,
         limit: Option<u32>,
     ) -> Result<MasternodeProtocolVotes, Error>;
@@ -35,7 +35,7 @@ pub trait MasternodeProtocolVoteEx<K: Ord> {
 #[async_trait]
 impl MasternodeProtocolVoteEx<ProTxHash> for MasternodeProtocolVote {
     async fn fetch_votes(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         start_protxhash: Option<ProTxHash>,
         limit: Option<u32>,
     ) -> Result<MasternodeProtocolVotes, Error> {
@@ -53,7 +53,7 @@ impl MasternodeProtocolVoteEx<ProTxHash> for MasternodeProtocolVote {
 #[async_trait]
 impl MasternodeProtocolVoteEx<ProTxHash> for MasternodeProtocolVotes {
     async fn fetch_votes(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         start_protxhash: Option<ProTxHash>,
         limit: Option<u32>,
     ) -> Result<MasternodeProtocolVotes, Error> {

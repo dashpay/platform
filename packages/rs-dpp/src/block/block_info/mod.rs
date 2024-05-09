@@ -1,4 +1,5 @@
 use crate::block::epoch::{Epoch, EPOCH_0};
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -13,16 +14,16 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 // Extended block info however is not immutable
 // @immutable
 /// Block information
-#[derive(Clone, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct BlockInfo {
     /// Block time in milliseconds
-    pub time_ms: u64,
+    pub time_ms: TimestampMillis,
 
     /// Block height
-    pub height: u64,
+    pub height: BlockHeight,
 
     /// Core height
-    pub core_height: u32,
+    pub core_height: CoreBlockHeight,
 
     /// Current fee epoch
     pub epoch: Epoch,

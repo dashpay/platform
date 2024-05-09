@@ -8,7 +8,6 @@ use dpp::identifier::Identifier;
 use crate::data_contract::state_transition::DataContractCreateTransitionWasm;
 use crate::data_contract::state_transition::DataContractUpdateTransitionWasm;
 use crate::data_contract::DataContractWasm;
-use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::errors::protocol_error::from_protocol_error;
 use crate::utils::{
     get_bool_from_options, ToSerdeJSONExt, WithJsError, SKIP_VALIDATION_PROPERTY_NAME,
@@ -17,6 +16,7 @@ use crate::utils::{
 use dpp::ProtocolError;
 use std::sync::Arc;
 
+use dpp::prelude::IdentityNonce;
 use wasm_bindgen::prelude::*;
 
 impl From<DataContractFacade> for DataContractFacadeWasm {
@@ -30,9 +30,8 @@ impl From<DataContractFacade> for DataContractFacadeWasm {
 pub struct DataContractFacadeWasm(pub(crate) Arc<DataContractFacade>);
 
 impl DataContractFacadeWasm {
-    pub fn new(protocol_version: u32, entropy_generator: ExternalEntropyGenerator) -> Self {
-        let inner = DataContractFacade::new(protocol_version, Some(Box::new(entropy_generator)))
-            .expect("should create facade");
+    pub fn new(protocol_version: u32) -> Self {
+        let inner = DataContractFacade::new(protocol_version).expect("should create facade");
 
         Self(Arc::new(inner))
     }
@@ -45,6 +44,7 @@ impl DataContractFacadeWasm {
     pub fn create(
         &self,
         owner_id: Vec<u8>,
+        identity_nonce: IdentityNonce,
         documents: JsValue,
         definitions: Option<js_sys::Object>,
     ) -> Result<DataContractWasm, JsValue> {
@@ -56,6 +56,7 @@ impl DataContractFacadeWasm {
         self.0
             .create(
                 id,
+                identity_nonce,
                 serde_wasm_bindgen::from_value(documents)?,
                 None,
                 definitions
@@ -125,9 +126,13 @@ impl DataContractFacadeWasm {
     pub fn create_data_contract_update_transition(
         &self,
         data_contract: &DataContractWasm,
+        identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_update_transition(data_contract.to_owned().into())
+            .create_data_contract_update_transition(
+                data_contract.to_owned().into(),
+                identity_contract_nonce,
+            )
             .map(Into::into)
             .map_err(from_protocol_error)
     }

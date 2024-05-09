@@ -1,6 +1,5 @@
 use dpp::prelude::Identifier;
 use itertools::Itertools;
-pub use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
 

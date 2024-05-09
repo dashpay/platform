@@ -3,7 +3,7 @@ use crate::data_contract::DataContract;
 use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
-use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier, Value};
 use std::collections::BTreeMap;
@@ -56,6 +56,7 @@ impl ExtendedDocument {
     }
 
     /// Returns an optional reference to the document's creation timestamp in milliseconds.
+    /// It will be None if it is not required by the schema.
     pub fn created_at(&self) -> Option<TimestampMillis> {
         match self {
             ExtendedDocument::V0(v0) => v0.created_at(),
@@ -63,9 +64,42 @@ impl ExtendedDocument {
     }
 
     /// Returns an optional reference to the document's last update timestamp in milliseconds.
+    /// It will be None if it is not required by the schema.
     pub fn updated_at(&self) -> Option<TimestampMillis> {
         match self {
             ExtendedDocument::V0(v0) => v0.updated_at(),
+        }
+    }
+
+    /// Returns an optional block height at which the document was created.
+    /// It will be None if it is not required by the schema.
+    pub fn created_at_block_height(&self) -> Option<BlockHeight> {
+        match self {
+            ExtendedDocument::V0(v0) => v0.created_at_block_height(),
+        }
+    }
+
+    /// Returns an optional block height at which the document was last updated.
+    /// It will be None if it is not required by the schema.
+    pub fn updated_at_block_height(&self) -> Option<BlockHeight> {
+        match self {
+            ExtendedDocument::V0(v0) => v0.updated_at_block_height(),
+        }
+    }
+
+    /// Returns an optional core block height at which the document was created.
+    /// It will be None if it is not required by the schema.
+    pub fn created_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        match self {
+            ExtendedDocument::V0(v0) => v0.created_at_core_block_height(),
+        }
+    }
+
+    /// Returns an optional core block height at which the document was last updated.
+    /// It will be None if it is not required by the schema.
+    pub fn updated_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        match self {
+            ExtendedDocument::V0(v0) => v0.updated_at_core_block_height(),
         }
     }
 

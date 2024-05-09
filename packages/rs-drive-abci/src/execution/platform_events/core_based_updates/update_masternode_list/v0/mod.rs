@@ -40,10 +40,10 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if let Some(last_commited_block_info) =
+        if let Some(last_committed_block_info) =
             block_platform_state.last_committed_block_info().as_ref()
         {
-            if core_block_height == last_commited_block_info.basic_info().core_height {
+            if core_block_height == last_committed_block_info.basic_info().core_height {
                 tracing::debug!(
                     method = "update_masternode_list_v0",
                     "no update mnl at height {}",
@@ -56,7 +56,7 @@ where
             method = "update_masternode_list_v0",
             "update mnl to height {} at block {}",
             core_block_height,
-            block_platform_state.core_height()
+            block_platform_state.last_committed_core_height()
         );
         //todo: there's a weird condition that can happen if we are not on init chain, but we are
         // in the genesis and we are not on round 0, and the core height changed

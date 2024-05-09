@@ -1,17 +1,15 @@
 use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult, GetChainTipsResult,
-    GetTransactionLockedResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
-    SoftforkInfo,
+    AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
+    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
 };
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
-use dpp::dashcore::{hashes::Hash, InstantLock};
+use dpp::dashcore::InstantLock;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use tenderdash_abci::proto::types::CoreChainLock;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
@@ -24,17 +22,21 @@ pub trait CoreRPCLike {
     /// Get block hash by height
     fn get_block_hash(&self, height: CoreHeight) -> Result<BlockHash, Error>;
 
-    /// Get block hash by height
-    fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error>;
+    /// Get the best chain lock
+    fn get_best_chain_lock(&self) -> Result<ChainLock, Error>;
+
+    /// Submit a chain lock
+    fn submit_chain_lock(&self, chain_lock: &ChainLock) -> Result<u32, Error>;
 
     /// Get transaction
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
 
-    /// Get transaction finalization status
-    fn get_transactions_are_chain_locked(
+    /// Get asset unlock statuses
+    fn get_asset_unlock_statuses(
         &self,
-        tx_ids: Vec<Txid>,
-    ) -> Result<Vec<GetTransactionLockedResult>, Error>;
+        indices: &[u64],
+        core_chain_locked_height: u32,
+    ) -> Result<Vec<AssetUnlockStatusResult>, Error>;
 
     /// Get transaction
     fn get_transaction_extended_info(&self, tx_id: &Txid)
@@ -109,16 +111,13 @@ pub trait CoreRPCLike {
     ) -> Result<bool, Error>;
 
     /// Verify a chain lock signature
-    /// If `max_height` is provided the chain lock will be verified
-    /// against quorums available at this height
-    fn verify_chain_lock(
-        &self,
-        chain_lock: &ChainLock,
-        max_height: Option<u32>,
-    ) -> Result<bool, Error>;
+    fn verify_chain_lock(&self, chain_lock: &ChainLock) -> Result<bool, Error>;
 
     /// Returns masternode sync status
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error>;
+
+    /// Sends raw transaction to the network
+    fn send_raw_transaction(&self, transaction: &[u8]) -> Result<Txid, Error>;
 }
 
 #[derive(Debug)]
@@ -127,6 +126,12 @@ pub struct DefaultCoreRPC {
     inner: Client,
 }
 
+// TODO: Create errors for these error codes in dashcore_rpc
+
+/// TX is invalid due to consensus rules
+pub const CORE_RPC_TX_CONSENSUS_ERROR: i32 = -26;
+/// Tx already broadcasted and included in the chain
+pub const CORE_RPC_TX_ALREADY_IN_CHAIN: i32 = -27;
 /// Client still warming up
 pub const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
 /// Dash is not connected
@@ -139,6 +144,11 @@ pub const CORE_RPC_PARSE_ERROR: i32 = -32700;
 pub const CORE_RPC_INVALID_ADDRESS_OR_KEY: i32 = -5;
 /// Invalid, missing or duplicate parameter
 pub const CORE_RPC_INVALID_PARAMETER: i32 = -8;
+
+/// Asset Unlock consenus error "bad-assetunlock-not-active-quorum"
+pub const CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM: &str = "bad-assetunlock-not-active-quorum";
+/// Asset Unlock consenus error "bad-assetunlock-not-active-quorum"
+pub const CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED: &str = "bad-assetunlock-too-late";
 
 macro_rules! retry {
     ($action:expr) => {{
@@ -202,30 +212,16 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.get_block_hash(height))
     }
 
-    fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error> {
-        //no need to retry on this one
-        let GetBestChainLockResult {
-            blockhash,
-            height,
-            signature,
-            known_block: _,
-        } = self.inner.get_best_chain_lock()?;
-        Ok(CoreChainLock {
-            core_block_height: height,
-            core_block_hash: blockhash.to_byte_array().to_vec(),
-            signature,
-        })
+    fn get_best_chain_lock(&self) -> Result<ChainLock, Error> {
+        retry!(self.inner.get_best_chain_lock())
+    }
+
+    fn submit_chain_lock(&self, chain_lock: &ChainLock) -> Result<u32, Error> {
+        retry!(self.inner.submit_chain_lock(chain_lock))
     }
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
         retry!(self.inner.get_raw_transaction(tx_id, None))
-    }
-
-    fn get_transactions_are_chain_locked(
-        &self,
-        tx_ids: Vec<Txid>,
-    ) -> Result<Vec<GetTransactionLockedResult>, Error> {
-        retry!(self.inner.get_transaction_are_locked(&tx_ids))
     }
 
     fn get_transaction_extended_info(
@@ -300,23 +296,33 @@ impl CoreRPCLike for DefaultCoreRPC {
     }
 
     /// Verify a chain lock signature
-    /// If `max_height` is provided the chain lock will be verified
-    /// against quorums available at this height
-    fn verify_chain_lock(
-        &self,
-        chain_lock: &ChainLock,
-        max_height: Option<u32>,
-    ) -> Result<bool, Error> {
+    fn verify_chain_lock(&self, chain_lock: &ChainLock) -> Result<bool, Error> {
         let block_hash = chain_lock.block_hash.to_string();
         let signature = hex::encode(chain_lock.signature);
 
-        retry!(self
-            .inner
-            .get_verifychainlock(block_hash.as_str(), &signature, max_height))
+        retry!(self.inner.get_verifychainlock(
+            block_hash.as_str(),
+            &signature,
+            Some(chain_lock.block_height)
+        ))
     }
 
     /// Returns masternode sync status
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error> {
         retry!(self.inner.mnsync_status())
+    }
+
+    fn send_raw_transaction(&self, transaction: &[u8]) -> Result<Txid, Error> {
+        retry!(self.inner.send_raw_transaction(transaction))
+    }
+
+    fn get_asset_unlock_statuses(
+        &self,
+        indices: &[u64],
+        core_chain_locked_height: u32,
+    ) -> Result<Vec<AssetUnlockStatusResult>, Error> {
+        retry!(self
+            .inner
+            .get_asset_unlock_statuses(indices, Some(core_chain_locked_height)))
     }
 }

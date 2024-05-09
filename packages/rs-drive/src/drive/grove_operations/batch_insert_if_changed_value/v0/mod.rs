@@ -106,7 +106,7 @@ impl Drive {
                             GroveDb::average_case_for_get_raw(
                                 &key_info_path,
                                 &key_info,
-                                element.serialized_size() as u32,
+                                element.serialized_size()? as u32,
                                 in_tree_using_sums,
                             ),
                         ));

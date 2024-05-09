@@ -52,15 +52,29 @@ class CorePromiseClient {
   }
 
   /**
-   * @param {!GetStatusRequest} getStatusRequest
+   * @param {!GetBlockchainStatusRequest} getBlockchainStatusRequest
    * @param {?Object<string, string>} metadata
-   * @return {Promise<!GetStatusResponse>}
+   * @return {Promise<!GetBlockchainStatusResponse>}
    */
-  getStatus(getStatusRequest, metadata = {}) {
+  getBlockchainStatus(getBlockchainStatusRequest, metadata = {}) {
     return promisify(
-      this.client.getStatus.bind(this.client),
+      this.client.getBlockchainStatus.bind(this.client),
     )(
-      getStatusRequest,
+      getBlockchainStatusRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetMasternodeStatusRequest} getMasternodeStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetMasternodeStatusResponse>}
+   */
+  getMasternodeStatus(getMasternodeStatusRequest, metadata = {}) {
+    return promisify(
+      this.client.getMasternodeStatus.bind(this.client),
+    )(
+      getMasternodeStatusRequest,
       metadata,
     );
   }

@@ -1133,7 +1133,7 @@ describe.skip('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.getCode()).to.equal(1009);
+        expect(error.getCode()).to.equal(10202);
         expect(error.getPattern()).to.equal('^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$');
         expect(error.getPath()).to.equal('/documents/indexedDocument/properties/something');
       });

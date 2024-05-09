@@ -15,9 +15,17 @@ export default async function waitForMasternodesSync(rpcClient, progressCallback
   do {
     try {
       await rpcClient.mnsync('next');
+
+      ({
+        result: { IsSynced: isSynced },
+      } = await rpcClient.mnsync('status'));
+
+      ({
+        result: { verificationprogress: verificationProgress },
+      } = await rpcClient.getBlockchainInfo());
     } catch (e) {
       // Core RPC is not started yet
-      if (!e.message.includes('Dash JSON-RPC: Request Error: ') && e.code !== -28) {
+      if (!e.message.includes('Dash JSON-RPC: Request Error: ') && !e.message.includes('Timeout') && e.code !== -28) {
         throw e;
       }
 
@@ -28,13 +36,6 @@ export default async function waitForMasternodesSync(rpcClient, progressCallback
 
       continue;
     }
-
-    ({
-      result: { IsSynced: isSynced },
-    } = await rpcClient.mnsync('status'));
-    ({
-      result: { verificationprogress: verificationProgress },
-    } = await rpcClient.getBlockchainInfo());
 
     if (!isSynced) {
       progressCallback(verificationProgress);

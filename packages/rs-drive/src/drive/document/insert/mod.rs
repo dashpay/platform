@@ -35,42 +35,34 @@
 // Module: add_document
 // This module contains functionality for adding a document
 mod add_document;
-pub use add_document::*;
 
 // Module: add_document_for_contract
 // This module contains functionality for adding a document for a given contract
 mod add_document_for_contract;
-pub use add_document_for_contract::*;
 
 // Module: add_document_for_contract_apply_and_add_to_operations
 // This module contains functionality for applying and adding operations for a contract document
 mod add_document_for_contract_apply_and_add_to_operations;
-pub use add_document_for_contract_apply_and_add_to_operations::*;
 
 // Module: add_document_for_contract_operations
 // This module contains functionality for adding a document for contract operations
 mod add_document_for_contract_operations;
-pub use add_document_for_contract_operations::*;
 
 // Module: add_document_to_primary_storage
 // This module contains functionality for adding a document to primary storage
 mod add_document_to_primary_storage;
-pub use add_document_to_primary_storage::*;
 
 // Module: add_indices_for_index_level_for_contract_operations
 // This module contains functionality for adding indices for an index level for contract operations
 mod add_indices_for_index_level_for_contract_operations;
-pub use add_indices_for_index_level_for_contract_operations::*;
 
 // Module: add_indices_for_top_index_level_for_contract_operations
 // This module contains functionality for adding indices for the top index level for contract operations
 mod add_indices_for_top_index_level_for_contract_operations;
-pub use add_indices_for_top_index_level_for_contract_operations::*;
 
 // Module: add_reference_for_index_level_for_contract_operations
 // This module contains functionality for adding a reference for an index level for contract operations
 mod add_reference_for_index_level_for_contract_operations;
-pub use add_reference_for_index_level_for_contract_operations::*;
 
 #[cfg(all(
     feature = "fixtures-and-mocks",
@@ -84,7 +76,7 @@ mod tests {
     use std::option::Option::None;
 
     use dpp::block::block_info::BlockInfo;
-    use rand::Rng;
+    use rand::{random, Rng};
 
     use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
@@ -209,7 +201,7 @@ mod tests {
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
@@ -336,11 +328,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 3057
+                storage_fee: 3058
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2316870,
+                processing_fee: 2317270,
                 ..Default::default()
             }
         );
@@ -399,11 +391,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1303
+                storage_fee: 1305
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 1481210,
+                processing_fee: 1482010,
                 ..Default::default()
             }
         );
@@ -468,8 +460,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        assert_eq!(1303, added_bytes);
-        assert_eq!(142936000, processing_fee);
+        assert_eq!(1305, added_bytes);
+        assert_eq!(142936800, processing_fee);
     }
 
     #[test]
@@ -487,7 +479,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -561,7 +553,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -889,7 +881,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let created_contract =
-            get_dpns_data_contract_fixture(None, platform_version.protocol_version);
+            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
 
         drive
             .apply_contract(

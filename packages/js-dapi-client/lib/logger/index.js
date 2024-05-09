@@ -1,7 +1,9 @@
 const util = require('util');
 const winston = require('winston');
 
-const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
+// TODO: Refactor to use params instead on envs
+
+const LOG_LEVEL = process.env.LOG_LEVEL || 'silent';
 const LOG_TO_FILE = process.env.LOG_WALLET_TO_FILE || 'false';
 
 // Log levels:
@@ -36,6 +38,7 @@ const createLogger = (formats = [], id = '') => {
   const transports = [
     new winston.transports.Console({
       format,
+      silent: LOG_LEVEL === 'silent',
     }),
   ];
 
@@ -44,6 +47,7 @@ const createLogger = (formats = [], id = '') => {
       new winston.transports.File({
         filename: `wallet${id !== '' ? `_${id}` : ''}`,
         format,
+        silent: LOG_LEVEL === 'silent',
       }),
     );
   }

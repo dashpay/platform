@@ -8,7 +8,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Data Contract version must be {expected_version}, go {version}")]
+#[error("Data Contract version must be {expected_version}, got {version}")]
 #[platform_serialize(unversioned)]
 pub struct InvalidDataContractVersionError {
     /*

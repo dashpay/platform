@@ -1,3 +1,4 @@
+use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 
@@ -11,45 +12,38 @@ impl DocumentCreateTransitionActionV0 {
     /// try from document create transition with contract lookup
     pub fn try_from_document_create_transition_with_contract_lookup(
         value: DocumentCreateTransitionV0,
+        block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
-        let DocumentCreateTransitionV0 {
+        let DocumentCreateTransitionV0 { base, data, .. } = value;
+        let base = DocumentBaseTransitionAction::from_base_transition_with_contract_lookup(
             base,
-            created_at,
-            updated_at,
-            data,
-            ..
-        } = value;
+            get_data_contract,
+        )?;
+
         Ok(DocumentCreateTransitionActionV0 {
-            base: DocumentBaseTransitionAction::from_base_transition_with_contract_lookup(
-                base,
-                get_data_contract,
-            )?,
-            created_at,
-            updated_at,
+            base,
+            block_info: *block_info,
             data,
         })
     }
 
-    /// try from ...
+    /// try from borrowed document create transition with contract lookup
     pub fn try_from_borrowed_document_create_transition_with_contract_lookup(
         value: &DocumentCreateTransitionV0,
+        block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
-        let DocumentCreateTransitionV0 {
-            base,
-            created_at,
-            updated_at,
-            data,
-            ..
-        } = value;
-        Ok(DocumentCreateTransitionActionV0 {
-            base: DocumentBaseTransitionAction::from_borrowed_base_transition_with_contract_lookup(
+        let DocumentCreateTransitionV0 { base, data, .. } = value;
+        let base =
+            DocumentBaseTransitionAction::from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
-            )?,
-            created_at: *created_at,
-            updated_at: *updated_at,
+            )?;
+
+        Ok(DocumentCreateTransitionActionV0 {
+            base,
+            block_info: *block_info,
             //todo: get rid of clone
             data: data.clone(),
         })

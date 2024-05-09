@@ -8,17 +8,19 @@ use dpp::fee::fee_result::FeeResult;
 /// There are four possible outcomes of the state transition execution described by this enum
 #[derive(Debug, Clone)]
 pub enum StateTransitionExecutionResult {
-    // TODO: Error should also have fees
     /// State Transition is invalid, but we have a proved identity associated with it,
     /// and we can deduct processing fees calculated until this validation error happened
-    PaidConsensusError(ConsensusError),
-    /// State Transition is invalid, but we don't have a proved identity associated with it
-    /// so we can't deduct balance.
+    PaidConsensusError(ConsensusError, FeeResult),
+    /// State Transition is invalid, and is not paid for because we either :
+    ///     * don't have a proved identity associated with it so we can't deduct balance.
+    ///     * the state transition revision causes this transaction to not be valid
+    /// These state transitions can appear in prepare proposal but must never appear in process
+    /// proposal.
     UnpaidConsensusError(ConsensusError),
     /// State Transition execution failed due to the internal drive-abci error
-    DriveAbciError(String),
+    InternalError(String),
     /// State Transition was successfully executed
-    SuccessfulExecution(EstimatedFeeResult, FeeResult),
+    SuccessfulExecution(Option<EstimatedFeeResult>, FeeResult),
 }
 
 /// State Transitions Processing Result produced by [process_raw_state_transitions] and represents
@@ -27,7 +29,8 @@ pub enum StateTransitionExecutionResult {
 #[derive(Debug, Default, Clone)]
 pub struct StateTransitionsProcessingResult {
     execution_results: Vec<StateTransitionExecutionResult>,
-    invalid_count: usize,
+    invalid_paid_count: usize,
+    invalid_unpaid_count: usize,
     valid_count: usize,
     failed_count: usize,
     fees: FeeResult,
@@ -37,12 +40,15 @@ impl StateTransitionsProcessingResult {
     /// Add a new execution result
     pub fn add(&mut self, execution_result: StateTransitionExecutionResult) -> Result<(), Error> {
         match &execution_result {
-            StateTransitionExecutionResult::DriveAbciError(_) => {
+            StateTransitionExecutionResult::InternalError(_) => {
                 self.failed_count += 1;
             }
-            StateTransitionExecutionResult::PaidConsensusError(_)
-            | StateTransitionExecutionResult::UnpaidConsensusError(_) => {
-                self.invalid_count += 1;
+            StateTransitionExecutionResult::PaidConsensusError(_, actual_fees) => {
+                self.invalid_paid_count += 1;
+                self.fees.checked_add_assign(actual_fees.clone())?;
+            }
+            StateTransitionExecutionResult::UnpaidConsensusError(_) => {
+                self.invalid_unpaid_count += 1;
             }
             StateTransitionExecutionResult::SuccessfulExecution(_, actual_fees) => {
                 self.valid_count += 1;
@@ -56,9 +62,14 @@ impl StateTransitionsProcessingResult {
         Ok(())
     }
 
-    /// Returns the number of invalid state transitions
-    pub fn invalid_count(&self) -> usize {
-        self.invalid_count
+    /// Returns the number of paid invalid state transitions
+    pub fn invalid_paid_count(&self) -> usize {
+        self.invalid_paid_count
+    }
+
+    /// Returns the number of unpaid invalid state transitions
+    pub fn invalid_unpaid_count(&self) -> usize {
+        self.invalid_unpaid_count
     }
 
     /// Returns the number of valid state transitions

@@ -22,8 +22,8 @@ export default async function broadcastStateTransition(
   stateTransition: any,
   // TODO: restore once validation is done?
   // eslint-disable-next-line
-  options: { skipValidation?: boolean; } = {},
-): Promise<IStateTransitionResult | void> {
+    options: { skipValidation?: boolean; } = {},
+): Promise<IStateTransitionResult> {
   const { client } = platform;
 
   // TODO(versioning): restore

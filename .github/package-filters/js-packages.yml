@@ -71,7 +71,12 @@ dash: &dash
 dashmate:
   - .github/workflows/tests*
   - packages/dashmate/**
-  - *dash
+  - *dashpay-contract
+  - *masternode-reward-shares-contract
+  - *dpns-contract
+  - *withdrawals-contract
+  - *wallet-lib
+  - *dapi-client
 
 '@dashevo/platform-test-suite':
   - .github/workflows/tests*

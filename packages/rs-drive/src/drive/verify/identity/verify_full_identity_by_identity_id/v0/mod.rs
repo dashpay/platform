@@ -40,6 +40,7 @@ impl Drive {
     /// - The identity ID does not correspond to a valid full identity.
     /// - The balance, revision, or keys information is missing or incorrect.
     ///
+    #[inline(always)]
     pub(super) fn verify_full_identity_by_identity_id_v0(
         proof: &[u8],
         is_proof_subset: bool,

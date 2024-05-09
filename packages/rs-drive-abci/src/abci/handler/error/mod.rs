@@ -6,7 +6,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::platform_value;
 use dpp::platform_value::string_encoding::{encode, Encoding};
-use tenderdash_abci::proto::abci::ResponseException;
+use tenderdash_abci::proto::abci as proto;
 
 /// ABCI handlers errors
 #[derive(Debug, thiserror::Error)]
@@ -151,15 +151,14 @@ impl HandlerError {
     }
 
     /// Returns base64-encoded message for info field of ABCI handler responses
-    pub fn response_info(&self) -> Result<String, ResponseException> {
+    pub fn response_info(&self) -> Result<String, Error> {
         let error_data_buffer = platform_value!({
             "message": self.message(),
             // TODO: consider capturing stack with one of the libs
             //   and send it to the client
             //"stack": "..."
         })
-        .to_cbor_buffer()
-        .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
+        .to_cbor_buffer()?;
 
         let error_data_base64 = encode(&error_data_buffer, Encoding::Base64);
 
@@ -189,5 +188,11 @@ impl From<&ConsensusError> for HandlerError {
 impl From<&Error> for HandlerError {
     fn from(value: &Error) -> Self {
         Self::Internal(value.to_string())
+    }
+}
+
+pub fn error_into_exception(error: Error) -> proto::ResponseException {
+    proto::ResponseException {
+        error: error.to_string(),
     }
 }

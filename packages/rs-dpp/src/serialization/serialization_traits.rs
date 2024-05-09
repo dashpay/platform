@@ -1,10 +1,17 @@
+#[cfg(any(
+    feature = "message-signature-verification",
+    feature = "message-signing"
+))]
 use crate::identity::KeyType;
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
-use crate::{BlsModule, ProtocolError};
+#[cfg(feature = "message-signing")]
+use crate::BlsModule;
+use crate::ProtocolError;
 use platform_value::Value;
 
 pub trait Signable {
@@ -159,13 +166,15 @@ pub trait ValueConvertible<'a>: Serialize + Deserialize<'a> {
 }
 
 pub trait PlatformMessageSignable {
+    #[cfg(feature = "message-signature-verification")]
     fn verify_signature(
         &self,
         public_key_type: KeyType,
         public_key_data: &[u8],
         signature: &[u8],
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
+    ) -> SimpleConsensusValidationResult;
 
+    #[cfg(feature = "message-signing")]
     fn sign_by_private_key(
         &self,
         private_key: &[u8],

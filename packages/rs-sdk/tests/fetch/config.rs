@@ -1,12 +1,12 @@
-//! Configuration helpers for mocking of rs-sdk.
+//! Configuration helpers for mocking of dash-platform-sdk.
 //!
-//! This module contains [Config] struct that can be used to configure rs-sdk.
+//! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
 use dpp::prelude::Identifier;
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
-use std::{path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 /// Existing document ID
 ///
@@ -18,12 +18,12 @@ const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
 ];
 
 #[derive(Debug, Deserialize)]
-/// Configuration for rs-sdk.
+/// Configuration for dash-platform-sdk.
 ///
 /// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
 /// when the [Config::new()] is called.
-/// Variable names in the enviroment and `.env` file must be prefixed with [RS_SDK_](Config::CONFIG_PREFIX)
-/// and written as SCREAMING_SNAKE_CASE (e.g. `RS_SDK_PLATFORM_HOST`).
+/// Variable names in the enviroment and `.env` file must be prefixed with [DASH_SDK_](Config::CONFIG_PREFIX)
+/// and written as SCREAMING_SNAKE_CASE (e.g. `DASH_SDK_PLATFORM_HOST`).
 pub struct Config {
     /// Hostname of the Dash Platform node to connect to
     #[serde(default)]
@@ -40,6 +40,9 @@ pub struct Config {
     /// Password for Dash Core RPC interface
     #[serde(default)]
     pub core_password: String,
+    /// When true, use SSL for the Dash Platform node grpc interface
+    #[serde(default)]
+    pub platform_ssl: bool,
 
     /// Directory where all generated test vectors will be saved.
     ///
@@ -69,12 +72,12 @@ pub struct Config {
 
 impl Config {
     /// Prefix of configuration options in the environment variables and `.env` file.
-    pub const CONFIG_PREFIX: &str = "RS_SDK_";
+    pub const CONFIG_PREFIX: &'static str = "DASH_SDK_";
     /// Load configuration from operating system environment variables and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and `${CARGO_MANIFEST_DIR}/tests/.env` file.
     /// Variable names in the environment and `.env` file must be converted to SCREAMING_SNAKE_CASE and
-    /// prefixed with [RS_SDK_](Config::CONFIG_PREFIX).
+    /// prefixed with [DASH_SDK_](Config::CONFIG_PREFIX).
     pub fn new() -> Self {
         // load config from .env file, ignore errors
 
@@ -114,7 +117,12 @@ impl Config {
     #[allow(unused)]
     /// Create list of Platform addresses from the configuration
     pub fn address_list(&self) -> AddressList {
-        let address: String = format!("http://{}:{}", self.platform_host, self.platform_port);
+        let scheme = match self.platform_ssl {
+            true => "https",
+            false => "http",
+        };
+
+        let address: String = format!("{}://{}:{}", scheme, self.platform_host, self.platform_port);
 
         AddressList::from_iter(vec![http::Uri::from_str(&address).expect("valid uri")])
     }
@@ -129,12 +137,35 @@ impl Config {
     /// new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
-    pub async fn setup_api(&self) -> rs_sdk::Sdk {
+    ///
+    /// ## Arguments
+    ///
+    /// * namespace - namespace to use when storing mock expectations; this is used to separate
+    /// expectations from different tests.
+    ///
+    /// When empty string is provided, expectations are stored in the root of the dump directory.
+    pub async fn setup_api(&self, namespace: &str) -> Arc<dash_sdk::Sdk> {
+        let dump_dir = match namespace.is_empty() {
+            true => self.dump_dir.clone(),
+            false => self.dump_dir.join(sanitize_filename::sanitize(namespace)),
+        };
+
+        if dump_dir.is_relative() {
+            panic!(
+                "dump dir must be absolute path to avoid mistakes, got: {}",
+                dump_dir.display()
+            );
+        }
+
+        if dump_dir.as_os_str().eq("/") {
+            panic!("cannot use namespace with root dump dir");
+        }
+
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
-            let builder = rs_sdk::SdkBuilder::new(self.address_list()).with_core(
+            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
                 &self.platform_host,
                 self.core_port,
                 &self.core_user,
@@ -142,7 +173,20 @@ impl Config {
             );
 
             #[cfg(feature = "generate-test-vectors")]
-            let builder = builder.with_dump_dir(&self.dump_dir);
+            let builder = {
+                // When we use namespaces, clean up the namespaced dump dir before starting
+                // to avoid mixing expectations from different test runs
+                if !namespace.is_empty() {
+                    if let Err(err) = std::fs::remove_dir_all(&dump_dir) {
+                        tracing::warn!(?err, ?dump_dir, "failed to remove dump dir");
+                    }
+                    std::fs::create_dir_all(&dump_dir).expect("create dump dir");
+                    // ensure dump dir is committed to git
+                    std::fs::write(dump_dir.join(".gitkeep"), "").expect("create .gitkeep file")
+                }
+
+                builder.with_dump_dir(&dump_dir)
+            };
 
             builder.build().expect("cannot initialize api")
         };
@@ -150,14 +194,14 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mut mock_sdk = rs_sdk::SdkBuilder::new_mock()
+            let mock_sdk = dash_sdk::SdkBuilder::new_mock()
                 .build()
                 .expect("initialize api");
 
             mock_sdk
                 .mock()
-                .quorum_info_dir(&self.dump_dir)
-                .load_expectations(&self.dump_dir)
+                .quorum_info_dir(&dump_dir)
+                .load_expectations(&dump_dir)
                 .await
                 .expect("load expectations");
 
@@ -168,15 +212,11 @@ impl Config {
     }
 
     fn default_identity_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS
-            .source()
-            .expect("data contract source")
-            .owner_id_bytes
-            .into()
+        data_contracts::dpns_contract::OWNER_ID_BYTES.into()
     }
 
     fn default_data_contract_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS.id()
+        data_contracts::dpns_contract::ID_BYTES.into()
     }
 
     fn default_document_type_name() -> String {

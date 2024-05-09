@@ -4,7 +4,6 @@ use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::{data_contract::DataContractFactory, platform_value, prelude::Identifier, ProtocolError};
 use wasm_bindgen::prelude::*;
 
-use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 use crate::data_contract::{DataContractCreateTransitionWasm, DataContractWasm};
@@ -28,24 +27,18 @@ impl From<DataContractFactoryWasm> for DataContractFactory {
 #[wasm_bindgen(js_class=DataContractFactory)]
 impl DataContractFactoryWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        protocol_version: u32,
-        external_entropy_generator_arg: Option<ExternalEntropyGenerator>,
-    ) -> DataContractFactoryWasm {
-        if let Some(external_entropy_generator) = external_entropy_generator_arg {
-            DataContractFactory::new(protocol_version, Some(Box::new(external_entropy_generator)))
-        } else {
-            DataContractFactory::new(protocol_version, None)
-        }
-        .with_js_error()
-        .expect("should create a factory")
-        .into()
+    pub fn new(protocol_version: u32) -> DataContractFactoryWasm {
+        DataContractFactory::new(protocol_version)
+            .with_js_error()
+            .expect("should create a factory")
+            .into()
     }
 
     #[wasm_bindgen(js_name=create)]
     pub fn create(
         &self,
         owner_id: Vec<u8>,
+        identity_nonce: u64,
         documents: JsValue,
         config: JsValue,
     ) -> Result<DataContractWasm, JsValue> {
@@ -64,7 +57,13 @@ impl DataContractFactoryWasm {
             .with_js_error()?;
         //todo: contract config
         self.0
-            .create_with_value_config(identifier, documents_object, contract_config, None)
+            .create_with_value_config(
+                identifier,
+                identity_nonce,
+                documents_object,
+                contract_config,
+                None,
+            )
             .map(Into::into)
             .with_js_error()
     }

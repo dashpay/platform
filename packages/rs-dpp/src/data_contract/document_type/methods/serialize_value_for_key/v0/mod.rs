@@ -21,16 +21,28 @@ impl DocumentTypeV0 {
                 if bytes.len() != DEFAULT_HASH_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(
-                            "expected system value to be 32 bytes long",
+                            "expected system value to be 32 bytes long".to_string(),
                         ),
                     ))
                 } else {
                     Ok(bytes)
                 }
             }
-            "$createdAt" | "$updatedAt" => DocumentPropertyType::encode_date_timestamp(
+            "$createdAt" | "$updatedAt" | "$transferredAt" => {
+                Ok(DocumentPropertyType::encode_date_timestamp(
+                    value.to_integer().map_err(ProtocolError::ValueError)?,
+                ))
+            }
+            "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
+                Ok(DocumentPropertyType::encode_u64(
+                    value.to_integer().map_err(ProtocolError::ValueError)?,
+                ))
+            }
+            "$createdAtCoreBlockHeight"
+            | "$updatedAtCoreBlockHeight"
+            | "$transferredAtCoreBlockHeight" => Ok(DocumentPropertyType::encode_u32(
                 value.to_integer().map_err(ProtocolError::ValueError)?,
-            ),
+            )),
             _ => {
                 let property = self.flattened_properties.get(key).ok_or_else(|| {
                     DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties.keys().join(" | "), self.name))
@@ -39,7 +51,7 @@ impl DocumentTypeV0 {
                 if bytes.len() > MAX_INDEX_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(
-                            "value must be less than 256 bytes long",
+                            "value must be less than 256 bytes long".to_string(),
                         ),
                     ))
                 } else {

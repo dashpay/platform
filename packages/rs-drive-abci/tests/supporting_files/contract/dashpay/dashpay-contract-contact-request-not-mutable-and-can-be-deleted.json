@@ -1,0 +1,234 @@
+{
+    "$format_version": "0",
+    "id": "8MjTnX7JUbGfYYswyuCtHU7ZqcYU9s1fUaNiqD9s5tEw",
+    "ownerId": "2QjL594djCH2NyDsn45vd6yQjEDHupMKo7CEGVTHtQxU",
+    "version": 1,
+    "documentSchemas": {
+        "profile": {
+            "type": "object",
+            "indices": [
+                {
+                    "name": "ownerId",
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        }
+                    ],
+                    "unique": true
+                },
+                {
+                    "name": "ownerIdUpdatedAt",
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        },
+                        {
+                            "$updatedAt": "asc"
+                        }
+                    ]
+                }
+            ],
+            "properties": {
+                "avatarUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "maxLength": 2048,
+                    "position": 0
+                },
+                "publicMessage": {
+                    "type": "string",
+                    "maxLength": 140,
+                    "position": 1
+                },
+                "displayName": {
+                    "type": "string",
+                    "maxLength": 25,
+                    "position": 2
+                }
+            },
+            "required": [
+                "$createdAt",
+                "$updatedAt"
+            ],
+            "additionalProperties": false
+        },
+        "contactInfo": {
+            "type": "object",
+            "indices": [
+                {
+                    "name": "ownerIdKeyIndexes",
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        },
+                        {
+                            "rootEncryptionKeyIndex": "asc"
+                        },
+                        {
+                            "derivationEncryptionKeyIndex": "asc"
+                        }
+                    ],
+                    "unique": true
+                },
+                {
+                    "name": "owner_updated",
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        },
+                        {
+                            "$updatedAt": "asc"
+                        }
+                    ]
+                }
+            ],
+            "properties": {
+                "encToUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "position": 0
+                },
+                "rootEncryptionKeyIndex": {
+                    "type": "integer",
+                    "position": 1
+                },
+                "derivationEncryptionKeyIndex": {
+                    "type": "integer",
+                    "position": 2
+                },
+                "privateData": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 48,
+                    "maxItems": 2048,
+                    "position": 3,
+                    "description": "This is the encrypted values of aliasName + note + displayHidden encoded as an array in cbor"
+                }
+            },
+            "required": [
+                "$createdAt",
+                "$updatedAt",
+                "encToUserId",
+                "privateData",
+                "rootEncryptionKeyIndex",
+                "derivationEncryptionKeyIndex"
+            ],
+            "additionalProperties": false
+        },
+        "contactRequest": {
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "requiresIdentityEncryptionBoundedKey": 2,
+            "requiresIdentityDecryptionBoundedKey": 2,
+            "type": "object",
+            "indices": [
+                {
+                    "name": "owner_user_ref",
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        },
+                        {
+                            "toUserId": "asc"
+                        },
+                        {
+                            "accountReference": "asc"
+                        }
+                    ],
+                    "unique": true
+                },
+                {
+                    "name": "ownerId_toUserId",
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        },
+                        {
+                            "toUserId": "asc"
+                        }
+                    ]
+                },
+                {
+                    "name": "toUserId_$createdAt",
+                    "properties": [
+                        {
+                            "toUserId": "asc"
+                        },
+                        {
+                            "$createdAt": "asc"
+                        }
+                    ]
+                },
+                {
+                    "name": "$ownerId_$createdAt",
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        },
+                        {
+                            "$createdAt": "asc"
+                        }
+                    ]
+                }
+            ],
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "position": 0
+                },
+                "encryptedPublicKey": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 96,
+                    "maxItems": 96,
+                    "position": 1
+                },
+                "senderKeyIndex": {
+                    "type": "integer",
+                    "position": 2
+                },
+                "recipientKeyIndex": {
+                    "type": "integer",
+                    "position": 3
+                },
+                "accountReference": {
+                    "type": "integer",
+                    "position": 4
+                },
+                "encryptedAccountLabel": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 48,
+                    "maxItems": 80,
+                    "position": 5
+                },
+                "autoAcceptProof": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 38,
+                    "maxItems": 102,
+                    "position": 6
+                },
+                "coreHeightCreatedAt": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "position": 7
+                }
+            },
+            "required": [
+                "$createdAt",
+                "toUserId",
+                "encryptedPublicKey",
+                "senderKeyIndex",
+                "recipientKeyIndex",
+                "accountReference"
+            ],
+            "additionalProperties": false
+        }
+    }
+}

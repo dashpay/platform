@@ -17,7 +17,7 @@ impl Drive {
     ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
         let CostContext { value, cost } =
             self.grove
-                .query_keys_optional(path_query, true, true, transaction);
+                .query_keys_optional(path_query, true, true, true, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

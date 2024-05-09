@@ -245,7 +245,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         );
 
         self.operations.iter().find_map(|op| {
-            if &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()) {
+            if op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()) {
                 Some(&op.op)
             } else {
                 None
@@ -277,7 +277,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         if let Some(index) = self
             .operations
             .iter()
-            .position(|op| &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()))
+            .position(|op| op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()))
         {
             Some(self.operations.remove(index).op)
         } else {
@@ -307,7 +307,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         if let Some(index) = self
             .operations
             .iter()
-            .position(|op| &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()))
+            .position(|op| op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()))
         {
             let op = &self.operations[index].op;
             let op = if matches!(

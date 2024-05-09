@@ -30,13 +30,13 @@ describe('fetchProofForStateTransition', () => {
     identitiesProofResponse.setV0(new GetProofsResponseV0().setProof(new Proof([Buffer.from('identities contracts proof')])));
 
     driveClientMock = {
-      fetchProofs: this.sinon.stub().callsFake(async (requestProto) => {
+      getProofs: this.sinon.stub().callsFake(async (requestProto) => {
         if (requestProto.getV0().getIdentitiesList().length > 0) {
-          return identitiesProofResponse.serializeBinary();
+          return identitiesProofResponse;
         } if (requestProto.getV0().getDocumentsList().length > 0) {
-          return documentsProofResponse.serializeBinary();
+          return documentsProofResponse;
         } if (requestProto.getV0().getContractsList().length > 0) {
-          return dataContractsProofResponse.serializeBinary();
+          return dataContractsProofResponse;
         }
 
         return null;

@@ -115,6 +115,10 @@ export default function getPlatformScopeFactory(
         const platformPeers = parseInt(tenderdashNetInfo.n_peers, 10);
         const { listening } = tenderdashNetInfo;
 
+        if (catchingUp) {
+          info.serviceStatus = ServiceStatusEnum.syncing;
+        }
+
         info.version = version;
         info.listening = listening;
         info.latestBlockHeight = latestBlockHeight;

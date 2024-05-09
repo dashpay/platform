@@ -29,7 +29,9 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
         None,
         false,
         false,
+        false,
         true,
+        &mut vec![],
         platform_version,
     )
     .expect("expected to create a document type")
@@ -59,9 +61,9 @@ pub fn mock_data_contract(
         document_types.insert(doc.name().to_string(), schema.clone());
     }
 
-    DataContractFactory::new(protocol_version, None)
+    DataContractFactory::new(protocol_version)
         .unwrap()
-        .create(owner_id, platform_value!(document_types), None, None)
+        .create(owner_id, 0, platform_value!(document_types), None, None)
         .expect("create data contract")
         .data_contract_owned()
 }
@@ -70,7 +72,7 @@ pub fn mock_data_contract(
 pub fn setup_logs() {
     tracing_subscriber::fmt::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,rs_sdk=trace,h2=info",
+            "info,dash_sdk=trace,h2=info",
         ))
         .pretty()
         .with_ansi(true)

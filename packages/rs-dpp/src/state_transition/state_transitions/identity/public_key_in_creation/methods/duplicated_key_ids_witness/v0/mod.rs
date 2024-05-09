@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 impl IdentityPublicKeyInCreation {
     /// Find duplicate key ids
+    #[inline(always)]
     pub(super) fn duplicated_key_ids_witness_v0(
         public_keys: &[IdentityPublicKeyInCreation],
     ) -> Vec<KeyID> {
