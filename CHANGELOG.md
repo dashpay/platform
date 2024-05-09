@@ -10,6 +10,7 @@
 
 * **dashmate:** handle docker pull error on images update ([#1685](https://github.com/dashpay/platform/issues/1685))
 * make document tranfers public
+* make start identities number u16
 * make purchase document public
 * make sdk document purchases public ([#1832](https://github.com/dashpay/platform/issues/1832))
 * make sdk files public
