@@ -49,7 +49,7 @@ impl Drive {
             .insert_contested
             .add_contested_document_to_primary_storage
         {
-            0 => self.add_document_to_primary_storage_0(
+            0 => self.add_contested_document_to_primary_storage_0(
                 document_and_contract_info,
                 block_info,
                 insert_without_check,

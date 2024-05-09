@@ -201,6 +201,14 @@ impl Index {
             .map(|property| property.name.clone())
             .collect()
     }
+
+    /// Get values
+    pub fn extract_values(&self, data: &BTreeMap<String, Value>) -> Vec<Value> {
+        self.properties
+            .iter()
+            .map(|property| data.get(&property.name).cloned().unwrap_or(Value::Null))
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]

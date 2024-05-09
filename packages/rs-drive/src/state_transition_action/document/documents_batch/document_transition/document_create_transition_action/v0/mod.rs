@@ -21,6 +21,7 @@ use dpp::fee::Credits;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
 /// document create transition action v0
 #[derive(Debug, Clone)]
@@ -33,7 +34,7 @@ pub struct DocumentCreateTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
     /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)
-    pub prefunded_voting_balances: BTreeMap<Index, Credits>,
+    pub prefunded_voting_balances: Vec<(ContestedDocumentResourceVotePoll, Credits)>,
 }
 
 /// document create transition action accessors v0
@@ -53,7 +54,7 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
 
     /// pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)
-    fn prefunded_voting_balances(&self) -> &BTreeMap<Index, Credits>;
+    fn prefunded_voting_balances(&self) -> &Vec<(ContestedDocumentResourceVotePoll, Credits)>;
 }
 
 /// documents from create transition v0

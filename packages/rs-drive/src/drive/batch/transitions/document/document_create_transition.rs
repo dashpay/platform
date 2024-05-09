@@ -1,5 +1,7 @@
 use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
-use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation};
+use crate::drive::batch::DriveOperation::{
+    DocumentOperation, IdentityOperation, PrefundedSpecializedBalanceOperation,
+};
 use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
@@ -13,6 +15,7 @@ use std::borrow::Cow;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use dpp::version::PlatformVersion;
+use crate::drive::batch::drive_op_batch::PrefundedSpecializedBalanceOperationType;
 use crate::drive::object_size_info::DataContractInfo::DataContractFetchInfo;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction {
@@ -57,9 +60,19 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                 override_document: false,
             }));
         } else {
-            // We are in the situation of a contested document
-            // We prefund the voting balances first
-            ops.push();
+            for (contested_document_resource_vote_poll, credits) in prefunded_voting_balances {
+                let prefunded_specialized_balance_id =
+                    contested_document_resource_vote_poll.specialized_balance_id()?;
+                // We are in the situation of a contested document
+                // We prefund the voting balances first
+                ops.push(PrefundedSpecializedBalanceOperation(
+                    PrefundedSpecializedBalanceOperationType::CreateNewPrefundedBalance {
+                        prefunded_specialized_balance_id,
+                        add_balance: *credits,
+                    },
+                ));
+            }
+
             // We add the contested document
             // The contested document resides in a special location in grovedb until a time where the
             // resolution expires, at that point it either will be moved to

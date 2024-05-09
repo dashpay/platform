@@ -5,7 +5,10 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 
-use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path;
+use crate::drive::prefunded_specialized_balances::{
+    prefunded_specialized_balances_for_voting_path,
+    prefunded_specialized_balances_for_voting_path_vec,
+};
 use grovedb::EstimatedSumTrees::SomeSumTrees;
 use std::collections::HashMap;
 
@@ -41,7 +44,7 @@ impl Drive {
         //todo : verify this
         // we then need to insert the contract layer
         estimated_costs_only_with_layer_info.insert(
-            KeyInfoPath::from_known_owned_path(prefunded_specialized_balances_for_voting_path()),
+            KeyInfoPath::from_known_owned_path(prefunded_specialized_balances_for_voting_path_vec()),
             EstimatedLayerInformation {
                 is_sum_tree: true,
                 estimated_layer_count: ApproximateElements(0),
