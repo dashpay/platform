@@ -29,21 +29,10 @@ export default class ConfigCommand extends ConfigBaseCommand {
     },
     config,
   ) {
-    let configOptions;
-    if (format === OUTPUT_FORMATS.JSON) {
-      configOptions = JSON.stringify(config.getOptions(), null, 2);
-    } else {
-      configOptions = inspect(
-        config.getOptions(),
-        { depth: Infinity, colors: chalk.supportsColor },
-      );
-    }
-
-    const output = `${config.getName()} config:\n\n${configOptions}`;
 
     // eslint-disable-next-line no-console
-    console.log(output);
+    console.log('output');
 
-    return config.getOptions();
+    return null
   }
 }

@@ -1,7 +1,5 @@
 import { Command, Flags, settings } from '@oclif/core';
 
-import { asValue } from 'awilix';
-
 import graceful from 'node-graceful';
 
 import dotenv from 'dotenv';
@@ -22,6 +20,7 @@ export default class BaseCommand extends Command {
   };
 
   async init() {
+    console.log('init BaseCommand')
     // Read environment variables from .env file
     dotenv.config();
 
@@ -30,43 +29,12 @@ export default class BaseCommand extends Command {
     this.parsedArgs = args;
     this.parsedFlags = flags;
 
-    this.container = await createDIContainer(process.env);
-
     // Load configs
     /**
      * @type {ConfigFileJsonRepository}
      */
-    const configFileRepository = this.container.resolve('configFileRepository');
-
-    let configFile;
-    try {
-      // Load config collection from config file
-      configFile = configFileRepository.read();
-    } catch (e) {
-      // Create default config collection if config file is not present
-      // on the first start for example
-
-      if (!(e instanceof ConfigFileNotFoundError)) {
-        throw e;
-      }
-
-      /**
-       * @type {createConfigFile}
-       */
-      const createConfigFile = this.container.resolve('createConfigFile');
-
-      configFile = createConfigFile();
-    }
-
-    // Register config collection in the container
-    this.container.register({
-      configFile: asValue(configFile),
-    });
 
     // Graceful exit
-    const stopAllContainers = this.container.resolve('stopAllContainers');
-    const startedContainers = this.container.resolve('startedContainers');
-
     graceful.exitOnDouble = false;
     graceful.on('exit', async () => {
       // remove all attached listeners from other libraries to mute there output
@@ -88,50 +56,12 @@ export default class BaseCommand extends Command {
 
     const params = getFunctionParams(this.runWithDependencies, 2);
 
-    const dependencies = params.map((paramName) => this.container.resolve(paramName));
 
-    return this.runWithDependencies(this.parsedArgs, this.parsedFlags, ...dependencies);
+    return this.runWithDependencies(this.parsedArgs, this.parsedFlags);
   }
 
   async finally(err) {
     // Save configs collection
-    if (this.container) {
-      /**
-       * @var {ConfigFileJsonRepository} configFileRepository
-       */
-      const configFileRepository = this.container.resolve('configFileRepository');
-
-      if (this.container.has('configFile') && err === undefined) {
-        /**
-         * @var {ConfigFile} configFile
-         */
-        const configFile = this.container.resolve('configFile');
-
-        if (configFile.isChanged()) {
-          configFileRepository.write(configFile);
-
-          /**
-           * @var {writeConfigTemplates} writeConfigTemplates
-           */
-          const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
-
-          configFile.getAllConfigs()
-            .filter((config) => config.isChanged())
-            .forEach(writeConfigTemplates);
-        }
-      }
-
-      // Stop all running containers
-      const stopAllContainers = this.container.resolve('stopAllContainers');
-      const startedContainers = this.container.resolve('startedContainers');
-
-      await stopAllContainers(
-        startedContainers.getContainers(),
-        {
-          remove: !settings.debug,
-        },
-      );
-    }
 
     return super.finally(err);
   }

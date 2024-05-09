@@ -119,202 +119,202 @@ export default async function createDIContainer(options = {}) {
     injectionMode: InjectionMode.CLASSIC,
   });
 
-  /**
-   * Config
-   */
-  container.register({
-    // TODO: It creates a directory on the disk when we create DI container. Doesn't smell good
-    homeDir: asFunction(() => (
-      HomeDir.createWithPathOrDefault(options.DASHMATE_HOME_DIR)
-    )).singleton(),
-    getServiceList: asFunction(getServiceListFactory).singleton(),
-    configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
-    getBaseConfig: asFunction(getBaseConfigFactory).singleton(),
-    getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
-    getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),
-    getMainnetConfig: asFunction(getMainnetConfigFactory).singleton(),
-    defaultConfigs: asFunction((
-      getBaseConfig,
-      getLocalConfig,
-      getTestnetConfig,
-      getMainnetConfig,
-    ) => new DefaultConfigs([
-      getBaseConfig,
-      getLocalConfig,
-      getTestnetConfig,
-      getMainnetConfig,
-    ])).singleton(),
-    createConfigFile: asFunction(createConfigFileFactory).singleton(),
-    getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton(),
-    migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
-    isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
-    getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
-    generateEnvs: asFunction(generateEnvsFactory).singleton(),
-    getConfigProfiles: asFunction(getConfigProfilesFactory).singleton(),
-    ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
-    // `configFile` and `config` are registering on command init
-  });
-
-  /**
-   * Update
-   */
-  container.register({
-    updateNode: asFunction(updateNodeFactory).singleton(),
-  });
-
-  /**
-   * Utils
-   */
-  container.register({
-    generateHDPrivateKeys: asValue(generateHDPrivateKeys),
-  });
-
-  /**
-   * Templates
-   */
-  container.register({
-    renderTemplate: asFunction(renderTemplateFactory).singleton(),
-    renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
-    writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
-    writeConfigTemplates: asFunction(writeConfigTemplatesFactory).singleton(),
-  });
-
-  /**
-   * SSL
-   */
-  container.register({
-    createZeroSSLCertificate: asValue(createZeroSSLCertificate),
-    generateCsr: asValue(generateCsr),
-    generateKeyPair: asValue(generateKeyPair),
-    verifyDomain: asValue(verifyDomain),
-    downloadCertificate: asValue(downloadCertificate),
-    getCertificate: asValue(getCertificate),
-    listCertificates: asValue(listCertificates),
-    createSelfSignedCertificate: asValue(createSelfSignedCertificate),
-    verificationServer: asClass(VerificationServer).singleton(),
-  });
-
-  /**
-   * Docker
-   */
-
-  const dockerOptions = {};
-  try {
-    dockerOptions.socketPath = await resolveDockerSocketPath();
-  } catch (e) {
-    // Here we skip possible error which is happening if docker is not installed or not running
-    // It will be handled in the logic below
-  }
-
-  container.register({
-    docker: asFunction(() => (
-      new Docker(dockerOptions)
-    )).singleton(),
-    dockerCompose: asClass(DockerCompose).singleton(),
-    startedContainers: asFunction(() => (
-      new StartedContainers()
-    )).singleton(),
-    stopAllContainers: asFunction(stopAllContainersFactory).singleton(),
-    dockerPull: asFunction(dockerPullFactory).singleton(),
-    resolveDockerHostIp: asFunction(resolveDockerHostIpFactory).singleton(),
-  });
-
-  /**
-   * Core
-   */
-  container.register({
-    createRpcClient: asValue(createRpcClient),
-    waitForCoreStart: asValue(waitForCoreStart),
-    waitForCoreSync: asValue(waitForCoreSync),
-    waitForMasternodesSync: asValue(waitForMasternodesSync),
-    startCore: asFunction(startCoreFactory).singleton(),
-    waitForBlocks: asValue(waitForBlocks),
-    waitForConfirmations: asValue(waitForConfirmations),
-    generateBlsKeys: asValue(generateBlsKeys),
-    activateCoreSpork: asValue(activateCoreSpork),
-    waitForCorePeersConnected: asValue(waitForCorePeersConnected),
-  });
-
-  /**
-   * Core Wallet
-   */
-  container.register({
-    createNewAddress: asValue(createNewAddress),
-    generateBlocks: asValue(generateBlocks),
-    generateToAddress: asValue(generateToAddress),
-    importPrivateKey: asValue(importPrivateKey),
-    getAddressBalance: asValue(getAddressBalance),
-    sendToAddress: asValue(sendToAddress),
-    registerMasternode: asValue(registerMasternode),
-    waitForBalanceToConfirm: asValue(waitForBalanceToConfirm),
-  });
-
-  /**
-   * Tenderdash
-   */
-  container.register({
-    createTenderdashRpcClient: asValue(createTenderdashRpcClient),
-  });
-
-  /**
-   * Prompts
-   */
-  container.register({
-    createIpAndPortsForm: asFunction(createIpAndPortsFormFactory).singleton(),
-  });
-
-  /**
-   * Tasks
-   */
-  container.register({
-    buildServicesTask: asFunction(buildServicesTaskFactory).singleton(),
-    startGroupNodesTask: asFunction(startGroupNodesTaskFactory).singleton(),
-    generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
-    registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
-    startNodeTask: asFunction(startNodeTaskFactory).singleton(),
-    stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
-    restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),
-    resetNodeTask: asFunction(resetNodeTaskFactory).singleton(),
-    setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton(),
-    setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
-    configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
-    configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
-    waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
-    enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
-    registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
-    obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
-    obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
-    saveCertificateTask: asFunction(saveCertificateTaskFactory),
-    reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
-    getCoreScope: asFunction(getCoreScopeFactory).singleton(),
-    getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),
-    getPlatformScope: asFunction(getPlatformScopeFactory).singleton(),
-    getOverviewScope: asFunction(getOverviewScopeFactory).singleton(),
-    getServicesScope: asFunction(getServicesScopeFactory).singleton(),
-    getHostScope: asFunction(getHostScopeFactory).singleton(),
-    configureNodeTask: asFunction(configureNodeTaskFactory).singleton(),
-    configureSSLCertificateTask: asFunction(configureSSLCertificateTaskFactory).singleton(),
-    registerMasternodeWithCoreWallet: asFunction(registerMasternodeWithCoreWalletFactory)
-      .singleton(),
-    registerMasternodeWithDMT: asFunction(registerMasternodeWithDMTFactory)
-      .singleton(),
-  });
-
-  /**
-   * Helper
-   */
-  container.register({
-    scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
-    createHttpApiServer: asFunction(createHttpApiServerFactory).singleton(),
-  });
-
-  /**
-   * Tests
-   */
-  container.register({
-    assertLocalServicesRunning: asFunction(assertLocalServicesRunningFactory).singleton(),
-    assertServiceRunning: asFunction(assertServiceRunningFactory).singleton(),
-  });
+  // /**
+  //  * Config
+  //  */
+  // container.register({
+  //   // TODO: It creates a directory on the disk when we create DI container. Doesn't smell good
+  //   homeDir: asFunction(() => (
+  //     HomeDir.createWithPathOrDefault(options.DASHMATE_HOME_DIR)
+  //   )).singleton(),
+  //   getServiceList: asFunction(getServiceListFactory).singleton(),
+  //   configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
+  //   getBaseConfig: asFunction(getBaseConfigFactory).singleton(),
+  //   getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
+  //   getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),
+  //   getMainnetConfig: asFunction(getMainnetConfigFactory).singleton(),
+  //   defaultConfigs: asFunction((
+  //     getBaseConfig,
+  //     getLocalConfig,
+  //     getTestnetConfig,
+  //     getMainnetConfig,
+  //   ) => new DefaultConfigs([
+  //     getBaseConfig,
+  //     getLocalConfig,
+  //     getTestnetConfig,
+  //     getMainnetConfig,
+  //   ])).singleton(),
+  //   createConfigFile: asFunction(createConfigFileFactory).singleton(),
+  //   getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton(),
+  //   migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
+  //   isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
+  //   getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
+  //   generateEnvs: asFunction(generateEnvsFactory).singleton(),
+  //   getConfigProfiles: asFunction(getConfigProfilesFactory).singleton(),
+  //   ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
+  //   // `configFile` and `config` are registering on command init
+  // });
+  //
+  // /**
+  //  * Update
+  //  */
+  // container.register({
+  //   updateNode: asFunction(updateNodeFactory).singleton(),
+  // });
+  //
+  // /**
+  //  * Utils
+  //  */
+  // container.register({
+  //   generateHDPrivateKeys: asValue(generateHDPrivateKeys),
+  // });
+  //
+  // /**
+  //  * Templates
+  //  */
+  // container.register({
+  //   renderTemplate: asFunction(renderTemplateFactory).singleton(),
+  //   renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
+  //   writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
+  //   writeConfigTemplates: asFunction(writeConfigTemplatesFactory).singleton(),
+  // });
+  //
+  // /**
+  //  * SSL
+  //  */
+  // container.register({
+  //   createZeroSSLCertificate: asValue(createZeroSSLCertificate),
+  //   generateCsr: asValue(generateCsr),
+  //   generateKeyPair: asValue(generateKeyPair),
+  //   verifyDomain: asValue(verifyDomain),
+  //   downloadCertificate: asValue(downloadCertificate),
+  //   getCertificate: asValue(getCertificate),
+  //   listCertificates: asValue(listCertificates),
+  //   createSelfSignedCertificate: asValue(createSelfSignedCertificate),
+  //   verificationServer: asClass(VerificationServer).singleton(),
+  // });
+  //
+  // /**
+  //  * Docker
+  //  */
+  //
+  // const dockerOptions = {};
+  // try {
+  //   dockerOptions.socketPath = await resolveDockerSocketPath();
+  // } catch (e) {
+  //   // Here we skip possible error which is happening if docker is not installed or not running
+  //   // It will be handled in the logic below
+  // }
+  //
+  // container.register({
+  //   docker: asFunction(() => (
+  //     new Docker(dockerOptions)
+  //   )).singleton(),
+  //   dockerCompose: asClass(DockerCompose).singleton(),
+  //   startedContainers: asFunction(() => (
+  //     new StartedContainers()
+  //   )).singleton(),
+  //   stopAllContainers: asFunction(stopAllContainersFactory).singleton(),
+  //   dockerPull: asFunction(dockerPullFactory).singleton(),
+  //   resolveDockerHostIp: asFunction(resolveDockerHostIpFactory).singleton(),
+  // });
+  //
+  // /**
+  //  * Core
+  //  */
+  // container.register({
+  //   createRpcClient: asValue(createRpcClient),
+  //   waitForCoreStart: asValue(waitForCoreStart),
+  //   waitForCoreSync: asValue(waitForCoreSync),
+  //   waitForMasternodesSync: asValue(waitForMasternodesSync),
+  //   startCore: asFunction(startCoreFactory).singleton(),
+  //   waitForBlocks: asValue(waitForBlocks),
+  //   waitForConfirmations: asValue(waitForConfirmations),
+  //   generateBlsKeys: asValue(generateBlsKeys),
+  //   activateCoreSpork: asValue(activateCoreSpork),
+  //   waitForCorePeersConnected: asValue(waitForCorePeersConnected),
+  // });
+  //
+  // /**
+  //  * Core Wallet
+  //  */
+  // container.register({
+  //   createNewAddress: asValue(createNewAddress),
+  //   generateBlocks: asValue(generateBlocks),
+  //   generateToAddress: asValue(generateToAddress),
+  //   importPrivateKey: asValue(importPrivateKey),
+  //   getAddressBalance: asValue(getAddressBalance),
+  //   sendToAddress: asValue(sendToAddress),
+  //   registerMasternode: asValue(registerMasternode),
+  //   waitForBalanceToConfirm: asValue(waitForBalanceToConfirm),
+  // });
+  //
+  // /**
+  //  * Tenderdash
+  //  */
+  // container.register({
+  //   createTenderdashRpcClient: asValue(createTenderdashRpcClient),
+  // });
+  //
+  // /**
+  //  * Prompts
+  //  */
+  // container.register({
+  //   createIpAndPortsForm: asFunction(createIpAndPortsFormFactory).singleton(),
+  // });
+  //
+  // /**
+  //  * Tasks
+  //  */
+  // container.register({
+  //   buildServicesTask: asFunction(buildServicesTaskFactory).singleton(),
+  //   startGroupNodesTask: asFunction(startGroupNodesTaskFactory).singleton(),
+  //   generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
+  //   registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
+  //   startNodeTask: asFunction(startNodeTaskFactory).singleton(),
+  //   stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
+  //   restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),
+  //   resetNodeTask: asFunction(resetNodeTaskFactory).singleton(),
+  //   setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton(),
+  //   setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
+  //   configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
+  //   configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
+  //   waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
+  //   enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
+  //   registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
+  //   obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
+  //   obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
+  //   saveCertificateTask: asFunction(saveCertificateTaskFactory),
+  //   reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
+  //   getCoreScope: asFunction(getCoreScopeFactory).singleton(),
+  //   getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),
+  //   getPlatformScope: asFunction(getPlatformScopeFactory).singleton(),
+  //   getOverviewScope: asFunction(getOverviewScopeFactory).singleton(),
+  //   getServicesScope: asFunction(getServicesScopeFactory).singleton(),
+  //   getHostScope: asFunction(getHostScopeFactory).singleton(),
+  //   configureNodeTask: asFunction(configureNodeTaskFactory).singleton(),
+  //   configureSSLCertificateTask: asFunction(configureSSLCertificateTaskFactory).singleton(),
+  //   registerMasternodeWithCoreWallet: asFunction(registerMasternodeWithCoreWalletFactory)
+  //     .singleton(),
+  //   registerMasternodeWithDMT: asFunction(registerMasternodeWithDMTFactory)
+  //     .singleton(),
+  // });
+  //
+  // /**
+  //  * Helper
+  //  */
+  // container.register({
+  //   scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
+  //   createHttpApiServer: asFunction(createHttpApiServerFactory).singleton(),
+  // });
+  //
+  // /**
+  //  * Tests
+  //  */
+  // container.register({
+  //   assertLocalServicesRunning: asFunction(assertLocalServicesRunningFactory).singleton(),
+  //   assertServiceRunning: asFunction(assertServiceRunningFactory).singleton(),
+  // });
 
   return container;
 }

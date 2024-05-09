@@ -1,8 +1,15 @@
-#!/usr/bin/env node
+import { run } from '../dist/index.js';
 
-async function main() {
-  const { execute } = await import('@oclif/core');
-  await execute({ dir: import.meta.url });
-}
+await run();
 
-await main();
+// #!/usr/bin/env node
+// console.log('start', new Date())
+// async function main() {
+//   console.log('main()', new Date())
+//   const { execute } = await import('@oclif/core');
+//   console.log('import()', new Date())
+//   await execute({ dir: import.meta.url });
+//   console.log('execute()', new Date())
+// }
+//
+// await main();
