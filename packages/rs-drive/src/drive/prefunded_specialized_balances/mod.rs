@@ -3,6 +3,7 @@ mod add_prefunded_specialized_balance_operations;
 mod deduct_from_prefunded_specialized_balance;
 mod deduct_from_prefunded_specialized_balance_operations;
 mod estimation_costs;
+mod fetch;
 
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;

@@ -1,0 +1,3 @@
+mod contested_resources;
+mod contested_resource_vote_state;
+mod contested_resource_vote_status;

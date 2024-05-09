@@ -143,6 +143,7 @@ pub struct DriveGroveMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DrivePrefundedSpecializedMethodVersions {
+    pub fetch_single: FeatureVersion,
     pub add_prefunded_specialized_balance: FeatureVersion,
     pub add_prefunded_specialized_balance_operations: FeatureVersion,
     pub deduct_from_prefunded_specialized_balance: FeatureVersion,

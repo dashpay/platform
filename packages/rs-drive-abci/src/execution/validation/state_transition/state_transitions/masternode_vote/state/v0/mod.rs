@@ -36,40 +36,7 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
-            self.pro_tx_hash().to_buffer(),
-            tx,
-            platform_version,
-        )?;
-
-        let Some(existing_identity_balance) = maybe_existing_identity_balance else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                IdentityNotFoundError::new(self.identity_id()).into(),
-            ));
-        };
-
-        if existing_identity_balance < self.amount() {
-            return Ok(ConsensusValidationResult::new_with_error(
-                IdentityInsufficientBalanceError::new(
-                    self.identity_id(),
-                    existing_identity_balance,
-                    self.amount(),
-                )
-                .into(),
-            ));
-        }
-
-        let maybe_existing_recipient = platform.drive.fetch_identity_balance(
-            self.recipient_id().to_buffer(),
-            tx,
-            platform_version,
-        )?;
-
-        if maybe_existing_recipient.is_none() {
-            return Ok(ConsensusValidationResult::new_with_error(
-                IdentityNotFoundError::new(self.recipient_id()).into(),
-            ));
-        }
+        
 
         self.transform_into_action_v0()
     }

@@ -2368,20 +2368,20 @@ pub mod get_contested_resource_vote_status_response {
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPreFundedSpecializedBalancesRequest {
-    #[prost(oneof = "get_pre_funded_specialized_balances_request::Version", tags = "1")]
+pub struct GetPrefundedSpecializedBalanceRequest {
+    #[prost(oneof = "get_prefunded_specialized_balance_request::Version", tags = "1")]
     pub version: ::core::option::Option<
-        get_pre_funded_specialized_balances_request::Version,
+        get_prefunded_specialized_balance_request::Version,
     >,
 }
-/// Nested message and enum types in `GetPreFundedSpecializedBalancesRequest`.
-pub mod get_pre_funded_specialized_balances_request {
+/// Nested message and enum types in `GetPrefundedSpecializedBalanceRequest`.
+pub mod get_prefunded_specialized_balance_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetPreFundedSpecializedBalancesRequestV0 {
+    pub struct GetPrefundedSpecializedBalanceRequestV0 {
         #[prost(bytes = "vec", tag = "1")]
         #[serde(with = "serde_bytes")]
         pub id: ::prost::alloc::vec::Vec<u8>,
@@ -2394,7 +2394,7 @@ pub mod get_pre_funded_specialized_balances_request {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag = "1")]
-        V0(GetPreFundedSpecializedBalancesRequestV0),
+        V0(GetPrefundedSpecializedBalanceRequestV0),
     }
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -2402,32 +2402,32 @@ pub mod get_pre_funded_specialized_balances_request {
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPreFundedSpecializedBalancesResponse {
-    #[prost(oneof = "get_pre_funded_specialized_balances_response::Version", tags = "1")]
+pub struct GetPrefundedSpecializedBalanceResponse {
+    #[prost(oneof = "get_prefunded_specialized_balance_response::Version", tags = "1")]
     pub version: ::core::option::Option<
-        get_pre_funded_specialized_balances_response::Version,
+        get_prefunded_specialized_balance_response::Version,
     >,
 }
-/// Nested message and enum types in `GetPreFundedSpecializedBalancesResponse`.
-pub mod get_pre_funded_specialized_balances_response {
+/// Nested message and enum types in `GetPrefundedSpecializedBalanceResponse`.
+pub mod get_prefunded_specialized_balance_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetPreFundedSpecializedBalancesResponseV0 {
+    pub struct GetPrefundedSpecializedBalanceResponseV0 {
         #[prost(message, optional, tag = "3")]
         pub metadata: ::core::option::Option<super::ResponseMetadata>,
         #[prost(
-            oneof = "get_pre_funded_specialized_balances_response_v0::Result",
+            oneof = "get_prefunded_specialized_balance_response_v0::Result",
             tags = "1, 2"
         )]
         pub result: ::core::option::Option<
-            get_pre_funded_specialized_balances_response_v0::Result,
+            get_prefunded_specialized_balance_response_v0::Result,
         >,
     }
-    /// Nested message and enum types in `GetPreFundedSpecializedBalancesResponseV0`.
-    pub mod get_pre_funded_specialized_balances_response_v0 {
+    /// Nested message and enum types in `GetPrefundedSpecializedBalanceResponseV0`.
+    pub mod get_prefunded_specialized_balance_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
         #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2445,7 +2445,7 @@ pub mod get_pre_funded_specialized_balances_response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag = "1")]
-        V0(GetPreFundedSpecializedBalancesResponseV0),
+        V0(GetPrefundedSpecializedBalanceResponseV0),
     }
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -3320,13 +3320,13 @@ pub mod platform_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_pre_funded_specialized_balances(
+        pub async fn get_prefunded_specialized_balance(
             &mut self,
             request: impl tonic::IntoRequest<
-                super::GetPreFundedSpecializedBalancesRequest,
+                super::GetPrefundedSpecializedBalanceRequest,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::GetPreFundedSpecializedBalancesResponse>,
+            tonic::Response<super::GetPrefundedSpecializedBalanceResponse>,
             tonic::Status,
         > {
             self.inner
@@ -3340,14 +3340,14 @@ pub mod platform_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/org.dash.platform.dapi.v0.Platform/getPreFundedSpecializedBalances",
+                "/org.dash.platform.dapi.v0.Platform/getPrefundedSpecializedBalance",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
-                        "getPreFundedSpecializedBalances",
+                        "getPrefundedSpecializedBalance",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -3545,11 +3545,11 @@ pub mod platform_server {
             tonic::Response<super::GetContestedResourceVoteStatusResponse>,
             tonic::Status,
         >;
-        async fn get_pre_funded_specialized_balances(
+        async fn get_prefunded_specialized_balance(
             &self,
-            request: tonic::Request<super::GetPreFundedSpecializedBalancesRequest>,
+            request: tonic::Request<super::GetPrefundedSpecializedBalanceRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetPreFundedSpecializedBalancesResponse>,
+            tonic::Response<super::GetPrefundedSpecializedBalanceResponse>,
             tonic::Status,
         >;
         async fn get_path_elements(
@@ -4681,15 +4681,15 @@ pub mod platform_server {
                     };
                     Box::pin(fut)
                 }
-                "/org.dash.platform.dapi.v0.Platform/getPreFundedSpecializedBalances" => {
+                "/org.dash.platform.dapi.v0.Platform/getPrefundedSpecializedBalance" => {
                     #[allow(non_camel_case_types)]
-                    struct getPreFundedSpecializedBalancesSvc<T: Platform>(pub Arc<T>);
+                    struct getPrefundedSpecializedBalanceSvc<T: Platform>(pub Arc<T>);
                     impl<
                         T: Platform,
                     > tonic::server::UnaryService<
-                        super::GetPreFundedSpecializedBalancesRequest,
-                    > for getPreFundedSpecializedBalancesSvc<T> {
-                        type Response = super::GetPreFundedSpecializedBalancesResponse;
+                        super::GetPrefundedSpecializedBalanceRequest,
+                    > for getPrefundedSpecializedBalanceSvc<T> {
+                        type Response = super::GetPrefundedSpecializedBalanceResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -4697,12 +4697,12 @@ pub mod platform_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::GetPreFundedSpecializedBalancesRequest,
+                                super::GetPrefundedSpecializedBalanceRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_pre_funded_specialized_balances(request).await
+                                (*inner).get_prefunded_specialized_balance(request).await
                             };
                             Box::pin(fut)
                         }
@@ -4714,7 +4714,7 @@ pub mod platform_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = getPreFundedSpecializedBalancesSvc(inner);
+                        let method = getPrefundedSpecializedBalanceSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

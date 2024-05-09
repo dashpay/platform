@@ -1,5 +1,7 @@
 mod state;
 mod structure;
+mod balance;
+mod nonce;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;

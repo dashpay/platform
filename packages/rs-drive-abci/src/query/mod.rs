@@ -5,6 +5,8 @@ mod proofs;
 mod response_metadata;
 mod service;
 mod system;
+mod voting;
+mod prefunded_specialized_balances;
 
 use crate::error::query::QueryError;
 
