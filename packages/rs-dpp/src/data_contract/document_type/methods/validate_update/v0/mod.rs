@@ -1,6 +1,4 @@
-use crate::consensus::basic::data_contract::{
-    DataContractInvalidIndexDefinitionUpdateError, IncompatibleDocumentTypeSchemaError,
-};
+use crate::consensus::basic::data_contract::IncompatibleDocumentTypeSchemaError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
@@ -17,18 +15,23 @@ impl<'a> DocumentTypeRef<'a> {
         new_document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        // Validate configuration
         let result = self.validate_config(new_document_type);
 
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let result = self.validate_indices(new_document_type);
+        // Validate indices
+        let result = self
+            .index_structure()
+            .validate_update(self.name(), new_document_type.index_structure());
 
         if !result.is_valid() {
             return Ok(result);
         }
 
+        // Validate schema compatibility
         self.validate_schema(new_document_type, platform_version)
     }
 
@@ -178,48 +181,6 @@ impl<'a> DocumentTypeRef<'a> {
         SimpleConsensusValidationResult::new()
     }
 
-    fn validate_indices(
-        &self,
-        new_document_type: DocumentTypeRef,
-    ) -> SimpleConsensusValidationResult {
-        // There is no changes. All good
-        if self.index_structure() == new_document_type.index_structure() {
-            return SimpleConsensusValidationResult::new();
-        }
-
-        // We want to figure out what changed, so we compare one way then the other
-
-        // If the new contract document type doesn't contain all previous indexes
-        if let Some(non_subset_path) = new_document_type
-            .index_structure()
-            .contains_subset_first_non_subset_path(self.index_structure())
-        {
-            return SimpleConsensusValidationResult::new_with_error(
-                DataContractInvalidIndexDefinitionUpdateError::new(
-                    self.name().clone(),
-                    non_subset_path,
-                )
-                .into(),
-            );
-        }
-
-        // If the old contract document type doesn't contain all new indexes
-        if let Some(non_subset_path) = self
-            .index_structure()
-            .contains_subset_first_non_subset_path(new_document_type.index_structure())
-        {
-            return SimpleConsensusValidationResult::new_with_error(
-                DataContractInvalidIndexDefinitionUpdateError::new(
-                    self.name().clone(),
-                    non_subset_path,
-                )
-                .into(),
-            );
-        }
-
-        SimpleConsensusValidationResult::new()
-    }
-
     fn validate_schema(
         &self,
         new_document_type: DocumentTypeRef,
@@ -281,5 +242,781 @@ impl<'a> DocumentTypeRef<'a> {
             .collect();
 
         Ok(SimpleConsensusValidationResult::new_with_errors(errors))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::consensus::state::state_error::StateError;
+    use crate::consensus::ConsensusError;
+    use crate::data_contract::document_type::DocumentType;
+    use assert_matches::assert_matches;
+    use platform_value::platform_value;
+    use platform_value::Identifier;
+
+    mod validate_config {
+        use super::*;
+
+        #[test]
+        fn should_fail_when_creation_restriction_mode_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "creationRestrictionMode": 1,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "creationRestrictionMode": 0,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change creation restriction mode: changing from Owner Only to No Restrictions"
+            );
+        }
+
+        #[test]
+        fn should_fail_when_trade_mode_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "tradeMode": 1,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "tradeMode": 0,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change trade mode: changing from Direct Purchase to No Trading"
+            );
+        }
+
+        #[test]
+        fn should_fail_when_documents_transferable_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "transferable": 1,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "transferable": 0,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether its documents are transferable: changing from Always to Never"
+            );
+        }
+
+        #[test]
+        fn should_fail_when_documents_can_be_deleted_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "canBeDeleted": true,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "canBeDeleted": false,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether its documents can be deleted: changing from true to false"
+            );
+        }
+
+        #[test]
+        fn should_fail_when_documents_keep_history_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "documentsKeepHistory": true,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "documentsKeepHistory": false,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether it keeps history: changing from true to false"
+            );
+        }
+
+        #[test]
+        fn should_fail_when_documents_mutable_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "documentsMutable": true,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "documentsMutable": false,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether its documents are mutable: changing from true to false"
+            );
+        }
+
+        #[test]
+        fn should_fail_when_requires_identity_encryption_bounded_key_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "requiresIdentityEncryptionBoundedKey": 0,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "requiresIdentityEncryptionBoundedKey": 1,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether it required an identity encryption bounded key: changing from Some(Unique) to Some(Multiple)"
+            );
+        }
+
+        #[test]
+        fn should_fail_when_requires_identity_decryption_bounded_key_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "requiresIdentityDecryptionBoundedKey": 0,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "requiresIdentityDecryptionBoundedKey": 2,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether it required an identity decryption bounded key: changing from Some(Unique) to Some(MultipleReferenceToLatest)"
+            );
+        }
+
+        #[test]
+        fn should_fail_when_security_level_requirement_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "signatureSecurityLevelRequirement": 1,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change the security level requirement for its updates: changing from MASTER to CRITICAL"
+            );
+        }
+    }
+
+    mod validate_schema {
+        use super::*;
+        use crate::consensus::basic::BasicError;
+
+        #[test]
+        fn should_pass_when_schema_is_not_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema.clone(),
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert!(result.is_valid());
+        }
+
+        #[test]
+        fn should_fail_when_schemas_are_not_backward_compatible() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema.clone(),
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "number",
+                        "position": 0,
+                    }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.operation() == "replace" && e.property_path() == "/properties/test/type"
+            );
+        }
     }
 }

@@ -11,6 +11,7 @@ mod test {
     use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::tests::json_document::json_document_to_contract;
+    use assert_matches::assert_matches;
     use platform_version::version::PlatformVersion;
 
     type IndexName = &'static str;
@@ -230,7 +231,7 @@ mod test {
         let deserialized_contract = DataContract::from_cbor(contract_cbor, true, platform_version)
             .expect("deserialization shouldn't fail");
 
-        assert!(matches!(
+        assert_matches!(
             deserialized_contract.config(),
             DataContractConfig::V0(DataContractConfigV0 {
                 can_be_deleted: false,
@@ -242,7 +243,7 @@ mod test {
                 requires_identity_encryption_bounded_key: None,
                 requires_identity_decryption_bounded_key: None,
             })
-        ));
+        );
     }
 
     #[test]

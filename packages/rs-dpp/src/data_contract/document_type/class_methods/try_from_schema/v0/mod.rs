@@ -784,6 +784,7 @@ fn insert_values_nested(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use platform_value::platform_value;
 
     mod document_type_name {
@@ -847,15 +848,17 @@ mod tests {
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 result,
-                Err(ProtocolError::ConsensusError(boxed)
-            ) if matches!(
-                boxed.as_ref(),
-                ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
-                ))
-            ));
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                        )
+                    )
+                }
+            );
         }
 
         #[test]
@@ -886,15 +889,17 @@ mod tests {
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 result,
-                Err(ProtocolError::ConsensusError(boxed)
-            ) if matches!(
-                boxed.as_ref(),
-                ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
-                ))
-            ));
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                        )
+                    )
+                }
+            );
         }
 
         #[test]
@@ -925,15 +930,17 @@ mod tests {
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 result,
-                Err(ProtocolError::ConsensusError(boxed)
-            ) if matches!(
-                boxed.as_ref(),
-                ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
-                ))
-            ));
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                        )
+                    )
+                }
+            );
 
             let result = DocumentTypeV0::try_from_schema_v0(
                 Identifier::new([1; 32]),
@@ -948,15 +955,17 @@ mod tests {
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 result,
-                Err(ProtocolError::ConsensusError(boxed)
-            ) if matches!(
-                boxed.as_ref(),
-                ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
-                ))
-            ));
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                        )
+                    )
+                }
+            );
         }
     }
 }
