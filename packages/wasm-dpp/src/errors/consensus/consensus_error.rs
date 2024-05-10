@@ -74,7 +74,7 @@ use crate::errors::consensus::basic::data_contract::{
     DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
     DataContractImmutablePropertiesUpdateErrorWasm,
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
-    DocumentTypesAreMissingErrorWasm, IncompatibleDataContractSchemaErrorWasm,
+    IncompatibleDataContractSchemaErrorWasm, IncompatibleDocumentTypeSchemaErrorWasm,
     InvalidDataContractIdErrorWasm, InvalidDocumentTypeNameErrorWasm,
 };
 use crate::errors::consensus::basic::document::{
@@ -96,7 +96,7 @@ use crate::errors::consensus::state::data_contract::data_trigger::{
 };
 use crate::errors::consensus::state::data_contract::{
     DataContractAlreadyPresentErrorWasm, DataContractConfigUpdateErrorWasm,
-    DataContractIsReadonlyErrorWasm,
+    DataContractIsReadonlyErrorWasm, DataContractUpdatePermissionErrorWasm,
 };
 use crate::errors::consensus::state::document::{
     DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
@@ -237,6 +237,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::DocumentIncorrectPurchasePriceError(e) => {
             generic_consensus_error!(DocumentIncorrectPurchasePriceError, e).into()
         }
+        StateError::DataContractUpdatePermissionError(e) => {
+            DataContractUpdatePermissionErrorWasm::from(e).into()
+        }
     }
 }
 
@@ -330,8 +333,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::IncompatibleDataContractSchemaError(err) => {
             IncompatibleDataContractSchemaErrorWasm::from(err).into()
         }
-        BasicError::DocumentTypesAreMissingError(err) => {
-            DocumentTypesAreMissingErrorWasm::from(err).into()
+        BasicError::IncompatibleDocumentTypeSchemaError(err) => {
+            IncompatibleDocumentTypeSchemaErrorWasm::from(err).into()
         }
         BasicError::InvalidIdentityKeySignatureError(err) => {
             InvalidIdentityKeySignatureErrorWasm::from(err).into()
