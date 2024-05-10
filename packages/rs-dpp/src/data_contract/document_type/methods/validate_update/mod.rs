@@ -21,7 +21,7 @@ impl<'a> DocumentTypeRef<'a> {
         {
             0 => self.validate_update_v0(new_document_type, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "validate_config_update".to_string(),
+                method: "validate_update".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
