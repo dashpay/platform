@@ -1,1 +1,1 @@
-mod validate_update;
+mod validate_config_update;
