@@ -152,7 +152,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_fail_when_old_contract_is_readonly() {
+        fn should_return_invalid_result_when_old_contract_is_readonly() {
             let old_config: DataContractConfig = DataContractConfigV0 {
                 readonly: true,
                 ..Default::default()
@@ -170,7 +170,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_new_contract_is_readonly() {
+        fn should_return_invalid_result_when_new_contract_is_readonly() {
             let old_config: DataContractConfig = DataContractConfigV0::default().into();
             let new_config = DataContractConfigV0 {
                 readonly: true,
@@ -190,7 +190,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_keeps_history_changes() {
+        fn should_return_invalid_result_when_keeps_history_changes() {
             let old_config: DataContractConfig = DataContractConfigV0 {
                 keeps_history: true,
                 ..Default::default()
@@ -214,7 +214,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_can_be_deleted_changes() {
+        fn should_return_invalid_result_when_can_be_deleted_changes() {
             let old_config: DataContractConfig = DataContractConfigV0 {
                 can_be_deleted: true,
                 ..Default::default()
@@ -238,7 +238,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_documents_keep_history_contract_default_changes() {
+        fn should_return_invalid_result_when_documents_keep_history_contract_default_changes() {
             let old_config: DataContractConfig = DataContractConfigV0 {
                 documents_keep_history_contract_default: true,
                 ..Default::default()
@@ -262,7 +262,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_documents_mutable_contract_default_changes() {
+        fn should_return_invalid_result_when_documents_mutable_contract_default_changes() {
             let old_config: DataContractConfig = DataContractConfigV0 {
                 documents_mutable_contract_default: true,
                 ..Default::default()
@@ -286,7 +286,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_documents_can_be_deleted_contract_default_changes() {
+        fn should_return_invalid_result_when_documents_can_be_deleted_contract_default_changes() {
             let old_config: DataContractConfig = DataContractConfigV0 {
                 documents_can_be_deleted_contract_default: true,
                 ..Default::default()
@@ -310,7 +310,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_requires_identity_encryption_bounded_key_changes() {
+        fn should_return_invalid_result_when_requires_identity_encryption_bounded_key_changes() {
             let old_config: DataContractConfig = DataContractConfigV0 {
                 requires_identity_encryption_bounded_key: Some(StorageKeyRequirements::Multiple),
                 ..Default::default()
@@ -334,7 +334,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_requires_identity_decryption_bounded_key_changes() {
+        fn should_return_invalid_result_when_requires_identity_decryption_bounded_key_changes() {
             let old_config: DataContractConfig = DataContractConfigV0 {
                 requires_identity_decryption_bounded_key: Some(StorageKeyRequirements::Unique),
                 ..Default::default()

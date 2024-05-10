@@ -465,7 +465,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_if_trying_to_update_config() {
+        fn should_return_invalid_result_if_trying_to_update_config() {
             let TestData {
                 mut data_contract,
                 platform,

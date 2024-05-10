@@ -260,7 +260,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_fail_when_creation_restriction_mode_is_changed() {
+        fn should_return_invalid_result_when_creation_restriction_mode_is_changed() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";
@@ -330,7 +330,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_trade_mode_is_changed() {
+        fn should_return_invalid_result_when_trade_mode_is_changed() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";
@@ -400,7 +400,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_documents_transferable_is_changed() {
+        fn should_return_invalid_result_when_documents_transferable_is_changed() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";
@@ -470,7 +470,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_documents_can_be_deleted_is_changed() {
+        fn should_return_invalid_result_when_documents_can_be_deleted_is_changed() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";
@@ -540,7 +540,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_documents_keep_history_is_changed() {
+        fn should_return_invalid_result_when_documents_keep_history_is_changed() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";
@@ -610,7 +610,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_documents_mutable_is_changed() {
+        fn should_return_invalid_result_when_documents_mutable_is_changed() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";
@@ -680,7 +680,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_requires_identity_encryption_bounded_key_is_changed() {
+        fn should_return_invalid_result_when_requires_identity_encryption_bounded_key_is_changed() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";
@@ -750,7 +750,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_requires_identity_decryption_bounded_key_is_changed() {
+        fn should_return_invalid_result_when_requires_identity_decryption_bounded_key_is_changed() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";
@@ -820,7 +820,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_security_level_requirement_is_changed() {
+        fn should_return_invalid_result_when_security_level_requirement_is_changed() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";
@@ -949,7 +949,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_schemas_are_not_backward_compatible() {
+        fn should_return_invalid_result_when_schemas_are_not_backward_compatible() {
             let platform_version = PlatformVersion::latest();
             let data_contract_id = Identifier::random();
             let document_type_name = "test";

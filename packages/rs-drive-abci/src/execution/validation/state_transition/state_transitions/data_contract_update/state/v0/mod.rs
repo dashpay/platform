@@ -2,29 +2,18 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::epoch::Epoch;
-use serde_json::json;
 
-use dpp::consensus::basic::data_contract::{
-    IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
-};
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
-use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-use dpp::data_contract::document_type::schema::validate_schema_compatibility;
-use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
-use dpp::platform_value::Value;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::StateTransitionLike;
 use dpp::version::PlatformVersion;
 
 use crate::error::execution::ExecutionError;
@@ -194,5 +183,24 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 Ok(action.into())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod validate_state_v0 {
+        use super::*;
+
+        #[test]
+        fn should_return_invalid_result_when_transform_into_action_failed() {}
+
+        #[test]
+        fn should_return_invalid_result_when_() {}
+    }
+
+    mod transform_into_action_v0 {
+        use super::*;
     }
 }

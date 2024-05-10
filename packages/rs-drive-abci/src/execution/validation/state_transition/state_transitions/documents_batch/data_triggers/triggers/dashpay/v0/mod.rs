@@ -236,7 +236,7 @@ mod test {
     }
 
     #[test]
-    fn should_fail_if_owner_id_equals_to_user_id() {
+    fn should_return_invalid_result_if_owner_id_equals_to_user_id() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -354,7 +354,7 @@ mod test {
     }
 
     #[test]
-    fn should_fail_if_id_not_exists() {
+    fn should_return_invalid_result_if_id_not_exists() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();

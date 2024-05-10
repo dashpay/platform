@@ -189,7 +189,7 @@ mod tests {
         use crate::data_contract::document_type::DocumentTypeMutRef;
 
         #[test]
-        fn should_fail_if_owner_id_is_not_the_same() {
+        fn should_return_invalid_result_if_owner_id_is_not_the_same() {
             let platform_version = PlatformVersion::latest();
 
             let old_data_contract =
@@ -212,7 +212,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_if_contract_version_is_not_greater_for_one() {
+        fn should_return_invalid_result_if_contract_version_is_not_greater_for_one() {
             let platform_version = PlatformVersion::latest();
 
             let old_data_contract =
@@ -233,7 +233,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_if_config_was_updated() {
+        fn should_return_invalid_result_if_config_was_updated() {
             let platform_version = PlatformVersion::latest();
 
             let old_data_contract =
@@ -257,7 +257,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_document_type_is_removed() {
+        fn should_return_invalid_result_when_document_type_is_removed() {
             let platform_version = PlatformVersion::latest();
 
             let old_data_contract =
@@ -283,7 +283,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_document_type_has_incompatible_change() {
+        fn should_return_invalid_result_when_document_type_has_incompatible_change() {
             let platform_version = PlatformVersion::latest();
 
             let old_data_contract =
@@ -313,7 +313,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_defs_is_removed() {
+        fn should_return_invalid_result_when_defs_is_removed() {
             let platform_version = PlatformVersion::latest();
 
             let mut old_data_contract =
@@ -344,7 +344,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_updated_defs_is_incompatible() {
+        fn should_return_invalid_result_when_updated_defs_is_incompatible() {
             let platform_version = PlatformVersion::latest();
 
             let old_data_contract =

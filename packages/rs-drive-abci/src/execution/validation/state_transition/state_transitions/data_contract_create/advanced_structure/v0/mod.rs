@@ -88,7 +88,7 @@ mod tests {
         use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
         #[test]
-        fn should_fail_if_contract_version_is_not_initial() {
+        fn should_return_invalid_result_if_contract_version_is_not_initial() {
             let platform_version = PlatformVersion::latest();
             let identity_nonce = IdentityNonce::default();
 
@@ -136,7 +136,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_if_contract_id_is_not_valid() {
+        fn should_return_invalid_result_if_contract_id_is_not_valid() {
             let platform_version = PlatformVersion::latest();
             let identity_nonce = IdentityNonce::default();
 

@@ -161,7 +161,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_fail_when_transform_into_action_failed() {
+        fn should_return_invalid_result_when_transform_into_action_failed() {
             let platform_version = PlatformVersion::latest();
             let identity_nonce = IdentityNonce::default();
 
@@ -251,7 +251,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_when_contract_with_specified_id_already_exists() {
+        fn should_return_invalid_result_when_contract_with_specified_id_already_exists() {
             let platform_version = PlatformVersion::latest();
             let identity_nonce = IdentityNonce::default();
 
@@ -398,7 +398,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_fail_if_data_contract_is_not_valid() {
+        fn should_return_invalid_result_if_data_contract_is_not_valid() {
             let platform_version = PlatformVersion::latest();
             let identity_nonce = IdentityNonce::default();
 

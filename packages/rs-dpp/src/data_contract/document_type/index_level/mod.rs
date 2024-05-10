@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn should_fail_if_some_indices_are_removed() {
+    fn should_return_invalid_result_if_some_indices_are_removed() {
         let platform_version = PlatformVersion::latest();
         let document_type_name = "test";
 
@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn should_fail_if_additional_property_is_added_to_existing_index() {
+    fn should_return_invalid_result_if_additional_property_is_added_to_existing_index() {
         let platform_version = PlatformVersion::latest();
         let document_type_name = "test";
 
@@ -383,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn should_fail_if_property_is_removed_to_existing_index() {
+    fn should_return_invalid_result_if_property_is_removed_to_existing_index() {
         let platform_version = PlatformVersion::latest();
         let document_type_name = "test";
 
