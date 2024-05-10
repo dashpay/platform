@@ -22,8 +22,8 @@ impl IncompatibleDocumentTypeSchemaErrorWasm {
         self.inner.operation().to_string()
     }
 
-    #[wasm_bindgen(js_name=getFieldPath)]
-    pub fn get_field_path(&self) -> String {
+    #[wasm_bindgen(js_name=getPropertyPath)]
+    pub fn get_property_path(&self) -> String {
         self.inner.property_path().to_string()
     }
 
