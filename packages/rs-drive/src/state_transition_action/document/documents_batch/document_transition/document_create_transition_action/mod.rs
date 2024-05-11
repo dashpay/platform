@@ -63,9 +63,13 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
-    fn take_prefunded_voting_balances(&mut self) -> Vec<(ContestedDocumentResourceVotePoll, Credits)> {
+    fn take_prefunded_voting_balances(
+        &mut self,
+    ) -> Vec<(ContestedDocumentResourceVotePoll, Credits)> {
         match self {
-            DocumentCreateTransitionAction::V0(v0) => mem::replace(&mut v0.prefunded_voting_balances, vec![]),
+            DocumentCreateTransitionAction::V0(v0) => {
+                mem::replace(&mut v0.prefunded_voting_balances, vec![])
+            }
         }
     }
 

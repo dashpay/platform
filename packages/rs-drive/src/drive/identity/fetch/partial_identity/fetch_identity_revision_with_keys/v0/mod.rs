@@ -21,7 +21,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Option<PartialIdentity>, Error> {
         let id = Identifier::new(identity_key_request.identity_id);
-        
+
         let revision = self.fetch_identity_revision(
             identity_key_request.identity_id,
             true,

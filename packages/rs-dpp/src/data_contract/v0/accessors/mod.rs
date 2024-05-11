@@ -36,7 +36,10 @@ impl DataContractV0Getters for DataContractV0 {
             })
     }
 
-    fn document_type_borrowed_for_name(&self, name: &str) -> Result<&DocumentType, DataContractError> {
+    fn document_type_borrowed_for_name(
+        &self,
+        name: &str,
+    ) -> Result<&DocumentType, DataContractError> {
         self.document_types.get(name).ok_or_else(|| {
             DataContractError::DocumentTypeNotFound(
                 "can not get document type from contract".to_string(),

@@ -88,7 +88,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
 
         let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
-        let maybe_partial_identity = match (request_identity_balance,request_identity_revision) {
+        let maybe_partial_identity = match (request_identity_balance, request_identity_revision) {
             (true, true) => {
                 // This is for identity update
                 execution_context.add_operation(ValidationOperation::RetrieveIdentity(
@@ -99,28 +99,40 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
                     transaction,
                     platform_version,
                 )?
-            },
+            }
             (true, false) => {
                 // This is for most state transitions
                 execution_context.add_operation(ValidationOperation::RetrieveIdentity(
                     RetrieveIdentityInfo::one_key_and_balance(),
                 ));
-                drive.fetch_identity_balance_with_keys(key_request, transaction, platform_version)?
-            },
+                drive.fetch_identity_balance_with_keys(
+                    key_request,
+                    transaction,
+                    platform_version,
+                )?
+            }
             (false, true) => {
                 // This currently is not used
                 execution_context.add_operation(ValidationOperation::RetrieveIdentity(
                     RetrieveIdentityInfo::one_key_and_revision(),
                 ));
-                drive.fetch_identity_revision_with_keys(key_request, transaction, platform_version)?
-            },
+                drive.fetch_identity_revision_with_keys(
+                    key_request,
+                    transaction,
+                    platform_version,
+                )?
+            }
             (false, false) => {
                 // This is for masternode vote transition
                 execution_context.add_operation(ValidationOperation::RetrieveIdentity(
                     RetrieveIdentityInfo::one_key(),
                 ));
-                drive.fetch_identity_keys_as_partial_identity(key_request, transaction, platform_version)?
-            },
+                drive.fetch_identity_keys_as_partial_identity(
+                    key_request,
+                    transaction,
+                    platform_version,
+                )?
+            }
         };
 
         let partial_identity = match maybe_partial_identity {

@@ -1,9 +1,9 @@
 use crate::data_contract::DataContract;
 use crate::document::Document;
 use crate::identity::{Identity, PartialIdentity};
+use crate::voting::votes::Vote;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
-use crate::voting::votes::Vote;
 
 #[derive(Debug)]
 pub enum StateTransitionProofResult {

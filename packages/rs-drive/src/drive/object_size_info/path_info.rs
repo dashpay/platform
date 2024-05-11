@@ -4,7 +4,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb_storage::worst_case_costs::WorstKeyLength;
 
 use DriveKeyInfo::{Key, KeyRef, KeySize};
-use PathInfo::{PathFixedSizeArray, PathAsVec, PathWithSizes};
+use PathInfo::{PathAsVec, PathFixedSizeArray, PathWithSizes};
 
 use crate::drive::object_size_info::drive_key_info::DriveKeyInfo;
 use crate::error::drive::DriveError;

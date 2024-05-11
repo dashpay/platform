@@ -51,9 +51,11 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     fn data_mut(&mut self) -> &mut BTreeMap<String, Value>;
     /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
-    
+
     /// Take the prefunded voting balance vec (and replace it with an empty vec).
-    fn take_prefunded_voting_balances(&mut self) -> Vec<(ContestedDocumentResourceVotePoll, Credits)>;
+    fn take_prefunded_voting_balances(
+        &mut self,
+    ) -> Vec<(ContestedDocumentResourceVotePoll, Credits)>;
 
     /// pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)

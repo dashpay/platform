@@ -26,16 +26,19 @@ impl<C> Platform<C> {
             }));
 
         let response = if prove {
-            let proof = check_validation_result_with_data!(self.drive.prove_prefunded_specialized_balance(
-                balance_id.into_buffer(),
-                None,
-                platform_version,
-            ));
+            let proof =
+                check_validation_result_with_data!(self.drive.prove_prefunded_specialized_balance(
+                    balance_id.into_buffer(),
+                    None,
+                    platform_version,
+                ));
 
             GetPrefundedSpecializedBalanceResponseV0 {
-                result: Some(get_prefunded_specialized_balance_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
-                )),
+                result: Some(
+                    get_prefunded_specialized_balance_response_v0::Result::Proof(
+                        self.response_proof_v0(platform_state, proof),
+                    ),
+                ),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
@@ -52,7 +55,9 @@ impl<C> Platform<C> {
             };
 
             GetPrefundedSpecializedBalanceResponseV0 {
-                result: Some(get_prefunded_specialized_balance_response_v0::Result::Balance(balance)),
+                result: Some(
+                    get_prefunded_specialized_balance_response_v0::Result::Balance(balance),
+                ),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };

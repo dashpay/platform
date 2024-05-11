@@ -3,9 +3,7 @@ use crate::drive::object_size_info::path_key_info::PathKeyInfo::{
     PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
 };
 use crate::drive::object_size_info::PathInfo;
-use crate::drive::object_size_info::PathInfo::{
-    PathFixedSizeArray, PathAsVec, PathWithSizes,
-};
+use crate::drive::object_size_info::PathInfo::{PathAsVec, PathFixedSizeArray, PathWithSizes};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -67,9 +65,7 @@ impl<'a> DriveKeyInfo<'a> {
                 PathFixedSizeArray(iter) => {
                     PathKeySize(KeyInfoPath::from_known_path(iter), key_info)
                 }
-                PathAsVec(iter) => {
-                    PathKeySize(KeyInfoPath::from_known_owned_path(iter), key_info)
-                }
+                PathAsVec(iter) => PathKeySize(KeyInfoPath::from_known_owned_path(iter), key_info),
                 PathWithSizes(key_info_path) => PathKeySize(key_info_path, key_info),
             },
         }

@@ -8,7 +8,26 @@ use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
-use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest, GetConsensusParamsResponse, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse};
+use dapi_grpc::platform::v0::{
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
+    GetConsensusParamsResponse, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVoteStateResponse, GetContestedResourceVoteStatusRequest,
+    GetContestedResourceVoteStatusResponse, GetContestedResourcesRequest,
+    GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
+    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
+    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
+    GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
+    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
+    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
+    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+};
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::sync::atomic::Ordering;
@@ -369,6 +388,39 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_path_elements,
             "get_path_elements",
+        )
+        .await
+    }
+
+    async fn get_contested_resources(
+        &self,
+        request: Request<GetContestedResourcesRequest>,
+    ) -> Result<Response<GetContestedResourcesResponse>, Status> {
+        todo!()
+    }
+
+    async fn get_contested_resource_vote_state(
+        &self,
+        request: Request<GetContestedResourceVoteStateRequest>,
+    ) -> Result<Response<GetContestedResourceVoteStateResponse>, Status> {
+        todo!()
+    }
+
+    async fn get_contested_resource_vote_status(
+        &self,
+        request: Request<GetContestedResourceVoteStatusRequest>,
+    ) -> Result<Response<GetContestedResourceVoteStatusResponse>, Status> {
+        todo!()
+    }
+
+    async fn get_prefunded_specialized_balance(
+        &self,
+        request: Request<GetPrefundedSpecializedBalanceRequest>,
+    ) -> Result<Response<GetPrefundedSpecializedBalanceResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_prefunded_specialized_balance,
+            "get_prefunded_specialized_balance",
         )
         .await
     }

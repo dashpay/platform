@@ -1,9 +1,9 @@
 use crate::drive::Drive;
 use crate::error::Error;
 
+use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, TransactionArg};
-use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 
 impl Drive {
     /// Proves the prefunded specialized balance from the backing store

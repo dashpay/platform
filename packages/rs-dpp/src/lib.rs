@@ -40,6 +40,7 @@ pub mod balances;
 pub mod block;
 pub mod fee;
 pub mod nft;
+pub mod prefunded_specialized_balance;
 pub mod serialization;
 #[cfg(any(
     feature = "message-signing",
@@ -50,7 +51,6 @@ pub mod signing;
 pub mod system_data_contracts;
 pub mod voting;
 pub mod withdrawal;
-pub mod prefunded_specialized_balance;
 
 pub use async_trait;
 

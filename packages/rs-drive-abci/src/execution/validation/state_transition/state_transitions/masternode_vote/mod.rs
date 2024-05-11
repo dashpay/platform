@@ -1,12 +1,12 @@
-mod state;
-mod structure;
 mod balance;
 mod nonce;
+mod state;
+mod structure;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
@@ -15,14 +15,11 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::masternode_vote::state::v0::MasternodeVoteStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::masternode_vote::structure::v0::MasternodeVoteStateTransitionStructureValidationV0;
-use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionStateValidationV0,
-};
+use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;

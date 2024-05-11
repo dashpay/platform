@@ -9,8 +9,7 @@ use crate::drive::batch::GroveDbOpBatch;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-
-    /// Initializes the main structure of the vote tree within a GroveDB operation batch. 
+    /// Initializes the main structure of the vote tree within a GroveDB operation batch.
     /// This function is version-controlled to ensure compatibility with different versions of the platform.
     ///
     /// # Parameters

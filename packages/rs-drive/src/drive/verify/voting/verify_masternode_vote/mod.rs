@@ -39,7 +39,7 @@ impl Drive {
     ///
     pub fn verify_masternode_vote(
         proof: &[u8],
-        masternode_pro_tx_hash: [u8;32],
+        masternode_pro_tx_hash: [u8; 32],
         vote: &Vote,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,

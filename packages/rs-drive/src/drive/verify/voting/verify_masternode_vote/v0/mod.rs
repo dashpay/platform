@@ -36,7 +36,7 @@ impl Drive {
     ///
     pub(crate) fn verify_masternode_vote_v0(
         proof: &[u8],
-        masternode_pro_tx_hash: [u8;32],
+        masternode_pro_tx_hash: [u8; 32],
         vote: &Vote,
         verify_subset_of_proof: bool,
     ) -> Result<(RootHash, Option<Vote>), Error> {
@@ -60,7 +60,7 @@ impl Drive {
         //             "we did not get back an element for the correct key in balances".to_string(),
         //         )));
         //     }
-        // 
+        //
         //     let signed_balance = maybe_element
         //         .as_ref()
         //         .map(|element| {

@@ -228,7 +228,6 @@ impl ErrorWithCode for StateError {
             // Data trigger errors: 40500-40799
             #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
-
         }
     }
 }

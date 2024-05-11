@@ -10,8 +10,8 @@ use dpp::ProtocolError;
 
 mod cleanup;
 mod insert;
-mod setup;
 mod paths;
+mod setup;
 
 pub trait TreePath {
     fn tree_path<'a>(&'a self, contract: &'a DataContract) -> Result<Vec<&'a [u8]>, ProtocolError>;
@@ -38,8 +38,9 @@ impl TreePath for ResourceVote {
                         contract.id()
                     )));
                 }
-                let document_type = contract
-                    .document_type_borrowed_for_name(&contested_document_vote_poll.document_type_name)?;
+                let document_type = contract.document_type_borrowed_for_name(
+                    &contested_document_vote_poll.document_type_name,
+                )?;
                 let index = document_type
                     .indexes()
                     .get(&contested_document_vote_poll.index_name)

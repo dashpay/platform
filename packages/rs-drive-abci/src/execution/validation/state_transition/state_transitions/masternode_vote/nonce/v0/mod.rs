@@ -48,10 +48,10 @@ impl MasternodeVoteTransitionIdentityNonceV0 for MasternodeVoteTransition {
             ));
         }
 
-        let identity_id = self.identity_id();
+        let pro_tx_hash_identity_id = self.pro_tx_hash();
 
         let (existing_nonce, fee) = platform.drive.fetch_identity_nonce_with_fees(
-            identity_id.to_buffer(),
+            pro_tx_hash_identity_id.to_buffer(),
             block_info,
             true,
             tx,
@@ -61,9 +61,9 @@ impl MasternodeVoteTransitionIdentityNonceV0 for MasternodeVoteTransition {
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         let result = if let Some(existing_nonce) = existing_nonce {
-            validate_identity_nonce_update(existing_nonce, revision_nonce, identity_id)
+            validate_identity_nonce_update(existing_nonce, revision_nonce, pro_tx_hash_identity_id)
         } else {
-            validate_new_identity_nonce(revision_nonce, identity_id)
+            validate_new_identity_nonce(revision_nonce, pro_tx_hash_identity_id)
         };
 
         Ok(result)

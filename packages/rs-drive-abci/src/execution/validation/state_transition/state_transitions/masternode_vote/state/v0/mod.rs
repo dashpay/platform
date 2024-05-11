@@ -36,8 +36,6 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        
-
         self.transform_into_action_v0()
     }
 

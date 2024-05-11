@@ -2,10 +2,6 @@ mod v0;
 
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
-use crate::fee::op::LowLevelDriveOperation;
-use dpp::block::block_info::BlockInfo;
-use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
 
 use dpp::version::PlatformVersion;
 
@@ -35,7 +31,11 @@ impl Drive {
             .prefunded_specialized_balances
             .prove_single
         {
-            0 => self.prove_prefunded_specialized_balance_v0(prefunded_specialized_balance_id, transaction, platform_version),
+            0 => self.prove_prefunded_specialized_balance_v0(
+                prefunded_specialized_balance_id,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_prefunded_specialized_balance".to_string(),
                 known_versions: vec![0],

@@ -1,12 +1,12 @@
 mod data_contract_based_queries;
 mod document_query;
 mod identity_based_queries;
+mod prefunded_specialized_balances;
 mod proofs;
 mod response_metadata;
 mod service;
 mod system;
 mod voting;
-mod prefunded_specialized_balances;
 
 use crate::error::query::QueryError;
 

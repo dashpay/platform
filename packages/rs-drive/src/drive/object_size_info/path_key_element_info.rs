@@ -1,9 +1,7 @@
 use crate::drive::object_size_info::path_key_element_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElementSize, PathKeyRefElement, PathKeyUnknownElementSize,
 };
-use crate::drive::object_size_info::PathInfo::{
-    PathFixedSizeArray, PathAsVec, PathWithSizes,
-};
+use crate::drive::object_size_info::PathInfo::{PathAsVec, PathFixedSizeArray, PathWithSizes};
 use crate::drive::object_size_info::{KeyElementInfo, PathInfo};
 use crate::error::drive::DriveError;
 use crate::error::Error;

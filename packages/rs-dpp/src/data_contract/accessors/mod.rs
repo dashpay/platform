@@ -43,7 +43,10 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn document_type_borrowed_for_name(&self, name: &str) -> Result<&DocumentType, DataContractError> {
+    fn document_type_borrowed_for_name(
+        &self,
+        name: &str,
+    ) -> Result<&DocumentType, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_borrowed_for_name(name),
         }

@@ -11,7 +11,9 @@ use bincode::{Decode, Encode};
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Insufficient specialized balance {balance_id} balance {balance} required {required_balance}")]
+#[error(
+    "Insufficient specialized balance {balance_id} balance {balance} required {required_balance}"
+)]
 #[platform_serialize(unversioned)]
 pub struct PrefundedSpecializedBalanceInsufficientError {
     /*
@@ -47,6 +49,8 @@ impl PrefundedSpecializedBalanceInsufficientError {
 }
 impl From<PrefundedSpecializedBalanceInsufficientError> for ConsensusError {
     fn from(err: PrefundedSpecializedBalanceInsufficientError) -> Self {
-        Self::StateError(StateError::PrefundedSpecializedBalanceInsufficientError(err))
+        Self::StateError(StateError::PrefundedSpecializedBalanceInsufficientError(
+            err,
+        ))
     }
 }

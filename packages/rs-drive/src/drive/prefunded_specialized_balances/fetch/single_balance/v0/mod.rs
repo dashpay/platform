@@ -8,10 +8,10 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 
+use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path;
 use dpp::version::PlatformVersion;
 use grovedb::Element::SumItem;
 use grovedb::TransactionArg;
-use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path;
 
 impl Drive {
     /// Fetches the Prefunded specialized balance from the backing store

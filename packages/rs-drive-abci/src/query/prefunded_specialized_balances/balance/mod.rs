@@ -5,7 +5,9 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_prefunded_specialized_balance_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_prefunded_specialized_balance_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse};
+use dapi_grpc::platform::v0::{
+    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
+};
 use dpp::version::PlatformVersion;
 
 mod v0;
@@ -20,7 +22,9 @@ impl<C> Platform<C> {
     ) -> Result<QueryValidationResult<GetPrefundedSpecializedBalanceResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError("could not decode prefunded specialized balance query".to_string()),
+                QueryError::DecodingError(
+                    "could not decode prefunded specialized balance query".to_string(),
+                ),
             ));
         };
 
@@ -46,11 +50,17 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result = self.query_prefunded_specialized_balance_v0(request_v0, platform_state, platform_version)?;
+                let result = self.query_prefunded_specialized_balance_v0(
+                    request_v0,
+                    platform_state,
+                    platform_version,
+                )?;
 
-                Ok(result.map(|response_v0| GetPrefundedSpecializedBalanceResponse {
-                    version: Some(ResponseVersion::V0(response_v0)),
-                }))
+                Ok(
+                    result.map(|response_v0| GetPrefundedSpecializedBalanceResponse {
+                        version: Some(ResponseVersion::V0(response_v0)),
+                    }),
+                )
             }
         }
     }

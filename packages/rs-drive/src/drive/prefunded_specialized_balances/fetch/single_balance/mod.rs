@@ -35,7 +35,11 @@ impl Drive {
             .prefunded_specialized_balances
             .fetch_single
         {
-            0 => self.fetch_prefunded_specialized_balance_v0(prefunded_specialized_balance_id, transaction, platform_version),
+            0 => self.fetch_prefunded_specialized_balance_v0(
+                prefunded_specialized_balance_id,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_prefunded_specialized_balance".to_string(),
                 known_versions: vec![0],

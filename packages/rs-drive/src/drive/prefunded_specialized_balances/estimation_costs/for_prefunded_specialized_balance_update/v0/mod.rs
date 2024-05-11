@@ -5,9 +5,7 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 
-use crate::drive::prefunded_specialized_balances::{
-    prefunded_specialized_balances_for_voting_path_vec,
-};
+use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use grovedb::EstimatedSumTrees::SomeSumTrees;
 use std::collections::HashMap;
 

@@ -21,7 +21,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Option<PartialIdentity>, Error> {
         let id = Identifier::new(identity_key_request.identity_id);
-        
+
         let public_keys_with_optionals = self
             .fetch_identity_keys::<KeyIDOptionalIdentityPublicKeyPairBTreeMap>(
                 identity_key_request,

@@ -5,6 +5,7 @@ use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
+use crate::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 
 /// action v0
 #[derive(Default, Debug, Clone)]
@@ -18,6 +19,14 @@ pub struct DocumentsBatchTransitionActionV0 {
 }
 
 impl DocumentsBatchTransitionActionV0 {
+    pub(super) fn all_used_balances(&self) -> Result<Option<Credits>, ProtocolError> {
+        Ok(match (self.all_purchases_amount()?, self.all_conflicting_index_collateral_voting_funds()?) {
+            (Some(all_purchases_amount), Some(all_conflicting_index_collateral_voting_funds)) => Some(all_purchases_amount.checked_add(all_conflicting_index_collateral_voting_funds).ok_or(ProtocolError::Overflow("overflow between all_purchases_amount and all_conflicting_index_collateral_voting_funds"))?),
+            (Some(all_purchases_amount), None) => Some(all_purchases_amount),
+            (None, Some(all_conflicting_index_collateral_voting_funds)) => Some(all_conflicting_index_collateral_voting_funds),
+            (None, None) => None,
+        })
+    }
     pub(super) fn all_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError> {
         let (total, any_purchases): (Option<Credits>, bool) = self
             .transitions
@@ -50,7 +59,8 @@ impl DocumentsBatchTransitionActionV0 {
                 DocumentTransitionAction::CreateAction(document_create_transition_action) => {
                     document_create_transition_action
                         .prefunded_voting_balances()
-                        .iter().try_fold(0u64, |acc, &(_, val)| acc.checked_add(val))
+                        .iter()
+                        .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val))
                 }
                 _ => None,
             })

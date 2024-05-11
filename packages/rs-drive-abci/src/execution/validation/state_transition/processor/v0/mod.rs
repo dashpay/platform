@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -8,11 +7,11 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
-use dpp::identifier::Identifier;
 use dpp::identity::PartialIdentity;
 use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
+use std::collections::BTreeMap;
 
 use crate::error::execution::ExecutionError;
 use dpp::serialization::Signable;
@@ -138,8 +137,17 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    let prefunded_balances = if state_transition.uses_prefunded_specialized_balance_for_payment() {
-        Some(state_transition.validate_minimum_prefunded_specialized_balance_pre_check()?)
+    // The prefunded_balances are currently not used as we would only use them for a masternode vote
+    // however the masternode vote acts as a free operation, as it is paid for
+    let _prefunded_balances = if state_transition.uses_prefunded_specialized_balance_for_payment() {
+        Some(
+            state_transition.validate_minimum_prefunded_specialized_balance_pre_check(
+                platform.drive,
+                transaction,
+                &mut state_transition_execution_context,
+                platform_version,
+            )?,
+        )
     } else {
         None
     };
@@ -414,12 +422,11 @@ pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
     /// This balance validation is not for the operations of the state transition, but more as a
     /// quick early verification that the user has the balance they want to transfer or withdraw.
     fn has_balance_pre_check_validation(&self) -> bool {
-        !matches!(self, StateTransition::MasternodeVote(_))
+        true
     }
 }
 
 pub(crate) trait StateTransitionPrefundedSpecializedBalanceValidationV0 {
-
     /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
     ///
     /// # Arguments
@@ -440,12 +447,14 @@ pub(crate) trait StateTransitionPrefundedSpecializedBalanceValidationV0 {
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<BTreeMap<PrefundedSpecializedBalanceIdentifier, Credits>>, Error>;
-    
-    
+    ) -> Result<
+        ConsensusValidationResult<BTreeMap<PrefundedSpecializedBalanceIdentifier, Credits>>,
+        Error,
+    >;
+
     /// Do we use a prefunded specialized balance for payment
     fn uses_prefunded_specialized_balance_for_payment(&self) -> bool {
-        matches!(self, StateTransition::MasternodeVote(_))
+        false
     }
 }
 
@@ -484,7 +493,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
-            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_) | StateTransition::MasternodeVote(_) => {
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::MasternodeVote(_) => {
                 // no basic structure validation
                 Ok(SimpleConsensusValidationResult::new())
             }
@@ -503,7 +514,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
     fn has_basic_structure_validation(&self) -> bool {
         !matches!(
             self,
-            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_) | StateTransition::MasternodeVote(_)
+            StateTransition::DataContractCreate(_)
+                | StateTransition::DataContractUpdate(_)
+                | StateTransition::MasternodeVote(_)
         )
     }
 }
@@ -605,9 +618,9 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             | StateTransition::IdentityUpdate(_) => {
                 self.validate_simple_pre_check_minimum_balance(identity, platform_version)
             }
-            StateTransition::MasternodeVote(_) | StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
-                Ok(SimpleConsensusValidationResult::new())
-            }
+            StateTransition::MasternodeVote(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_) => Ok(SimpleConsensusValidationResult::new()),
         }
     }
 
@@ -624,7 +637,6 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
     }
 }
 
-
 impl StateTransitionPrefundedSpecializedBalanceValidationV0 for StateTransition {
     fn validate_minimum_prefunded_specialized_balance_pre_check(
         &self,
@@ -632,14 +644,20 @@ impl StateTransitionPrefundedSpecializedBalanceValidationV0 for StateTransition 
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<BTreeMap<PrefundedSpecializedBalanceIdentifier, Credits>>, Error> {
+    ) -> Result<
+        ConsensusValidationResult<BTreeMap<PrefundedSpecializedBalanceIdentifier, Credits>>,
+        Error,
+    > {
         match self {
             StateTransition::MasternodeVote(masternode_vote_transition) => {
-                masternode_vote_transition.validate_minimum_prefunded_specialized_balance_pre_check(drive, tx, execution_context, platform_version)
+                masternode_vote_transition.validate_minimum_prefunded_specialized_balance_pre_check(
+                    drive,
+                    tx,
+                    execution_context,
+                    platform_version,
+                )
             }
-            _ => {
-                Ok(ConsensusValidationResult::new())
-            }
+            _ => Ok(ConsensusValidationResult::new()),
         }
     }
 
@@ -794,10 +812,10 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
 
                 // We do not request the balance because masternodes do not pay for their voting
                 //  themselves
-                
+
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
-                    false, 
+                    false,
                     false,
                     tx,
                     execution_context,
@@ -942,7 +960,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 epoch,
                 execution_context,
                 tx,
-            )
+            ),
         }
     }
 }

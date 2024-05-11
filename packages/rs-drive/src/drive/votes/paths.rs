@@ -1,5 +1,5 @@
-use dpp::identity::TimestampMillis;
 use crate::drive::RootTree;
+use dpp::identity::TimestampMillis;
 
 /// The votes tree structure looks like this
 ///
@@ -74,7 +74,8 @@ pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_tree_pat
     ]
 }
 
-pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_at_time_tree_path_vec(time: TimestampMillis
+pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_at_time_tree_path_vec(
+    time: TimestampMillis,
 ) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Votes as u8],

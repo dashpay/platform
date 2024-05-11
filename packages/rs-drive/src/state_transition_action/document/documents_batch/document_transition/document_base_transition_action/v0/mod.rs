@@ -28,7 +28,7 @@ pub struct DocumentBaseTransitionActionV0 {
 pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// The document Id
     fn id(&self) -> Identifier;
-    
+
     /// The document type
     fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError>;
 
@@ -41,7 +41,7 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     fn document_type_name_owned(self) -> String;
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
     fn data_contract_id(&self) -> Identifier;
-    
+
     /// A reference to the data contract fetch info that does not clone the Arc
     fn data_contract_fetch_info_ref(&self) -> &Arc<DataContractFetchInfo>;
     /// Data contract

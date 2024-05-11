@@ -24,9 +24,7 @@ pub struct PrefundedSpecializedBalanceNotFoundError {
 
 impl PrefundedSpecializedBalanceNotFoundError {
     pub fn new(balance_id: Identifier) -> Self {
-        Self {
-            balance_id,
-        }
+        Self { balance_id }
     }
 
     pub fn balance_id(&self) -> &Identifier {
