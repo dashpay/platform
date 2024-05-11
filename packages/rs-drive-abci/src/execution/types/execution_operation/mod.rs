@@ -162,6 +162,19 @@ impl ValidationOperation {
                             "execution processing fee overflow error",
                         ))?;
                 }
+                ValidationOperation::RetrievePrefundedSpecializedBalance => {
+                    let operation_cost =                            platform_version
+                        .fee_version
+                        .processing
+                        .fetch_prefunded_specialized_balance_processing_cost;
+                    
+                    fee_result.processing_fee = fee_result
+                        .processing_fee
+                        .checked_add(operation_cost)
+                        .ok_or(ExecutionError::Overflow(
+                            "execution processing fee overflow error",
+                        ))?;
+                }
                 ValidationOperation::ValidateKeyStructure(key_count) => {
                     fee_result.processing_fee = fee_result
                         .processing_fee
@@ -184,6 +197,7 @@ impl ValidationOperation {
                             "execution processing fee overflow error",
                         ))?;
                 }
+
             }
         }
         Ok(())

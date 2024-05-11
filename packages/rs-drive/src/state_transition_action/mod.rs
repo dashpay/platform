@@ -27,6 +27,7 @@ use crate::state_transition_action::system::partially_use_asset_lock_action::{
 };
 use derive_more::From;
 use dpp::prelude::UserFeeIncrease;
+use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 
 /// ST action
 #[derive(Debug, Clone, From)]
@@ -47,6 +48,8 @@ pub enum StateTransitionAction {
     IdentityUpdateAction(IdentityUpdateTransitionAction),
     /// identity credit transfer
     IdentityCreditTransferAction(IdentityCreditTransferTransitionAction),
+    /// masternode vote action
+    MasternodeVoteAction(MasternodeVoteTransitionAction),
     /// bump identity nonce action
     /// this can only come in this form from identity state transitions that do not use asset locks
     /// it will also only happen if the state validation fails
@@ -82,6 +85,9 @@ impl StateTransitionAction {
             }
             StateTransitionAction::PartiallyUseAssetLockAction(action) => {
                 action.user_fee_increase()
+            }
+            StateTransitionAction::MasternodeVoteAction(action) => {
+                UserFeeIncrease::default() // 0 (or none)
             }
         }
     }

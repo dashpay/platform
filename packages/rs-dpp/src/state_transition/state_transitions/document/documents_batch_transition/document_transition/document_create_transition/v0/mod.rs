@@ -5,6 +5,8 @@ use bincode::{Decode, Encode};
 
 #[cfg(feature = "state-transition-value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+#[cfg(feature = "state-transition-value-conversion")]
+use platform_value::{ValueMap, ValueMapHelper};
 use platform_value::{Identifier, Value};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};

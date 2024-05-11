@@ -716,6 +716,64 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
                     }
                 }
+                StateTransitionAction::MasternodeVoteAction(
+                    masternode_vote_action,
+                ) => {
+                    proofs_request
+                        .votes
+                        .push(get_proofs_request_v0::VoteStatusRequest{
+                            request_type: Some(get_proofs_request_v0::vote_status_request::ContestedResourceVoteStatusRequest {
+                                resource_path: vec![],
+                                resource_identifier: vec![],
+                                voter_identifier: vec![],
+                            })
+                        });
+
+                    proofs_request
+                        .identities
+                        .push(get_proofs_request_v0::IdentityRequest {
+                            identity_id: identity_credit_transfer_action.recipient_id().to_vec(),
+                            request_type: get_proofs_request_v0::identity_request::Type::Balance
+                                .into(),
+                        });
+
+                    let versioned_request = GetProofsRequest {
+                        version: Some(get_proofs_request::Version::V0(proofs_request)),
+                    };
+
+                    let result = abci_app
+                        .platform
+                        .query_proofs(versioned_request, &state, platform_version)
+                        .expect("expected to query proofs");
+                    let response = result.into_data().expect("expected queries to be valid");
+
+                    let response_proof = response.proof_owned().expect("proof should be present");
+
+                    // we expect to get a vote that matches the state transition
+                    let (root_hash_identity, _balance_identity) =
+                        Drive::verify_identity_balance_for_identity_id(
+                            &response_proof.grovedb_proof,
+                            identity_credit_transfer_action.identity_id().into_buffer(),
+                            true,
+                            platform_version,
+                        )
+                            .expect("expected to verify balance identity");
+
+                    assert_eq!(
+                        &root_hash_identity,
+                        expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info()
+                    );
+                    
+                    if *was_executed {
+                        let balance_recipient = balance_recipient.expect("expected a balance");
+
+                        assert!(
+                            balance_recipient >= identity_credit_transfer_action.transfer_amount()
+                        );
+                    }
+                }
                 StateTransitionAction::BumpIdentityNonceAction(_) => {}
                 StateTransitionAction::BumpIdentityDataContractNonceAction(_) => {}
                 StateTransitionAction::PartiallyUseAssetLockAction(_) => {}

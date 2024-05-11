@@ -311,9 +311,20 @@ message GetProofsRequest {
 
     message ContractRequest { bytes contract_id = 1; }
 
+    message VoteStatusRequest {
+      message ContestedResourceVoteStatusRequest {
+        repeated bytes resource_path = 1;
+        bytes resource_identifier = 2;
+        bytes voter_identifier = 3;
+      }
+
+      oneof request_type { ContestedResourceVoteStatusRequest contested_resource_vote_status_request = 1; }
+    }
+
     repeated IdentityRequest identities = 1;
     repeated ContractRequest contracts = 2;
     repeated DocumentRequest documents = 3;
+    repeated VoteStatusRequest votes = 4;
   }
 
   oneof version { GetProofsRequestV0 v0 = 1; }

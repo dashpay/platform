@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
-    use crate::strategy::{NetworkStrategy, Strategy};
+    use crate::strategy::NetworkStrategy;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -9,7 +9,7 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::platform_value::Value;
-    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::config::{ExecutionConfig, PlatformConfig};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
@@ -19,8 +19,7 @@ mod tests {
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities};
-    use tenderdash_abci::proto::types::CoreChainLock;
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     #[test]
     fn run_chain_block_two_state_transitions_conflicting_unique_index() {

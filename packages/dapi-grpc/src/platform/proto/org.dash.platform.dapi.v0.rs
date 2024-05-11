@@ -863,6 +863,8 @@ pub mod get_proofs_request {
         pub contracts: ::prost::alloc::vec::Vec<get_proofs_request_v0::ContractRequest>,
         #[prost(message, repeated, tag = "3")]
         pub documents: ::prost::alloc::vec::Vec<get_proofs_request_v0::DocumentRequest>,
+        #[prost(message, repeated, tag = "4")]
+        pub votes: ::prost::alloc::vec::Vec<get_proofs_request_v0::VoteStatusRequest>,
     }
     /// Nested message and enum types in `GetProofsRequestV0`.
     pub mod get_proofs_request_v0 {
@@ -948,6 +950,41 @@ pub mod get_proofs_request {
         pub struct ContractRequest {
             #[prost(bytes = "vec", tag = "1")]
             pub contract_id: ::prost::alloc::vec::Vec<u8>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct VoteStatusRequest {
+            #[prost(oneof = "vote_status_request::RequestType", tags = "1")]
+            pub request_type: ::core::option::Option<vote_status_request::RequestType>,
+        }
+        /// Nested message and enum types in `VoteStatusRequest`.
+        pub mod vote_status_request {
+            #[derive(::serde::Serialize, ::serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            #[derive(::dapi_grpc_macros::Mockable)]
+            #[allow(clippy::derive_partial_eq_without_eq)]
+            #[derive(Clone, PartialEq, ::prost::Message)]
+            pub struct ContestedResourceVoteStatusRequest {
+                #[prost(bytes = "vec", repeated, tag = "1")]
+                pub resource_path: ::prost::alloc::vec::Vec<
+                    ::prost::alloc::vec::Vec<u8>,
+                >,
+                #[prost(bytes = "vec", tag = "2")]
+                pub resource_identifier: ::prost::alloc::vec::Vec<u8>,
+                #[prost(bytes = "vec", tag = "3")]
+                pub voter_identifier: ::prost::alloc::vec::Vec<u8>,
+            }
+            #[derive(::serde::Serialize, ::serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            #[allow(clippy::derive_partial_eq_without_eq)]
+            #[derive(Clone, PartialEq, ::prost::Oneof)]
+            pub enum RequestType {
+                #[prost(message, tag = "1")]
+                ContestedResourceVoteStatusRequest(ContestedResourceVoteStatusRequest),
+            }
         }
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
