@@ -66,6 +66,7 @@ pub const SHA256_BLOCK_SIZE: u16 = 64;
 pub enum ValidationOperation {
     Protocol(ProtocolValidationOperation),
     RetrieveIdentity(RetrieveIdentityInfo),
+    RetrievePrefundedSpecializedBalance,
     DoubleSha256(HashBlockCount),
     ValidateKeyStructure(KeyCount), // This is extremely cheap
     SignatureVerification(SignatureVerificationOperation),

@@ -221,9 +221,14 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
             Self::DocumentTypeUpdateError(_) => 40212,
 
+            // Prefunded specialized balances Errors: 40400-40499
+            Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,
+            Self::PrefundedSpecializedBalanceNotFoundError(_) => 40401,
+
             // Data trigger errors: 40500-40799
             #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
+
         }
     }
 }

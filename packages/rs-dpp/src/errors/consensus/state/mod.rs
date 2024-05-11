@@ -4,3 +4,4 @@ pub mod data_trigger;
 pub mod document;
 pub mod identity;
 pub mod state_error;
+pub mod prefunded_specialized_balances;

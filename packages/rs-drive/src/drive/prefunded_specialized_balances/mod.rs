@@ -4,10 +4,14 @@ mod deduct_from_prefunded_specialized_balance;
 mod deduct_from_prefunded_specialized_balance_operations;
 mod estimation_costs;
 mod fetch;
+mod prove;
 
+use grovedb::TransactionArg;
+use platform_version::version::drive_versions::DriveVersion;
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};
+use crate::error::Error;
 
 pub const PREFUNDED_BALANCES_FOR_VOTING: [u8; 1] = [128];
 

@@ -32,6 +32,8 @@ use crate::consensus::state::document::document_incorrect_purchase_price_error::
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
+use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
+use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -127,6 +129,12 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentTypeUpdateError(DocumentTypeUpdateError),
+
+    #[error(transparent)]
+    PrefundedSpecializedBalanceInsufficientError(PrefundedSpecializedBalanceInsufficientError),
+
+    #[error(transparent)]
+    PrefundedSpecializedBalanceNotFoundError(PrefundedSpecializedBalanceNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {

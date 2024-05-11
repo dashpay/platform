@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -6,7 +7,10 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::fee::Credits;
+use dpp::identifier::Identifier;
 use dpp::identity::PartialIdentity;
+use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 
@@ -133,6 +137,12 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
         }
     }
+
+    let prefunded_balances = if state_transition.uses_prefunded_specialized_balance_for_payment() {
+        Some(state_transition.validate_minimum_prefunded_specialized_balance_pre_check()?)
+    } else {
+        None
+    };
 
     // Only identity update and data contract create have advanced structure validation without state
     if state_transition.has_advanced_structure_validation_without_state() {
@@ -379,7 +389,7 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
 }
 
 /// A trait for validating state transitions within a blockchain.
-pub(crate) trait StateTransitionBalanceValidationV0 {
+pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
     /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
     ///
     /// # Arguments
@@ -404,7 +414,38 @@ pub(crate) trait StateTransitionBalanceValidationV0 {
     /// This balance validation is not for the operations of the state transition, but more as a
     /// quick early verification that the user has the balance they want to transfer or withdraw.
     fn has_balance_pre_check_validation(&self) -> bool {
-        true
+        !matches!(self, StateTransition::MasternodeVote(_))
+    }
+}
+
+pub(crate) trait StateTransitionPrefundedSpecializedBalanceValidationV0 {
+
+    /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - A reference to the platform containing the state data.
+    /// * `tx` - The transaction argument to be applied.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `C: CoreRPCLike` - A type constraint indicating that C should implement `CoreRPCLike`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ConsensusValidationResult<StateTransitionAction>, Error>` - A result with either a ConsensusValidationResult containing a StateTransitionAction or an Error.
+    fn validate_minimum_prefunded_specialized_balance_pre_check(
+        &self,
+        drive: &Drive,
+        tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<BTreeMap<PrefundedSpecializedBalanceIdentifier, Credits>>, Error>;
+    
+    
+    /// Do we use a prefunded specialized balance for payment
+    fn uses_prefunded_specialized_balance_for_payment(&self) -> bool {
+        matches!(self, StateTransition::MasternodeVote(_))
     }
 }
 
@@ -543,7 +584,7 @@ impl StateTransitionNonceValidationV0 for StateTransition {
     }
 }
 
-impl StateTransitionBalanceValidationV0 for StateTransition {
+impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
     fn validate_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,
@@ -564,10 +605,7 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
             | StateTransition::IdentityUpdate(_) => {
                 self.validate_simple_pre_check_minimum_balance(identity, platform_version)
             }
-            StateTransition::MasternodeVote(_) => {
-                // We validate that amount set aside still has funds
-            }
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
+            StateTransition::MasternodeVote(_) | StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
                 Ok(SimpleConsensusValidationResult::new())
             }
         }
@@ -582,6 +620,32 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
                 | StateTransition::DataContractUpdate(_)
                 | StateTransition::DocumentsBatch(_)
                 | StateTransition::IdentityUpdate(_)
+        )
+    }
+}
+
+
+impl StateTransitionPrefundedSpecializedBalanceValidationV0 for StateTransition {
+    fn validate_minimum_prefunded_specialized_balance_pre_check(
+        &self,
+        drive: &Drive,
+        tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<BTreeMap<PrefundedSpecializedBalanceIdentifier, Credits>>, Error> {
+        match self {
+            StateTransition::MasternodeVote(masternode_vote_transition) => {
+                masternode_vote_transition.validate_minimum_prefunded_specialized_balance_pre_check(drive, tx, execution_context, platform_version)
+            }
+            _ => {
+                Ok(ConsensusValidationResult::new())
+            }
+        }
+    }
+
+    fn uses_prefunded_specialized_balance_for_payment(&self) -> bool {
+        matches!(
+            self,
                 | StateTransition::MasternodeVote(_)
         )
     }

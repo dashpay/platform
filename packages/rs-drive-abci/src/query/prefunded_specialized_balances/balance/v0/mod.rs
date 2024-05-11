@@ -18,7 +18,7 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetPrefundedSpecializedBalanceResponseV0>, Error> {
-        let identity_id: Identifier =
+        let balance_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
                     "id must be a valid identifier (32 bytes long)".to_string(),
@@ -26,21 +26,21 @@ impl<C> Platform<C> {
             }));
 
         let response = if prove {
-            let proof = check_validation_result_with_data!(self.drive.prove_identity_balance(
-                identity_id.into_buffer(),
+            let proof = check_validation_result_with_data!(self.drive.prove_prefunded_specialized_balance(
+                balance_id.into_buffer(),
                 None,
-                &platform_version.drive
+                platform_version,
             ));
 
-            GetIdentityBalanceResponseV0 {
-                result: Some(get_identity_balance_response_v0::Result::Proof(
+            GetPrefundedSpecializedBalanceResponseV0 {
+                result: Some(get_prefunded_specialized_balance_response_v0::Result::Proof(
                     self.response_proof_v0(platform_state, proof),
                 )),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
-            let maybe_balance = self.drive.fetch_identity_balance(
-                identity_id.into_buffer(),
+            let maybe_balance = self.drive.fetch_prefunded_specialized_balance(
+                balance_id.into_buffer(),
                 None,
                 platform_version,
             )?;
@@ -51,8 +51,8 @@ impl<C> Platform<C> {
                 )));
             };
 
-            GetIdentityBalanceResponseV0 {
-                result: Some(get_identity_balance_response_v0::Result::Balance(balance)),
+            GetPrefundedSpecializedBalanceResponseV0 {
+                result: Some(get_prefunded_specialized_balance_response_v0::Result::Balance(balance)),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
@@ -70,13 +70,13 @@ mod tests {
     fn test_invalid_identity_id() {
         let (platform, state, version) = setup_platform(false);
 
-        let request = GetIdentityBalanceRequestV0 {
+        let request = GetPrefundedSpecializedBalanceRequestV0 {
             id: vec![0; 8],
             prove: false,
         };
 
         let result = platform
-            .query_balance_v0(request, &state, version)
+            .query_prefunded_specialized_balance_v0(request, &state, version)
             .expect("should query balance");
 
         assert_invalid_identifier(result);
@@ -88,13 +88,13 @@ mod tests {
 
         let id = vec![0; 32];
 
-        let request = GetIdentityBalanceRequestV0 {
+        let request = GetPrefundedSpecializedBalanceRequestV0 {
             id: id.clone(),
             prove: false,
         };
 
         let result = platform
-            .query_balance_v0(request, &state, version)
+            .query_prefunded_specialized_balance_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -109,19 +109,19 @@ mod tests {
 
         let id = vec![0; 32];
 
-        let request = GetIdentityBalanceRequestV0 {
+        let request = GetPrefundedSpecializedBalanceRequestV0 {
             id: id.clone(),
             prove: true,
         };
 
         let result = platform
-            .query_balance_v0(request, &state, version)
+            .query_prefunded_specialized_balance_v0(request, &state, version)
             .expect("should query balance");
 
         assert!(matches!(
             result.data,
-            Some(GetIdentityBalanceResponseV0 {
-                result: Some(get_identity_balance_response_v0::Result::Proof(_)),
+            Some(GetPrefundedSpecializedBalanceResponseV0 {
+                result: Some(get_prefunded_specialized_balance_response_v0::Result::Proof(_)),
                 metadata: Some(_)
             })
         ));
