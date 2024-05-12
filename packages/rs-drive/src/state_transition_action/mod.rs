@@ -16,6 +16,7 @@ use crate::state_transition_action::identity::identity_credit_transfer::Identity
 use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
+use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::{
     BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionAccessorsV0,
 };
@@ -27,7 +28,6 @@ use crate::state_transition_action::system::partially_use_asset_lock_action::{
 };
 use derive_more::From;
 use dpp::prelude::UserFeeIncrease;
-use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 
 /// ST action
 #[derive(Debug, Clone, From)]

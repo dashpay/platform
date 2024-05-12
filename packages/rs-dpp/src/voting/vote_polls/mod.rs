@@ -36,4 +36,12 @@ impl VotePoll {
             }
         }
     }
+
+    pub fn unique_id(&self) -> Result<Identifier, ProtocolError> {
+        match self {
+            VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
+                contested_document_resource_vote_poll.unique_id()
+            }
+        }
+    }
 }

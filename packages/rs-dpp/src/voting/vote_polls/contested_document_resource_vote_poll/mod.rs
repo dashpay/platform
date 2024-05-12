@@ -39,6 +39,10 @@ impl ContestedDocumentResourceVotePoll {
     }
 
     pub fn specialized_balance_id(&self) -> Result<Identifier, ProtocolError> {
-        self.sha256_2_hash().map(|id| Identifier::new(id))
+        self.unique_id()
+    }
+
+    pub fn unique_id(&self) -> Result<Identifier, ProtocolError> {
+        self.sha256_2_hash().map(Identifier::new)
     }
 }

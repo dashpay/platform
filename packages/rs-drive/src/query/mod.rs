@@ -4,6 +4,7 @@ pub use {
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     ordering::OrderClause,
     single_document_drive_query::SingleDocumentDriveQuery,
+    vote_query::IdentityBasedVoteDriveQuery,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -71,6 +72,9 @@ mod single_document_drive_query;
 // Module declarations exclusively for "server" feature
 #[cfg(feature = "server")]
 mod test_index;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+mod vote_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct

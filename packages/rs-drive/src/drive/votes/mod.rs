@@ -8,12 +8,22 @@ use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::Vote;
 use dpp::ProtocolError;
 
+#[cfg(feature = "server")]
 mod cleanup;
+
+#[cfg(feature = "server")]
 mod insert;
-mod paths;
+
+/// Paths important for the module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod paths;
+
+#[cfg(feature = "server")]
 mod setup;
 
+/// A trait to convert the vote to a tree path usable in grovedb
 pub trait TreePath {
+    /// The tree path function
     fn tree_path<'a>(&'a self, contract: &'a DataContract) -> Result<Vec<&'a [u8]>, ProtocolError>;
 }
 

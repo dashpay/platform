@@ -9,7 +9,6 @@ use dpp::prelude::IdentityNonce;
 use dpp::ProtocolError;
 
 use crate::drive::contract::DataContractFetchInfo;
-use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 
 #[derive(Debug, Clone)]
 /// document base transition action v0

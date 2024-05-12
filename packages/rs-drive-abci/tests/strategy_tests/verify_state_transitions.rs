@@ -6,6 +6,8 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request;
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::RequestType;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
 use dpp::state_transition::StateTransition;
@@ -19,8 +21,6 @@ use drive_abci::execution::validation::state_transition::transformer::StateTrans
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
-use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request;
-use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::RequestType;
 
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::voting::vote_polls::VotePoll;
@@ -722,19 +722,25 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
                     }
                 }
-                StateTransitionAction::MasternodeVoteAction(
-                    masternode_vote_action,
-                ) => {
-                    match masternode_vote_action.vote_ref() { Vote::ResourceVote(resource_vote) => {
+                StateTransitionAction::MasternodeVoteAction(masternode_vote_action) => {
+                    match masternode_vote_action.vote_ref() {
+                        Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
+                            VotePoll::ContestedDocumentResourceVotePoll(
+                                contested_document_resource_vote_poll,
+                            ) => {
+                                let config = bincode::config::standard()
+                                    .with_big_endian()
+                                    .with_no_limit();
+                                let serialized_index_values = contested_document_resource_vote_poll
+                                    .index_values
+                                    .iter()
+                                    .map(|value| {
+                                        bincode::encode_to_vec(value, config)
+                                            .expect("expected to encode value in path")
+                                    })
+                                    .collect();
 
-                        match resource_vote.vote_poll() { VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
-                            
-                            let config = bincode::config::standard();
-                            let serialized_index_values = contested_document_resource_vote_poll.index_values.iter().map(|value|
-                                bincode::encode_to_vec(value, config).expect("expected to encode value in path")
-                            ).collect();
-                            
-                            proofs_request
+                                proofs_request
                                 .votes
                                 .push(get_proofs_request_v0::VoteStatusRequest{
                                     request_type: Some(RequestType::ContestedResourceVoteStatusRequest(vote_status_request::ContestedResourceVoteStatusRequest {
@@ -745,8 +751,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         index_values: serialized_index_values,
                                     }))
                                 });
-                        } }
-                    } }
+                            }
+                        },
+                    }
 
                     let versioned_request = GetProofsRequest {
                         version: Some(get_proofs_request::Version::V0(proofs_request)),
@@ -761,15 +768,14 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get a vote that matches the state transition
-                    let (root_hash_vote, maybe_vote) =
-                        Drive::verify_masternode_vote(
-                            &response_proof.grovedb_proof,
-                            masternode_vote_action.pro_tx_hash().into_buffer(),
-                            masternode_vote_action.vote_ref(),
-                            true,
-                            platform_version,
-                        )
-                            .expect("expected to verify balance identity");
+                    let (root_hash_vote, maybe_vote) = Drive::verify_masternode_vote(
+                        &response_proof.grovedb_proof,
+                        masternode_vote_action.pro_tx_hash().into_buffer(),
+                        masternode_vote_action.vote_ref(),
+                        true,
+                        platform_version,
+                    )
+                    .expect("expected to verify balance identity");
 
                     assert_eq!(
                         &root_hash_vote,
@@ -781,9 +787,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     if *was_executed {
                         let vote = maybe_vote.expect("expected a vote");
 
-                        assert_eq!(
-                            &vote, masternode_vote_action.vote_ref()
-                        );
+                        assert_eq!(&vote, masternode_vote_action.vote_ref());
                     }
                 }
                 StateTransitionAction::BumpIdentityNonceAction(_) => {}

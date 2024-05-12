@@ -118,7 +118,7 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 validation_mode,
                 execution_context,
                 tx,
-            )
+            ),
         }
     }
 }

@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::RequestType;
 use dapi_grpc::platform::v0::get_proofs_request::GetProofsRequestV0;
 use dapi_grpc::platform::v0::get_proofs_response::{get_proofs_response_v0, GetProofsResponseV0};
 use dpp::check_validation_result_with_data;
@@ -10,8 +11,9 @@ use dpp::platform_value::Bytes32;
 use dpp::prelude::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
-use drive::query::SingleDocumentDriveQuery;
+use drive::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 
 impl<C> Platform<C> {
     pub(super) fn query_proofs_v0(
@@ -19,7 +21,7 @@ impl<C> Platform<C> {
         GetProofsRequestV0 {
             identities,
             contracts,
-            documents, 
+            documents,
             votes,
         }: GetProofsRequestV0,
         platform_state: &PlatformState,
@@ -91,29 +93,47 @@ impl<C> Platform<C> {
             })
             .collect::<Result<Vec<_>, QueryError>>());
 
-        let document_queries = check_validation_result_with_data!(votes
+        let vote_queries = check_validation_result_with_data!(votes
             .into_iter()
-            .map(|vote_proof_request| {
-                let contract_id: Identifier =
-                    document_proof_request.contract_id.try_into().map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?;
-                let document_id: Identifier =
-                    document_proof_request.document_id.try_into().map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?;
-
-                Ok(SingleDocumentDriveQuery {
-                    contract_id: contract_id.into_buffer(),
-                    document_type_name: document_proof_request.document_type,
-                    document_type_keeps_history: document_proof_request.document_type_keeps_history,
-                    document_id: document_id.into_buffer(),
-                    block_time_ms: None, //None because we want latest
-                })
+            .filter_map(|vote_proof_request| {
+                if let Some(request_type) = vote_proof_request.request_type {
+                    match request_type {
+                        RequestType::ContestedResourceVoteStatusRequest(contested_resource_vote_status_request) => {
+                            let identity_id = match contested_resource_vote_status_request.voter_identifier.try_into() {
+                                Ok(identity_id) => identity_id,
+                                Err(_) => return Some(Err(QueryError::InvalidArgument(
+                            "voter_identifier must be a valid identifier (32 bytes long)".to_string(),
+                        ))),
+                            };
+                            let contract_id = match  contested_resource_vote_status_request.contract_id.try_into() {
+                                Ok(contract_id) => contract_id,
+                                Err(_) => return Some(Err(QueryError::InvalidArgument(
+                            "contract_id must be a valid identifier (32 bytes long)".to_string(),
+                        ))),
+                            };
+                            let document_type_name = contested_resource_vote_status_request.document_type_name;
+                            let index_name = contested_resource_vote_status_request.index_name;
+                            let index_values = match contested_resource_vote_status_request.index_values.into_iter().enumerate().map(|(pos,serialized_value)|
+                                Ok(bincode::decode_from_slice(serialized_value.as_slice(), bincode::config::standard().with_big_endian()
+            .with_no_limit()).map_err(|_| QueryError::InvalidArgument(
+                            format!("could not convert {:?} to a value in the index values at position {}", serialized_value, pos),
+                        ))?.0)
+                            ).collect::<Result<Vec<_>, QueryError>>() {
+                                Ok(index_values) => index_values,
+                                Err(e) => return Some(Err(e)),
+                            };
+                            let vote_poll = ContestedDocumentResourceVotePoll {
+                            contract_id, document_type_name, index_name, index_values,
+                            }.into();
+                            Some(Ok(IdentityBasedVoteDriveQuery {
+                                identity_id,
+                                vote_poll,
+                            }))
+                        }
+                    }
+                } else {
+                    None
+                }
             })
             .collect::<Result<Vec<_>, QueryError>>());
 
@@ -156,6 +176,7 @@ mod tests {
             }],
             contracts: vec![],
             documents: vec![],
+            votes: vec![],
         };
 
         let result = platform
@@ -178,6 +199,7 @@ mod tests {
             }],
             contracts: vec![],
             documents: vec![],
+            votes: vec![],
         };
 
         let result = platform
@@ -203,6 +225,7 @@ mod tests {
                 contract_id: vec![0; 8],
             }],
             documents: vec![],
+            votes: vec![],
         };
 
         let result = platform
@@ -225,6 +248,7 @@ mod tests {
                 document_type_keeps_history: false,
                 document_id: vec![0; 32],
             }],
+            votes: vec![],
         };
 
         let result = platform
@@ -247,6 +271,7 @@ mod tests {
                 document_type_keeps_history: false,
                 document_id: vec![0; 8],
             }],
+            votes: vec![],
         };
 
         let result = platform
@@ -269,6 +294,7 @@ mod tests {
                 document_type_keeps_history: false,
                 document_id: vec![0; 32],
             }],
+            votes: vec![],
         };
 
         let validation_result = platform
@@ -299,6 +325,7 @@ mod tests {
                 document_type_keeps_history: false,
                 document_id: vec![1; 32],
             }],
+            votes: vec![],
         };
 
         let validation_result = platform
