@@ -313,9 +313,11 @@ message GetProofsRequest {
 
     message VoteStatusRequest {
       message ContestedResourceVoteStatusRequest {
-        repeated bytes resource_path = 1;
-        bytes resource_identifier = 2;
-        bytes voter_identifier = 3;
+        bytes contract_id = 1;
+        string document_type_name = 2;
+        string index_name = 3;
+        repeated bytes index_values = 4;
+        bytes voter_identifier = 5;
       }
 
       oneof request_type { ContestedResourceVoteStatusRequest contested_resource_vote_status_request = 1; }

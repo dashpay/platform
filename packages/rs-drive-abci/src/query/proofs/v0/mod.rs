@@ -19,7 +19,8 @@ impl<C> Platform<C> {
         GetProofsRequestV0 {
             identities,
             contracts,
-            documents,
+            documents, 
+            votes,
         }: GetProofsRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
@@ -90,10 +91,37 @@ impl<C> Platform<C> {
             })
             .collect::<Result<Vec<_>, QueryError>>());
 
+        let document_queries = check_validation_result_with_data!(votes
+            .into_iter()
+            .map(|vote_proof_request| {
+                let contract_id: Identifier =
+                    document_proof_request.contract_id.try_into().map_err(|_| {
+                        QueryError::InvalidArgument(
+                            "id must be a valid identifier (32 bytes long)".to_string(),
+                        )
+                    })?;
+                let document_id: Identifier =
+                    document_proof_request.document_id.try_into().map_err(|_| {
+                        QueryError::InvalidArgument(
+                            "id must be a valid identifier (32 bytes long)".to_string(),
+                        )
+                    })?;
+
+                Ok(SingleDocumentDriveQuery {
+                    contract_id: contract_id.into_buffer(),
+                    document_type_name: document_proof_request.document_type,
+                    document_type_keeps_history: document_proof_request.document_type_keeps_history,
+                    document_id: document_id.into_buffer(),
+                    block_time_ms: None, //None because we want latest
+                })
+            })
+            .collect::<Result<Vec<_>, QueryError>>());
+
         let proof = self.drive.prove_multiple_state_transition_results(
             &identity_requests,
             &contract_ids,
             &document_queries,
+            &vote_queries,
             None,
             platform_version,
         )?;

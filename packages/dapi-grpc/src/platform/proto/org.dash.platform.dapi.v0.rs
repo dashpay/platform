@@ -968,13 +968,15 @@ pub mod get_proofs_request {
             #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Message)]
             pub struct ContestedResourceVoteStatusRequest {
-                #[prost(bytes = "vec", repeated, tag = "1")]
-                pub resource_path: ::prost::alloc::vec::Vec<
-                    ::prost::alloc::vec::Vec<u8>,
-                >,
-                #[prost(bytes = "vec", tag = "2")]
-                pub resource_identifier: ::prost::alloc::vec::Vec<u8>,
-                #[prost(bytes = "vec", tag = "3")]
+                #[prost(bytes = "vec", tag = "1")]
+                pub contract_id: ::prost::alloc::vec::Vec<u8>,
+                #[prost(string, tag = "2")]
+                pub document_type_name: ::prost::alloc::string::String,
+                #[prost(string, tag = "3")]
+                pub index_name: ::prost::alloc::string::String,
+                #[prost(bytes = "vec", repeated, tag = "4")]
+                pub index_values: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+                #[prost(bytes = "vec", tag = "5")]
                 pub voter_identifier: ::prost::alloc::vec::Vec<u8>,
             }
             #[derive(::serde::Serialize, ::serde::Deserialize)]

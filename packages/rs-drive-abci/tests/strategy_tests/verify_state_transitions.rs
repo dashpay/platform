@@ -19,8 +19,13 @@ use drive_abci::execution::validation::state_transition::transformer::StateTrans
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request;
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::RequestType;
 
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dpp::voting::votes::Vote;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
@@ -101,6 +106,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             identities: vec![],
             contracts: vec![],
             documents: vec![],
+            votes: vec![],
         };
 
         if let Some(action) = action {
@@ -719,23 +725,28 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 StateTransitionAction::MasternodeVoteAction(
                     masternode_vote_action,
                 ) => {
-                    proofs_request
-                        .votes
-                        .push(get_proofs_request_v0::VoteStatusRequest{
-                            request_type: Some(get_proofs_request_v0::vote_status_request::ContestedResourceVoteStatusRequest {
-                                resource_path: vec![],
-                                resource_identifier: vec![],
-                                voter_identifier: vec![],
-                            })
-                        });
+                    match masternode_vote_action.vote_ref() { Vote::ResourceVote(resource_vote) => {
 
-                    proofs_request
-                        .identities
-                        .push(get_proofs_request_v0::IdentityRequest {
-                            identity_id: identity_credit_transfer_action.recipient_id().to_vec(),
-                            request_type: get_proofs_request_v0::identity_request::Type::Balance
-                                .into(),
-                        });
+                        match resource_vote.vote_poll() { VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
+                            
+                            let config = bincode::config::standard();
+                            let serialized_index_values = contested_document_resource_vote_poll.index_values.iter().map(|value|
+                                bincode::encode_to_vec(value, config).expect("expected to encode value in path")
+                            ).collect();
+                            
+                            proofs_request
+                                .votes
+                                .push(get_proofs_request_v0::VoteStatusRequest{
+                                    request_type: Some(RequestType::ContestedResourceVoteStatusRequest(vote_status_request::ContestedResourceVoteStatusRequest {
+                                        contract_id: contested_document_resource_vote_poll.contract_id.to_vec(),
+                                        document_type_name: contested_document_resource_vote_poll.document_type_name.clone(),
+                                        index_name: contested_document_resource_vote_poll.index_name.clone(),
+                                        voter_identifier: masternode_vote_action.pro_tx_hash().to_vec(),
+                                        index_values: serialized_index_values,
+                                    }))
+                                });
+                        } }
+                    } }
 
                     let versioned_request = GetProofsRequest {
                         version: Some(get_proofs_request::Version::V0(proofs_request)),
@@ -750,27 +761,28 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get a vote that matches the state transition
-                    let (root_hash_identity, _balance_identity) =
-                        Drive::verify_identity_balance_for_identity_id(
+                    let (root_hash_vote, maybe_vote) =
+                        Drive::verify_masternode_vote(
                             &response_proof.grovedb_proof,
-                            identity_credit_transfer_action.identity_id().into_buffer(),
+                            masternode_vote_action.pro_tx_hash().into_buffer(),
+                            masternode_vote_action.vote_ref(),
                             true,
                             platform_version,
                         )
                             .expect("expected to verify balance identity");
 
                     assert_eq!(
-                        &root_hash_identity,
+                        &root_hash_vote,
                         expected_root_hash,
                         "state last block info {:?}",
                         platform.state.last_committed_block_info()
                     );
-                    
-                    if *was_executed {
-                        let balance_recipient = balance_recipient.expect("expected a balance");
 
-                        assert!(
-                            balance_recipient >= identity_credit_transfer_action.transfer_amount()
+                    if *was_executed {
+                        let vote = maybe_vote.expect("expected a vote");
+
+                        assert_eq!(
+                            &vote, masternode_vote_action.vote_ref()
                         );
                     }
                 }
