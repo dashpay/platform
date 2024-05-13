@@ -2,7 +2,6 @@ use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DocumentName;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
