@@ -19,6 +19,10 @@ pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 5] = [
     StateTransitionType::IdentityCreditWithdrawal,
 ];
 
+pub const VOTING_TRANSITION_TYPE: [StateTransitionType; 1] = [
+    StateTransitionType::MasternodeVote,
+];
+
 pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
     StateTransitionType::DataContractCreate,
     StateTransitionType::DataContractUpdate,
@@ -56,6 +60,12 @@ pub trait StateTransitionLike:
     fn is_identity_state_transition(&self) -> bool {
         IDENTITY_TRANSITION_TYPE.contains(&self.state_transition_type())
     }
+
+    /// return true if state transition is a voting state transition
+    fn is_voting_state_transition(&self) -> bool {
+        VOTING_TRANSITION_TYPE.contains(&self.state_transition_type())
+    }
+
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>);
 

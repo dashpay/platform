@@ -64,11 +64,14 @@ use wasm_bindgen::{JsError, JsValue};
 use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
 use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
+use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
+use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
+use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractEmptySchemaErrorWasm, DataContractErrorWasm,
@@ -236,6 +239,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentIncorrectPurchasePriceError(e) => {
             generic_consensus_error!(DocumentIncorrectPurchasePriceError, e).into()
+        }
+        StateError::PrefundedSpecializedBalanceInsufficientError(e) => {
+            generic_consensus_error!(PrefundedSpecializedBalanceInsufficientError, e).into()
+        }
+        StateError::PrefundedSpecializedBalanceNotFoundError(e) => {
+            generic_consensus_error!(PrefundedSpecializedBalanceNotFoundError, e).into()
         }
     }
 }
@@ -476,6 +485,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DocumentCreationNotAllowedError(e) => {
             generic_consensus_error!(DocumentCreationNotAllowedError, e).into()
+        }
+        BasicError::OverflowError(e) => {
+            generic_consensus_error!(OverflowError, e).into()
         }
     }
 }

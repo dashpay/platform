@@ -25,6 +25,16 @@ pub enum IndexType {
     ContestedResourceIndex,
 }
 
+impl IndexType {
+    pub fn is_unique(&self) -> bool {
+        match self {
+            NonUniqueIndex => false,
+            UniqueIndex => true,
+            ContestedResourceIndex => true,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct IndexLevel {
     /// the lower index levels from this level

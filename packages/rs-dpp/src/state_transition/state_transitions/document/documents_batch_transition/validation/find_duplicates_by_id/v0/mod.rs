@@ -72,6 +72,7 @@ mod test {
                 }),
                 entropy: Default::default(),
                 data: Default::default(),
+                prefunded_voting_balances: Default::default(),
             }));
 
         let create_transition_duplicate = create_transition.clone();

@@ -12,6 +12,7 @@ use dpp::state_transition::state_transition_factory::StateTransitionFactory;
 use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use crate::voting::state_transition::masternode_vote_transition::MasternodeVoteTransitionWasm;
 
 #[wasm_bindgen(js_name = StateTransitionFactory)]
 pub struct StateTransitionFactoryWasm(StateTransitionFactory);
@@ -57,6 +58,9 @@ impl StateTransitionFactoryWasm {
                 }
                 StateTransition::DocumentsBatch(st) => {
                     Ok(DocumentsBatchTransitionWasm::from(st).into())
+                }
+                StateTransition::MasternodeVote(st) => {
+                    Ok(MasternodeVoteTransitionWasm::from(st).into())
                 }
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {

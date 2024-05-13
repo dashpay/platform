@@ -1,50 +1,47 @@
-use crate::utils::WithJsError;
+mod to_object;
 
-use std::convert::TryInto;
-use std::default::Default;
-
-use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
-
-use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::from_dpp_err;
-use crate::identifier::IdentifierWrapper;
-use crate::identity::IdentityPublicKeyWasm;
-use crate::{buffer::Buffer, with_js_error};
+use wasm_bindgen::{JsError, JsValue};
+use wasm_bindgen::prelude::wasm_bindgen;
 use dpp::identifier::Identifier;
 use dpp::identity::KeyType;
+use dpp::platform_value::{BinaryData, string_encoding};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
+use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
+use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::version::PlatformVersion;
+use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::buffer::Buffer;
+use crate::errors::from_dpp_err;
+use crate::identifier::IdentifierWrapper;
+use crate::{IdentityPublicKeyWasm, with_js_error};
+use crate::utils::WithJsError;
 
-use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use dpp::state_transition::StateTransitionLike;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
-#[wasm_bindgen(js_name=IdentityCreditTransferTransition)]
 #[derive(Clone)]
-pub struct IdentityCreditTransferTransitionWasm(IdentityCreditTransferTransition);
+#[wasm_bindgen(js_name=MasternodeVoteTransition)]
+pub struct MasternodeVoteTransitionWasm(MasternodeVoteTransition);
 
-impl From<IdentityCreditTransferTransition> for IdentityCreditTransferTransitionWasm {
-    fn from(v: IdentityCreditTransferTransition) -> Self {
-        IdentityCreditTransferTransitionWasm(v)
+impl From<MasternodeVoteTransition> for MasternodeVoteTransitionWasm {
+    fn from(v: MasternodeVoteTransition) -> Self {
+        MasternodeVoteTransitionWasm(v)
     }
 }
 
-impl From<IdentityCreditTransferTransitionWasm> for IdentityCreditTransferTransition {
-    fn from(v: IdentityCreditTransferTransitionWasm) -> Self {
-        v.0
+impl From<MasternodeVoteTransitionWasm> for MasternodeVoteTransition {
+    fn from(val: MasternodeVoteTransitionWasm) -> Self {
+        val.0
     }
 }
 
-#[wasm_bindgen(js_class = IdentityCreditTransferTransition)]
-impl IdentityCreditTransferTransitionWasm {
+#[wasm_bindgen(js_class=MasternodeVoteTransition)]
+impl MasternodeVoteTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(platform_version: u32) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
+    pub fn new(platform_version: u32) -> Result<MasternodeVoteTransitionWasm, JsValue> {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityCreditTransferTransition::default_versioned(platform_version)
+        MasternodeVoteTransition::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -54,60 +51,29 @@ impl IdentityCreditTransferTransitionWasm {
         self.0.state_transition_type() as u8
     }
 
-    #[wasm_bindgen(getter, js_name=identityId)]
-    pub fn identity_id(&self) -> IdentifierWrapper {
-        self.get_identity_id()
-    }
-
-    #[wasm_bindgen(getter, js_name=recipientId)]
-    pub fn recipient_id(&self) -> IdentifierWrapper {
-        self.get_recipient_id()
-    }
-
-    #[wasm_bindgen(getter, js_name=amount)]
-    pub fn amount(&self) -> u64 {
-        self.0.amount()
+    #[wasm_bindgen(getter, js_name=proTxHash)]
+    pub fn pro_tx_hash(&self) -> IdentifierWrapper {
+        self.get_pro_tx_hash()
     }
 
     #[wasm_bindgen(js_name=getIdentityId)]
-    pub fn get_identity_id(&self) -> IdentifierWrapper {
-        self.0.identity_id().into()
+    pub fn get_pro_tx_hash(&self) -> IdentifierWrapper {
+        self.0.pro_tx_hash().into()
     }
-
-    #[wasm_bindgen(js_name=getRecipientId)]
-    pub fn get_recipient_id(&self) -> IdentifierWrapper {
-        self.0.recipient_id().into()
-    }
-
+    
     #[wasm_bindgen(js_name=setIdentityId)]
-    pub fn set_identity_id(&mut self, identity_id: &IdentifierWrapper) {
-        self.0.set_identity_id(identity_id.into());
+    pub fn set_pro_tx_hash(&mut self, pro_tx_hash: &IdentifierWrapper) {
+        self.0.set_pro_tx_hash(pro_tx_hash.into());
     }
-
-    #[wasm_bindgen(js_name=setRecipientId)]
-    pub fn set_recipient_id(&mut self, recipient_id: &IdentifierWrapper) {
-        self.0.set_recipient_id(recipient_id.into());
-    }
-
-    #[wasm_bindgen(js_name=getAmount)]
-    pub fn get_amount(&self) -> f64 {
-        self.0.amount() as f64
-    }
-
-    #[wasm_bindgen(js_name=setAmount)]
-    pub fn set_amount(&mut self, amount: f64) {
-        self.0.set_amount(amount as u64);
-    }
-
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
-        let opts: super::to_object::ToObjectOptions = if options.is_object() {
+        let opts: self::to_object::ToObjectOptions = if options.is_object() {
             with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
             Default::default()
         };
 
-        let object = super::to_object::to_object_struct(&self.0, opts);
+        let object = self::to_object::to_object_struct(&self.0, opts);
         let js_object = js_sys::Object::new();
 
         js_sys::Reflect::set(
@@ -117,7 +83,7 @@ impl IdentityCreditTransferTransitionWasm {
         )?;
 
         let version = match self.0 {
-            IdentityCreditTransferTransition::V0(_) => "0",
+            MasternodeVoteTransition::V0(_) => "0",
         };
 
         js_sys::Reflect::set(&js_object, &"$version".to_owned().into(), &version.into())?;
@@ -148,21 +114,11 @@ impl IdentityCreditTransferTransitionWasm {
 
         js_sys::Reflect::set(
             &js_object,
-            &"identityId".to_owned().into(),
-            &Buffer::from_bytes(object.identity_id.to_buffer().as_slice()),
+            &"proTxHash".to_owned().into(),
+            &Buffer::from_bytes(object.pro_tx_hash.to_buffer().as_slice()),
         )?;
 
-        js_sys::Reflect::set(
-            &js_object,
-            &"recipientId".to_owned().into(),
-            &Buffer::from_bytes(object.recipient_id.to_buffer().as_slice()),
-        )?;
-
-        js_sys::Reflect::set(
-            &js_object,
-            &"amount".to_owned().into(),
-            &JsValue::from_f64(object.amount as f64),
-        )?;
+        //todo: reflect vote
 
         Ok(js_object.into())
     }
@@ -170,15 +126,15 @@ impl IdentityCreditTransferTransitionWasm {
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
         let bytes = PlatformSerializable::serialize_to_bytes(
-            &StateTransition::IdentityCreditTransfer(self.0.clone()),
+            &StateTransition::MasternodeVote(self.0.clone()),
         )
-        .with_js_error()?;
+            .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let object = super::to_object::to_object_struct(&self.0, Default::default());
+        let object = self::to_object::to_object_struct(&self.0, Default::default());
         let js_object = js_sys::Object::new();
 
         js_sys::Reflect::set(
@@ -188,7 +144,7 @@ impl IdentityCreditTransferTransitionWasm {
         )?;
 
         let version = match self.0 {
-            IdentityCreditTransferTransition::V0(_) => "0",
+            MasternodeVoteTransition::V0(_) => "0",
         };
 
         js_sys::Reflect::set(&js_object, &"$version".to_owned().into(), &version.into())?;
@@ -217,27 +173,15 @@ impl IdentityCreditTransferTransitionWasm {
             }
         }
 
-        let identity_id = object.identity_id.to_string(Encoding::Base58);
+        let pro_tx_hash = object.pro_tx_hash.to_string(Encoding::Base58);
 
         js_sys::Reflect::set(
             &js_object,
-            &"identityId".to_owned().into(),
-            &identity_id.into(),
+            &"proTxHash".to_owned().into(),
+            &pro_tx_hash.into(),
         )?;
 
-        let recipient_id = object.recipient_id.to_string(Encoding::Base58);
-
-        js_sys::Reflect::set(
-            &js_object,
-            &"recipientId".to_owned().into(),
-            &recipient_id.into(),
-        )?;
-
-        js_sys::Reflect::set(
-            &js_object,
-            &"amount".to_owned().into(),
-            &JsValue::from_f64(object.amount as f64),
-        )?;
+        // todo: reflect vote
 
         Ok(js_object.into())
     }
@@ -286,7 +230,7 @@ impl IdentityCreditTransferTransitionWasm {
             return Err(JsError::new(
                 format!("BLS adapter is required for BLS key type '{}'", key_type).as_str(),
             )
-            .into());
+                .into());
         }
 
         let bls_adapter = if let Some(adapter) = bls {
@@ -297,7 +241,7 @@ impl IdentityCreditTransferTransitionWasm {
 
         // TODO: not the best approach because it involves cloning the transition
         // Probably it worth to return `sign_by_private_key` per state transition
-        let mut wrapper = StateTransition::IdentityCreditTransfer(self.0.clone());
+        let mut wrapper = StateTransition::MasternodeVote(self.0.clone());
         wrapper
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
             .with_js_error()?;
@@ -328,7 +272,7 @@ impl IdentityCreditTransferTransitionWasm {
         let bls_adapter = BlsAdapter(bls);
 
         // TODO: come up with a better way to set signature to the binding.
-        let mut state_transition = StateTransition::IdentityCreditTransfer(self.0.clone());
+        let mut state_transition = StateTransition::MasternodeVote(self.0.clone());
         state_transition
             .sign(
                 &identity_public_key.to_owned().into(),

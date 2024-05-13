@@ -7,6 +7,7 @@ pub use data_contract::*;
 pub use document::*;
 pub use identity::*;
 pub use metadata::*;
+pub use voting::*;
 // pub use state_transition::*;
 
 mod dash_platform_protocol;
@@ -31,3 +32,4 @@ mod entropy_generator;
 mod lodash;
 mod protocol_version;
 mod validation;
+mod voting;

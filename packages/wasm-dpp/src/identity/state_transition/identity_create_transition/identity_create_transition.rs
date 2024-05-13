@@ -315,6 +315,11 @@ impl IdentityCreateTransitionWasm {
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
     }
+    
+    #[wasm_bindgen(js_name=isVotingStateTransition)]
+    pub fn is_voting_state_transition(&self) -> bool {
+        self.0.is_voting_state_transition()
+    }
 
     #[wasm_bindgen(js_name=signByPrivateKey)]
     pub fn sign_by_private_key(
