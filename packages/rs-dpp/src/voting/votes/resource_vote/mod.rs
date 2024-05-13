@@ -8,15 +8,7 @@ use serde::{Deserialize, Serialize};
 pub mod accessors;
 pub mod v0;
 
-#[derive(
-Debug,
-Clone,
-Encode,
-Decode,
-PlatformSerialize,
-PlatformDeserialize,
-PartialEq,
-)]
+#[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]
 #[cfg_attr(
     feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),

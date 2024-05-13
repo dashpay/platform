@@ -7,12 +7,12 @@ use crate::identity::state_transition::{
     IdentityUpdateTransitionWasm,
 };
 use crate::state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm;
+use crate::voting::state_transition::masternode_vote_transition::MasternodeVoteTransitionWasm;
 use dpp::state_transition::errors::StateTransitionError;
 use dpp::state_transition::state_transition_factory::StateTransitionFactory;
 use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
-use crate::voting::state_transition::masternode_vote_transition::MasternodeVoteTransitionWasm;
 
 #[wasm_bindgen(js_name = StateTransitionFactory)]
 pub struct StateTransitionFactoryWasm(StateTransitionFactory);

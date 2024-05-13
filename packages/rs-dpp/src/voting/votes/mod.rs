@@ -8,15 +8,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
-#[derive(
-Debug,
-Clone,
-Encode,
-Decode,
-PlatformSerialize,
-PlatformDeserialize,
-PartialEq,
-)]
+#[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]
 #[cfg_attr(
     feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),

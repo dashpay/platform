@@ -98,7 +98,8 @@ impl DocumentCreateTransitionV0 {
                 .remove_hash256_bytes(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?,
             prefunded_voting_balances: map
-                .remove_optional_map_as_btree_map(property_names::PREFUNDED_VOTING_BALANCES)?.unwrap_or_default(),
+                .remove_optional_map_as_btree_map(property_names::PREFUNDED_VOTING_BALANCES)?
+                .unwrap_or_default(),
             data: map,
         })
     }

@@ -17,7 +17,6 @@ impl fmt::Debug for BinaryData {
     }
 }
 
-
 impl Serialize for BinaryData {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

@@ -486,9 +486,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::DocumentCreationNotAllowedError(e) => {
             generic_consensus_error!(DocumentCreationNotAllowedError, e).into()
         }
-        BasicError::OverflowError(e) => {
-            generic_consensus_error!(OverflowError, e).into()
-        }
+        BasicError::OverflowError(e) => generic_consensus_error!(OverflowError, e).into(),
     }
 }
 

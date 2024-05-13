@@ -184,6 +184,7 @@ pub struct DocumentTypeVersions {
 pub struct DocumentTypeMethodVersions {
     pub create_document_from_data: FeatureVersion,
     pub create_document_with_prevalidated_properties: FeatureVersion,
+    pub prefunded_voting_balances_for_document: FeatureVersion,
     pub estimated_size: FeatureVersion,
     pub index_for_types: FeatureVersion,
     pub max_size: FeatureVersion,

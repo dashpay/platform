@@ -232,7 +232,10 @@ mod test {
         assert_eq!(indices["&ownerId&updatedAt"].name, "&ownerId&updatedAt");
         assert_eq!(indices["&ownerId&updatedAt"].properties.len(), 2);
         assert_eq!(indices["&ownerId&updatedAt"].properties[0].name, "$ownerId");
-        assert_eq!(indices["&ownerId&updatedAt"].properties[1].name, "$updatedAt");
+        assert_eq!(
+            indices["&ownerId&updatedAt"].properties[1].name,
+            "$updatedAt"
+        );
         assert!(!indices["&ownerId&updatedAt"].unique);
     }
 }

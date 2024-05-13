@@ -441,9 +441,7 @@ mod tests {
         assert_eq!(proof.len(), 248); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
 
         let mut query = Query::new();
-        query.insert_key(vec![
-            RootTree::PreFundedSpecializedBalances as u8,
-        ]);
+        query.insert_key(vec![RootTree::PreFundedSpecializedBalances as u8]);
         let root_path_query = PathQuery::new(
             vec![],
             SizedQuery {

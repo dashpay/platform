@@ -3,6 +3,7 @@ mod create_document_with_prevalidated_properties;
 mod estimated_size;
 mod index_for_types;
 mod max_size;
+mod prefunded_voting_balances_for_document;
 mod serialize_value_for_key;
 mod validate_update;
 
@@ -18,6 +19,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+use crate::fee::Credits;
 use platform_value::{Identifier, Value};
 
 // TODO: Some of those methods are only for tests. Hide under feature
@@ -109,6 +111,13 @@ pub trait DocumentTypeV0Methods {
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
+
+    /// Figures out the minimum prefunded voting balance needed for a document
+    fn prefunded_voting_balances_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<String, Credits>, ProtocolError>;
 }
 
 impl DocumentTypeV0Methods for DocumentTypeV0 {
@@ -288,6 +297,27 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "create_document_with_prevalidated_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn prefunded_voting_balances_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<String, Credits>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .create_document_with_prevalidated_properties
+        {
+            0 => Ok(self.prefunded_voting_balances_for_document_v0(document, platform_version)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "prefunded_voting_balances_for_document".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

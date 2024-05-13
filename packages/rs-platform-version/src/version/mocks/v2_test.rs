@@ -1073,6 +1073,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 methods: DocumentTypeMethodVersions {
                     create_document_from_data: 0,
                     create_document_with_prevalidated_properties: 0,
+                    prefunded_voting_balances_for_document: 0,
                     estimated_size: 0,
                     index_for_types: 0,
                     max_size: 0,

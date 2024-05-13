@@ -174,7 +174,9 @@ mod test {
             .document_types
             .get("contactInfo")
             .unwrap()
-            .indexes().values().collect::<Vec<_>>();
+            .indexes()
+            .values()
+            .collect::<Vec<_>>();
         assert_eq!(contact_info_indices.len(), 2);
         assert!(contact_info_indices[1].unique);
         assert!(!contact_info_indices[0].unique);

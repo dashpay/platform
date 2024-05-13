@@ -1,22 +1,22 @@
 mod to_object;
 
-use wasm_bindgen::{JsError, JsValue};
-use wasm_bindgen::prelude::wasm_bindgen;
-use dpp::identifier::Identifier;
-use dpp::identity::KeyType;
-use dpp::platform_value::{BinaryData, string_encoding};
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
-use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
-use dpp::version::PlatformVersion;
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
-use crate::{IdentityPublicKeyWasm, with_js_error};
 use crate::utils::WithJsError;
+use crate::{with_js_error, IdentityPublicKeyWasm};
+use dpp::identifier::Identifier;
+use dpp::identity::KeyType;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{string_encoding, BinaryData};
+use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
+use dpp::version::PlatformVersion;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=MasternodeVoteTransition)]
@@ -60,7 +60,7 @@ impl MasternodeVoteTransitionWasm {
     pub fn get_pro_tx_hash(&self) -> IdentifierWrapper {
         self.0.pro_tx_hash().into()
     }
-    
+
     #[wasm_bindgen(js_name=setIdentityId)]
     pub fn set_pro_tx_hash(&mut self, pro_tx_hash: &IdentifierWrapper) {
         self.0.set_pro_tx_hash(pro_tx_hash.into());
@@ -125,10 +125,10 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = PlatformSerializable::serialize_to_bytes(
-            &StateTransition::MasternodeVote(self.0.clone()),
-        )
-            .with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::MasternodeVote(
+            self.0.clone(),
+        ))
+        .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -230,7 +230,7 @@ impl MasternodeVoteTransitionWasm {
             return Err(JsError::new(
                 format!("BLS adapter is required for BLS key type '{}'", key_type).as_str(),
             )
-                .into());
+            .into());
         }
 
         let bls_adapter = if let Some(adapter) = bls {

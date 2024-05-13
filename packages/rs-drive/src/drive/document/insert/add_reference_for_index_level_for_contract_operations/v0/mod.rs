@@ -83,8 +83,7 @@ impl Drive {
             // This is the simpler situation
             // Under each tree we have all the references
 
-            if let Some(estimated_costs_only_with_layer_info) =
-                estimated_costs_only_with_layer_info
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 // On this level we will have a 0 and all the top index paths
                 estimated_costs_only_with_layer_info.insert(
@@ -140,7 +139,6 @@ impl Drive {
 
             // here we should return an error if the element already exists
             self.batch_insert(path_key_element_info, batch_operations, drive_version)?;
-        
         } else {
             let key_element_info =
                 match &document_and_contract_info.owned_document_info.document_info {

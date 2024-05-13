@@ -18,6 +18,7 @@ pub mod v0;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
+use crate::fee::Credits;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -83,6 +84,18 @@ impl DocumentType {
     pub fn as_mut_ref(&mut self) -> DocumentTypeMutRef {
         match self {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
+        }
+    }
+
+    pub fn prefunded_voting_balances_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<String, Credits>, ProtocolError> {
+        match self {
+            DocumentType::V0(v0) => {
+                v0.prefunded_voting_balances_for_document(document, platform_version)
+            }
         }
     }
 }
@@ -206,6 +219,18 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
                 properties,
                 platform_version,
             ),
+        }
+    }
+
+    fn prefunded_voting_balances_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<String, Credits>, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => {
+                v0.prefunded_voting_balances_for_document(document, platform_version)
+            }
         }
     }
 }

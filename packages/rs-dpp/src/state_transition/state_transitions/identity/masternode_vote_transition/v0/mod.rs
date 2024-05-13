@@ -54,15 +54,15 @@ mod test {
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
     use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+    use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use crate::voting::vote_polls::VotePoll;
+    use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
+    use crate::voting::votes::resource_vote::ResourceVote;
     use crate::voting::votes::Vote;
     use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;
-    use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-    use crate::voting::vote_polls::VotePoll;
-    use crate::voting::votes::resource_vote::ResourceVote;
-    use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
 
     fn test_masternode_vote_transition<
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
@@ -89,7 +89,7 @@ mod test {
                         document_type_name: "hello".to_string(),
                         index_name: "index_1".to_string(),
                         index_values: vec![],
-                    }
+                    },
                 ),
                 resource_vote_choice: ResourceVoteChoice::TowardsIdentity(Identifier::random()),
             })),
