@@ -42,7 +42,7 @@ where
                 (0, "".to_string())
             };
 
-            let check_tx_result = validation_result.into_data()?;
+            let check_tx_result = validation_result.data.unwrap_or_default();
 
             let gas_wanted = check_tx_result
                 .fee_result
