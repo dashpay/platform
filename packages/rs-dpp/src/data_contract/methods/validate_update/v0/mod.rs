@@ -63,7 +63,7 @@ impl DataContract {
         // * Failure (contract does not exist): Keep ST and transform it to a nonce bump action.
         // * How: A user pushed an update to a contract that changed its configuration.
 
-        let config_validation_result = self.config().validate_config_update(
+        let config_validation_result = self.config().validate_update(
             new_data_contract.config(),
             self.id(),
             platform_version,
