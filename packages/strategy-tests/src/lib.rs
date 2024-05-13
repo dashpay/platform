@@ -243,7 +243,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Strategy {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -273,7 +273,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             .map(|(serialized_contract, maybe_updates)| {
                 let contract = CreatedDataContract::versioned_deserialize(
                     serialized_contract.as_slice(),
-                    validate,
+                    full_validation,
                     platform_version,
                 )?;
                 let maybe_updates = maybe_updates
@@ -283,7 +283,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
                             .map(|(key, serialized_contract_update)| {
                                 let update = CreatedDataContract::versioned_deserialize(
                                     serialized_contract_update.as_slice(),
-                                    validate,
+                                    full_validation,
                                     platform_version,
                                 )?;
                                 Ok((key, update))
@@ -304,7 +304,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
         let operations = operations
             .into_iter()
             .map(|operation| {
-                Operation::versioned_deserialize(operation.as_slice(), validate, platform_version)
+                Operation::versioned_deserialize(
+                    operation.as_slice(),
+                    full_validation,
+                    platform_version,
+                )
             })
             .collect::<Result<Vec<Operation>, ProtocolError>>()?;
 

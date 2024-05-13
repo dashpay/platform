@@ -14,7 +14,7 @@ impl DataContractSchemaMethodsV0 for DataContract {
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
@@ -22,7 +22,7 @@ impl DataContractSchemaMethodsV0 for DataContract {
             DataContract::V0(v0) => v0.set_document_schemas(
                 schemas,
                 defs,
-                validate,
+                full_validation,
                 validation_operations,
                 platform_version,
             ),
@@ -33,7 +33,7 @@ impl DataContractSchemaMethodsV0 for DataContract {
         &mut self,
         name: &str,
         schema: Value,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
@@ -41,7 +41,7 @@ impl DataContractSchemaMethodsV0 for DataContract {
             DataContract::V0(v0) => v0.set_document_schema(
                 name,
                 schema,
-                validate,
+                full_validation,
                 validation_operations,
                 platform_version,
             ),
@@ -63,14 +63,17 @@ impl DataContractSchemaMethodsV0 for DataContract {
     fn set_schema_defs(
         &mut self,
         defs: Option<BTreeMap<DefinitionName, Value>>,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => {
-                v0.set_schema_defs(defs, validate, validation_operations, platform_version)
-            }
+            DataContract::V0(v0) => v0.set_schema_defs(
+                defs,
+                full_validation,
+                validation_operations,
+                platform_version,
+            ),
         }
     }
 }
