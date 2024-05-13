@@ -96,7 +96,7 @@ impl DocumentTypeV0 {
         )?;
 
         #[cfg(not(feature = "validation"))]
-        if full_validation {
+        if validate {
             // TODO we are silently dropping this error when we shouldn't be
             // but returning this error causes tests to fail; investigate more.
             ProtocolError::CorruptedCodeExecution(
@@ -108,7 +108,7 @@ impl DocumentTypeV0 {
         let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
 
         #[cfg(feature = "validation")]
-        if full_validation {
+        if validate {
             // Make sure a document type name is compliant
             if !name
                 .chars()
@@ -238,7 +238,7 @@ impl DocumentTypeV0 {
         .unwrap_or_default();
 
         #[cfg(feature = "validation")]
-        if full_validation {
+        if validate {
             validation_operations.push(
                 ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
                     property_values.values().len() as u64,
@@ -320,7 +320,7 @@ impl DocumentTypeV0 {
                             .map_err(consensus_or_protocol_data_contract_error)?;
 
                         #[cfg(feature = "validation")]
-                        if full_validation {
+                        if validate {
                             validation_operations.push(
                                 ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
                                     index.properties.len() as u64,
@@ -473,7 +473,7 @@ impl DocumentTypeV0 {
             .unwrap_or(SecurityLevel::HIGH);
 
         #[cfg(feature = "validation")]
-        if full_validation && security_level_requirement == SecurityLevel::MASTER {
+        if validate && security_level_requirement == SecurityLevel::MASTER {
             return Err(ConsensusError::BasicError(
                 BasicError::InvalidDocumentTypeRequiredSecurityLevelError(
                     InvalidDocumentTypeRequiredSecurityLevelError::new(

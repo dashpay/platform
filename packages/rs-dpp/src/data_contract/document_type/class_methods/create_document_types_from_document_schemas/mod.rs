@@ -58,7 +58,7 @@ impl DocumentType {
                 documents_keep_history_contract_default,
                 documents_mutable_contract_default,
                 documents_can_be_deleted_contract_default,
-                full_validation,
+                validate,
                 validation_operations,
                 platform_version,
             ),

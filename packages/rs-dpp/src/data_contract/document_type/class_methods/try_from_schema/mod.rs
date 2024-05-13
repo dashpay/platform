@@ -36,7 +36,7 @@ impl DocumentType {
                 default_keeps_history,
                 default_mutability,
                 default_can_be_deleted,
-                full_validation,
+                validate,
                 validation_operations,
                 platform_version,
             )

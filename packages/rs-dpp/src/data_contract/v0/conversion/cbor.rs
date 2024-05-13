@@ -17,7 +17,7 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let mut data_contract = Self::from_cbor(cbor_bytes, full_validation, platform_version)?;
+        let mut data_contract = Self::from_cbor(cbor_bytes, validate, platform_version)?;
         if let Some(id) = contract_id {
             data_contract.id = id;
         }

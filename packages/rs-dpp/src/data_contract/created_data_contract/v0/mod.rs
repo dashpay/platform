@@ -48,7 +48,7 @@ impl CreatedDataContractV0 {
             .map_err(ProtocolError::ValueError)?;
 
         let data_contract =
-            DataContract::from_value(raw_data_contract, full_validation, platform_version)?;
+            DataContract::from_value(raw_data_contract, validate, platform_version)?;
 
         Ok(Self {
             data_contract,

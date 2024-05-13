@@ -142,7 +142,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                 .0;
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
-            full_validation,
+            validate,
             &mut vec![],
             platform_version,
         )
@@ -171,7 +171,7 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
         Ok((
             DataContract::try_from_platform_versioned(
                 data_contract_in_serialization_format,
-                full_validation,
+                validate,
                 &mut vec![],
                 platform_version,
             )?,

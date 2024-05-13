@@ -59,7 +59,7 @@ impl DataContractV0 {
                     0 => {
                         let data_contract = DataContractV0::try_from_platform_versioned_v0(
                             serialization_format_v0,
-                            full_validation,
+                            validate,
                             validation_operations,
                             platform_version,
                         )?;
@@ -98,7 +98,7 @@ impl DataContractV0 {
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
             config.documents_can_be_deleted_contract_default(),
-            full_validation,
+            validate,
             validation_operations,
             platform_version,
         )?;

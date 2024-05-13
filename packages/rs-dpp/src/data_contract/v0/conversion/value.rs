@@ -30,7 +30,7 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
 
                 DataContractV0::try_from_platform_versioned(
                     data_contract_data.into(),
-                    full_validation,
+                    validate,
                     &mut vec![], // this is not used in consensus code
                     platform_version,
                 )

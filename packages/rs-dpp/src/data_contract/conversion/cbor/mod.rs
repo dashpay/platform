@@ -23,7 +23,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
             0 => Ok(DataContractV0::from_cbor_with_id(
                 cbor_bytes,
                 contract_id,
-                full_validation,
+                validate,
                 platform_version,
             )?
             .into()),

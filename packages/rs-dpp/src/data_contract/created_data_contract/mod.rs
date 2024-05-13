@@ -104,7 +104,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Cre
             created_data_contract_in_serialization_format.data_contract_and_identity_nonce_owned();
         let data_contract = DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
-            full_validation,
+            validate,
             &mut vec![],
             platform_version,
         )?;
@@ -206,12 +206,9 @@ impl CreatedDataContract {
             .contract_versions
             .created_data_contract_structure
         {
-            0 => Ok(CreatedDataContractV0::from_object(
-                raw_object,
-                full_validation,
-                platform_version,
-            )?
-            .into()),
+            0 => Ok(
+                CreatedDataContractV0::from_object(raw_object, validate, platform_version)?.into(),
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "CreatedDataContract::from_object".to_string(),
                 known_versions: vec![0],

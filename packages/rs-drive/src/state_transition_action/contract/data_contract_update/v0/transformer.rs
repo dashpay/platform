@@ -15,7 +15,7 @@ impl DataContractUpdateTransitionActionV0 {
         Ok(DataContractUpdateTransitionActionV0 {
             data_contract: DataContract::try_from_platform_versioned(
                 value.data_contract,
-                full_validation,
+                validate,
                 validation_operations,
                 platform_version,
             )?,
@@ -33,7 +33,7 @@ impl DataContractUpdateTransitionActionV0 {
         Ok(DataContractUpdateTransitionActionV0 {
             data_contract: DataContract::try_from_platform_versioned(
                 value.data_contract.clone(),
-                full_validation,
+                validate,
                 validation_operations,
                 platform_version,
             )?,

@@ -19,7 +19,7 @@ impl DataContractCreateTransitionAction {
             DataContractCreateTransition::V0(v0) => {
                 Ok(DataContractCreateTransitionActionV0::try_from_transition(
                     v0,
-                    full_validation,
+                    validate,
                     validation_operations,
                     platform_version,
                 )?
@@ -42,7 +42,7 @@ impl DataContractCreateTransitionAction {
             DataContractCreateTransition::V0(v0) => Ok(
                 DataContractCreateTransitionActionV0::try_from_borrowed_transition(
                     v0,
-                    full_validation,
+                    validate,
                     validation_operations,
                     platform_version,
                 )?

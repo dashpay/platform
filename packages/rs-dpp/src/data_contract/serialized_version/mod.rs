@@ -185,7 +185,7 @@ impl DataContract {
                     0 => {
                         let data_contract = DataContractV0::try_from_platform_versioned_v0(
                             serialization_format_v0,
-                            full_validation,
+                            validate,
                             validation_operations,
                             platform_version,
                         )?;

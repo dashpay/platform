@@ -111,12 +111,10 @@ impl DataContractFactoryV0 {
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(DataContractV0::from_value(
-                data_contract_object,
-                full_validation,
-                platform_version,
-            )?
-            .into()),
+            0 => Ok(
+                DataContractV0::from_value(data_contract_object, validate, platform_version)?
+                    .into(),
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactoryV0::create_from_object".to_string(),
                 known_versions: vec![0],

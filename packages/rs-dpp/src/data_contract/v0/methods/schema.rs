@@ -26,7 +26,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
             self.config.documents_can_be_deleted_contract_default(),
-            full_validation,
+            validate,
             validation_operations,
             platform_version,
         )?;
@@ -50,7 +50,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
             self.config.documents_mutable_contract_default(),
-            full_validation,
+            validate,
             validation_operations,
             platform_version,
         )?;
@@ -88,7 +88,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         self.set_document_schemas(
             document_schemas,
             defs.clone(),
-            full_validation,
+            validate,
             validation_operations,
             platform_version,
         )?;
