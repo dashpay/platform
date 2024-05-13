@@ -52,7 +52,7 @@ describe('Local Network', function main() {
     localConfig.set('dashmate.helper.api.port', 40000);
     localConfig.set('core.p2p.port', 40001);
     localConfig.set('core.rpc.port', 40002);
-    localConfig.set('platform.dapi.envoy.http.port', 40003);
+    localConfig.set('platform.gateway.listeners.dapiAndDrive.port', 40003);
     localConfig.set('platform.drive.tenderdash.p2p.port', 40004);
     localConfig.set('platform.drive.tenderdash.rpc.port', 40005);
     localConfig.set('platform.drive.tenderdash.pprof.port', 40006);

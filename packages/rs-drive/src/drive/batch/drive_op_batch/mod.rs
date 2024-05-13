@@ -203,13 +203,13 @@ mod tests {
         DocumentOperationsForContractDocumentType, UpdateOperationInfo,
     };
     use crate::drive::batch::DataContractOperationType::ApplyContract;
-    use crate::drive::batch::DocumentOperationType::AddDocumentForContract;
+    use crate::drive::batch::DocumentOperationType::AddDocument;
     use crate::drive::batch::DriveOperation::{DataContractOperation, DocumentOperation};
 
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::drive::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
@@ -251,18 +251,16 @@ mod tests {
         )
         .expect("expected to get document");
 
-        drive_operations.push(DocumentOperation(AddDocumentForContract {
-            document_and_contract_info: DocumentAndContractInfo {
-                owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefInfo((
-                        &dashpay_cr_document,
-                        StorageFlags::optional_default_as_cow(),
-                    )),
-                    owner_id: None,
-                },
-                contract: &contract,
-                document_type,
+        drive_operations.push(DocumentOperation(AddDocument {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &dashpay_cr_document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: None,
             },
+            contract_info: DataContractInfo::BorrowedDataContract(&contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeRef(document_type),
             override_document: false,
         }));
 
@@ -354,17 +352,13 @@ mod tests {
         )
         .expect("expected to get contract");
 
-        drive_operations.push(DocumentOperation(AddDocumentForContract {
-            document_and_contract_info: DocumentAndContractInfo {
-                owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefInfo((&dashpay_cr_document, None)),
-                    owner_id: None,
-                },
-                contract: &contract,
-                document_type: contract
-                    .document_type_for_name("contactRequest")
-                    .expect("expected to get document type"),
+        drive_operations.push(DocumentOperation(AddDocument {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((&dashpay_cr_document, None)),
+                owner_id: None,
             },
+            contract_info: DataContractInfo::BorrowedDataContract(&contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("contactRequest"),
             override_document: false,
         }));
 
@@ -378,17 +372,13 @@ mod tests {
         )
         .expect("expected to get contract");
 
-        drive_operations.push(DocumentOperation(AddDocumentForContract {
-            document_and_contract_info: DocumentAndContractInfo {
-                owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefInfo((&dashpay_cr_1_document, None)),
-                    owner_id: None,
-                },
-                contract: &contract,
-                document_type: contract
-                    .document_type_for_name("contactRequest")
-                    .expect("expected to get document type"),
+        drive_operations.push(DocumentOperation(AddDocument {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((&dashpay_cr_1_document, None)),
+                owner_id: None,
             },
+            contract_info: DataContractInfo::BorrowedDataContract(&contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("contactRequest"),
             override_document: false,
         }));
 

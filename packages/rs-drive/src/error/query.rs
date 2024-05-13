@@ -96,7 +96,7 @@ pub enum QuerySyntaxError {
 
     /// Where clause on non indexed property error
     #[error("where clause on non indexed property error: {0}")]
-    WhereClauseOnNonIndexedProperty(&'static str),
+    WhereClauseOnNonIndexedProperty(String),
     /// Query is too far from index error
     #[error("query is too far from index: {0}")]
     QueryTooFarFromIndex(&'static str),

@@ -125,34 +125,85 @@ export default function getBaseConfigFactory(homeDir) {
         indexes: true,
       },
       platform: {
-        dapi: {
-          envoy: {
-            docker: {
-              image: 'dashpay/envoy:1.22.11',
+        gateway: {
+          docker: {
+            image: 'dashpay/envoy:1.30.2-impr.1',
+          },
+          maxConnections: 1000,
+          maxHeapSizeInBytes: 125000000, // 1 Gb
+          upstreams: {
+            driveGrpc: {
+              maxRequests: 100,
             },
-            http: {
+            dapiApi: {
+              maxRequests: 100,
+            },
+            dapiCoreStreams: {
+              maxRequests: 100,
+            },
+            dapiJsonRpc: {
+              maxRequests: 100,
+            },
+          },
+          metrics: {
+            enabled: false,
+            host: '127.0.0.1',
+            port: 9090,
+          },
+          admin: {
+            enabled: false,
+            host: '127.0.0.1',
+            port: 9901,
+          },
+          listeners: {
+            dapiAndDrive: {
+              http2: {
+                maxConcurrentStreams: 10,
+              },
               host: '0.0.0.0',
               port: 443,
-              connectTimeout: '5s',
-              responseTimeout: '15s',
             },
-            rateLimiter: {
-              maxTokens: 300,
-              tokensPerFill: 150,
-              fillInterval: '60s',
-              enabled: true,
+          },
+          log: {
+            level: 'info',
+            accessLogs: [
+              {
+                type: 'stdout',
+                format: 'text',
+                template: null,
+              },
+            ],
+          },
+          rateLimiter: {
+            docker: {
+              image: 'envoyproxy/ratelimit:3fcc3609',
             },
-            ssl: {
+            metrics: {
               enabled: false,
-              provider: 'zerossl',
-              providerConfigs: {
-                zerossl: {
-                  apiKey: null,
-                  id: null,
-                },
+              docker: {
+                image: 'prom/statsd-exporter:v0.26.1',
+              },
+              host: '127.0.0.1',
+              port: 9102,
+            },
+            unit: 'minute',
+            requestsPerUnit: 150,
+            blacklist: [],
+            whitelist: [],
+            enabled: true,
+          },
+          ssl: {
+            enabled: false,
+            provider: 'zerossl',
+            providerConfigs: {
+              zerossl: {
+                apiKey: null,
+                id: null,
               },
             },
           },
+        },
+        dapi: {
           api: {
             docker: {
               image: `dashpay/dapi:${dockerImageVersion}`,
@@ -191,7 +242,7 @@ export default function getBaseConfigFactory(homeDir) {
               enabled: false,
               host: '127.0.0.1',
               port: 6669,
-              retention_secs: 60 * 3,
+              retention: 60 * 3,
             },
             validatorSet: {
               llmqType: 4,
@@ -200,6 +251,11 @@ export default function getBaseConfigFactory(homeDir) {
               llmqType: 2,
               dkgInterval: 288,
               llmqSize: 400,
+            },
+            metrics: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 29090,
             },
             epochTime: 788400,
           },

@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "1.0.0-dev.12"
+version = "1.0.0-dev.13"
 edition = "2021"
 rust-version = "1.76"
 authors = [
@@ -99,6 +99,7 @@ all_features = [
   "identity-value-conversion",
   "identity-json-conversion",
   "identity-cbor-conversion",
+  "index-serde-conversion",
   "state-transition-serde-conversion",
   "state-transition-value-conversion",
   "state-transition-json-conversion",
@@ -159,6 +160,7 @@ all_features_without_client = [
   "identity-value-conversion",
   "identity-json-conversion",
   "identity-cbor-conversion",
+  "index-serde-conversion",
   "state-transition-serde-conversion",
   "state-transition-value-conversion",
   "state-transition-json-conversion",
@@ -225,6 +227,7 @@ identity-cbor-conversion = [
   "cbor",
   "platform-value-cbor",
 ]
+index-serde-conversion = []
 state-transition-serde-conversion = ["data-contract-serde-conversion"]
 state-transition-value-conversion = [
   "platform-value",

@@ -164,7 +164,7 @@ mod tests {
             .find_best_index(platform_version)
             .expect_err("expected to not find index");
         assert!(
-            matches!(error, Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message)) if message == "query must be for valid indexes")
+            matches!(error, Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message)) if message.contains("query must be for valid indexes"))
         )
     }
 }

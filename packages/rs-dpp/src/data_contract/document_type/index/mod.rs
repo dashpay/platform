@@ -21,6 +21,7 @@ pub mod random_index;
 
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
 pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
@@ -54,6 +55,7 @@ impl Index {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,

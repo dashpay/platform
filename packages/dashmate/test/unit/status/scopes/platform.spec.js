@@ -47,7 +47,7 @@ describe('getPlatformScopeFactory', () => {
 
       config = getConfigMock(this.sinon);
 
-      httpPort = config.get('platform.dapi.envoy.http.port');
+      httpPort = config.get('platform.gateway.listeners.dapiAndDrive.port');
       httpService = `${config.get('externalIp')}:${httpPort}`;
       p2pPort = config.get('platform.drive.tenderdash.p2p.port');
       p2pService = `${config.get('externalIp')}:${p2pPort}`;
