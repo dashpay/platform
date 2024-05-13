@@ -111,7 +111,7 @@ impl DocumentTypeV0 {
         default_keeps_history: bool,
         default_mutability: bool,
         default_can_be_deleted: bool,
-        validate: bool, // we don't need to validate if loaded from state
+        full_validation: bool, // we don't need to validate if loaded from state
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -123,7 +123,7 @@ impl DocumentTypeV0 {
         )?;
 
         #[cfg(not(feature = "validation"))]
-        if validate {
+        if full_validation {
             // TODO we are silently dropping this error when we shouldn't be
             // but returning this error causes tests to fail; investigate more.
             ProtocolError::CorruptedCodeExecution(
@@ -135,7 +135,7 @@ impl DocumentTypeV0 {
         let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
 
         #[cfg(feature = "validation")]
-        if validate {
+        if full_validation {
             // Make sure a document type name is compliant
             if !name
                 .chars()
@@ -265,7 +265,7 @@ impl DocumentTypeV0 {
         .unwrap_or_default();
 
         #[cfg(feature = "validation")]
-        if validate {
+        if full_validation {
             validation_operations.push(
                 ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
                     property_values.values().len() as u64,
@@ -347,7 +347,7 @@ impl DocumentTypeV0 {
                             .map_err(consensus_or_protocol_data_contract_error)?;
 
                         #[cfg(feature = "validation")]
-                        if validate {
+                        if full_validation {
                             validation_operations.push(
                                 ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
                                     index.properties.len() as u64,
@@ -500,7 +500,7 @@ impl DocumentTypeV0 {
             .unwrap_or(SecurityLevel::HIGH);
 
         #[cfg(feature = "validation")]
-        if validate && security_level_requirement == SecurityLevel::MASTER {
+        if full_validation && security_level_requirement == SecurityLevel::MASTER {
             return Err(ConsensusError::BasicError(
                 BasicError::InvalidDocumentTypeRequiredSecurityLevelError(
                     InvalidDocumentTypeRequiredSecurityLevelError::new(

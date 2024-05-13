@@ -65,12 +65,12 @@ pub fn json_document_to_cbor(
 #[cfg(feature = "data-contract-json-conversion")]
 pub fn json_document_to_contract(
     path: impl AsRef<Path>,
-    validate: bool,
+    full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
-    DataContract::from_json(value, validate, platform_version)
+    DataContract::from_json(value, full_validation, platform_version)
 }
 
 #[cfg(all(
@@ -81,10 +81,10 @@ pub fn json_document_to_contract(
 pub fn json_document_to_created_contract(
     path: impl AsRef<Path>,
     identity_nonce: IdentityNonce,
-    validate: bool,
+    full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
-    let data_contract = json_document_to_contract(path, validate, platform_version)?;
+    let data_contract = json_document_to_contract(path, full_validation, platform_version)?;
 
     Ok(CreatedDataContractV0 {
         data_contract,
@@ -99,12 +99,12 @@ pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,
     id: Option<Identifier>,
     owner_id: Option<Identifier>,
-    validate: bool,
+    full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
-    let mut contract = DataContract::from_json(value, validate, platform_version)?;
+    let mut contract = DataContract::from_json(value, full_validation, platform_version)?;
 
     if let Some(id) = id {
         contract.set_id(id);
