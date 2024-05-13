@@ -4,6 +4,7 @@ use crate::util::hash::hash_double;
 use crate::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value};
+#[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]

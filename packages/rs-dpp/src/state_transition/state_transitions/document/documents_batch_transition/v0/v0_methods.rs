@@ -30,7 +30,6 @@ use crate::state_transition::documents_batch_transition::{
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
-#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
@@ -334,14 +333,13 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
             .filter_map(|transition| {
                 transition
                     .as_transition_create()
-                    .map(|document_create_transition| {
+                    .and_then(|document_create_transition| {
                         // Safely sum up values to avoid overflow.
                         document_create_transition
                             .prefunded_voting_balances()
                             .values()
                             .try_fold(0u64, |acc, &val| acc.checked_add(val))
                     })
-                    .flatten()
             })
             .fold((None, false), |(acc, _), price| match acc {
                 Some(acc_val) => acc_val

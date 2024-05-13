@@ -17,6 +17,7 @@ use crate::voting::votes::Vote;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::BinaryData;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -53,13 +54,15 @@ mod test {
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
     use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
-    use crate::voting::resource_vote::ResourceVote;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use crate::voting::votes::Vote;
-    use crate::voting::ContestedDocumentResourceVote;
     use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;
+    use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_polls::VotePoll;
+    use crate::voting::votes::resource_vote::ResourceVote;
+    use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
 
     fn test_masternode_vote_transition<
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
@@ -79,15 +82,17 @@ mod test {
         let mut rng = rand::thread_rng();
         let transition = MasternodeVoteTransitionV0 {
             pro_tx_hash: Identifier::random(),
-            vote: Vote::ResourceVote(ContestedDocumentResourceVote {
-                vote_poll: ContestedDocumentResourceVotePoll {
-                    contract_id: Default::default(),
-                    document_type_name: "hello".to_string(),
-                    index_name: "index_1".to_string(),
-                    index_values: vec![],
-                },
-                resource_vote_choice: ResourceVote::TowardsIdentity(Identifier::random()),
-            }),
+            vote: Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                    ContestedDocumentResourceVotePoll {
+                        contract_id: Default::default(),
+                        document_type_name: "hello".to_string(),
+                        index_name: "index_1".to_string(),
+                        index_values: vec![],
+                    }
+                ),
+                resource_vote_choice: ResourceVoteChoice::TowardsIdentity(Identifier::random()),
+            })),
             nonce: 1,
             signature_public_key_id: rng.gen(),
             signature: [0; 65].to_vec().into(),

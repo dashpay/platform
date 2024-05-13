@@ -117,7 +117,10 @@ mod tests {
         let index = query
             .find_best_index(platform_version)
             .expect("expected to find index");
-        assert_eq!(index, document_type.indexes().get(2).unwrap());
+        let mut iter = document_type.indexes().iter();
+        iter.next();
+        iter.next();
+        assert_eq!(index, iter.next().unwrap().1); //position 2
 
         let query_value = json!({
             "where": [
