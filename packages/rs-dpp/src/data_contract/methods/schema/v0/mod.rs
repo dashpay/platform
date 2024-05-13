@@ -10,7 +10,7 @@ pub trait DataContractSchemaMethodsV0 {
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
-        full_validation: bool,
+        validate: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;
@@ -19,7 +19,7 @@ pub trait DataContractSchemaMethodsV0 {
         &mut self,
         name: &str,
         schema: Value,
-        full_validation: bool,
+        validate: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;

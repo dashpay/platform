@@ -11,7 +11,7 @@ impl DataContractCreateTransitionAction {
     /// if validation is false, the data contract base structure is created regardless of if it is valid
     pub fn try_from_transition(
         value: DataContractCreateTransition,
-        full_validation: bool,
+        validate: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -34,7 +34,7 @@ impl DataContractCreateTransitionAction {
 
     pub fn try_from_borrowed_transition(
         value: &DataContractCreateTransition,
-        full_validation: bool,
+        validate: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {

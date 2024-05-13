@@ -103,7 +103,7 @@ impl DataContractFactoryV0 {
     pub fn create_from_object(
         &self,
         data_contract_object: Value,
-        full_validation: bool,
+        validate: bool,
     ) -> Result<DataContract, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         match platform_version

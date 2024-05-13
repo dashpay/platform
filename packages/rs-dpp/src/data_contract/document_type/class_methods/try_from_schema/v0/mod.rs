@@ -84,7 +84,7 @@ impl DocumentTypeV0 {
         default_keeps_history: bool,
         default_mutability: bool,
         default_can_be_deleted: bool,
-        full_validation: bool, // we don't need to validate if loaded from state
+        validate: bool, // we don't need to validate if loaded from state
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {

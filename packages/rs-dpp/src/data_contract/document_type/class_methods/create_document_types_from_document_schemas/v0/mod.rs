@@ -18,7 +18,7 @@ impl DocumentTypeV0 {
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         documents_can_be_deleted_contract_default: bool,
-        full_validation: bool,
+        validate: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {

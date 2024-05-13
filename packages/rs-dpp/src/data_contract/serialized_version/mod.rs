@@ -171,7 +171,7 @@ impl TryFromPlatformVersioned<DataContract> for DataContractInSerializationForma
 impl DataContract {
     pub fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
-        full_validation: bool,
+        validate: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {

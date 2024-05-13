@@ -10,7 +10,7 @@ use platform_value::Value;
 impl DataContractValueConversionMethodsV0 for DataContract {
     fn from_value(
         raw_object: Value,
-        full_validation: bool,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version

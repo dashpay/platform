@@ -15,7 +15,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
-        full_validation: bool,
+        validate: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
@@ -38,7 +38,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         &mut self,
         name: &str,
         schema: Value,
-        full_validation: bool,
+        validate: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
@@ -75,7 +75,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
     fn set_schema_defs(
         &mut self,
         defs: Option<BTreeMap<DefinitionName, Value>>,
-        full_validation: bool,
+        validate: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {

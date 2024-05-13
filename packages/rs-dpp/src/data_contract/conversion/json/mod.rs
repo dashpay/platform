@@ -10,7 +10,7 @@ use serde_json::Value as JsonValue;
 impl DataContractJsonConversionMethodsV0 for DataContract {
     fn from_json(
         json_value: JsonValue,
-        full_validation: bool,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where

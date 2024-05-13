@@ -7,14 +7,14 @@ pub trait DataContractCborConversionMethodsV0 {
     fn from_cbor_with_id(
         cbor_bytes: impl AsRef<[u8]>,
         contract_id: Option<Identifier>,
-        full_validation: bool,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
     fn from_cbor(
         cbor_bytes: impl AsRef<[u8]>,
-        full_validation: bool,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where

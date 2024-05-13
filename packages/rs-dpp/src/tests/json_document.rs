@@ -65,7 +65,7 @@ pub fn json_document_to_cbor(
 #[cfg(feature = "data-contract-json-conversion")]
 pub fn json_document_to_contract(
     path: impl AsRef<Path>,
-    full_validation: bool,
+    validate: bool,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
@@ -81,7 +81,7 @@ pub fn json_document_to_contract(
 pub fn json_document_to_created_contract(
     path: impl AsRef<Path>,
     identity_nonce: IdentityNonce,
-    full_validation: bool,
+    validate: bool,
     platform_version: &PlatformVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
     let data_contract = json_document_to_contract(path, full_validation, platform_version)?;
@@ -99,7 +99,7 @@ pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,
     id: Option<Identifier>,
     owner_id: Option<Identifier>,
-    full_validation: bool,
+    validate: bool,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;

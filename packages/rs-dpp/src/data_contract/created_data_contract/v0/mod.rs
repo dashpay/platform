@@ -32,7 +32,7 @@ impl CreatedDataContractV0 {
     #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
         raw_object: Value,
-        full_validation: bool,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut raw_map = raw_object

@@ -82,7 +82,7 @@ impl PlatformSerializableWithPlatformVersion for CreatedDataContract {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for CreatedDataContract {
     fn versioned_deserialize(
         data: &[u8],
-        full_validation: bool,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -198,7 +198,7 @@ impl CreatedDataContract {
     #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
         raw_object: Value,
-        full_validation: bool,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
