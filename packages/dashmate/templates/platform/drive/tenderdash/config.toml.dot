@@ -374,12 +374,6 @@ tx-send-rate-limit = {{=it.platform.drive.tenderdash.mempool.txSendRateLimit}}
 # Default: 0
 tx-recv-rate-limit = {{=it.platform.drive.tenderdash.mempool.txRecvRateLimit}}
 
-# tx-recv-rate-punish-peer set to true means that when tx-recv-rate-limit is reached, the peer will be punished
-# (disconnected). If set to false, the peer will be throttled (messages will be dropped).
-#
-# Default: false
-tx-recv-rate-punish-peer = false
-
 # Maximum size of a single transaction.
 # NOTE: the max size of a tx transmitted over the network is {max-tx-bytes}.
 max-tx-bytes = 50000
