@@ -108,7 +108,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
         // The contract in serialized form into it's execution form
         let result = DataContractCreateTransitionAction::try_from_borrowed_transition(
             self,
-            validation_mode.should_validate_contract_on_transform_into_action(),
+            validation_mode.should_fully_validate_contract_on_transform_into_action(),
             &mut validation_operations,
             platform_version,
         );

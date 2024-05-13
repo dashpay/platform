@@ -32,7 +32,7 @@ impl CreatedDataContractV0 {
     #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
         raw_object: Value,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut raw_map = raw_object
@@ -48,7 +48,7 @@ impl CreatedDataContractV0 {
             .map_err(ProtocolError::ValueError)?;
 
         let data_contract =
-            DataContract::from_value(raw_data_contract, validate, platform_version)?;
+            DataContract::from_value(raw_data_contract, full_validation, platform_version)?;
 
         Ok(Self {
             data_contract,

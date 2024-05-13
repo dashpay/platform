@@ -157,7 +157,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
             self,
-            validation_mode.should_validate_contract_on_transform_into_action(),
+            validation_mode.should_fully_validate_contract_on_transform_into_action(),
             &mut validation_operations,
             platform_version,
         );

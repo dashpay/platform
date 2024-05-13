@@ -122,7 +122,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DataContract {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -142,7 +142,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                 .0;
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
-            validate,
+            full_validation,
             &mut vec![],
             platform_version,
         )
@@ -152,7 +152,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
 impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
     fn versioned_deserialize_with_bytes_len(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, usize), ProtocolError>
     where
@@ -171,7 +171,7 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
         Ok((
             DataContract::try_from_platform_versioned(
                 data_contract_in_serialization_format,
-                validate,
+                full_validation,
                 &mut vec![],
                 platform_version,
             )?,

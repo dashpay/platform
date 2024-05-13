@@ -94,7 +94,7 @@ impl PlatformSerializableWithPlatformVersion for DocumentOp {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DocumentOp {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -116,7 +116,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Doc
         } = document_op_in_serialization_format;
         let data_contract = DataContract::try_from_platform_versioned(
             contract,
-            validate,
+            full_validation,
             &mut vec![],
             platform_version,
         )?;
@@ -177,7 +177,7 @@ impl PlatformSerializableWithPlatformVersion for Operation {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Operation {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -194,8 +194,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 .0;
         let OperationInSerializationFormat { op_type, frequency } =
             operation_in_serialization_format;
-        let op_type =
-            OperationType::versioned_deserialize(op_type.as_slice(), validate, platform_version)?;
+        let op_type = OperationType::versioned_deserialize(
+            op_type.as_slice(),
+            full_validation,
+            platform_version,
+        )?;
         Ok(Operation { op_type, frequency })
     }
 }
@@ -278,7 +281,7 @@ impl PlatformSerializableWithPlatformVersion for DataContractUpdateOp {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DataContractUpdateOp {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -299,7 +302,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
 
         let contract = DataContract::try_from_platform_versioned(
             deserialized.contract,
-            validate,
+            full_validation,
             &mut vec![],
             platform_version,
         )?;
@@ -324,7 +327,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                                 true,
                                 true,
                                 true,
-                                validate,
+                                full_validation,
                                 &mut vec![],
                                 platform_version,
                             )
@@ -420,7 +423,7 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for OperationType {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -439,7 +442,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
             OperationTypeInSerializationFormat::Document(serialized_op) => {
                 let document_op = DocumentOp::versioned_deserialize(
                     serialized_op.as_slice(),
-                    validate,
+                    full_validation,
                     platform_version,
                 )?;
                 OperationType::Document(document_op)
@@ -457,7 +460,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
             OperationTypeInSerializationFormat::ContractUpdate(serialized_op) => {
                 let update_op = DataContractUpdateOp::versioned_deserialize(
                     serialized_op.as_slice(),
-                    validate,
+                    full_validation,
                     platform_version,
                 )?;
                 OperationType::ContractUpdate(update_op)
