@@ -34,13 +34,13 @@ use super::MockResponse;
 /// ## Panics
 ///
 /// Can panic on errors.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     prove: bool,
-    quorum_provider: Option<MockContextProvider>,
+    quorum_provider: Option<Arc<MockContextProvider>>,
 }
 
 impl MockDashPlatformSdk {
@@ -68,7 +68,7 @@ impl MockDashPlatformSdk {
     pub fn quorum_info_dir<P: AsRef<std::path::Path>>(&mut self, dir: P) -> &mut Self {
         let mut provider = MockContextProvider::new();
         provider.quorum_keys_dir(Some(dir.as_ref().to_path_buf()));
-        self.quorum_provider = Some(provider);
+        self.quorum_provider = Some(Arc::new(provider));
 
         self
     }

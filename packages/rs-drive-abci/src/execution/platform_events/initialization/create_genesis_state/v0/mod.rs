@@ -49,7 +49,9 @@ use drive::drive::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
 
-use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+use drive::drive::object_size_info::{
+    DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
+};
 use drive::query::TransactionArg;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -267,18 +269,15 @@ impl<C> Platform<C> {
 
         let document_type = contract.document_type_for_name("domain")?;
 
-        let operation =
-            DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {
-                document_and_contract_info: DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
-                        owner_id: None,
-                    },
-                    contract,
-                    document_type,
-                },
-                override_document: false,
-            });
+        let operation = DriveOperation::DocumentOperation(DocumentOperationType::AddDocument {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
+                owner_id: None,
+            },
+            contract_info: DataContractInfo::BorrowedDataContract(contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeRef(document_type),
+            override_document: false,
+        });
 
         operations.push(operation);
 

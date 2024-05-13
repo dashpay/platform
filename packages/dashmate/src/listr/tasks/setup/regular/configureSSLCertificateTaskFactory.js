@@ -91,7 +91,7 @@ export default function configureSSLCertificateTaskFactory(
             },
           });
 
-          ctx.config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', apiKey);
+          ctx.config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', apiKey);
 
           return obtainZeroSSLCertificateTask(ctx.config);
         },
@@ -141,7 +141,7 @@ export default function configureSSLCertificateTaskFactory(
             });
           }
 
-          ctx.config.set('platform.dapi.envoy.ssl.provider', ctx.certificateProvider);
+          ctx.config.set('platform.gateway.ssl.provider', ctx.certificateProvider);
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.certificateProvider;

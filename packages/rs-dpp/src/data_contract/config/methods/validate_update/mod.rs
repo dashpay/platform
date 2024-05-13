@@ -7,7 +7,7 @@ use platform_version::version::PlatformVersion;
 mod v0;
 
 impl DataContractConfig {
-    pub fn validate_config_update(
+    pub fn validate_update(
         &self,
         new_config: &DataContractConfig,
         contract_id: Identifier,
@@ -19,9 +19,9 @@ impl DataContractConfig {
             .data_contract
             .validate_config_update
         {
-            0 => Ok(self.validate_config_update_v0(new_config, contract_id)),
+            0 => Ok(self.validate_update_v0(new_config, contract_id)),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "validate_config_update".to_string(),
+                method: "validate_update".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

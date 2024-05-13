@@ -58,7 +58,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
-        validate: bool,
+        full_validation: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error>;
@@ -68,7 +68,7 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
     fn transform_document_transitions_within_contract_v0(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
-        validate: bool,
+        full_validation: bool,
         data_contract_id: &Identifier,
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
@@ -79,7 +79,7 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
     fn transform_document_transitions_within_document_type_v0(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
-        validate: bool,
+        full_validation: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         document_type_name: &str,
         owner_id: Identifier,
@@ -90,7 +90,7 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
     ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error>;
     /// The data contract can be of multiple difference versions
     fn transform_transition_v0(
-        validate: bool,
+        full_validation: bool,
         block_info: &BlockInfo,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &DocumentTransition,

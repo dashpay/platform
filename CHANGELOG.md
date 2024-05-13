@@ -1,3 +1,39 @@
+## [1.0.0-dev.13](https://github.com/dashpay/platform/compare/v1.0.0-dev.12...v1.0.0-dev.13) (2024-05-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** don't return Arc in SdkBuilder (#1838)
+* **platform:** document creation/update/deletion does not refetch contract (#1840)
+
+### Features
+
+* **dashmate:** handle docker pull error on images update ([#1685](https://github.com/dashpay/platform/issues/1685))
+* make document tranfers public
+* make start identities number u16
+* make purchase document public
+* make sdk document purchases public ([#1832](https://github.com/dashpay/platform/issues/1832))
+* make sdk files public
+* put index serialization behind feature
+* serialize for indexes and change error messages to strings
+* use all current identities for strategy test state transitions ([#1820](https://github.com/dashpay/platform/issues/1820))
+
+
+### Bug Fixes
+
+* **platform:** npm audit security fix ([#1836](https://github.com/dashpay/platform/issues/1836))
+
+
+### Code Refactoring
+
+* **platform:** document creation/update/deletion does not refetch contract ([#1840](https://github.com/dashpay/platform/issues/1840))
+* **sdk:** don't return Arc in SdkBuilder ([#1838](https://github.com/dashpay/platform/issues/1838))
+
+
+### Miscellaneous Chores
+
+* observability and security for HTTP gateway ([#1825](https://github.com/dashpay/platform/issues/1825))
+
 ## [1.0.0-dev.12](https://github.com/dashpay/platform/compare/v1.0.0-dev.11...v1.0.0-dev.12) (2024-04-29)
 
 

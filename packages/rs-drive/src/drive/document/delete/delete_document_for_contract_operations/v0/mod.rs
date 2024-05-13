@@ -29,6 +29,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::identifier::Identifier;
 
 use dpp::version::PlatformVersion;
 
@@ -37,7 +38,7 @@ impl Drive {
     #[inline(always)]
     pub(super) fn delete_document_for_contract_operations_v0(
         &self,
-        document_id: [u8; 32],
+        document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,

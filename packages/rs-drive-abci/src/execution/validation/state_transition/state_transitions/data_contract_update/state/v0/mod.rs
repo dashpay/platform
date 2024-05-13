@@ -180,7 +180,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         // * Failure (contract does not exist): Keep ST and transform it to a nonce bump action.
         // * How: A user pushed an update to a contract that changed its configuration.
 
-        let config_validation_result = old_data_contract.config().validate_config_update(
+        let config_validation_result = old_data_contract.config().validate_update(
             new_data_contract.config(),
             self.data_contract().id(),
             platform_version,
@@ -428,7 +428,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
             self,
-            validation_mode.should_validate_contract_on_transform_into_action(),
+            validation_mode.should_fully_validate_contract_on_transform_into_action(),
             &mut validation_operations,
             platform_version,
         );

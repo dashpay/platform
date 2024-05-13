@@ -12,6 +12,7 @@ use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::identifier::Identifier;
 
 use dpp::version::PlatformVersion;
 
@@ -20,8 +21,8 @@ impl Drive {
     #[inline(always)]
     pub(super) fn delete_document_for_contract_id_with_named_type_operations_v0(
         &self,
-        document_id: [u8; 32],
-        contract_id: [u8; 32],
+        document_id: Identifier,
+        contract_id: Identifier,
         document_type_name: &str,
         epoch: &Epoch,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
@@ -33,7 +34,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations = vec![];
         let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(
-            contract_id,
+            contract_id.to_buffer(),
             Some(epoch),
             true,
             transaction,

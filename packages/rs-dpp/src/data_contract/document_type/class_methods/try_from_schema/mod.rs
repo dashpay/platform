@@ -17,7 +17,7 @@ impl DocumentType {
         default_keeps_history: bool,
         default_mutability: bool,
         default_can_be_deleted: bool,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -36,7 +36,7 @@ impl DocumentType {
                 default_keeps_history,
                 default_mutability,
                 default_can_be_deleted,
-                validate,
+                full_validation,
                 validation_operations,
                 platform_version,
             )
