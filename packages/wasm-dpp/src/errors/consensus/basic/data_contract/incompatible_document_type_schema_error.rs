@@ -15,7 +15,7 @@ impl From<&IncompatibleDocumentTypeSchemaError> for IncompatibleDocumentTypeSche
     }
 }
 
-#[wasm_bindgen(js_class=IncompatibleDataContractSchemaError)]
+#[wasm_bindgen(js_class=IncompatibleDocumentTypeSchemaError)]
 impl IncompatibleDocumentTypeSchemaErrorWasm {
     #[wasm_bindgen(js_name=getOperation)]
     pub fn get_operation(&self) -> String {
