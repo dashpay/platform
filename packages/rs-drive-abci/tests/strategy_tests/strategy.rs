@@ -368,17 +368,22 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && self.strategy.start_identities.number_of_identities > 0 {
-            let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
-                self.strategy.start_identities.number_of_identities.into(),
-                self.strategy.identity_inserts.start_keys as KeyID,
-                &self.strategy.identity_inserts.extra_keys,
-                signer,
-                rng,
-                platform_version,
-            );
-            state_transitions.append(&mut new_transitions);
-        }
+        if block_info.height == 1 {
+            if self.strategy.start_identities.number_of_identities > 0 {
+                let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
+                    self.strategy.start_identities.number_of_identities.into(),
+                    self.strategy.identity_inserts.start_keys as KeyID,
+                    &self.strategy.identity_inserts.extra_keys,
+                    signer,
+                    rng,
+                    platform_version,
+                );
+                state_transitions.append(&mut new_transitions);
+            }
+            if !self.strategy.start_identities.hard_coded.is_empty() {
+                state_transitions.extend(self.strategy.start_identities.hard_coded.clone());
+            }
+        } 
         let frequency = &self.strategy.identity_inserts.frequency;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);

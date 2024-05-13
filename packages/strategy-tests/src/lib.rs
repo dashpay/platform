@@ -128,6 +128,7 @@ pub struct StartIdentities {
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
     pub extra_keys: KeyMaps,
+    pub hard_coded: Vec<(Identity, StateTransition)>,
 }
 
 /// Identities to register on the first block of the strategy

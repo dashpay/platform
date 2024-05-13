@@ -223,7 +223,7 @@ mod tests {
                 &platform_version.drive,
             )
             .expect("expected to get root elements");
-        assert_eq!(elements.len(), 11);
+        assert_eq!(elements.len(), 13);
     }
 
     #[test]
@@ -324,8 +324,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 248);
-        //it + left + right + parent + sibling + parent sibling + grandparent
+        assert_eq!(proof.len(), 248); //it + left + right + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Pools as u8]);
@@ -347,7 +346,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 184); //it + parent + sibling + parent sibling + grandparent
+        assert_eq!(proof.len(), 218); //it + left + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::WithdrawalTransactions as u8]);
@@ -372,7 +371,7 @@ mod tests {
         assert_eq!(proof.len(), 216); //it + left + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
-        query.insert_key(vec![RootTree::Misc as u8]);
+        query.insert_key(vec![RootTree::Votes as u8]);
         let root_path_query = PathQuery::new(
             vec![],
             SizedQuery {
@@ -391,7 +390,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 216); //it + right + parent + sibling + parent sibling + grandparent
+        assert_eq!(proof.len(), 250); //it + left + right + parent + sibling + parent sibling + grandparent
 
         // Merk Level 3
 
@@ -415,7 +414,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 248);
+        assert_eq!(proof.len(), 248); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![
@@ -439,7 +438,31 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 248);
+        assert_eq!(proof.len(), 248); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
+
+        let mut query = Query::new();
+        query.insert_key(vec![
+            RootTree::PreFundedSpecializedBalances as u8,
+        ]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                false,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 217); //it + parent + parent sibling + grandparent + grandparent sibling + great-grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::SpentAssetLockTransactions as u8]);
@@ -461,7 +484,29 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 214);
+        assert_eq!(proof.len(), 214); //it + parent + parent sibling + grandparent + grandparent sibling + great-grandparent
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::Misc as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                false,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 250); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Versions as u8]);
@@ -483,6 +528,6 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 216);
+        assert_eq!(proof.len(), 250); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
     }
 }

@@ -39,7 +39,7 @@ bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter",
 [dev-dependencies]
 tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
 rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
-base64 = { version = "0.22.0" }
+base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 dpp = { path = "../rs-dpp", features = [
   "client",

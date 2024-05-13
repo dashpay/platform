@@ -9,15 +9,27 @@ use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
 use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Debug, Formatter};
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 
 /// This simple signer is only to be used in tests
-#[derive(Default, Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Default, Clone, PartialEq, Encode, Decode)]
 pub struct SimpleSigner {
     /// Private keys is a map from the public key to the Private key bytes
-    pub private_keys: HashMap<IdentityPublicKey, Vec<u8>>,
+    pub private_keys: BTreeMap<IdentityPublicKey, Vec<u8>>,
     /// Private keys to be added at the end of a block
-    pub private_keys_in_creation: HashMap<IdentityPublicKey, Vec<u8>>,
+    pub private_keys_in_creation: BTreeMap<IdentityPublicKey, Vec<u8>>,
+}
+
+impl Debug for SimpleSigner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SimpleSigner")
+            .field("private_keys", &self.private_keys.iter().map(|(k, v)| (k, format!("sk: {}", BASE64_STANDARD.encode(v)))).collect::<BTreeMap<_, _>>())
+            .field("private_keys_in_creation", &self.private_keys_in_creation.iter().map(|(k, v)| (k, format!("sk: {}", BASE64_STANDARD.encode(v)))).collect::<BTreeMap<_, _>>())
+            .finish()
+    }
 }
 
 impl SimpleSigner {
@@ -34,7 +46,7 @@ impl SimpleSigner {
     /// Commit keys in creation
     pub fn commit_block_keys(&mut self) {
         self.private_keys
-            .extend(self.private_keys_in_creation.drain())
+            .append(&mut self.private_keys_in_creation)
     }
 }
 
@@ -48,8 +60,8 @@ impl Signer for SimpleSigner {
             .private_keys
             .get(identity_public_key)
             .or_else(|| self.private_keys_in_creation.get(identity_public_key))
-            .ok_or(ProtocolError::InvalidSignaturePublicKeyError(
-                InvalidSignaturePublicKeyError::new(identity_public_key.data().to_vec()),
+            .ok_or(ProtocolError::Generic(
+                format!("{:?} not found in {:?}", identity_public_key, self)
             ))?;
         match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {

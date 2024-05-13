@@ -49,7 +49,7 @@ mod tests {
 
         let mut simple_signer = SimpleSigner::default();
 
-        let (identity1, keys) =
+        let (identity1, keys1) =
             Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
                 2,
                 &mut rng,
@@ -57,9 +57,9 @@ mod tests {
             )
             .unwrap();
 
-        simple_signer.add_keys(keys);
+        simple_signer.add_keys(keys1);
 
-        let (identity2, keys) =
+        let (identity2, keys2) =
             Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
                 2,
                 &mut rng,
@@ -67,11 +67,11 @@ mod tests {
             )
             .unwrap();
 
-        simple_signer.add_keys(keys);
+        simple_signer.add_keys(keys2);
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
-            &mut simple_signer,
+            &simple_signer,
             &mut rng,
             platform_version,
         );
@@ -153,7 +153,10 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: StartIdentities::default(),
+                start_identities: StartIdentities {
+                    hard_coded: start_identities,
+                    ..Default::default()
+                },
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -163,7 +166,7 @@ mod tests {
                 },
 
                 identity_contract_nonce_gaps: None,
-                signer: None,
+                signer: Some(simple_signer),
             },
             total_hpmns: 100,
             extra_normal_mns: 0,

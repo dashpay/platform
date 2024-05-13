@@ -461,7 +461,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         assert_eq!(1305, added_bytes);
-        assert_eq!(142936800, processing_fee);
+        assert_eq!(144784800, processing_fee);
     }
 
     #[test]

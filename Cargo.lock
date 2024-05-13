@@ -303,21 +303,15 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ea22880d78093b0cbe17c89f64a7d457941e65759157ec6cb31a31d652b05e5"
-
-[[package]]
-name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
 name = "base64"
-version = "0.22.0"
+version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9475866fec1451be56a3c2400fd081ff546538961565ccb5b7142cbd22bc7a51"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64ct"
@@ -1085,7 +1079,7 @@ name = "dash-sdk"
 version = "1.0.0-dev.12"
 dependencies = [
  "async-trait",
- "base64 0.22.0",
+ "base64 0.22.1",
  "bincode",
  "bip37-bloom-filter",
  "ciborium",
@@ -1296,7 +1290,7 @@ version = "1.0.0-dev.12"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.0",
+ "base64 0.22.1",
  "bincode",
  "bls-signatures",
  "bs58 0.4.0",
@@ -1345,7 +1339,7 @@ name = "drive"
 version = "1.0.0-dev.12"
 dependencies = [
  "arc-swap",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bs58 0.5.1",
  "byteorder",
  "chrono",
@@ -1383,7 +1377,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "atty",
- "base64 0.20.0",
+ "base64 0.22.1",
  "bincode",
  "chrono",
  "ciborium",
@@ -2368,7 +2362,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
- "base64 0.22.0",
+ "base64 0.21.7",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -3013,7 +3007,7 @@ dependencies = [
 name = "platform-value"
 version = "1.0.0-dev.12"
 dependencies = [
- "base64 0.22.0",
+ "base64 0.22.1",
  "bincode",
  "bs58 0.5.1",
  "ciborium",
@@ -3723,7 +3717,7 @@ version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29993a25686778eb88d4189742cd713c9bce943bc54251a33509dc63cbacf73d"
 dependencies = [
- "base64 0.22.0",
+ "base64 0.22.1",
  "rustls-pki-types",
 ]
 
@@ -3961,7 +3955,7 @@ version = "3.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c85f8e96d1d6857f13768fcbd895fcb06225510022a2774ed8b5150581847b0"
 dependencies = [
- "base64 0.22.0",
+ "base64 0.22.1",
  "chrono",
  "hex",
  "serde",
@@ -4049,6 +4043,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 name = "simple-signer"
 version = "1.0.0-dev.12"
 dependencies = [
+ "base64 0.22.1",
  "bincode",
  "dashcore-rpc",
  "dpp",
@@ -4909,7 +4904,7 @@ version = "2.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d11a831e3c0b56e438a28308e7c810799e3c118417f342d30ecec080105395cd"
 dependencies = [
- "base64 0.22.0",
+ "base64 0.22.1",
  "flate2",
  "log",
  "once_cell",

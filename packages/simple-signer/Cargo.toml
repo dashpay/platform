@@ -10,3 +10,4 @@ rust-version = "1.76"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.2" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
+base64 = { version = "0.22.1"}
