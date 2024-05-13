@@ -71,5 +71,7 @@ where
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
 
+    // TODO: Here you need to create a snapshot
+
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }
