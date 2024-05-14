@@ -22,6 +22,7 @@ use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
 
 impl Drive {
     /// Adds indices for the top index level and calls for lower levels.
@@ -58,7 +59,7 @@ impl Drive {
         //  * Document and DataContract root tree
         //  * DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
-        let contract_document_type_path = contract_document_type_path_vec(
+        let contract_document_type_path = vote_contested_resource_active_polls_contract_document_tree_path_vec(
             document_and_contract_info.contract.id_ref().as_bytes(),
             document_and_contract_info.document_type.name(),
         );

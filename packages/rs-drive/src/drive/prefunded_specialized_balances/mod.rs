@@ -10,13 +10,20 @@ use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};
 
-pub const PREFUNDED_BALANCES_FOR_VOTING: [u8; 1] = [128];
+pub const PREFUNDED_BALANCES_FOR_VOTING: u8 = 128;
+
+/// prefunded specialized balances for voting
+pub(crate) fn prefunded_specialized_balances_path() -> [&'static [u8]; 1] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances),
+    ]
+}
 
 /// prefunded specialized balances for voting
 pub(crate) fn prefunded_specialized_balances_for_voting_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances),
-        &PREFUNDED_BALANCES_FOR_VOTING,
+        &[PREFUNDED_BALANCES_FOR_VOTING],
     ]
 }
 
@@ -24,7 +31,7 @@ pub(crate) fn prefunded_specialized_balances_for_voting_path() -> [&'static [u8]
 pub(crate) fn prefunded_specialized_balances_for_voting_path_vec() -> Vec<Vec<u8>> {
     vec![
         Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances).to_vec(),
-        PREFUNDED_BALANCES_FOR_VOTING.to_vec(),
+        vec![PREFUNDED_BALANCES_FOR_VOTING],
     ]
 }
 
@@ -39,7 +46,7 @@ impl Drive {
     pub fn add_initial_prefunded_specialized_balances_operations(batch: &mut GroveDbOpBatch) {
         batch.add_insert_empty_sum_tree(
             vec![vec![RootTree::PreFundedSpecializedBalances as u8]],
-            PREFUNDED_BALANCES_FOR_VOTING.to_vec(),
+            vec![PREFUNDED_BALANCES_FOR_VOTING],
         );
     }
 }

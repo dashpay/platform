@@ -1,13 +1,14 @@
 use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
+use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 
-use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
-use grovedb::EstimatedSumTrees::SomeSumTrees;
+use crate::drive::prefunded_specialized_balances::{prefunded_specialized_balances_for_voting_path_vec, prefunded_specialized_balances_path};
+use grovedb::EstimatedSumTrees::{AllSumTrees, SomeSumTrees};
 use std::collections::HashMap;
+use crate::drive::defaults::{AVERAGE_BALANCE_SIZE, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8};
 
 impl Drive {
     /// Adds estimation costs for total system credits update.
@@ -18,15 +19,15 @@ impl Drive {
     pub(super) fn add_estimation_costs_for_prefunded_specialized_balance_update_v0(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
-        //todo: verify (this is wrong)
-        // we have constructed the top layer so contract/documents tree are at the top
-        // since balance will be on layer 2, updating will mean we will update 1 sum tree
-        // and 1 normal tree, hence we should give an equal weight to both
+        // todo: this will be inserted at the same time as other estimated costs for documents,
+        //  hence we add the full information, but it would be much better that estimated costs would
+        //  be merged instead of overwritten
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 is_sum_tree: false,
-                estimated_layer_count: EstimatedLevel(1, false),
+                // We are on the 3rd level
+                estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: AllSubtrees(
                     1,
                     SomeSumTrees {
@@ -38,14 +39,21 @@ impl Drive {
             },
         );
 
-        //todo : verify this
-        // we then need to insert the contract layer
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(prefunded_specialized_balances_path()),
+            EstimatedLayerInformation {
+                is_sum_tree: true,
+                estimated_layer_count: EstimatedLevel(0, false),
+                estimated_layer_sizes: AllSubtrees(1, AllSumTrees, None),
+            },
+        );
+        
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(prefunded_specialized_balances_for_voting_path_vec()),
             EstimatedLayerInformation {
                 is_sum_tree: true,
-                estimated_layer_count: ApproximateElements(0),
-                estimated_layer_sizes: AllItems(1, 8, None),
+                estimated_layer_count: PotentiallyAtMaxElements,
+                estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, AVERAGE_BALANCE_SIZE, None),
             },
         );
     }

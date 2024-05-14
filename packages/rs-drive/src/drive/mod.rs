@@ -110,7 +110,7 @@ pub enum RootTree {
     Identities = 32,
     /// Unique Public Key Hashes to Identities
     UniquePublicKeyHashesToIdentities = 24, // UPKH->I above
-    /// Non Unique Public Key Hashes to Identities, useful for Masternode Identities
+    /// Non-Unique Public Key Hashes to Identities, useful for Masternode Identities
     NonUniquePublicKeyKeyHashesToIdentities = 8, // NUPKH->I
     /// Pools
     Pools = 48,

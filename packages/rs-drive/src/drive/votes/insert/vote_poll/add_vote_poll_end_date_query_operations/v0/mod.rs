@@ -3,10 +3,7 @@ use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::drive::object_size_info::PathKeyElementInfo::{PathKeyElementSize, PathKeyRefElement};
 use crate::drive::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
-use crate::drive::votes::paths::{
-    vote_contested_resource_end_date_queries_at_time_tree_path_vec,
-    vote_contested_resource_end_date_queries_tree_path_vec,
-};
+use crate::drive::votes::paths::{vote_contested_resource_active_polls_contract_tree_path, vote_contested_resource_end_date_queries_at_time_tree_path_vec, vote_contested_resource_end_date_queries_tree_path, vote_contested_resource_end_date_queries_tree_path_vec};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -20,6 +17,10 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
+use grovedb::EstimatedLayerCount::ApproximateElements;
+use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::EstimatedSumTrees::NoSumTrees;
+use crate::drive::defaults::{AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE, DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE, U64_SIZE_U8};
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
@@ -41,6 +42,36 @@ impl Drive {
         let storage_flags = creator_identity_id.map(|creator_identity_id| {
             StorageFlags::new_single_epoch(block_info.epoch.index, Some(creator_identity_id))
         });
+
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+        {
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_path(vote_contested_resource_end_date_queries_tree_path()),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    // We can estimate that there is at least a vote concluding every block, and we put blocks at 6 seconds.
+                    estimated_layer_count: ApproximateElements(201_600),
+                    estimated_layer_sizes: AllSubtrees(
+                        U64_SIZE_U8,
+                        NoSumTrees,
+                        Some(StorageFlags::approximate_size(true, None)),
+                    ),
+                });
+                
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_owned_path(vote_contested_resource_end_date_queries_at_time_tree_path_vec(end_date)),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    // We can estimate that there is 2 votes ending per block.
+                    estimated_layer_count: ApproximateElements(2),
+                    estimated_layer_sizes: AllItems(
+                        DEFAULT_HASH_SIZE_U8,
+                        AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE,
+                        Some(StorageFlags::approximate_size(true, None)),
+                    ),
+                },
+            );
+        }
 
         // This is a GroveDB Tree (Not Sub Tree Merk representation)
         //                         End Date queries
@@ -121,14 +152,5 @@ impl Drive {
 
         Ok(())
 
-        //todo
-        // if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
-        // {
-        //     Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
-        //         contract,
-        //         estimated_costs_only_with_layer_info,
-        //         drive_version,
-        //     )?;
-        // }
     }
 }

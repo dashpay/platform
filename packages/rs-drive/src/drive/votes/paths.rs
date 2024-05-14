@@ -108,16 +108,58 @@ pub fn vote_contested_resource_active_polls_tree_path_vec() -> Vec<Vec<u8>> {
 
 #[cfg(feature = "server")]
 /// Returns the path to the primary keys of a contract document type.
-pub fn vote_contested_resource_contract_documents_primary_key_path<'a>(
-    contract_id: &'a [u8],
-    document_type_name: &'a str,
-) -> [&'a [u8]; 7] {
+pub fn vote_contested_resource_active_polls_contract_tree_path(
+    contract_id: &[u8],
+) -> [&[u8]; 4] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes), // 1
         &[CONTESTED_RESOURCE_TREE_KEY as u8],    // 1
         &[ACTIVE_POLLS_TREE_KEY as u8],          // 1
         contract_id,                             // 32
-        &[1],                                    // 1
+    ]
+}
+
+#[cfg(feature = "server")]
+/// Returns the path to the primary keys of a contract document type.
+pub fn vote_contested_resource_active_polls_contract_document_tree_path<'a>(
+    contract_id: &'a [u8],
+    document_type_name: &'a str,
+) -> [&'a [u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes), // 1
+        &[CONTESTED_RESOURCE_TREE_KEY as u8],    // 1
+        &[ACTIVE_POLLS_TREE_KEY as u8],          // 1
+        contract_id,                             // 32
+        document_type_name.as_bytes(),
+    ]
+}
+
+#[cfg(feature = "server")]
+/// Returns the path to the root of document type in the contested tree
+pub fn vote_contested_resource_active_polls_contract_document_tree_path_vec(
+    contract_id: &[u8],
+    document_type_name: &str,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+        contract_id.to_vec(),
+        document_type_name.as_bytes().to_vec(),
+    ]
+}
+
+#[cfg(feature = "server")]
+/// Returns the path to the primary keys of a contract document type.
+pub fn vote_contested_resource_contract_documents_primary_key_path<'a>(
+    contract_id: &'a [u8],
+    document_type_name: &'a str,
+) -> [&'a [u8]; 6] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes), // 1
+        &[CONTESTED_RESOURCE_TREE_KEY as u8],    // 1
+        &[ACTIVE_POLLS_TREE_KEY as u8],          // 1
+        contract_id,                             // 32
         document_type_name.as_bytes(),
         &[0], // 1
     ]

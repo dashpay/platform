@@ -116,3 +116,6 @@ pub const ESTIMATED_AVERAGE_INDEX_NAME_SIZE: u8 = 16;
 
 /// The estimated count of identities having the same key if they are not unique
 pub const ESTIMATED_NON_UNIQUE_KEY_DUPLICATES: u32 = 2;
+
+/// The average size of an item that is acting as a tree reference towards the contested item vote
+pub const AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE: u32 = 150;
