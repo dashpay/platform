@@ -1,14 +1,9 @@
-use dpp::data_contract::document_type::DocumentPropertyType;
-
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
-use grovedb::reference_path::ReferencePathType::SiblingReference;
 
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use std::collections::HashMap;
-use std::option::Option::None;
 
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
 use crate::drive::flags::StorageFlags;
@@ -38,9 +33,14 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
-use dpp::version::PlatformVersion;
-use crate::drive::document::paths::{contract_documents_keeping_history_primary_key_path_for_document_id, contract_documents_keeping_history_primary_key_path_for_unknown_document_id, contract_documents_keeping_history_storage_time_reference_path_size, contract_documents_primary_key_path};
+use crate::drive::document::paths::{
+    contract_documents_keeping_history_primary_key_path_for_document_id,
+    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
+    contract_documents_keeping_history_storage_time_reference_path_size,
+    contract_documents_primary_key_path,
+};
 use crate::drive::votes::paths::vote_contested_resource_contract_documents_primary_key_path;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -73,7 +73,7 @@ impl Drive {
                 platform_version,
             )?;
         }
-        
+
         if insert_without_check {
             let path_key_element_info = match &document_and_contract_info
                 .owned_document_info

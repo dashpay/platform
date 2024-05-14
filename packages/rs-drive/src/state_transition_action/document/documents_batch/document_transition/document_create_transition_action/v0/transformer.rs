@@ -52,7 +52,8 @@ impl DocumentCreateTransitionActionV0 {
                 };
 
                 Ok::<_, ProtocolError>((vote_poll, credits))
-            }).transpose()?;
+            })
+            .transpose()?;
 
         Ok(DocumentCreateTransitionActionV0 {
             base,
@@ -84,7 +85,8 @@ impl DocumentCreateTransitionActionV0 {
 
         let document_type_indexes = document_type.indexes();
 
-        let prefunded_voting_balances_by_vote_poll = prefunded_voting_balance.as_ref()
+        let prefunded_voting_balances_by_vote_poll = prefunded_voting_balance
+            .as_ref()
             .map(|(index_name, credits)| {
                 let index = document_type_indexes.get(index_name).ok_or(
                     ProtocolError::UnknownContestedIndexResolution(format!(
@@ -103,7 +105,8 @@ impl DocumentCreateTransitionActionV0 {
                 };
 
                 Ok::<_, ProtocolError>((vote_poll, *credits))
-            }).transpose()?;
+            })
+            .transpose()?;
 
         Ok(DocumentCreateTransitionActionV0 {
             base,

@@ -14,23 +14,28 @@ impl DocumentTypeV0 {
             .iter()
             .find(|(name, index)| {
                 if let Some(contested_index_info) = &index.contested_index {
-                    if let Some(value) = document.get(&contested_index_info.contested_field_name) {
-                        contested_index_info.field_match.matches(value)
-                    } else {
-                        false
-                    }
+                    contested_index_info
+                        .field_matches
+                        .iter()
+                        .all(|(field, field_match)| {
+                            if let Some(value) = document.get(field) {
+                                field_match.matches(value)
+                            } else {
+                                false
+                            }
+                        })
                 } else {
                     false
                 }
-            }).map(|(name, index)| {
-            
-          let index_values = index.extract_values(document.properties());
-          VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
-              contract_id: self.data_contract_id,
-              document_type_name: self.name.clone(),
-              index_name: index.name.clone(),
-              index_values,
-          })  
-        })
+            })
+            .map(|(name, index)| {
+                let index_values = index.extract_values(document.properties());
+                VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
+                    contract_id: self.data_contract_id,
+                    document_type_name: self.name.clone(),
+                    index_name: index.name.clone(),
+                    index_values,
+                })
+            })
     }
 }

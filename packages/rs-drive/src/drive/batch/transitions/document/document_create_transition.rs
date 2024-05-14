@@ -48,7 +48,9 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
             },
         )];
 
-        if let Some((contested_document_resource_vote_poll, credits)) = maybe_prefunded_voting_balance {
+        if let Some((contested_document_resource_vote_poll, credits)) =
+            maybe_prefunded_voting_balance
+        {
             let prefunded_specialized_balance_id =
                 contested_document_resource_vote_poll.specialized_balance_id()?;
             // We are in the situation of a contested document

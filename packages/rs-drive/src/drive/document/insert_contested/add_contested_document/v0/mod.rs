@@ -8,8 +8,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
-use grovedb::TransactionArg;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds a contested document using bincode serialization
@@ -28,7 +28,9 @@ impl Drive {
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
-                contested_document_resource_vote_poll.contract_id.into_buffer(),
+                contested_document_resource_vote_poll
+                    .contract_id
+                    .into_buffer(),
                 Some(&block_info.epoch),
                 true,
                 transaction,
@@ -39,7 +41,11 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type_for_name(contested_document_resource_vote_poll.document_type_name.as_str())?;
+        let document_type = contract.document_type_for_name(
+            contested_document_resource_vote_poll
+                .document_type_name
+                .as_str(),
+        )?;
 
         let document_and_contract_info = DocumentAndContractInfo {
             owned_document_info,

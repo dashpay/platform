@@ -20,7 +20,7 @@ impl Drive {
     /// any votes poll should be closed.
     pub fn add_vote_poll_end_date_query_operations(
         &self,
-        creator_identity_id: Option<[u8;32]>,
+        creator_identity_id: Option<[u8; 32]>,
         vote_poll: VotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,

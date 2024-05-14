@@ -10,8 +10,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
-use grovedb::TransactionArg;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds a contested document to a contract.

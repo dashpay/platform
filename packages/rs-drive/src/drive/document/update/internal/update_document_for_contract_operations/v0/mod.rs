@@ -24,6 +24,11 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 
+use crate::drive::document::paths::{
+    contract_document_type_path,
+    contract_documents_keeping_history_primary_key_path_for_document_id,
+    contract_documents_primary_key_path,
+};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -32,7 +37,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use crate::drive::document::paths::{contract_document_type_path, contract_documents_keeping_history_primary_key_path_for_document_id, contract_documents_primary_key_path};
 
 impl Drive {
     /// Gathers operations for updating a document.

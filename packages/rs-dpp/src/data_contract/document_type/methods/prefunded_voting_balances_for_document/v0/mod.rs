@@ -15,20 +15,28 @@ impl DocumentTypeV0 {
             .iter()
             .find(|(name, index)| {
                 if let Some(contested_index_info) = &index.contested_index {
-                    if let Some(value) = document.get(&contested_index_info.contested_field_name) {
-                        contested_index_info.field_match.matches(value)
-                    } else {
-                        false
-                    }
+                    contested_index_info
+                        .field_matches
+                        .iter()
+                        .all(|(field, field_match)| {
+                            if let Some(value) = document.get(field) {
+                                field_match.matches(value)
+                            } else {
+                                false
+                            }
+                        })
                 } else {
                     false
                 }
-            }).map(|(index_name, _)| (
-            index_name.clone(),
-            platform_version
-                .fee_version
-                .vote_resolution_fund_fees
-                .conflicting_vote_resolution_fund_required_amount,
-        ))
+            })
+            .map(|(index_name, _)| {
+                (
+                    index_name.clone(),
+                    platform_version
+                        .fee_version
+                        .vote_resolution_fund_fees
+                        .conflicting_vote_resolution_fund_required_amount,
+                )
+            })
     }
 }

@@ -21,11 +21,11 @@ use crate::document::Document;
 use crate::fee::Credits;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
+use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
-use crate::voting::vote_polls::VotePoll;
 
 mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
@@ -235,7 +235,11 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
-    fn contested_vote_poll_for_document(&self, document: &Document, platform_version: &PlatformVersion) -> Result<Option<VotePoll>, ProtocolError> {
+    fn contested_vote_poll_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => {
                 v0.contested_vote_poll_for_document(document, platform_version)

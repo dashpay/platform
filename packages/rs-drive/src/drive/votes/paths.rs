@@ -114,10 +114,10 @@ pub fn vote_contested_resource_contract_documents_primary_key_path<'a>(
 ) -> [&'a [u8]; 7] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes), // 1
-        &[CONTESTED_RESOURCE_TREE_KEY as u8], // 1
-        &[ACTIVE_POLLS_TREE_KEY as u8], // 1
-        contract_id,                                             // 32
-        &[1],                                                    // 1
+        &[CONTESTED_RESOURCE_TREE_KEY as u8],    // 1
+        &[ACTIVE_POLLS_TREE_KEY as u8],          // 1
+        contract_id,                             // 32
+        &[1],                                    // 1
         document_type_name.as_bytes(),
         &[0], // 1
     ]

@@ -1,4 +1,5 @@
 use crate::drive::flags::StorageFlags;
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::drive::object_size_info::PathKeyElementInfo::{PathKeyElementSize, PathKeyRefElement};
 use crate::drive::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
@@ -19,14 +20,13 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
     pub(in crate::drive::votes::insert) fn add_vote_poll_end_date_query_operations_v0(
         &self,
-        creator_identity_id: Option<[u8;32]>,
+        creator_identity_id: Option<[u8; 32]>,
         vote_poll: VotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
@@ -39,10 +39,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let storage_flags = creator_identity_id.map(|creator_identity_id| {
-            StorageFlags::new_single_epoch(
-                block_info.epoch.index,
-                Some(creator_identity_id),
-            )
+            StorageFlags::new_single_epoch(block_info.epoch.index, Some(creator_identity_id))
         });
 
         // This is a GroveDB Tree (Not Sub Tree Merk representation)
@@ -113,8 +110,6 @@ impl Drive {
                     item,
                 ))
             };
-
-
 
         self.batch_insert_if_not_exists(
             path_key_element_info,

@@ -67,9 +67,7 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         &mut self,
     ) -> Option<(ContestedDocumentResourceVotePoll, Credits)> {
         match self {
-            DocumentCreateTransitionAction::V0(v0) => {
-                v0.prefunded_voting_balance.take()
-            }
+            DocumentCreateTransitionAction::V0(v0) => v0.prefunded_voting_balance.take(),
         }
     }
 

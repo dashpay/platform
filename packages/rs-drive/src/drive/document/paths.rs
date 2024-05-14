@@ -1,10 +1,10 @@
-use dpp::data_contract::document_type::DocumentTypeRef;
-use grovedb::batch::KeyInfoPath;
-use grovedb::batch::key_info::KeyInfo;
+use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::drive::{defaults, RootTree};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use crate::drive::{defaults, RootTree};
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the path to a contract document type.

@@ -48,7 +48,6 @@ impl TryFrom<u8> for ContestedIndexResolution {
 pub enum ContestedIndexFieldMatch {
     Regex(regex::Regex),
     PositiveIntegerMatch(u128),
-    All,
 }
 
 impl PartialOrd for ContestedIndexFieldMatch {
@@ -64,12 +63,6 @@ impl PartialOrd for ContestedIndexFieldMatch {
 
             // Comparing Regex with Regex, perhaps based on pattern length
             (Regex(a), Regex(b)) => a.as_str().len().partial_cmp(&b.as_str().len()),
-
-            // Handling the `All` variant:
-            // All is greater than any other variant
-            (All, All) => Some(Ordering::Equal),
-            (All, _) => Some(Ordering::Greater),
-            (_, All) => Some(Ordering::Less),
         }
     }
 }
@@ -87,11 +80,6 @@ impl Ord for ContestedIndexFieldMatch {
             // Regex is considered less than a positive integer
             (Regex(_), PositiveIntegerMatch(_)) => Ordering::Less,
             (PositiveIntegerMatch(_), Regex(_)) => Ordering::Greater,
-
-            // All is always the greatest
-            (All, All) => Ordering::Equal,
-            (All, _) => Ordering::Greater,
-            (_, All) => Ordering::Less,
         }
     }
 }
@@ -100,7 +88,6 @@ impl Clone for ContestedIndexFieldMatch {
     fn clone(&self) -> Self {
         match self {
             Regex(regex) => Regex(regex::Regex::new(regex.as_str()).unwrap()),
-            ContestedIndexFieldMatch::All => ContestedIndexFieldMatch::All,
             ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
                 ContestedIndexFieldMatch::PositiveIntegerMatch(*int)
             }
@@ -113,10 +100,6 @@ impl PartialEq for ContestedIndexFieldMatch {
         match self {
             Regex(regex) => match other {
                 Regex(other_regex) => regex.as_str() == other_regex.as_str(),
-                _ => false,
-            },
-            ContestedIndexFieldMatch::All => match other {
-                ContestedIndexFieldMatch::All => true,
                 _ => false,
             },
             ContestedIndexFieldMatch::PositiveIntegerMatch(int) => match other {
@@ -139,7 +122,6 @@ impl ContestedIndexFieldMatch {
                     false
                 }
             }
-            ContestedIndexFieldMatch::All => true,
             ContestedIndexFieldMatch::PositiveIntegerMatch(int) => value
                 .as_integer::<u128>()
                 .map(|i| i == *int)
@@ -150,18 +132,14 @@ impl ContestedIndexFieldMatch {
 
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub struct ContestedIndexInformation {
-    pub contested_field_temp_replacement_name: String,
-    pub contested_field_name: String,
-    pub field_match: ContestedIndexFieldMatch,
+    pub field_matches: BTreeMap<String, ContestedIndexFieldMatch>,
     pub resolution: ContestedIndexResolution,
 }
 
 impl Default for ContestedIndexInformation {
     fn default() -> Self {
         ContestedIndexInformation {
-            contested_field_temp_replacement_name: "".to_string(),
-            contested_field_name: "".to_string(),
-            field_match: ContestedIndexFieldMatch::All, //by default always contest
+            field_matches: BTreeMap::new(),
             resolution: ContestedIndexResolution::MasternodeVote,
         }
     }
@@ -375,24 +353,62 @@ impl TryFrom<&[(Value, Value)]> for Index {
                             .to_str()
                             .map_err(|e| DataContractError::ValueDecodingError(e.to_string()))?;
                         match contested_key {
-                            "regexPattern" => {
-                                let regex = contested_value.to_str()?.to_owned();
-                                contested_index_information.field_match =
-                                    Regex(regex::Regex::new(&regex).map_err(|e| {
-                                        RegexError(format!(
-                                            "invalid field match regex: {}",
-                                            e.to_string()
-                                        ))
-                                    })?);
-                            }
-                            "name" => {
-                                let field = contested_value.to_str()?.to_owned();
-                                contested_index_information.contested_field_temp_replacement_name =
-                                    field;
-                            }
-                            "fieldMatch" => {
-                                let field = contested_value.to_str()?.to_owned();
-                                contested_index_information.contested_field_name = field;
+                            "fieldMatches" => {
+                                let field_matches_array = contested_value.to_array_ref()?;
+                                for field_match in field_matches_array {
+                                    let field_match_map = field_match.to_map()?;
+                                    let mut name = None;
+                                    let mut field_matches = None;
+                                    for (field_match_key_as_value, field_match_value) in
+                                        field_match_map
+                                    {
+                                        let field_match_key =
+                                            field_match_key_as_value.to_str().map_err(|e| {
+                                                DataContractError::ValueDecodingError(e.to_string())
+                                            })?;
+                                        match field_match_key {
+                                            "field" => {
+                                                let field = field_match_value.to_str()?.to_owned();
+                                                name = Some(field);
+                                            }
+                                            "regexPattern" => {
+                                                let regex = field_match_value.to_str()?.to_owned();
+                                                field_matches = Some(Regex(
+                                                    regex::Regex::new(&regex).map_err(|e| {
+                                                        RegexError(format!(
+                                                            "invalid field match regex: {}",
+                                                            e.to_string()
+                                                        ))
+                                                    })?,
+                                                ));
+                                            }
+                                            key => {
+                                                return Err(DataContractError::ValueWrongType(
+                                                    format!("unexpected field match key {}", key),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    if name.is_none() {
+                                        return Err(DataContractError::FieldRequirementUnmet(
+                                            format!(
+                                                "field not present in contested fieldMatches {}",
+                                                key
+                                            ),
+                                        ));
+                                    }
+                                    if field_matches.is_none() {
+                                        return Err(DataContractError::FieldRequirementUnmet(
+                                            format!(
+                                                "field not present in contested fieldMatches {}",
+                                                key
+                                            ),
+                                        ));
+                                    }
+                                    contested_index_information
+                                        .field_matches
+                                        .insert(name.unwrap(), field_matches.unwrap());
+                                }
                             }
                             "resolution" => {
                                 let resolution_int = contested_value.to_integer::<u8>()?;
@@ -402,10 +418,11 @@ impl TryFrom<&[(Value, Value)]> for Index {
                                     })?;
                             }
                             "description" => {}
-                            _ => {
-                                return Err(DataContractError::ValueWrongType(
-                                    "unexpected contested key".to_string(),
-                                ));
+                            key => {
+                                return Err(DataContractError::ValueWrongType(format!(
+                                    "unexpected contested key {}",
+                                    key
+                                )));
                             }
                         }
                     }

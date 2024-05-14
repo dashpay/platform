@@ -10,13 +10,13 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
+use crate::drive::votes::paths::vote_contested_resource_contract_documents_primary_key_path;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::voting::vote_polls::VotePoll;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use dpp::voting::vote_polls::VotePoll;
-use crate::drive::votes::paths::vote_contested_resource_contract_documents_primary_key_path;
 
 impl Drive {
     /// Gathers the operations to add a contested document to a contract.
@@ -54,12 +54,22 @@ impl Drive {
             &mut batch_operations,
             platform_version,
         )?;
-        
-        let end_date = block_info.time_ms.saturating_add(platform_version.dpp.voting_versions.default_vote_time_ms);
-        
-        
-        self.add_vote_poll_end_date_query_operations(document_and_contract_info.owned_document_info.owner_id,
-                                                     VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll), end_date, block_info, estimated_costs_only_with_layer_info, previous_batch_operations, &mut batch_operations, transaction, platform_version)?;
+
+        let end_date = block_info
+            .time_ms
+            .saturating_add(platform_version.dpp.voting_versions.default_vote_time_ms);
+
+        self.add_vote_poll_end_date_query_operations(
+            document_and_contract_info.owned_document_info.owner_id,
+            VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll),
+            end_date,
+            block_info,
+            estimated_costs_only_with_layer_info,
+            previous_batch_operations,
+            &mut batch_operations,
+            transaction,
+            platform_version,
+        )?;
 
         self.add_contested_indices_for_top_index_level_for_contract_operations(
             &document_and_contract_info,

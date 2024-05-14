@@ -1,3 +1,4 @@
+mod contested_vote_poll_for_document;
 mod create_document_from_data;
 mod create_document_with_prevalidated_properties;
 mod estimated_size;
@@ -6,7 +7,6 @@ mod max_size;
 mod prefunded_voting_balances_for_document;
 mod serialize_value_for_key;
 mod validate_update;
-mod contested_vote_poll_for_document;
 
 use std::collections::BTreeMap;
 
@@ -21,8 +21,8 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
 use crate::fee::Credits;
-use platform_value::{Identifier, Value};
 use crate::voting::vote_polls::VotePoll;
+use platform_value::{Identifier, Value};
 
 // TODO: Some of those methods are only for tests. Hide under feature
 pub trait DocumentTypeV0Methods {
@@ -120,7 +120,7 @@ pub trait DocumentTypeV0Methods {
         document: &Document,
         platform_version: &PlatformVersion,
     ) -> Result<Option<(String, Credits)>, ProtocolError>;
-    
+
     /// Gets the vote poll associated with a document
     fn contested_vote_poll_for_document(
         &self,
@@ -354,5 +354,4 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             }),
         }
     }
-        
 }

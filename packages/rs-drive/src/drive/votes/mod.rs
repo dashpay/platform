@@ -61,30 +61,17 @@ impl TreePath for ResourceVote {
                         contract.id()
                     )))?;
                 let mut path = contract_document_type_path(
-                    &contested_document_vote_poll.contract_id.as_bytes(),
+                    contested_document_vote_poll.contract_id.as_bytes(),
                     &contested_document_vote_poll.document_type_name,
                 )
                 .to_vec();
 
                 // at this point the path only contains the parts before the index
 
-                let Some(contested_index) = &index.contested_index else {
-                    return Err(ProtocolError::VoteError(
-                    "we expect the index in a contested document resource votes type to be contested"
-                        .to_string(),
-                ));
-                };
-
                 let mut properties_iter = index.properties.iter();
 
                 while let Some(index_part) = properties_iter.next() {
-                    let level_name = if contested_index.contested_field_name == index_part.name {
-                        &contested_index.contested_field_temp_replacement_name
-                    } else {
-                        &index_part.name
-                    };
-
-                    path.push(level_name.as_bytes());
+                    path.push(index_part.name.as_bytes());
                 }
                 Ok(path)
             }

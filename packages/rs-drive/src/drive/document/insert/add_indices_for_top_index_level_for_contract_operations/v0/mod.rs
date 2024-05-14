@@ -15,13 +15,13 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use dpp::version::PlatformVersion;
 
+use crate::drive::document::paths::contract_document_type_path_vec;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use crate::drive::document::paths::contract_document_type_path_vec;
 
 impl Drive {
     /// Adds indices for the top index level and calls for lower levels.

@@ -1,5 +1,17 @@
 use crate::version::contracts::SystemDataContractVersions;
-use crate::version::dpp_versions::{AssetLockVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions, DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions, DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions, IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions, IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions, StateTransitionConversionVersions, StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions, VotingVersions};
+use crate::version::dpp_versions::{
+    AssetLockVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
+    DataContractMethodVersions, DataContractValidationVersions, DocumentFeatureVersionBounds,
+    DocumentMethodVersions, DocumentTransitionVersions, DocumentTypeClassMethodVersions,
+    DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions,
+    DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
+    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
+    IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
+    IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
+    RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
+    StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
+    VotingVersions,
+};
 use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
     DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
@@ -1105,7 +1117,9 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 random_public_and_private_key_data: 0,
             },
         },
-        voting_versions: VotingVersions { default_vote_time_ms: 0 },
+        voting_versions: VotingVersions {
+            default_vote_time_ms: 0,
+        },
         asset_lock_versions: AssetLockVersions {
             reduced_asset_lock_value: FeatureVersionBounds {
                 min_version: 0,

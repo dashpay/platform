@@ -157,13 +157,7 @@ mod tests {
                     hard_coded: start_identities,
                     ..Default::default()
                 },
-                identity_inserts: IdentityInsertInfo {
-                    frequency: Frequency {
-                        times_per_block_range: 1..2,
-                        chance_per_block: None,
-                    },
-                    ..Default::default()
-                },
+                identity_inserts: Default::default(),
 
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -186,7 +180,7 @@ mod tests {
         let outcome =
             run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 15);
 
-        let state_transitions_block_2 = &outcome
+        let state_transitions_block_2 = outcome
             .state_transition_results_per_block
             .get(&2)
             .expect("expected to get block 2");

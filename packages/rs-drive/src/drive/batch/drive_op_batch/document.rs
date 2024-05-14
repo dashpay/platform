@@ -17,12 +17,12 @@ use dpp::prelude::Identifier;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -156,7 +156,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             }
             DocumentOperationType::AddContestedDocument {
                 owned_document_info,
-                contested_document_resource_vote_poll, 
+                contested_document_resource_vote_poll,
                 contract_info,
                 document_type_info,
                 insert_without_check,

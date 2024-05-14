@@ -38,8 +38,13 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
+use crate::drive::document::paths::{
+    contract_documents_keeping_history_primary_key_path_for_document_id,
+    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
+    contract_documents_keeping_history_storage_time_reference_path_size,
+    contract_documents_primary_key_path,
+};
 use dpp::version::PlatformVersion;
-use crate::drive::document::paths::{contract_documents_keeping_history_primary_key_path_for_document_id, contract_documents_keeping_history_primary_key_path_for_unknown_document_id, contract_documents_keeping_history_storage_time_reference_path_size, contract_documents_primary_key_path};
 
 impl Drive {
     /// Adds a document to primary storage.

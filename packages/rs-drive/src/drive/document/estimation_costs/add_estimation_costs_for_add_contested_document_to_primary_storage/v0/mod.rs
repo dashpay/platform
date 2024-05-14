@@ -57,7 +57,8 @@ impl Drive {
         if document_and_contract_info
             .owned_document_info
             .document_info
-            .get_borrowed_document().is_none()
+            .get_borrowed_document()
+            .is_none()
         {
             return Ok(());
         };
@@ -84,7 +85,7 @@ impl Drive {
                     Some(flags_size),
                 ),
             },
-        );          
+        );
         Ok(())
     }
 }

@@ -21,8 +21,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
-use dpp::version::PlatformVersion;
 use crate::drive::document::paths::contract_document_type_path_vec;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes indices for the top index level and calls for lower levels.

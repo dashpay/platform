@@ -18,6 +18,7 @@ use crate::platform_types::state_transitions_processing_result::{
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
+#[derive(Debug)]
 struct StateTransitionAwareError {
     error: Error,
     raw_state_transition: Vec<u8>,
@@ -98,6 +99,7 @@ where
                     platform_version,
                 )
                 .unwrap_or_else(|execution_error| {
+                    panic!("{:?}", execution_error);
                     let mut st_hash = String::new();
                     if tracing::enabled!(tracing::Level::ERROR) {
                         st_hash = hex::encode(
@@ -118,6 +120,7 @@ where
                 })
             })
             .unwrap_or_else(|processing_error| {
+                panic!("{}", processing_error);
                 let mut st_hash = String::new();
                 if tracing::enabled!(tracing::Level::ERROR) {
                     st_hash = hex::encode(
