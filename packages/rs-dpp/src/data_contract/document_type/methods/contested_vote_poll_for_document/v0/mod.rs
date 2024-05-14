@@ -1,16 +1,15 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::{Document, DocumentV0Getters};
-use crate::fee::Credits;
-use crate::version::PlatformVersion;
+use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use crate::voting::vote_polls::VotePoll;
 
 impl DocumentTypeV0 {
     /// Figures out the prefunded voting balance (v0) for a document in a document type
-    pub(in crate::data_contract::document_type) fn prefunded_voting_balance_for_document_v0(
+    pub(in crate::data_contract::document_type) fn contested_vote_poll_for_document_v0(
         &self,
         document: &Document,
-        platform_version: &PlatformVersion,
-    ) -> Option<(String, Credits)> {
+    ) -> Option<VotePoll> {
         self.indexes()
             .iter()
             .find(|(name, index)| {
@@ -23,12 +22,15 @@ impl DocumentTypeV0 {
                 } else {
                     false
                 }
-            }).map(|(index_name, _)| (
-            index_name.clone(),
-            platform_version
-                .fee_version
-                .vote_resolution_fund_fees
-                .conflicting_vote_resolution_fund_required_amount,
-        ))
+            }).map(|(name, index)| {
+            
+          let index_values = index.extract_values(document.properties());
+          VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
+              contract_id: self.data_contract_id,
+              document_type_name: self.name.clone(),
+              index_name: index.name.clone(),
+              index_values,
+          })  
+        })
     }
 }

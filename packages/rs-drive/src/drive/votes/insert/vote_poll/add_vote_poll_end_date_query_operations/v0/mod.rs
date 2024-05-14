@@ -1,5 +1,5 @@
 use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
+use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::drive::object_size_info::PathKeyElementInfo::{PathKeyElementSize, PathKeyRefElement};
 use crate::drive::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
 use crate::drive::votes::paths::{
@@ -19,13 +19,14 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
     pub(in crate::drive::votes::insert) fn add_vote_poll_end_date_query_operations_v0(
         &self,
-        creator_identity_id: Option<Identifier>,
+        creator_identity_id: Option<[u8;32]>,
         vote_poll: VotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
@@ -40,7 +41,7 @@ impl Drive {
         let storage_flags = creator_identity_id.map(|creator_identity_id| {
             StorageFlags::new_single_epoch(
                 block_info.epoch.index,
-                Some(creator_identity_id.to_buffer()),
+                Some(creator_identity_id),
             )
         });
 
@@ -92,6 +93,16 @@ impl Drive {
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
         );
 
+        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+            BatchInsertApplyType::StatefulBatchInsert
+        } else {
+            BatchInsertApplyType::StatelessBatchInsert {
+                in_tree_using_sums: false,
+                // todo: figure out a default serialized size to make this faster
+                target: QueryTargetValue(item.serialized_size()? as u32),
+            }
+        };
+
         let path_key_element_info: PathKeyElementInfo<'_, 0> =
             if estimated_costs_only_with_layer_info.is_none() {
                 PathKeyRefElement((time_path, &[0], item))
@@ -103,8 +114,12 @@ impl Drive {
                 ))
             };
 
-        self.batch_insert(
+
+
+        self.batch_insert_if_not_exists(
             path_key_element_info,
+            apply_type,
+            transaction,
             batch_operations,
             &platform_version.drive,
         )?;

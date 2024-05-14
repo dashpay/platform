@@ -8,6 +8,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
 impl Drive {
     /// Performs the operations to add a document to a contract.
@@ -15,7 +16,8 @@ impl Drive {
     pub(super) fn add_contested_document_for_contract_apply_and_add_to_operations_v0(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
-        override_document: bool,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePoll,
+        insert_without_check: bool,
         block_info: &BlockInfo,
         document_is_unique_for_document_type_in_batch: bool,
         stateful: bool,
@@ -31,7 +33,8 @@ impl Drive {
         if document_is_unique_for_document_type_in_batch {
             let batch_operations = self.add_contested_document_for_contract_operations(
                 document_and_contract_info,
-                override_document,
+                contested_document_resource_vote_poll,
+                insert_without_check,
                 block_info,
                 &mut None,
                 &mut estimated_costs_only_with_layer_info,
@@ -48,7 +51,8 @@ impl Drive {
         } else {
             let batch_operations = self.add_contested_document_for_contract_operations(
                 document_and_contract_info,
-                override_document,
+                contested_document_resource_vote_poll,
+                insert_without_check,
                 block_info,
                 &mut Some(drive_operations),
                 &mut estimated_costs_only_with_layer_info,

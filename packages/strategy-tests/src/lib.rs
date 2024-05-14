@@ -610,7 +610,7 @@ impl Strategy {
                                         .into(),
                                         entropy: entropy.to_buffer(),
                                         data: document.properties_consumed(),
-                                        prefunded_voting_balances: Default::default(),
+                                        prefunded_voting_balance: Default::default(),
                                     }
                                     .into();
 
@@ -721,7 +721,7 @@ impl Strategy {
                                         .into(),
                                         entropy: entropy.to_buffer(),
                                         data: document.properties_consumed(),
-                                        prefunded_voting_balances: Default::default(),
+                                        prefunded_voting_balance: Default::default(),
                                     }
                                     .into();
 

@@ -54,29 +54,27 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransition {
         }
     }
 
-    fn prefunded_voting_balances(&self) -> &BTreeMap<String, Credits> {
+    fn prefunded_voting_balance(&self) -> &Option<(String, Credits)> {
         match self {
-            DocumentCreateTransition::V0(v0) => &v0.prefunded_voting_balances,
+            DocumentCreateTransition::V0(v0) => v0.prefunded_voting_balance(),
         }
     }
 
-    fn prefunded_voting_balances_mut(&mut self) -> &mut BTreeMap<String, Credits> {
+    fn prefunded_voting_balances_mut(&mut self) -> &mut Option<(String, Credits)> {
         match self {
-            DocumentCreateTransition::V0(v0) => &mut v0.prefunded_voting_balances,
+            DocumentCreateTransition::V0(v0) => v0.prefunded_voting_balances_mut(),
         }
     }
 
-    fn add_prefunded_voting_balance(&mut self, index_name: String, amount: Credits) {
+    fn set_prefunded_voting_balance(&mut self, index_name: String, amount: Credits) {
         match self {
-            DocumentCreateTransition::V0(v0) => {
-                v0.prefunded_voting_balances.insert(index_name, amount);
-            }
+            DocumentCreateTransition::V0(v0) => v0.set_prefunded_voting_balance(index_name, amount),
         }
     }
 
-    fn clear_prefunded_voting_balances(&mut self) {
+    fn clear_prefunded_voting_balance(&mut self) {
         match self {
-            DocumentCreateTransition::V0(v0) => v0.prefunded_voting_balances.clear(),
+            DocumentCreateTransition::V0(v0) => v0.clear_prefunded_voting_balance(),
         }
     }
 }

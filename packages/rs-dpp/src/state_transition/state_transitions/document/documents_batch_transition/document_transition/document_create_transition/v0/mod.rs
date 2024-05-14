@@ -76,7 +76,7 @@ pub struct DocumentCreateTransitionV0 {
     /// aside that will be used by voters to vote)
     /// This is a map of index names to the amount we want to prefund them for
     /// Since index conflict resolution is not a common feature most often nothing should be added here.
-    pub prefunded_voting_balances: BTreeMap<String, Credits>,
+    pub prefunded_voting_balance: Option<(String, Credits)>,
 }
 
 impl DocumentCreateTransitionV0 {
@@ -97,7 +97,7 @@ impl DocumentCreateTransitionV0 {
             entropy: map
                 .remove_hash256_bytes(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?,
-            prefunded_voting_balances: map
+            prefunded_voting_balance: map
                 .remove_optional_map_as_btree_map(property_names::PREFUNDED_VOTING_BALANCES)?
                 .unwrap_or_default(),
             data: map,
@@ -115,7 +115,7 @@ impl DocumentCreateTransitionV0 {
         transition_base_map.insert(
             property_names::PREFUNDED_VOTING_BALANCES.to_string(),
             Value::Map(ValueMap::from_btree_map(
-                self.prefunded_voting_balances.clone(),
+                self.prefunded_voting_balance.clone(),
             )),
         );
 

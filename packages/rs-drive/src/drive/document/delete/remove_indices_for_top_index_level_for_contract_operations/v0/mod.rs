@@ -8,7 +8,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-use crate::drive::document::{contract_document_type_path_vec, unique_event_id};
+use crate::drive::document::unique_event_id;
 
 use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
@@ -22,6 +22,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use dpp::version::PlatformVersion;
+use crate::drive::document::paths::contract_document_type_path_vec;
 
 impl Drive {
     /// Removes indices for the top index level and calls for lower levels.

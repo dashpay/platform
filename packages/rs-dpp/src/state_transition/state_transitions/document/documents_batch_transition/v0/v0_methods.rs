@@ -336,9 +336,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
                     .and_then(|document_create_transition| {
                         // Safely sum up values to avoid overflow.
                         document_create_transition
-                            .prefunded_voting_balances()
-                            .values()
-                            .try_fold(0u64, |acc, &val| acc.checked_add(val))
+                            .prefunded_voting_balance().as_ref().map(|(_, credits)| *credits)
                     })
             })
             .fold((None, false), |(acc, _), price| match acc {

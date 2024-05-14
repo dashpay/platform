@@ -1,4 +1,4 @@
-use crate::drive::document::contract_documents_primary_key_path;
+use crate::drive::document::paths::contract_documents_primary_key_path;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};

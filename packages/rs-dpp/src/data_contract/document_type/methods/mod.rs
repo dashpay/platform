@@ -6,6 +6,7 @@ mod max_size;
 mod prefunded_voting_balances_for_document;
 mod serialize_value_for_key;
 mod validate_update;
+mod contested_vote_poll_for_document;
 
 use std::collections::BTreeMap;
 
@@ -21,6 +22,7 @@ use crate::ProtocolError;
 
 use crate::fee::Credits;
 use platform_value::{Identifier, Value};
+use crate::voting::vote_polls::VotePoll;
 
 // TODO: Some of those methods are only for tests. Hide under feature
 pub trait DocumentTypeV0Methods {
@@ -113,11 +115,18 @@ pub trait DocumentTypeV0Methods {
     ) -> Result<Document, ProtocolError>;
 
     /// Figures out the minimum prefunded voting balance needed for a document
-    fn prefunded_voting_balances_for_document(
+    fn prefunded_voting_balance_for_document(
         &self,
         document: &Document,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<String, Credits>, ProtocolError>;
+    ) -> Result<Option<(String, Credits)>, ProtocolError>;
+    
+    /// Gets the vote poll associated with a document
+    fn contested_vote_poll_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError>;
 }
 
 impl DocumentTypeV0Methods for DocumentTypeV0 {
@@ -303,19 +312,19 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         }
     }
 
-    fn prefunded_voting_balances_for_document(
+    fn prefunded_voting_balance_for_document(
         &self,
         document: &Document,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<String, Credits>, ProtocolError> {
+    ) -> Result<Option<(String, Credits)>, ProtocolError> {
         match platform_version
             .dpp
             .contract_versions
             .document_type_versions
             .methods
-            .create_document_with_prevalidated_properties
+            .prefunded_voting_balance_for_document
         {
-            0 => Ok(self.prefunded_voting_balances_for_document_v0(document, platform_version)),
+            0 => Ok(self.prefunded_voting_balance_for_document_v0(document, platform_version)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "prefunded_voting_balances_for_document".to_string(),
                 known_versions: vec![0],
@@ -323,4 +332,27 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             }),
         }
     }
+
+    /// Gets the vote poll associated with a document
+    fn contested_vote_poll_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .contested_vote_poll_for_document
+        {
+            0 => Ok(self.contested_vote_poll_for_document_v0(document)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "contested_vote_poll_for_document".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+        
 }

@@ -591,7 +591,7 @@ impl NetworkStrategy {
                                         .into(),
                                         entropy: entropy.to_buffer(),
                                         data: document.properties_consumed(),
-                                        prefunded_voting_balances,
+                                        prefunded_voting_balance: prefunded_voting_balances,
                                     }
                                     .into();
 
@@ -712,7 +712,7 @@ impl NetworkStrategy {
                                         .into(),
                                         entropy: entropy.to_buffer(),
                                         data: document.properties_consumed(),
-                                        prefunded_voting_balances,
+                                        prefunded_voting_balance: prefunded_voting_balances,
                                     }
                                     .into();
 

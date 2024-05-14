@@ -33,7 +33,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
 
         let identity_contract_nonce = self.base().identity_contract_nonce();
 
-        let prefunded_voting_balances = self.take_prefunded_voting_balances();
+        let maybe_prefunded_voting_balance = self.take_prefunded_voting_balance();
 
         let document =
             Document::try_from_owned_create_transition_action(self, owner_id, platform_version)?;
@@ -48,30 +48,17 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
             },
         )];
 
-        if prefunded_voting_balances.is_empty() {
-            // Just add the document
-            ops.push(DocumentOperation(DocumentOperationType::AddDocument {
-                owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
-                    owner_id: Some(owner_id.into_buffer()),
+        if let Some((contested_document_resource_vote_poll, credits)) = maybe_prefunded_voting_balance {
+            let prefunded_specialized_balance_id =
+                contested_document_resource_vote_poll.specialized_balance_id()?;
+            // We are in the situation of a contested document
+            // We prefund the voting balances first
+            ops.push(PrefundedSpecializedBalanceOperation(
+                PrefundedSpecializedBalanceOperationType::CreateNewPrefundedBalance {
+                    prefunded_specialized_balance_id,
+                    add_balance: credits,
                 },
-                contract_info: DataContractFetchInfo(contract_fetch_info),
-                document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
-                override_document: false,
-            }));
-        } else {
-            for (contested_document_resource_vote_poll, credits) in prefunded_voting_balances {
-                let prefunded_specialized_balance_id =
-                    contested_document_resource_vote_poll.specialized_balance_id()?;
-                // We are in the situation of a contested document
-                // We prefund the voting balances first
-                ops.push(PrefundedSpecializedBalanceOperation(
-                    PrefundedSpecializedBalanceOperationType::CreateNewPrefundedBalance {
-                        prefunded_specialized_balance_id,
-                        add_balance: credits,
-                    },
-                ));
-            }
+            ));
 
             // We add the contested document
             // The contested document resides in a special location in grovedb until a time where the
@@ -85,11 +72,23 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                         )),
                         owner_id: Some(owner_id.into_buffer()),
                     },
+                    contested_document_resource_vote_poll,
                     contract_info: DataContractFetchInfo(contract_fetch_info),
                     document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
-                    override_document: false,
+                    insert_without_check: false, //todo: consider setting to true
                 },
             ));
+        } else {
+            // Just add the document
+            ops.push(DocumentOperation(DocumentOperationType::AddDocument {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
+                    owner_id: Some(owner_id.into_buffer()),
+                },
+                contract_info: DataContractFetchInfo(contract_fetch_info),
+                document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
+                override_document: false,
+            }));
         }
 
         Ok(ops)

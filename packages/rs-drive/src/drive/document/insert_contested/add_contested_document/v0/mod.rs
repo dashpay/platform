@@ -6,10 +6,10 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::fee::fee_result::FeeResult;
-use dpp::identifier::Identifier;
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
 impl Drive {
     /// Adds a contested document using bincode serialization
@@ -17,9 +17,8 @@ impl Drive {
     pub(super) fn add_contested_document_v0(
         &self,
         owned_document_info: OwnedDocumentInfo,
-        data_contract_id: Identifier,
-        document_type_name: &str,
-        override_document: bool,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePoll,
+        insert_without_check: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -29,7 +28,7 @@ impl Drive {
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
-                data_contract_id.into_buffer(),
+                contested_document_resource_vote_poll.contract_id.into_buffer(),
                 Some(&block_info.epoch),
                 true,
                 transaction,
@@ -40,7 +39,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type_for_name(document_type_name)?;
+        let document_type = contract.document_type_for_name(contested_document_resource_vote_poll.document_type_name.as_str())?;
 
         let document_and_contract_info = DocumentAndContractInfo {
             owned_document_info,
@@ -50,7 +49,8 @@ impl Drive {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_contested_document_for_contract_apply_and_add_to_operations(
             document_and_contract_info,
-            override_document,
+            contested_document_resource_vote_poll,
+            insert_without_check,
             block_info,
             true,
             apply,

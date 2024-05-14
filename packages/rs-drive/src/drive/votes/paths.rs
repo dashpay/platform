@@ -8,6 +8,7 @@ use dpp::identity::TimestampMillis;
 ///     |- Decisions [key: "d"]
 ///     |- Contested Resource [key: "c"]
 ///        |- End date Queries [key: "e"]
+///        |- Active polls [key: "p"]
 ///        |- Identifier Votes Query [key: "i"]
 ///
 ///
@@ -20,6 +21,9 @@ pub const CONTESTED_RESOURCE_TREE_KEY: char = 'c';
 
 /// A subtree made for being able to query the end date of votes
 pub const END_DATE_QUERIES_TREE_KEY: char = 'e';
+
+/// The currently active polls
+pub const ACTIVE_POLLS_TREE_KEY: char = 'p';
 
 /// A subtree made for being able to query votes that an identity has made
 pub const IDENTITY_VOTES_TREE_KEY: char = 'i';
@@ -81,6 +85,41 @@ pub fn vote_contested_resource_end_date_queries_tree_path_vec() -> Vec<Vec<u8>> 
         vec![RootTree::Votes as u8],
         vec![CONTESTED_RESOURCE_TREE_KEY as u8],
         vec![END_DATE_QUERIES_TREE_KEY as u8],
+    ]
+}
+
+/// this is the path where votes are actually kept
+pub fn vote_contested_resource_active_polls_tree_path<'a>() -> [&'a [u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[CONTESTED_RESOURCE_TREE_KEY as u8],
+        &[ACTIVE_POLLS_TREE_KEY as u8],
+    ]
+}
+
+/// this is the path where votes are actually kept as a vec
+pub fn vote_contested_resource_active_polls_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+    ]
+}
+
+#[cfg(feature = "server")]
+/// Returns the path to the primary keys of a contract document type.
+pub fn vote_contested_resource_contract_documents_primary_key_path<'a>(
+    contract_id: &'a [u8],
+    document_type_name: &'a str,
+) -> [&'a [u8]; 7] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes), // 1
+        &[CONTESTED_RESOURCE_TREE_KEY as u8], // 1
+        &[ACTIVE_POLLS_TREE_KEY as u8], // 1
+        contract_id,                                             // 32
+        &[1],                                                    // 1
+        document_type_name.as_bytes(),
+        &[0], // 1
     ]
 }
 

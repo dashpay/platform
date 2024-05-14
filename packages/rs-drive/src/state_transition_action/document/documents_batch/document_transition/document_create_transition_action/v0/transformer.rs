@@ -21,7 +21,7 @@ impl DocumentCreateTransitionActionV0 {
         let DocumentCreateTransitionV0 {
             base,
             data,
-            prefunded_voting_balances,
+            prefunded_voting_balance,
             ..
         } = value;
         let base = DocumentBaseTransitionAction::from_base_transition_with_contract_lookup(
@@ -33,8 +33,7 @@ impl DocumentCreateTransitionActionV0 {
 
         let document_type_indexes = document_type.indexes();
 
-        let prefunded_voting_balances_by_vote_poll = prefunded_voting_balances
-            .into_iter()
+        let prefunded_voting_balances_by_vote_poll = prefunded_voting_balance
             .map(|(index_name, credits)| {
                 let index = document_type_indexes.get(&index_name).ok_or(
                     ProtocolError::UnknownContestedIndexResolution(format!(
@@ -52,16 +51,14 @@ impl DocumentCreateTransitionActionV0 {
                     index_values,
                 };
 
-                Ok((vote_poll, credits))
-            })
-            .collect::<Result<Vec<(ContestedDocumentResourceVotePoll, Credits)>, ProtocolError>>(
-            )?;
+                Ok::<_, ProtocolError>((vote_poll, credits))
+            }).transpose()?;
 
         Ok(DocumentCreateTransitionActionV0 {
             base,
             block_info: *block_info,
             data,
-            prefunded_voting_balances: prefunded_voting_balances_by_vote_poll,
+            prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
         })
     }
 
@@ -74,7 +71,7 @@ impl DocumentCreateTransitionActionV0 {
         let DocumentCreateTransitionV0 {
             base,
             data,
-            prefunded_voting_balances,
+            prefunded_voting_balance,
             ..
         } = value;
         let base =
@@ -87,8 +84,7 @@ impl DocumentCreateTransitionActionV0 {
 
         let document_type_indexes = document_type.indexes();
 
-        let prefunded_voting_balances_by_vote_poll = prefunded_voting_balances
-            .into_iter()
+        let prefunded_voting_balances_by_vote_poll = prefunded_voting_balance.as_ref()
             .map(|(index_name, credits)| {
                 let index = document_type_indexes.get(index_name).ok_or(
                     ProtocolError::UnknownContestedIndexResolution(format!(
@@ -106,17 +102,15 @@ impl DocumentCreateTransitionActionV0 {
                     index_values,
                 };
 
-                Ok((vote_poll, *credits))
-            })
-            .collect::<Result<Vec<(ContestedDocumentResourceVotePoll, Credits)>, ProtocolError>>(
-            )?;
+                Ok::<_, ProtocolError>((vote_poll, *credits))
+            }).transpose()?;
 
         Ok(DocumentCreateTransitionActionV0 {
             base,
             block_info: *block_info,
             //todo: get rid of clone
             data: data.clone(),
-            prefunded_voting_balances: prefunded_voting_balances_by_vote_poll,
+            prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
         })
     }
 }

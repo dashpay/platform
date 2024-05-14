@@ -17,8 +17,8 @@ impl DocumentCreateTransitionV0 {
         platform_version: &PlatformVersion,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {
-        let prefunded_voting_balances =
-            document_type.prefunded_voting_balances_for_document(&document, platform_version)?;
+        let prefunded_voting_balance =
+            document_type.prefunded_voting_balance_for_document(&document, platform_version)?;
         Ok(DocumentCreateTransitionV0 {
             base: DocumentBaseTransition::from_document(
                 &document,
@@ -29,7 +29,7 @@ impl DocumentCreateTransitionV0 {
             )?,
             entropy,
             data: document.properties_consumed(),
-            prefunded_voting_balances,
+            prefunded_voting_balance,
         })
     }
 }

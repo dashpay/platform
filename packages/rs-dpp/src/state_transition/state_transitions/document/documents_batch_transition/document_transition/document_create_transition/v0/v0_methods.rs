@@ -42,10 +42,10 @@ pub trait DocumentCreateTransitionV0Methods {
     ///
     /// * `data` - An `Option` containing a `BTreeMap<String, Value>` to set.
     fn set_data(&mut self, data: BTreeMap<String, Value>);
-    fn prefunded_voting_balances(&self) -> &BTreeMap<String, Credits>;
-    fn prefunded_voting_balances_mut(&mut self) -> &mut BTreeMap<String, Credits>;
-    fn add_prefunded_voting_balance(&mut self, index_name: String, amount: Credits);
-    fn clear_prefunded_voting_balances(&mut self);
+    fn prefunded_voting_balance(&self) -> &Option<(String, Credits)>;
+    fn prefunded_voting_balances_mut(&mut self) -> &mut Option<(String, Credits)>;
+    fn set_prefunded_voting_balance(&mut self, index_name: String, amount: Credits);
+    fn clear_prefunded_voting_balance(&mut self);
 }
 
 impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
@@ -81,19 +81,18 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
         self.data = data;
     }
 
-    fn prefunded_voting_balances(&self) -> &BTreeMap<String, Credits> {
-        &self.prefunded_voting_balances
+    fn prefunded_voting_balance(&self) -> &Option<(String, Credits)> {
+        &self.prefunded_voting_balance
     }
 
-    fn prefunded_voting_balances_mut(&mut self) -> &mut BTreeMap<String, Credits> {
-        &mut self.prefunded_voting_balances
+    fn prefunded_voting_balances_mut(&mut self) -> &mut Option<(String, Credits)> {
+        &mut self.prefunded_voting_balance
     }
 
-    fn add_prefunded_voting_balance(&mut self, index_name: String, amount: Credits) {
-        self.prefunded_voting_balances.insert(index_name, amount);
+    fn set_prefunded_voting_balance(&mut self, index_name: String, amount: Credits) {
+        self.prefunded_voting_balance = Some((index_name, amount));
     }
-
-    fn clear_prefunded_voting_balances(&mut self) {
-        self.prefunded_voting_balances.clear()
+    fn clear_prefunded_voting_balance(&mut self) {
+        self.prefunded_voting_balance = None;
     }
 }

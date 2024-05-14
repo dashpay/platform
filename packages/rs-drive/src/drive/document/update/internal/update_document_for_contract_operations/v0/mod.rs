@@ -1,9 +1,5 @@
 use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::{
-    contract_document_type_path,
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_primary_key_path, make_document_reference,
-};
+use crate::drive::document::make_document_reference;
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::{
@@ -36,6 +32,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use crate::drive::document::paths::{contract_document_type_path, contract_documents_keeping_history_primary_key_path_for_document_id, contract_documents_primary_key_path};
 
 impl Drive {
     /// Gathers operations for updating a document.

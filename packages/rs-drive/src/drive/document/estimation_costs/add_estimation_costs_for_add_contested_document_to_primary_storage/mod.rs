@@ -35,9 +35,9 @@ impl Drive {
     /// # Panics
     /// This function will not panic under normal circumstances. However, unexpected behavior may result
     /// from incorrect arguments or unforeseen edge cases.
-    pub(crate) fn add_estimation_costs_for_add_document_to_primary_storage(
+    pub(crate) fn add_estimation_costs_for_add_contested_document_to_primary_storage(
         document_and_contract_info: &DocumentAndContractInfo,
-        primary_key_path: [&[u8]; 5],
+        primary_key_path: [&[u8]; 7],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -46,16 +46,16 @@ impl Drive {
             .methods
             .document
             .estimation_costs
-            .add_estimation_costs_for_add_document_to_primary_storage
+            .add_estimation_costs_for_add_contested_document_to_primary_storage
         {
-            0 => Self::add_estimation_costs_for_add_document_to_primary_storage_v0(
+            0 => Self::add_estimation_costs_for_add_contested_document_to_primary_storage_v0(
                 document_and_contract_info,
                 primary_key_path,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "Drive::add_estimation_costs_for_add_document_to_primary_storage"
+                method: "Drive::add_estimation_costs_for_add_contested_document_to_primary_storage"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,

@@ -2,7 +2,7 @@ use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE, DEFAULT_FLOAT_SIZE,
     DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE_U8,
 };
-use crate::drive::document::contract_documents_keeping_history_primary_key_path_for_document_id;
+use crate::drive::document::paths::contract_documents_keeping_history_primary_key_path_for_document_id;
 use crate::drive::flags::StorageFlags;
 
 use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};

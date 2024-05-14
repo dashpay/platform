@@ -8,6 +8,7 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
 impl Drive {
     /// Adds a contested document to a contract.
@@ -15,7 +16,8 @@ impl Drive {
     pub(super) fn add_contested_document_for_contract_v0(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
-        override_document: bool,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePoll,
+        insert_without_check: bool,
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -24,7 +26,8 @@ impl Drive {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_contested_document_for_contract_apply_and_add_to_operations(
             document_and_contract_info,
-            override_document,
+            contested_document_resource_vote_poll,
+            insert_without_check,
             &block_info,
             true,
             apply,

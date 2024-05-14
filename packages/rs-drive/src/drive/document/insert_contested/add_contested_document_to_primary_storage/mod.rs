@@ -33,7 +33,6 @@ impl Drive {
     pub(crate) fn add_contested_document_to_primary_storage(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        block_info: &BlockInfo,
         insert_without_check: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -51,7 +50,6 @@ impl Drive {
         {
             0 => self.add_contested_document_to_primary_storage_0(
                 document_and_contract_info,
-                block_info,
                 insert_without_check,
                 estimated_costs_only_with_layer_info,
                 transaction,

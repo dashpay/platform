@@ -1,5 +1,5 @@
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-use crate::drive::document::{contract_document_type_path_vec, unique_event_id};
+use crate::drive::document::unique_event_id;
 
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 
@@ -21,6 +21,7 @@ use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use crate::drive::document::paths::contract_document_type_path_vec;
 
 impl Drive {
     /// Adds indices for the top index level and calls for lower levels.

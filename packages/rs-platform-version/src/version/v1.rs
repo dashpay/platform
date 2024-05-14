@@ -1,16 +1,5 @@
 use crate::version::contracts::SystemDataContractVersions;
-use crate::version::dpp_versions::{
-    AssetLockVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
-    DataContractMethodVersions, DataContractValidationVersions, DocumentFeatureVersionBounds,
-    DocumentMethodVersions, DocumentTransitionVersions, DocumentTypeClassMethodVersions,
-    DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions,
-    DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
-    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
-    IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
-    IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
-    RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
-    StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
-};
+use crate::version::dpp_versions::{AssetLockVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions, DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions, DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions, IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions, IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions, StateTransitionConversionVersions, StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions, VotingVersions};
 use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
     DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
@@ -208,6 +197,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 estimation_costs: DriveDocumentEstimationCostsMethodVersions {
                     add_estimation_costs_for_add_document_to_primary_storage: 0,
+                    add_estimation_costs_for_add_contested_document_to_primary_storage: 0,
                     stateless_delete_of_non_tree_for_costs: 0,
                 },
                 index_uniqueness: DriveDocumentIndexUniquenessMethodVersions {
@@ -1072,7 +1062,8 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 methods: DocumentTypeMethodVersions {
                     create_document_from_data: 0,
                     create_document_with_prevalidated_properties: 0,
-                    prefunded_voting_balances_for_document: 0,
+                    prefunded_voting_balance_for_document: 0,
+                    contested_vote_poll_for_document: 0,
                     estimated_size: 0,
                     index_for_types: 0,
                     max_size: 0,
@@ -1113,6 +1104,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 random_public_and_private_key_data: 0,
             },
         },
+        voting_versions: VotingVersions { default_vote_time_ms: 0 },
         asset_lock_versions: AssetLockVersions {
             reduced_asset_lock_value: FeatureVersionBounds {
                 min_version: 0,

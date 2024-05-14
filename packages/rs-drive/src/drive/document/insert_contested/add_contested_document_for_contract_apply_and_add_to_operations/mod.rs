@@ -10,6 +10,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 
 use grovedb::TransactionArg;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
 impl Drive {
     /// Performs the operations to add a contested document to a contract.
@@ -31,7 +32,8 @@ impl Drive {
     pub(crate) fn add_contested_document_for_contract_apply_and_add_to_operations(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
-        override_document: bool,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePoll,
+        insert_without_check: bool,
         block_info: &BlockInfo,
         document_is_unique_for_document_type_in_batch: bool,
         stateful: bool,
@@ -48,7 +50,8 @@ impl Drive {
         {
             0 => self.add_contested_document_for_contract_apply_and_add_to_operations_v0(
                 document_and_contract_info,
-                override_document,
+                contested_document_resource_vote_poll,
+                insert_without_check,
                 block_info,
                 document_is_unique_for_document_type_in_batch,
                 stateful,

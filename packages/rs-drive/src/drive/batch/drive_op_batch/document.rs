@@ -22,6 +22,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -68,12 +69,14 @@ pub enum DocumentOperationType<'a> {
     AddContestedDocument {
         /// The document and contract info, also may contain the owner_id
         owned_document_info: OwnedDocumentInfo<'a>,
+        /// The vote poll in question that will should be created
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePoll,
         /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
-        /// Should we override the document if one already exists?
-        override_document: bool,
+        /// Should we insert without verifying first that the document doesn't already exist
+        insert_without_check: bool,
     },
     /// Updates a document and returns the associated fee.
     UpdateDocument {
@@ -153,9 +156,10 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             }
             DocumentOperationType::AddContestedDocument {
                 owned_document_info,
+                contested_document_resource_vote_poll, 
                 contract_info,
                 document_type_info,
-                override_document,
+                insert_without_check,
             } => {
                 let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
                 let contract_resolved_info = contract_info.resolve(
@@ -175,7 +179,8 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 };
                 let mut operations = drive.add_contested_document_for_contract_operations(
                     document_and_contract_info,
-                    override_document,
+                    contested_document_resource_vote_poll,
+                    insert_without_check,
                     block_info,
                     &mut None,
                     estimated_costs_only_with_layer_info,

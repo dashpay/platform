@@ -305,6 +305,7 @@ pub struct DriveDocumentQueryMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentEstimationCostsMethodVersions {
     pub add_estimation_costs_for_add_document_to_primary_storage: FeatureVersion,
+    pub add_estimation_costs_for_add_contested_document_to_primary_storage: FeatureVersion,
     pub stateless_delete_of_non_tree_for_costs: FeatureVersion,
 }
 

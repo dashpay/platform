@@ -57,7 +57,7 @@ impl DocumentsBatchTransitionActionV0 {
             .filter_map(|transition| match transition {
                 DocumentTransitionAction::CreateAction(document_create_transition_action) => {
                     document_create_transition_action
-                        .prefunded_voting_balances()
+                        .prefunded_voting_balance()
                         .iter()
                         .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val))
                 }

@@ -1,4 +1,4 @@
-use crate::drive::document::contract_document_type_path;
+use crate::drive::document::paths::contract_document_type_path;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;

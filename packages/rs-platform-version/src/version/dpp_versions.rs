@@ -12,6 +12,7 @@ pub struct DPPVersion {
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
+    pub voting_versions: VotingVersions,
     pub asset_lock_versions: AssetLockVersions,
 }
 
@@ -184,7 +185,8 @@ pub struct DocumentTypeVersions {
 pub struct DocumentTypeMethodVersions {
     pub create_document_from_data: FeatureVersion,
     pub create_document_with_prevalidated_properties: FeatureVersion,
-    pub prefunded_voting_balances_for_document: FeatureVersion,
+    pub prefunded_voting_balance_for_document: FeatureVersion,
+    pub contested_vote_poll_for_document: FeatureVersion,
     pub estimated_size: FeatureVersion,
     pub index_for_types: FeatureVersion,
     pub max_size: FeatureVersion,
@@ -219,6 +221,11 @@ pub struct IdentityVersions {
     pub identity_structure_version: FeatureVersion,
     pub identity_key_structure_version: FeatureVersion,
     pub identity_key_type_method_versions: IdentityKeyTypeMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct VotingVersions {
+    pub default_vote_time_ms: u64,
 }
 
 #[derive(Clone, Debug, Default)]

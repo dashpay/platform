@@ -25,6 +25,7 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
+use crate::voting::vote_polls::VotePoll;
 
 mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
@@ -91,10 +92,10 @@ impl DocumentType {
         &self,
         document: &Document,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<String, Credits>, ProtocolError> {
+    ) -> Result<Option<(String, Credits)>, ProtocolError> {
         match self {
             DocumentType::V0(v0) => {
-                v0.prefunded_voting_balances_for_document(document, platform_version)
+                v0.prefunded_voting_balance_for_document(document, platform_version)
             }
         }
     }
@@ -222,14 +223,22 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
-    fn prefunded_voting_balances_for_document(
+    fn prefunded_voting_balance_for_document(
         &self,
         document: &Document,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<String, Credits>, ProtocolError> {
+    ) -> Result<Option<(String, Credits)>, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => {
-                v0.prefunded_voting_balances_for_document(document, platform_version)
+                v0.prefunded_voting_balance_for_document(document, platform_version)
+            }
+        }
+    }
+
+    fn contested_vote_poll_for_document(&self, document: &Document, platform_version: &PlatformVersion) -> Result<Option<VotePoll>, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => {
+                v0.contested_vote_poll_for_document(document, platform_version)
             }
         }
     }
