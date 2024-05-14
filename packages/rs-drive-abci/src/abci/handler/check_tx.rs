@@ -1,10 +1,12 @@
 use crate::abci::handler::error::consensus::AbciResponseInfoGetter;
 use crate::abci::handler::error::HandlerError;
 use crate::error::Error;
+use crate::metrics::{LABEL_CHECK_TX_MODE, LABEL_CHECK_TX_RESPONSE, LABEL_ST_TYPE};
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::SignedCredits;
+use metrics::Label;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn check_tx<C>(
@@ -14,7 +16,7 @@ pub fn check_tx<C>(
 where
     C: CoreRPCLike,
 {
-    let _timer = crate::metrics::abci_request_duration("check_tx");
+    let mut timer = crate::metrics::abci_request_duration("check_tx");
 
     let platform_state = platform.state.load();
     let platform_version = platform_state.current_platform_version()?;
@@ -39,6 +41,7 @@ where
                 (0, "".to_string())
             };
 
+            // TODO: We shouldn't use default check tx result. It provides wrong information
             let check_tx_result = validation_result.data.unwrap_or_default();
 
             let gas_wanted = check_tx_result
@@ -53,6 +56,27 @@ where
                 .cloned()
                 .unwrap_or_default();
 
+            let state_transition_name = check_tx_result.state_transition_name.to_owned();
+
+            let message = match (r#type, code) {
+                (0, 0) => "added to mempool".to_string(),
+                (1, 0) => "kept in mempool after re-check".to_string(),
+                (0, _) => format!("rejected with code {code}"),
+                (1, _) => format!("removed from mempool with code {code} after re-check"),
+                _ => unreachable!("we have only 2 modes of check tx"),
+            };
+
+            tracing::trace!(
+                ?check_tx_result,
+                "{} state transition {} {message}",
+                state_transition_name,
+                hex::encode(check_tx_result.state_transition_hash),
+            );
+
+            timer.add_label(Label::new(LABEL_ST_TYPE, state_transition_name));
+            timer.add_label(Label::new(LABEL_CHECK_TX_MODE, r#type.to_string()));
+            timer.add_label(Label::new(LABEL_CHECK_TX_RESPONSE, code.to_string()));
+
             Ok(proto::ResponseCheckTx {
                 code,
                 data: vec![],
@@ -66,7 +90,14 @@ where
         Err(error) => {
             let handler_error = HandlerError::Internal(error.to_string());
 
-            tracing::error!(?error, "check_tx failed");
+            tracing::error!(
+                ?error,
+                check_tx_mode = r#type,
+                "check_tx failed: {}"
+                error
+            );
+
+            timer.cancel();
 
             Ok(proto::ResponseCheckTx {
                 code: handler_error.code(),

@@ -53,7 +53,7 @@ impl TryFrom<i32> for CheckTxLevel {
 }
 
 /// The result of a check tx
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct CheckTxResult {
     /// The level used when checking the transaction
     pub level: CheckTxLevel,
@@ -67,6 +67,10 @@ pub struct CheckTxResult {
     /// Priority to return to tenderdash. State Transitions with higher priority take precedence
     /// over state transitions with lower priority
     pub priority: u32,
+    /// State transition type name
+    pub state_transition_name: String,
+    /// State transition ID
+    pub state_transition_hash: [u8; 32],
 }
 
 impl<C> Platform<C>

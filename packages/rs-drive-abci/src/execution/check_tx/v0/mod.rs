@@ -14,6 +14,8 @@ use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::dashcore::hashes;
+use dpp::dashcore::hashes::Hash;
 
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
@@ -92,6 +94,8 @@ where
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
+        let state_transition_hash = hashes::sha256::Hash::hash(raw_tx).to_byte_array();
+
         if raw_tx.len() as u64
             > platform_version
                 .dpp
@@ -137,6 +141,7 @@ where
         };
 
         let unique_identifiers = state_transition.unique_identifiers();
+        let state_transition_name = state_transition.name().to_string();
 
         let priority = state_transition.user_fee_increase() as u32 * 100;
 
@@ -161,6 +166,8 @@ where
                         fee_result: Some(fee_result),
                         unique_identifiers,
                         priority,
+                        state_transition_name,
+                        state_transition_hash,
                     })
                 })
             } else {
@@ -169,6 +176,8 @@ where
                     fee_result: None,
                     unique_identifiers,
                     priority,
+                    state_transition_name,
+                    state_transition_hash,
                 }))
             }
         })
