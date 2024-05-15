@@ -19,7 +19,7 @@ const LABEL_ENDPOINT: &str = "endpoint";
 const LABEL_RESPONSE_CODE: &str = "response_code";
 const HISTOGRAM_QUERY_DURATION: &str = "abci_query_duration";
 /// Metrics label to specify state transition name
-pub const LABEL_SATE_TRANSITION_NAME: &str = "st_name";
+pub const LABEL_STATE_TRANSITION_NAME: &str = "st_name";
 /// Metrics label to specify check tx mode: 0 - first time check, 1 - recheck
 pub const LABEL_CHECK_TX_MODE: &str = "check_tx_mode";
 /// Metrics label to specify check tx response code

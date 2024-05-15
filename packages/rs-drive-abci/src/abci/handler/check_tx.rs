@@ -1,7 +1,7 @@
 use crate::abci::handler::error::consensus::AbciResponseInfoGetter;
 use crate::abci::handler::error::HandlerError;
 use crate::error::Error;
-use crate::metrics::{LABEL_CHECK_TX_MODE, LABEL_CHECK_TX_RESPONSE, LABEL_SATE_TRANSITION_NAME};
+use crate::metrics::{LABEL_CHECK_TX_MODE, LABEL_CHECK_TX_RESPONSE, LABEL_STATE_TRANSITION_NAME};
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::codes::ErrorWithCode;
@@ -86,7 +86,7 @@ where
             );
 
             timer.add_label(Label::new(
-                LABEL_SATE_TRANSITION_NAME,
+                LABEL_STATE_TRANSITION_NAME,
                 state_transition_name,
             ));
             timer.add_label(Label::new(LABEL_CHECK_TX_MODE, r#type.to_string()));
