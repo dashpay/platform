@@ -41,14 +41,14 @@ where
     ///
     pub(super) fn decode_raw_state_transitions_v0<'a>(
         &self,
-        raw_state_transitions: &'a Vec<Vec<u8>>,
+        raw_state_transitions: &'a Vec<impl AsRef<[u8]>>,
         platform_version: &PlatformVersion,
     ) -> StateTransitionContainerV0<'a> {
         // Todo: might be better to have StateTransitionContainerV0 be a decoder instead and have
         //  the method decode_raw_state_transitions
         let mut container = StateTransitionContainerV0::default();
         for raw_state_transition in raw_state_transitions {
-            if raw_state_transition.len() as u64
+            if raw_state_transition.as_ref().len() as u64
                 > platform_version
                     .dpp
                     .state_transitions
@@ -58,7 +58,7 @@ where
                 let consensus_error =
                     ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
                         StateTransitionMaxSizeExceededError::new(
-                            raw_state_transition.len() as u64,
+                            raw_state_transition.as_ref().len() as u64,
                             platform_version
                                 .dpp
                                 .state_transitions
@@ -67,13 +67,19 @@ where
                     ));
                 tracing::debug!(?consensus_error, "State transition too big");
 
-                container.push_invalid_raw_state_transition(raw_state_transition, consensus_error);
+                container.push_invalid_raw_state_transition(
+                    raw_state_transition.as_ref(),
+                    consensus_error,
+                );
                 continue;
             }
 
-            match StateTransition::deserialize_from_bytes(raw_state_transition) {
+            match StateTransition::deserialize_from_bytes(raw_state_transition.as_ref()) {
                 Ok(state_transition) => {
-                    container.push_valid_state_transition(raw_state_transition, state_transition);
+                    container.push_valid_state_transition(
+                        raw_state_transition.as_ref(),
+                        state_transition,
+                    );
                 }
                 Err(error) => match error {
                     ProtocolError::PlatformDeserializationError(message) => {
@@ -85,13 +91,13 @@ where
                             ?errors,
                             "Invalid unknown state transition ({}): {}",
                             hex::encode(
-                                dashcore::hashes::sha256::Hash::hash(raw_state_transition)
+                                dashcore::hashes::sha256::Hash::hash(raw_state_transition.as_ref())
                                     .to_byte_array(),
                             ),
                             message
                         );
                         container.push_invalid_raw_state_transition(
-                            raw_state_transition,
+                            raw_state_transition.as_ref(),
                             consensus_error,
                         );
                     }
@@ -105,19 +111,19 @@ where
                             ?errors,
                             "State transition beyond max encoded bytes limit ({}): {}",
                             hex::encode(
-                                dashcore::hashes::sha256::Hash::hash(raw_state_transition)
+                                dashcore::hashes::sha256::Hash::hash(raw_state_transition.as_ref())
                                     .to_byte_array(),
                             ),
                             message
                         );
 
                         container.push_invalid_raw_state_transition(
-                            raw_state_transition,
+                            raw_state_transition.as_ref(),
                             consensus_error,
                         );
                     }
                     e => container.push_invalid_raw_state_transition_with_protocol_error(
-                        raw_state_transition,
+                        raw_state_transition.as_ref(),
                         e,
                     ),
                 },

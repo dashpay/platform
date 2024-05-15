@@ -102,7 +102,7 @@ where
             priority: 0,
         };
 
-        let raw_state_transitions = vec![raw_tx.to_vec()];
+        let raw_state_transitions = vec![raw_tx];
         let state_transition_container =
             self.decode_raw_state_transitions(&raw_state_transitions, platform_version)?;
 

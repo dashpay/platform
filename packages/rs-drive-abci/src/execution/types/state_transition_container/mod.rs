@@ -13,21 +13,19 @@ pub enum StateTransitionContainer<'a> {
     V0(StateTransitionContainerV0<'a>),
 }
 impl<'a> StateTransitionContainerGettersV0<'a> for StateTransitionContainer<'a> {
-    fn valid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, StateTransition)] {
+    fn valid_state_transitions(&'a self) -> &'a [(&'a [u8], StateTransition)] {
         match self {
             StateTransitionContainer::V0(container) => &container.valid_state_transitions,
         }
     }
 
-    fn invalid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, ConsensusError)] {
+    fn invalid_state_transitions(&'a self) -> &'a [(&'a [u8], ConsensusError)] {
         match self {
             StateTransitionContainer::V0(container) => &container.invalid_state_transitions,
         }
     }
 
-    fn invalid_state_transitions_with_protocol_error(
-        &'a self,
-    ) -> &'a [(&'a Vec<u8>, ProtocolError)] {
+    fn invalid_state_transitions_with_protocol_error(&'a self) -> &'a [(&'a [u8], ProtocolError)] {
         match self {
             StateTransitionContainer::V0(container) => {
                 &container.invalid_state_transitions_with_protocol_error
@@ -39,9 +37,9 @@ impl<'a> StateTransitionContainerGettersV0<'a> for StateTransitionContainer<'a> 
     fn destructure(
         self,
     ) -> (
-        Vec<(&'a Vec<u8>, StateTransition)>,
-        Vec<(&'a Vec<u8>, ConsensusError)>,
-        Vec<(&'a Vec<u8>, ProtocolError)>,
+        Vec<(&'a [u8], StateTransition)>,
+        Vec<(&'a [u8], ConsensusError)>,
+        Vec<(&'a [u8], ProtocolError)>,
     ) {
         match self {
             StateTransitionContainer::V0(container) => (
