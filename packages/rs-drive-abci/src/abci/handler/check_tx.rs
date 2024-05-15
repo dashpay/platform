@@ -57,11 +57,12 @@ where
                 .cloned()
                 .unwrap_or_default();
 
-            let state_transition_name = if check_tx_result.state_transition_name.is_empty() {
-                "Unknown".to_string()
-            } else {
-                check_tx_result.state_transition_name.to_owned()
-            };
+            let state_transition_name =
+                if let Some(ref name) = check_tx_result.state_transition_name {
+                    name.to_owned()
+                } else {
+                    "Unknown".to_string()
+                };
 
             let priority = check_tx_result.priority as i64;
 
@@ -73,11 +74,15 @@ where
                 _ => unreachable!("we have only 2 modes of check tx"),
             };
 
+            let state_transition_hash = check_tx_result
+                .state_transition_hash
+                .expect("state transition hash must be present");
+
             tracing::trace!(
                 ?check_tx_result,
                 "{} state transition {} {message}",
                 state_transition_name,
-                hex::encode(check_tx_result.state_transition_hash),
+                hex::encode(state_transition_hash),
             );
 
             timer.add_label(Label::new(

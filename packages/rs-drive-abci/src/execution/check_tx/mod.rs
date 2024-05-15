@@ -67,10 +67,10 @@ pub struct CheckTxResult {
     /// Priority to return to tenderdash. State Transitions with higher priority take precedence
     /// over state transitions with lower priority
     pub priority: u32,
-    /// State transition type name
-    pub state_transition_name: String,
-    /// State transition ID
-    pub state_transition_hash: [u8; 32],
+    /// State transition type name. Using for logging
+    pub state_transition_name: Option<String>,
+    /// State transition ID. Using for logging
+    pub state_transition_hash: Option<[u8; 32]>,
 }
 
 impl<C> Platform<C>

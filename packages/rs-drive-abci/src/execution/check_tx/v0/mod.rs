@@ -94,7 +94,10 @@ where
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
-        let state_transition_hash = hashes::sha256::Hash::hash(raw_tx).to_byte_array();
+        let mut state_transition_hash = None;
+        if tracing::enabled!(tracing::Level::TRACE) {
+            state_transition_hash = Some(hashes::sha256::Hash::hash(raw_tx).to_byte_array());
+        }
 
         if raw_tx.len() as u64
             > platform_version
@@ -119,17 +122,41 @@ where
                 hex::encode(raw_tx.split_at(80).0)
             );
 
-            return Ok(ValidationResult::new_with_error(consensus_error));
+            let check_tx_result = CheckTxResult {
+                level: check_tx_level,
+                fee_result: None,
+                unique_identifiers: vec![],
+                priority: 0,
+                state_transition_name: None,
+                state_transition_hash,
+            };
+
+            return Ok(ValidationResult::new_with_data_and_errors(
+                check_tx_result,
+                vec![consensus_error],
+            ));
         }
 
         let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
             Ok(state_transition) => state_transition,
             Err(err) => {
-                return Ok(ValidationResult::new_with_error(
-                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
-                        SerializedObjectParsingError::new(err.to_string()),
-                    )),
-                ))
+                let check_tx_result = CheckTxResult {
+                    level: check_tx_level,
+                    fee_result: None,
+                    unique_identifiers: vec![],
+                    priority: 0,
+                    state_transition_name: None,
+                    state_transition_hash,
+                };
+
+                return Ok(ValidationResult::new_with_data_and_errors(
+                    check_tx_result,
+                    vec![ConsensusError::BasicError(
+                        BasicError::SerializedObjectParsingError(
+                            SerializedObjectParsingError::new(err.to_string()),
+                        ),
+                    )],
+                ));
             }
         };
 
@@ -141,7 +168,7 @@ where
         };
 
         let unique_identifiers = state_transition.unique_identifiers();
-        let state_transition_name = state_transition.name().to_string();
+        let state_transition_name = Some(state_transition.name().to_string());
 
         let priority = state_transition.user_fee_increase() as u32 * 100;
 
