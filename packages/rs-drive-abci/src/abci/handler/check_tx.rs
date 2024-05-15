@@ -1,5 +1,6 @@
 use crate::abci::handler::error::consensus::AbciResponseInfoGetter;
 use crate::abci::handler::error::HandlerError;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -42,7 +43,11 @@ where
                 (0, "".to_string())
             };
 
-            let check_tx_result = validation_result.data.unwrap_or_default();
+            let check_tx_result = validation_result.into_data().map_err(|_| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "validation result should contain check tx result",
+                ))
+            })?;
 
             let gas_wanted = check_tx_result
                 .fee_result

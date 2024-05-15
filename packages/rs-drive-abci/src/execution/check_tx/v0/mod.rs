@@ -95,6 +95,13 @@ where
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
+        let mut check_tx_result = CheckTxResult {
+            level: check_tx_level,
+            fee_result: None,
+            unique_identifiers: vec![],
+            priority: 0,
+        };
+
         let raw_state_transitions = vec![raw_tx.to_vec()];
         let state_transition_container =
             self.decode_raw_state_transitions(&raw_state_transitions, platform_version)?;
@@ -116,7 +123,10 @@ where
         if !invalid_state_transitions.is_empty() {
             let (_, consensus_error) = invalid_state_transitions.remove(0);
 
-            return Ok(ValidationResult::new_with_error(consensus_error));
+            return Ok(ValidationResult::new_with_data_and_errors(
+                check_tx_result,
+                vec![consensus_error],
+            ));
         }
 
         // If there are no errors, then state transition is valid
@@ -134,10 +144,11 @@ where
             core_rpc: &self.core_rpc,
         };
 
-        let unique_identifiers = state_transition.unique_identifiers();
-
         let user_fee_increase = state_transition.user_fee_increase() as u32;
-        let priority = user_fee_increase.saturating_mul(PRIORITY_USER_FEE_INCREASE_MULTIPLIER);
+
+        check_tx_result.priority =
+            user_fee_increase.saturating_mul(PRIORITY_USER_FEE_INCREASE_MULTIPLIER);
+        check_tx_result.unique_identifiers = state_transition.unique_identifiers();
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
@@ -148,18 +159,13 @@ where
         // If there are any validation errors happen we return
         // the validation result with errors and CheckTxResult data
         if !validation_result.is_valid() {
-            return Ok(validation_result.map(|_| CheckTxResult {
-                level: check_tx_level,
-                fee_result: None,
-                unique_identifiers,
-                priority,
-            }));
+            return Ok(validation_result.map(|_| check_tx_result));
         }
 
-        // Validation succeeded. we need to map validation data to CheckTxResult
+        // State transition pre-validation succeeded
+        // We should run the execution event in dry run (estimated fees)
+        // to see if we would have enough fees for the transition
         if let Some(execution_event) = validation_result.into_data()? {
-            // We should run the execution event in dry run (estimated fees)
-            // to see if we would have enough fees for the transition
             self.validate_fees_of_event(
                 &execution_event,
                 platform_state.last_block_info(),
@@ -167,22 +173,15 @@ where
                 platform_version,
             )
             .map(|validation_result| {
-                validation_result.map(|fee_result| CheckTxResult {
-                    level: check_tx_level,
-                    fee_result: Some(fee_result),
-                    unique_identifiers,
-                    priority,
+                validation_result.map(|fee_result| {
+                    check_tx_result.fee_result = Some(fee_result);
+                    check_tx_result
                 })
             })
         } else {
             // In case of asset lock based transitions, we don't have execution event
             // because we already validated remaining balance
-            Ok(ValidationResult::new_with_data(CheckTxResult {
-                level: check_tx_level,
-                fee_result: None,
-                unique_identifiers,
-                priority,
-            }))
+            Ok(ValidationResult::new_with_data(check_tx_result))
         }
     }
 }
