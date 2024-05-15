@@ -191,7 +191,7 @@ impl<'a> DocumentTypeRef<'a> {
             return Ok(SimpleConsensusValidationResult::new());
         }
 
-        let old_document_schema_json = match self.schema().clone().try_into_validating_json() {
+        let old_document_schema_json = match self.schema().try_to_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -204,11 +204,7 @@ impl<'a> DocumentTypeRef<'a> {
             }
         };
 
-        let new_document_schema_json = match new_document_type
-            .schema()
-            .clone()
-            .try_into_validating_json()
-        {
+        let new_document_schema_json = match new_document_type.schema().try_to_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
