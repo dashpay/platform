@@ -10,6 +10,7 @@ use grovedb::EstimatedLayerInformation;
 
 use std::collections::HashMap;
 use dpp::data_contract::DataContract;
+use dpp::data_contract::document_type::DocumentTypeRef;
 
 impl Drive {
     /// This function calls the versioned `add_estimation_costs_for_contested_document_tree_levels_up_to_contract_v0`
@@ -19,8 +20,9 @@ impl Drive {
     /// # Parameters
     /// - `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` that holds the estimated layer information.
     /// - `drive_version`: A reference to the `DriveVersion` object that specifies the version of the function to call.
-    pub(in crate::drive) fn add_estimation_costs_for_contested_document_tree_levels_up_to_contract(
-        contract: &DataContract,
+    pub(in crate::drive) fn add_estimation_costs_for_contested_document_tree_levels_up_to_contract<'a>(
+        contract: &'a DataContract,
+        document_type: Option<DocumentTypeRef<'a>>,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -32,6 +34,7 @@ impl Drive {
             0 => {
                 Self::add_estimation_costs_for_contested_document_tree_levels_up_to_contract_v0(
                     contract,
+                    document_type,
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())

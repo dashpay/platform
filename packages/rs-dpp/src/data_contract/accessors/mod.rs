@@ -76,6 +76,12 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
+    fn document_types_with_contested_indexes(&self) -> BTreeMap<&DocumentName, &DocumentType> {
+        match self {
+            DataContract::V0(v0) => v0.document_types_with_contested_indexes(),
+        }
+    }
+
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_types(),

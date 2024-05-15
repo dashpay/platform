@@ -4,6 +4,7 @@ pub use {
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     ordering::OrderClause,
     single_document_drive_query::SingleDocumentDriveQuery,
+    single_document_drive_query::SingleDocumentDriveQueryContestedStatus,
     vote_query::IdentityBasedVoteDriveQuery,
 };
 // Imports available when either "server" or "verify" features are enabled

@@ -136,6 +136,12 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.security_level_requirement(),
         }
     }
+
+    fn find_contested_index(&self) -> Option<&Index> {
+        match self {
+            DocumentType::V0(v0) => v0.find_contested_index(),
+        }
+    }
 }
 
 impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
@@ -258,6 +264,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
             DocumentTypeRef::V0(v0) => v0.security_level_requirement(),
         }
     }
+
+    fn find_contested_index(&self) -> Option<&Index> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.find_contested_index(),
+        }
+    }
 }
 
 impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
@@ -378,6 +390,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     fn security_level_requirement(&self) -> SecurityLevel {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.security_level_requirement(),
+        }
+    }
+
+    fn find_contested_index(&self) -> Option<&Index> {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.find_contested_index(),
         }
     }
 }

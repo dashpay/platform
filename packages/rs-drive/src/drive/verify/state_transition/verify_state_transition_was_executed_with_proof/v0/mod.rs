@@ -40,7 +40,7 @@ use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
 use crate::error::Error;
 use crate::error::proof::ProofError;
-use crate::query::SingleDocumentDriveQuery;
+use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 
 impl Drive {
     #[inline(always)]
@@ -120,6 +120,26 @@ impl Drive {
                             transition.data_contract_id()
                         )))
                     })?;
+                
+                let contested_status = if let DocumentTransition::Create(create_transition) = transition {
+                    if create_transition.prefunded_voting_balance().is_some() {
+                        SingleDocumentDriveQueryContestedStatus::Contested
+                    } else {
+                        SingleDocumentDriveQueryContestedStatus::NotContested
+                    }
+                } else {
+                    SingleDocumentDriveQueryContestedStatus::NotContested
+                };
+                
+                match transition {
+                    DocumentTransition::Create(_) => {}
+                    DocumentTransition::Replace(_) => {}
+                    DocumentTransition::Delete(_) => {}
+                    DocumentTransition::Transfer(_) => {}
+                    DocumentTransition::UpdatePrice(_) => {}
+                    DocumentTransition::Purchase(_) => {}
+                }
+                
 
                 let query = SingleDocumentDriveQuery {
                     contract_id: transition.data_contract_id().into_buffer(),
@@ -127,6 +147,7 @@ impl Drive {
                     document_type_keeps_history: document_type.documents_keep_history(),
                     document_id: transition.base().id().into_buffer(),
                     block_time_ms: None, //None because we want latest
+                    contested_status,
                 };
                 let (root_hash, document) =
                     query.verify_proof(false, proof, document_type, platform_version)?;

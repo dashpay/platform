@@ -882,6 +882,55 @@ pub mod get_proofs_request {
             pub document_type_keeps_history: bool,
             #[prost(bytes = "vec", tag = "4")]
             pub document_id: ::prost::alloc::vec::Vec<u8>,
+            #[prost(
+                enumeration = "document_request::DocumentContestedStatus",
+                tag = "5"
+            )]
+            pub document_contested_status: i32,
+        }
+        /// Nested message and enum types in `DocumentRequest`.
+        pub mod document_request {
+            #[derive(::serde::Serialize, ::serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            #[derive(
+                Clone,
+                Copy,
+                Debug,
+                PartialEq,
+                Eq,
+                Hash,
+                PartialOrd,
+                Ord,
+                ::prost::Enumeration
+            )]
+            #[repr(i32)]
+            pub enum DocumentContestedStatus {
+                NotContested = 0,
+                MaybeContested = 1,
+                Contested = 2,
+            }
+            impl DocumentContestedStatus {
+                /// String value of the enum field names used in the ProtoBuf definition.
+                ///
+                /// The values are not transformed in any way and thus are considered stable
+                /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+                pub fn as_str_name(&self) -> &'static str {
+                    match self {
+                        DocumentContestedStatus::NotContested => "NOT_CONTESTED",
+                        DocumentContestedStatus::MaybeContested => "MAYBE_CONTESTED",
+                        DocumentContestedStatus::Contested => "CONTESTED",
+                    }
+                }
+                /// Creates an enum from field names used in the ProtoBuf definition.
+                pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+                    match value {
+                        "NOT_CONTESTED" => Some(Self::NotContested),
+                        "MAYBE_CONTESTED" => Some(Self::MaybeContested),
+                        "CONTESTED" => Some(Self::Contested),
+                        _ => None,
+                    }
+                }
+            }
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]

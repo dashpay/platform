@@ -165,6 +165,22 @@ pub fn vote_contested_resource_contract_documents_primary_key_path<'a>(
     ]
 }
 
+#[cfg(feature = "server")]
+/// Returns the path to the primary keys of a contract document type as a vec.
+pub fn vote_contested_resource_active_polls_contract_documents_primary_key_path_vec(
+    contract_id: &[u8],
+    document_type_name: &str,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+        contract_id.to_vec(),
+        document_type_name.as_bytes().to_vec(),
+        vec![0],
+    ]
+}
+
 /// the specific end date path query of a contested resources as a vec
 /// there is no need to ever add a key to this
 pub fn vote_contested_resource_end_date_queries_at_time_tree_path_vec(

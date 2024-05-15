@@ -64,6 +64,9 @@ pub trait DocumentTypeV0Methods {
     /// Non versioned
     fn top_level_indices(&self) -> Vec<&IndexProperty>;
 
+    /// Non versioned
+    fn top_level_indices_of_contested_unique_indexes(&self) -> Vec<&IndexProperty>;
+
     fn create_document_from_data(
         &self,
         data: Value,
@@ -239,13 +242,19 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn top_level_indices(&self) -> Vec<&IndexProperty> {
-        let mut index_properties: Vec<&IndexProperty> = Vec::with_capacity(self.indices.len());
-        for (_, index) in &self.indices {
-            if let Some(property) = index.properties.first() {
-                index_properties.push(property);
+        self.indices.values().filter_map(|index| index.properties.first()).collect()
+    }
+
+    // This should normally just be 1 item, however we keep a vec in case we want to change things
+    //  in the future.
+    fn top_level_indices_of_contested_unique_indexes(&self) -> Vec<&IndexProperty> {
+        self.indices.values().filter_map(|index| {
+            if index.contested_index.is_some() {
+                index.properties.first()
+            } else {
+                None
             }
-        }
-        index_properties
+        }).collect()
     }
 
     fn create_document_from_data(

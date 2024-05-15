@@ -90,10 +90,11 @@ impl Drive {
             count += historical_contract_ids.len();
         }
         if !document_queries.is_empty() {
-            path_queries.extend(document_queries.iter().map(|drive_query| {
-                let mut path_query = drive_query.construct_path_query();
+            path_queries.extend(document_queries.iter().filter_map(|drive_query| {
+                // The path query construction can only fail in extremely rare circumstances.
+                let mut path_query = drive_query.construct_path_query().ok()?;
                 path_query.query.limit = None;
-                path_query
+                Some(path_query)
             }));
             count += document_queries.len();
         }

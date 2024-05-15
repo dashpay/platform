@@ -74,6 +74,14 @@ pub enum DriveError {
     ChangingContractKeepsHistory(&'static str),
 
     /// Error
+    #[error("contested index not found error: {0}")]
+    ContestedIndexNotFound(&'static str),
+
+    /// Error
+    #[error("contested document missing owner error: {0}")]
+    ContestedDocumentMissingOwnerId(&'static str),
+
+    /// Error
     #[error("updating contract with history error: {0}")]
     UpdatingContractWithHistoryError(&'static str),
 
@@ -90,6 +98,10 @@ pub enum DriveError {
     #[error("changing document type keeps history error: {0}")]
     ChangingDocumentTypeKeepsHistory(&'static str),
 
+    /// Error
+    #[error("invalid path error: {0}")]
+    InvalidPath(&'static str),
+    
     /// Error
     #[error("corrupted contract path error: {0}")]
     CorruptedContractPath(&'static str),

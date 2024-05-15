@@ -40,6 +40,7 @@ impl Drive {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_contested_document_tree_levels_up_to_contract(
                 document_and_contract_info.contract,
+                Some(document_and_contract_info.document_type),
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
@@ -70,8 +71,8 @@ impl Drive {
             transaction,
             platform_version,
         )?;
-
-        self.add_contested_indices_for_top_index_level_for_contract_operations(
+        
+        self.add_contested_indices_for_contract_operations(
             &document_and_contract_info,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,

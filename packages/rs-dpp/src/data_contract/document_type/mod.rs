@@ -181,6 +181,12 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
+    fn top_level_indices_of_contested_unique_indexes(&self) -> Vec<&IndexProperty> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.top_level_indices_of_contested_unique_indexes(),
+        }
+    }
+
     fn create_document_from_data(
         &self,
         data: Value,

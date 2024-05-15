@@ -82,6 +82,8 @@ impl<C> Platform<C> {
                             "id must be a valid identifier (32 bytes long)".to_string(),
                         )
                     })?;
+                
+                let contested_status = document_proof_request.document_contested_status.try_into()?;
 
                 Ok(SingleDocumentDriveQuery {
                     contract_id: contract_id.into_buffer(),
@@ -89,9 +91,9 @@ impl<C> Platform<C> {
                     document_type_keeps_history: document_proof_request.document_type_keeps_history,
                     document_id: document_id.into_buffer(),
                     block_time_ms: None, //None because we want latest
+                    contested_status,
                 })
-            })
-            .collect::<Result<Vec<_>, QueryError>>());
+            }).collect::<Result<Vec<_>, QueryError>>());
 
         let vote_queries = check_validation_result_with_data!(votes
             .into_iter()
@@ -247,6 +249,7 @@ mod tests {
                 document_type: "niceDocument".to_string(),
                 document_type_keeps_history: false,
                 document_id: vec![0; 32],
+                document_contested_status: 0,
             }],
             votes: vec![],
         };
@@ -270,6 +273,7 @@ mod tests {
                 document_type: "niceDocument".to_string(),
                 document_type_keeps_history: false,
                 document_id: vec![0; 8],
+                document_contested_status: 0,
             }],
             votes: vec![],
         };
@@ -293,6 +297,7 @@ mod tests {
                 document_type: "niceDocument".to_string(),
                 document_type_keeps_history: false,
                 document_id: vec![0; 32],
+                document_contested_status: 0,
             }],
             votes: vec![],
         };
@@ -324,6 +329,7 @@ mod tests {
                 document_type: "niceDocument".to_string(),
                 document_type_keeps_history: false,
                 document_id: vec![1; 32],
+                document_contested_status: 0,
             }],
             votes: vec![],
         };

@@ -14,7 +14,7 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
-use drive::query::SingleDocumentDriveQuery;
+use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -27,7 +27,7 @@ use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
@@ -213,6 +213,15 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         .transitions()
                         .iter()
                         .for_each(|transition| {
+                            let document_contested_status = if let DocumentTransitionAction::CreateAction(create_action) = transition {
+                                if create_action.prefunded_voting_balance().is_some() {
+                                    SingleDocumentDriveQueryContestedStatus::Contested as u8
+                                } else {
+                                    SingleDocumentDriveQueryContestedStatus::NotContested as u8
+                                }
+                            } else {
+                                SingleDocumentDriveQueryContestedStatus::NotContested as u8
+                            };
                             proofs_request
                                 .documents
                                 .push(get_proofs_request_v0::DocumentRequest {
@@ -247,6 +256,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         .expect("expected a base for the document transition")
                                         .id()
                                         .to_vec(),
+                                    document_contested_status: document_contested_status as i32,
                                 });
                         });
                     let versioned_request = GetProofsRequest {
@@ -278,6 +288,16 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     .as_str(),
                             )
                             .expect("get document type");
+                        let contested_status = if let DocumentTransitionAction::CreateAction(create_action) = document_transition_action {
+                            if create_action.prefunded_voting_balance().is_some() {
+                                SingleDocumentDriveQueryContestedStatus::Contested
+                            } else {
+                                SingleDocumentDriveQueryContestedStatus::NotContested
+                            }
+                        } else {
+                            SingleDocumentDriveQueryContestedStatus::NotContested
+                        };
+                        
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition_action
                                 .base()
@@ -296,6 +316,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 .id()
                                 .into_buffer(),
                             block_time_ms: None, //None because we want latest
+                            contested_status,
                         };
 
                         // dbg!(

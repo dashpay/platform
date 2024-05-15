@@ -7,6 +7,8 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb_storage::worst_case_costs::WorstKeyLength;
 use std::collections::HashSet;
+use crate::drive::object_size_info::PathInfo;
+use crate::error::drive::DriveError;
 
 /// Path key info
 #[derive(Clone)]
@@ -22,6 +24,19 @@ pub enum PathKeyInfo<'a, const N: usize> {
     PathKeyRef((Vec<Vec<u8>>, &'a [u8])),
     /// A path size
     PathKeySize(KeyInfoPath, KeyInfo),
+}
+
+impl<'a> TryFrom<Vec<Vec<u8>>> for PathKeyInfo<'a, 0> {
+    type Error = Error;
+
+    fn try_from(mut value: Vec<Vec<u8>>) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            Err(Error::Drive(DriveError::InvalidPath("path must not be none to convert into a path key info")))
+        } else {
+            let last = value.remove(value.len() - 1);
+            Ok(PathKey((value, last)))
+        }
+    }
 }
 
 impl<'a, const N: usize> PathKeyInfo<'a, N> {

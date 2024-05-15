@@ -9,6 +9,7 @@ use crate::metadata::Metadata;
 
 use platform_value::Identifier;
 use std::collections::BTreeMap;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 impl DataContractV0Getters for DataContractV0 {
     fn id(&self) -> Identifier {
@@ -67,6 +68,10 @@ impl DataContractV0Getters for DataContractV0 {
 
     fn has_document_type_for_name(&self, name: &str) -> bool {
         self.document_types.get(name).is_some()
+    }
+
+    fn document_types_with_contested_indexes(&self) -> BTreeMap<&DocumentName, &DocumentType> {
+        self.document_types.iter().filter(|(_, document_type)| document_type.indexes().iter().any(|(_, index)| index.contested_index.is_some())).collect()
     }
 
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {

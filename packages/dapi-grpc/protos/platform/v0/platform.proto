@@ -292,10 +292,16 @@ message GetIdentitiesContractKeysResponse {
 message GetProofsRequest {
   message GetProofsRequestV0 {
     message DocumentRequest {
+      enum DocumentContestedStatus {
+        NOT_CONTESTED = 0;
+        MAYBE_CONTESTED = 1;
+        CONTESTED = 2;
+      }
       bytes contract_id = 1;
       string document_type = 2;
       bool document_type_keeps_history = 3;
       bytes document_id = 4;
+      DocumentContestedStatus document_contested_status = 5;
     }
 
     message IdentityRequest {

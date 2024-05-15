@@ -1,4 +1,4 @@
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE};
+use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE, ESTIMATED_AVERAGE_INDEX_NAME_SIZE};
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
@@ -12,7 +12,10 @@ use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 use std::collections::HashMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
-use crate::drive::votes::paths::{vote_contested_resource_active_polls_contract_tree_path, vote_contested_resource_active_polls_tree_path, vote_contested_resource_tree_path, vote_root_path};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use crate::drive::object_size_info::DocumentAndContractInfo;
+use crate::drive::votes::paths::{vote_contested_resource_active_polls_contract_document_tree_path, vote_contested_resource_active_polls_contract_tree_path, vote_contested_resource_active_polls_tree_path, vote_contested_resource_tree_path, vote_root_path};
 
 impl Drive {
     /// Adds estimated costs for layers up to the contract level.
@@ -37,8 +40,9 @@ impl Drive {
     ///
     /// This function is intended to be used internally within the Drive implementation.
     ///
-    pub(super) fn add_estimation_costs_for_contested_document_tree_levels_up_to_contract_v0(
-        contract: &DataContract,
+    pub(in crate::drive) fn add_estimation_costs_for_contested_document_tree_levels_up_to_contract_v0<'a>(
+        contract: &'a DataContract,
+        document_type: Option<DocumentTypeRef<'a>>,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
@@ -62,7 +66,7 @@ impl Drive {
                 estimated_layer_sizes: AllSubtrees(
                     1,
                     NoSumTrees,
-                    Some(StorageFlags::approximate_size(false, None)),
+                    None,
                 ),
             },
         );
@@ -77,7 +81,7 @@ impl Drive {
                 estimated_layer_sizes: AllSubtrees(
                     1,
                     NoSumTrees,
-                    Some(StorageFlags::approximate_size(false, None)),
+                    None,
                 ),
             },
         );
@@ -91,7 +95,7 @@ impl Drive {
                 estimated_layer_sizes: AllSubtrees(
                     DEFAULT_HASH_SIZE_U8,
                     NoSumTrees,
-                    Some(StorageFlags::approximate_size(false, None)),
+                    None,
                 ),
             },
         );
@@ -106,9 +110,24 @@ impl Drive {
                 estimated_layer_sizes: AllSubtrees(
                     ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,
                     NoSumTrees,
-                    Some(StorageFlags::approximate_size(true, None)),
+                    None,
                 ),
             },
         );
+        
+        if let Some(document_type) = document_type {
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_path(vote_contested_resource_active_polls_contract_document_tree_path(contract.id_ref().as_bytes(), document_type.name().as_str())),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: ApproximateElements(document_type_count),
+                    estimated_layer_sizes: AllSubtrees(
+                        ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
+                        NoSumTrees,
+                        None,
+                    ),
+                },
+            );
+        }
     }
 }
