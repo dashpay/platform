@@ -213,15 +213,18 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         .transitions()
                         .iter()
                         .for_each(|transition| {
-                            let document_contested_status = if let DocumentTransitionAction::CreateAction(create_action) = transition {
-                                if create_action.prefunded_voting_balance().is_some() {
-                                    SingleDocumentDriveQueryContestedStatus::Contested as u8
+                            let document_contested_status =
+                                if let DocumentTransitionAction::CreateAction(create_action) =
+                                    transition
+                                {
+                                    if create_action.prefunded_voting_balance().is_some() {
+                                        SingleDocumentDriveQueryContestedStatus::Contested as u8
+                                    } else {
+                                        SingleDocumentDriveQueryContestedStatus::NotContested as u8
+                                    }
                                 } else {
                                     SingleDocumentDriveQueryContestedStatus::NotContested as u8
-                                }
-                            } else {
-                                SingleDocumentDriveQueryContestedStatus::NotContested as u8
-                            };
+                                };
                             proofs_request
                                 .documents
                                 .push(get_proofs_request_v0::DocumentRequest {
@@ -288,16 +291,19 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     .as_str(),
                             )
                             .expect("get document type");
-                        let contested_status = if let DocumentTransitionAction::CreateAction(create_action) = document_transition_action {
-                            if create_action.prefunded_voting_balance().is_some() {
-                                SingleDocumentDriveQueryContestedStatus::Contested
+                        let contested_status =
+                            if let DocumentTransitionAction::CreateAction(create_action) =
+                                document_transition_action
+                            {
+                                if create_action.prefunded_voting_balance().is_some() {
+                                    SingleDocumentDriveQueryContestedStatus::Contested
+                                } else {
+                                    SingleDocumentDriveQueryContestedStatus::NotContested
+                                }
                             } else {
                                 SingleDocumentDriveQueryContestedStatus::NotContested
-                            }
-                        } else {
-                            SingleDocumentDriveQueryContestedStatus::NotContested
-                        };
-                        
+                            };
+
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition_action
                                 .base()

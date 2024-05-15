@@ -101,7 +101,7 @@ pub enum DriveError {
     /// Error
     #[error("invalid path error: {0}")]
     InvalidPath(&'static str),
-    
+
     /// Error
     #[error("corrupted contract path error: {0}")]
     CorruptedContractPath(&'static str),

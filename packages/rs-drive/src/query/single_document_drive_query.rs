@@ -1,11 +1,11 @@
 use crate::common::encode::encode_u64;
 use crate::drive::document::paths::contract_document_type_path_vec;
 
+use crate::drive::votes;
+use crate::error::query::QuerySyntaxError;
+use crate::error::Error;
 use crate::query::Query;
 use grovedb::{PathQuery, SizedQuery};
-use crate::drive::votes;
-use crate::error::Error;
-use crate::error::query::QuerySyntaxError;
 
 /// The expected contested status of a document
 /// Drives stores the document in either the not contested location (most of the time)
@@ -26,11 +26,14 @@ impl TryFrom<i32> for SingleDocumentDriveQueryContestedStatus {
     type Error = Error;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {  
+        match value {
             0 => Ok(SingleDocumentDriveQueryContestedStatus::NotContested),
             1 => Ok(SingleDocumentDriveQueryContestedStatus::MaybeContested),
             2 => Ok(SingleDocumentDriveQueryContestedStatus::Contested),
-            n => Err(Error::Query(QuerySyntaxError::Unsupported(format!("unsupported contested status {}, only 0, 1 and 2 are supported", n)))),
+            n => Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "unsupported contested status {}, only 0, 1 and 2 are supported",
+                n
+            )))),
         }
     }
 }
@@ -92,8 +95,8 @@ impl SingleDocumentDriveQuery {
                 query.set_subquery_key(vec![0]);
             }
         }
-        
-        let limit = if with_limit_1 { Some(1) } else { None } ;
+
+        let limit = if with_limit_1 { Some(1) } else { None };
 
         PathQuery::new(path, SizedQuery::new(query, limit, None))
     }
@@ -107,7 +110,7 @@ impl SingleDocumentDriveQuery {
         let mut query = Query::new();
         query.insert_key(self.document_id.to_vec());
 
-        let limit = if with_limit_1 { Some(1) } else { None } ;
+        let limit = if with_limit_1 { Some(1) } else { None };
 
         PathQuery::new(path, SizedQuery::new(query, limit, None))
     }

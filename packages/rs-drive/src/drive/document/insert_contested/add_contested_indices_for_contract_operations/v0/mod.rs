@@ -1,6 +1,8 @@
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathInfo};
+use crate::drive::object_size_info::{
+    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathInfo,
+};
 use crate::drive::Drive;
 
 use crate::error::fee::FeeError;
@@ -9,6 +11,10 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
+use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
+use crate::error::drive::DriveError;
+use dpp::data_contract::document_type::IndexProperty;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
@@ -16,10 +22,6 @@ use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::data_contract::document_type::IndexProperty;
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
-use crate::error::drive::DriveError;
 
 impl Drive {
     /// Adds indices for the top index level and calls for lower levels.
@@ -35,23 +37,34 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
-        let owner_id = document_and_contract_info.owned_document_info.owner_id.ok_or(Error::Drive(DriveError::ContestedDocumentMissingOwnerId("expecting an owner id")))?;
-        let contested_index = document_and_contract_info.document_type.find_contested_index().ok_or(Error::Drive(DriveError::ContestedIndexNotFound("a contested index is expected")))?;
+        let owner_id = document_and_contract_info
+            .owned_document_info
+            .owner_id
+            .ok_or(Error::Drive(DriveError::ContestedDocumentMissingOwnerId(
+                "expecting an owner id",
+            )))?;
+        let contested_index = document_and_contract_info
+            .document_type
+            .find_contested_index()
+            .ok_or(Error::Drive(DriveError::ContestedIndexNotFound(
+                "a contested index is expected",
+            )))?;
         let document_type = document_and_contract_info.document_type;
         let storage_flags = document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .get_storage_flags_ref();
+            .owned_document_info
+            .document_info
+            .get_storage_flags_ref();
 
         // we need to construct the path for documents on the contract
         // the path is
         //  * Document and DataContract root tree
         //  * DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
-        let contract_document_type_path = vote_contested_resource_active_polls_contract_document_tree_path_vec(
-            document_and_contract_info.contract.id_ref().as_bytes(),
-            document_and_contract_info.document_type.name(),
-        );
+        let contract_document_type_path =
+            vote_contested_resource_active_polls_contract_document_tree_path_vec(
+                document_and_contract_info.contract.id_ref().as_bytes(),
+                document_and_contract_info.document_type.name(),
+            );
 
         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
@@ -81,9 +94,8 @@ impl Drive {
             PathInfo::PathAsVec::<0>(index_path)
         };
 
-
         // next we need to store a reference to the document for each index
-        for IndexProperty{ name, .. } in &contested_index.properties {
+        for IndexProperty { name, .. } in &contested_index.properties {
             // We on purpose do not want to put index names
             // This is different from document secondary indexes
             // The reason is that there is only one index so we already know the structure
@@ -100,7 +112,7 @@ impl Drive {
                         "document field is too big for being an index on delete",
                     )));
                 }
-                
+
                 // On this level we will have all the user defined values for the paths
                 estimated_costs_only_with_layer_info.insert(
                     index_path_info.clone().convert_to_key_info_path(),
@@ -115,7 +127,7 @@ impl Drive {
                     },
                 );
             }
-                
+
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
             let document_top_field = document_and_contract_info
@@ -132,7 +144,9 @@ impl Drive {
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
-                document_top_field.clone().add_path_info(index_path_info.clone()),
+                document_top_field
+                    .clone()
+                    .add_path_info(index_path_info.clone()),
                 false,
                 storage_flags,
                 apply_type,
@@ -144,11 +158,10 @@ impl Drive {
 
             index_path_info.push(document_top_field)?;
         }
-        
+
         // at the end of all of this we put the identity tree that will hold the votes
 
-        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
-        {
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have all the identities
             estimated_costs_only_with_layer_info.insert(
                 index_path_info.clone().convert_to_key_info_path(),
@@ -175,6 +188,7 @@ impl Drive {
             drive_version,
         )?;
         
-        Ok(())
+        self.add_contested_reference_to_document_operations(document_and_contract_info, index_path_info, previous_batch_operations, storage_flags, estimated_costs_only_with_layer_info, transaction, batch_operations, drive_version)
+        
     }
 }

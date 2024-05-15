@@ -33,7 +33,7 @@ mod add_contested_indices_for_contract_operations;
 
 // Module: add_contested_reference_for_index_level_for_contract_operations
 // This module contains functionality for adding a reference for an index level for contract operations
-// mod add_contested_reference_for_index_level_for_contract_operations;
+mod add_contested_reference_for_index_level_for_contract_operations;
 
 #[cfg(all(
     feature = "fixtures-and-mocks",

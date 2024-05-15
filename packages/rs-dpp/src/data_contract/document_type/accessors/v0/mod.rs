@@ -22,7 +22,7 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the indices of the document type.
     fn indexes(&self) -> &BTreeMap<String, Index>;
-    
+
     /// The contested index if one exists
     fn find_contested_index(&self) -> Option<&Index>;
 

@@ -242,19 +242,25 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn top_level_indices(&self) -> Vec<&IndexProperty> {
-        self.indices.values().filter_map(|index| index.properties.first()).collect()
+        self.indices
+            .values()
+            .filter_map(|index| index.properties.first())
+            .collect()
     }
 
     // This should normally just be 1 item, however we keep a vec in case we want to change things
     //  in the future.
     fn top_level_indices_of_contested_unique_indexes(&self) -> Vec<&IndexProperty> {
-        self.indices.values().filter_map(|index| {
-            if index.contested_index.is_some() {
-                index.properties.first()
-            } else {
-                None
-            }
-        }).collect()
+        self.indices
+            .values()
+            .filter_map(|index| {
+                if index.contested_index.is_some() {
+                    index.properties.first()
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     fn create_document_from_data(

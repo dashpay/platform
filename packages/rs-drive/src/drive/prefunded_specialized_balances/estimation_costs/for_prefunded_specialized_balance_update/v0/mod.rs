@@ -5,10 +5,12 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, Potentia
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 
-use crate::drive::prefunded_specialized_balances::{prefunded_specialized_balances_for_voting_path_vec, prefunded_specialized_balances_path};
+use crate::drive::defaults::{AVERAGE_BALANCE_SIZE, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8};
+use crate::drive::prefunded_specialized_balances::{
+    prefunded_specialized_balances_for_voting_path_vec, prefunded_specialized_balances_path,
+};
 use grovedb::EstimatedSumTrees::{AllSumTrees, SomeSumTrees};
 use std::collections::HashMap;
-use crate::drive::defaults::{AVERAGE_BALANCE_SIZE, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8};
 
 impl Drive {
     /// Adds estimation costs for total system credits update.
@@ -47,7 +49,7 @@ impl Drive {
                 estimated_layer_sizes: AllSubtrees(1, AllSumTrees, None),
             },
         );
-        
+
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(prefunded_specialized_balances_for_voting_path_vec()),
             EstimatedLayerInformation {

@@ -82,8 +82,10 @@ impl<C> Platform<C> {
                             "id must be a valid identifier (32 bytes long)".to_string(),
                         )
                     })?;
-                
-                let contested_status = document_proof_request.document_contested_status.try_into()?;
+
+                let contested_status = document_proof_request
+                    .document_contested_status
+                    .try_into()?;
 
                 Ok(SingleDocumentDriveQuery {
                     contract_id: contract_id.into_buffer(),
@@ -93,7 +95,8 @@ impl<C> Platform<C> {
                     block_time_ms: None, //None because we want latest
                     contested_status,
                 })
-            }).collect::<Result<Vec<_>, QueryError>>());
+            })
+            .collect::<Result<Vec<_>, QueryError>>());
 
         let vote_queries = check_validation_result_with_data!(votes
             .into_iter()

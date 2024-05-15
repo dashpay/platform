@@ -48,7 +48,9 @@ impl Drive {
     /// This function will not panic under normal circumstances. However, unexpected behavior may result
     /// from incorrect arguments or unforeseen edge cases.
     #[inline(always)]
-    pub(super) fn add_estimation_costs_for_add_contested_document_to_primary_storage_v0<const N: usize>(
+    pub(super) fn add_estimation_costs_for_add_contested_document_to_primary_storage_v0<
+        const N: usize,
+    >(
         document_and_contract_info: &DocumentAndContractInfo,
         primary_key_path: [&[u8]; N],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

@@ -120,17 +120,18 @@ impl Drive {
                             transition.data_contract_id()
                         )))
                     })?;
-                
-                let contested_status = if let DocumentTransition::Create(create_transition) = transition {
-                    if create_transition.prefunded_voting_balance().is_some() {
-                        SingleDocumentDriveQueryContestedStatus::Contested
+
+                let contested_status =
+                    if let DocumentTransition::Create(create_transition) = transition {
+                        if create_transition.prefunded_voting_balance().is_some() {
+                            SingleDocumentDriveQueryContestedStatus::Contested
+                        } else {
+                            SingleDocumentDriveQueryContestedStatus::NotContested
+                        }
                     } else {
                         SingleDocumentDriveQueryContestedStatus::NotContested
-                    }
-                } else {
-                    SingleDocumentDriveQueryContestedStatus::NotContested
-                };
-                
+                    };
+
                 match transition {
                     DocumentTransition::Create(_) => {}
                     DocumentTransition::Replace(_) => {}
@@ -139,7 +140,6 @@ impl Drive {
                     DocumentTransition::UpdatePrice(_) => {}
                     DocumentTransition::Purchase(_) => {}
                 }
-                
 
                 let query = SingleDocumentDriveQuery {
                     contract_id: transition.data_contract_id().into_buffer(),

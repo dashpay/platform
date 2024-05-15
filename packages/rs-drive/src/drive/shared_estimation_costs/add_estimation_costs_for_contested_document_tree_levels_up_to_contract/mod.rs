@@ -8,9 +8,9 @@ use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerInformation;
 
-use std::collections::HashMap;
-use dpp::data_contract::DataContract;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
+use std::collections::HashMap;
 
 impl Drive {
     /// This function calls the versioned `add_estimation_costs_for_contested_document_tree_levels_up_to_contract_v0`
@@ -20,7 +20,9 @@ impl Drive {
     /// # Parameters
     /// - `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` that holds the estimated layer information.
     /// - `drive_version`: A reference to the `DriveVersion` object that specifies the version of the function to call.
-    pub(in crate::drive) fn add_estimation_costs_for_contested_document_tree_levels_up_to_contract<'a>(
+    pub(in crate::drive) fn add_estimation_costs_for_contested_document_tree_levels_up_to_contract<
+        'a,
+    >(
         contract: &'a DataContract,
         document_type: Option<DocumentTypeRef<'a>>,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -40,7 +42,8 @@ impl Drive {
                 Ok(())
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "add_estimation_costs_for_contested_document_tree_levels_up_to_contract".to_string(),
+                method: "add_estimation_costs_for_contested_document_tree_levels_up_to_contract"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

@@ -14,9 +14,9 @@ pub const PREFUNDED_BALANCES_FOR_VOTING: u8 = 128;
 
 /// prefunded specialized balances for voting
 pub(crate) fn prefunded_specialized_balances_path() -> [&'static [u8]; 1] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances),
-    ]
+    [Into::<&[u8; 1]>::into(
+        RootTree::PreFundedSpecializedBalances,
+    )]
 }
 
 /// prefunded specialized balances for voting

@@ -73,6 +73,36 @@ fn make_document_reference(
 }
 
 #[cfg(feature = "server")]
+/// Creates a reference to a contested document.
+fn make_document_contested_reference(
+    document: &Document,
+    storage_flags: Option<&StorageFlags>,
+) -> Element {
+    // we need to construct the reference from the split height of the contract document
+    // type which is at 5 for the contested tree
+    // 0 represents document storage
+    // Then we add document id
+    // Then we add 0 if the document type keys history
+    let reference_path = vec![vec![0], document.id().to_vec()];
+    let max_reference_hops = 1;
+    // 2 because the contract could allow for history
+    // 5 because
+    // -VotesTree
+    // -ContestedResourceTree
+    // -ActivePolls
+    // -DataContract ID
+    // - DocumentType
+    // We add 2
+    // - 0 Storage
+    // - Document id
+    Element::Reference(
+        UpstreamRootHeightReference(5, reference_path),
+        Some(max_reference_hops),
+        StorageFlags::map_to_some_element_flags(storage_flags),
+    )
+}
+
+#[cfg(feature = "server")]
 /// size of a document reference.
 fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     // we need to construct the reference from the split height of the contract document

@@ -108,9 +108,7 @@ pub fn vote_contested_resource_active_polls_tree_path_vec() -> Vec<Vec<u8>> {
 
 #[cfg(feature = "server")]
 /// Returns the path to the primary keys of a contract document type.
-pub fn vote_contested_resource_active_polls_contract_tree_path(
-    contract_id: &[u8],
-) -> [&[u8]; 4] {
+pub fn vote_contested_resource_active_polls_contract_tree_path(contract_id: &[u8]) -> [&[u8]; 4] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes), // 1
         &[CONTESTED_RESOURCE_TREE_KEY as u8],    // 1

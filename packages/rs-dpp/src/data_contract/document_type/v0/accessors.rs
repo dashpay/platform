@@ -32,7 +32,10 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
     }
 
     fn find_contested_index(&self) -> Option<&Index> {
-        self.indices.iter().find(|(_, index)| index.contested_index.is_some()).map(|(_, contested_index)| contested_index)
+        self.indices
+            .iter()
+            .find(|(_, index)| index.contested_index.is_some())
+            .map(|(_, contested_index)| contested_index)
     }
 
     fn index_structure(&self) -> &IndexLevel {

@@ -71,7 +71,7 @@ impl Drive {
             transaction,
             platform_version,
         )?;
-        
+
         self.add_contested_indices_for_contract_operations(
             &document_and_contract_info,
             previous_batch_operations,
