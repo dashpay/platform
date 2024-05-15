@@ -18,8 +18,11 @@ const HISTOGRAM_ABCI_REQUEST_DURATION: &str = "abci_request_duration_seconds";
 const LABEL_ENDPOINT: &str = "endpoint";
 const LABEL_RESPONSE_CODE: &str = "response_code";
 const HISTOGRAM_QUERY_DURATION: &str = "abci_query_duration";
-pub const LABEL_ST_TYPE: &str = "st_type";
+/// Metrics label to specify state transition name
+pub const LABEL_SATE_TRANSITION_NAME: &str = "st_name";
+/// Metrics label to specify check tx mode: 0 - first time check, 1 - recheck
 pub const LABEL_CHECK_TX_MODE: &str = "check_tx_mode";
+/// Metrics label to specify check tx response code
 pub const LABEL_CHECK_TX_RESPONSE: &str = "check_tx_response";
 
 /// Error returned by metrics subsystem

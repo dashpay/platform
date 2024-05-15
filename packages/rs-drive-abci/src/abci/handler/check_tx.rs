@@ -1,7 +1,7 @@
 use crate::abci::handler::error::consensus::AbciResponseInfoGetter;
 use crate::abci::handler::error::HandlerError;
 use crate::error::Error;
-use crate::metrics::{LABEL_CHECK_TX_MODE, LABEL_CHECK_TX_RESPONSE, LABEL_ST_TYPE};
+use crate::metrics::{LABEL_CHECK_TX_MODE, LABEL_CHECK_TX_RESPONSE, LABEL_SATE_TRANSITION_NAME};
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::codes::ErrorWithCode;
@@ -46,6 +46,7 @@ where
 
             let gas_wanted = check_tx_result
                 .fee_result
+                .as_ref()
                 .map(|fee_result| fee_result.total_base_fee())
                 .unwrap_or_default();
 
@@ -56,7 +57,13 @@ where
                 .cloned()
                 .unwrap_or_default();
 
-            let state_transition_name = check_tx_result.state_transition_name.to_owned();
+            let state_transition_name = if check_tx_result.state_transition_name.is_empty() {
+                "Unknown".to_string()
+            } else {
+                check_tx_result.state_transition_name.to_owned()
+            };
+
+            let priority = check_tx_result.priority as i64;
 
             let message = match (r#type, code) {
                 (0, 0) => "added to mempool".to_string(),
@@ -73,7 +80,10 @@ where
                 hex::encode(check_tx_result.state_transition_hash),
             );
 
-            timer.add_label(Label::new(LABEL_ST_TYPE, state_transition_name));
+            timer.add_label(Label::new(
+                LABEL_SATE_TRANSITION_NAME,
+                state_transition_name,
+            ));
             timer.add_label(Label::new(LABEL_CHECK_TX_MODE, r#type.to_string()));
             timer.add_label(Label::new(LABEL_CHECK_TX_RESPONSE, code.to_string()));
 
@@ -84,18 +94,13 @@ where
                 gas_wanted: gas_wanted as SignedCredits,
                 codespace: "".to_string(),
                 sender: first_unique_identifier,
-                priority: check_tx_result.priority as i64,
+                priority,
             })
         }
         Err(error) => {
             let handler_error = HandlerError::Internal(error.to_string());
 
-            tracing::error!(
-                ?error,
-                check_tx_mode = r#type,
-                "check_tx failed: {}"
-                error
-            );
+            tracing::error!(?error, check_tx_mode = r#type, "check_tx failed: {}", error);
 
             timer.cancel();
 
