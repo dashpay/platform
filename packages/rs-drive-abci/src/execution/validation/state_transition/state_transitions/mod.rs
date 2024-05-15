@@ -29,7 +29,7 @@ pub enum ValidationMode {
     CheckTx,
     /// Rechecking a state transition every block
     RecheckTx,
-    /// The validation of the validator
+    /// The validation during block execution by a proposer or validator
     Validator,
     /// A validation mode used to get the action with no validation
     NoValidation,

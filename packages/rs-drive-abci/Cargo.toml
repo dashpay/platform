@@ -98,6 +98,7 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 drive = { path = "../rs-drive" }
 strategy-tests = { path = "../strategy-tests" }
+assert_matches = "1.5.0"
 
 # For tests of grovedb verify
 rocksdb = { version = "0.22.0" }

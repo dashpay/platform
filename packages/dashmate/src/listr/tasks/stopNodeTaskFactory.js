@@ -1,4 +1,7 @@
+/* eslint-disable no-console */
 import { Listr } from 'listr2';
+import { MIN_BLOCKS_BEFORE_DKG } from '../../constants.js';
+import waitForDKGWindowPass from '../../core/quorum/waitForDKGWindowPass.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -35,6 +38,36 @@ export default function stopNodeTaskFactory(
         },
       },
       {
+        title: 'Check node is participating in DKG',
+        enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && !ctx.isSafe,
+        task: async () => {
+          const rpcClient = createRpcClient({
+            port: config.get('core.rpc.port'),
+            user: config.get('core.rpc.user'),
+            pass: config.get('core.rpc.password'),
+            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
+          });
+
+          const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
+          const { next_dkg: nextDkg } = dkgInfo;
+
+          if (nextDkg <= MIN_BLOCKS_BEFORE_DKG) {
+            throw new Error('Your node is currently participating in DKG exchange session and '
+              + 'stopping it right now may result in PoSE ban. Try again later, or continue with --force or --safe flags');
+          }
+        },
+      },
+      {
+        title: 'Wait for DKG window to pass',
+        enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && ctx.isSafe,
+        task: async () => waitForDKGWindowPass(createRpcClient({
+          port: config.get('core.rpc.port'),
+          user: config.get('core.rpc.user'),
+          pass: config.get('core.rpc.password'),
+          host: await getConnectionHost(config, 'core', 'core.rpc.host'),
+        })),
+      },
+      {
         title: 'Save core node time',
         enabled: () => config.get('group') === 'local',
         skip: (ctx) => ctx.isForce,
@@ -58,7 +91,6 @@ export default function stopNodeTaskFactory(
           if (ctx.platformOnly) {
             profiles.push('platform');
           }
-
           await dockerCompose.stop(config, { profiles });
         },
       },

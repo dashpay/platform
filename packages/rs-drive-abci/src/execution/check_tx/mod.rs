@@ -14,10 +14,8 @@ mod v0;
 
 // @append_only
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug)]
 pub enum CheckTxLevel {
-    #[default]
-    Unknown,
     FirstTimeCheck,
     Recheck,
 }
@@ -53,7 +51,7 @@ impl TryFrom<i32> for CheckTxLevel {
 }
 
 /// The result of a check tx
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct CheckTxResult {
     /// The level used when checking the transaction
     pub level: CheckTxLevel,

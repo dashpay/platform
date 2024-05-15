@@ -32,6 +32,9 @@ use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityL
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
+use crate::data_contract::document_type::class_methods::{
+    consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
+};
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
     TRADE_MODE, TRANSFERABLE,
@@ -69,36 +72,6 @@ const SYSTEM_PROPERTIES: [&str; 11] = [
 const MAX_INDEXED_STRING_PROPERTY_LENGTH: u16 = 63;
 const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: u16 = 255;
 const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
-
-#[inline]
-fn consensus_or_protocol_data_contract_error(
-    data_contract_error: DataContractError,
-) -> ProtocolError {
-    #[cfg(feature = "validation")]
-    {
-        ProtocolError::ConsensusError(
-            ConsensusError::BasicError(BasicError::ContractError(data_contract_error)).into(),
-        )
-    }
-    #[cfg(not(feature = "validation"))]
-    {
-        ProtocolError::DataContractError(data_contract_error)
-    }
-}
-
-#[inline]
-fn consensus_or_protocol_value_error(platform_value_error: platform_value::Error) -> ProtocolError {
-    #[cfg(feature = "validation")]
-    {
-        ProtocolError::ConsensusError(
-            ConsensusError::BasicError(BasicError::ValueError(platform_value_error.into())).into(),
-        )
-    }
-    #[cfg(not(feature = "validation"))]
-    {
-        ProtocolError::ValueError(platform_value_error.into())
-    }
-}
 
 impl DocumentTypeV0 {
     // TODO: Split into multiple functions
@@ -811,6 +784,7 @@ fn insert_values_nested(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use platform_value::platform_value;
 
     mod document_type_name {
@@ -874,15 +848,17 @@ mod tests {
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 result,
-                Err(ProtocolError::ConsensusError(boxed)
-            ) if matches!(
-                boxed.as_ref(),
-                ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
-                ))
-            ));
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                        )
+                    )
+                }
+            );
         }
 
         #[test]
@@ -913,15 +889,17 @@ mod tests {
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 result,
-                Err(ProtocolError::ConsensusError(boxed)
-            ) if matches!(
-                boxed.as_ref(),
-                ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
-                ))
-            ));
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                        )
+                    )
+                }
+            );
         }
 
         #[test]
@@ -952,15 +930,17 @@ mod tests {
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 result,
-                Err(ProtocolError::ConsensusError(boxed)
-            ) if matches!(
-                boxed.as_ref(),
-                ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
-                ))
-            ));
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                        )
+                    )
+                }
+            );
 
             let result = DocumentTypeV0::try_from_schema_v0(
                 Identifier::new([1; 32]),
@@ -975,15 +955,17 @@ mod tests {
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 result,
-                Err(ProtocolError::ConsensusError(boxed)
-            ) if matches!(
-                boxed.as_ref(),
-                ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
-                ))
-            ));
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                        )
+                    )
+                }
+            );
         }
     }
 }

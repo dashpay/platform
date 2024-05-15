@@ -55,6 +55,8 @@ type DefinitionName = String;
 pub type DocumentName = String;
 type PropertyPath = String;
 
+pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
+
 /// Understanding Data Contract versioning
 /// Data contract versioning is both for the code structure and for serialization.
 ///

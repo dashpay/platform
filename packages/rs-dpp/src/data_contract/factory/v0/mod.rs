@@ -13,7 +13,7 @@ use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::data_contract::DataContract;
+use crate::data_contract::{DataContract, INITIAL_DATA_CONTRACT_VERSION};
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -82,7 +82,7 @@ impl DataContractFactoryV0 {
         let format = DataContractInSerializationFormat::V0(DataContractInSerializationFormatV0 {
             id: data_contract_id,
             config: config.unwrap_or(DataContractConfig::default_for_version(platform_version)?),
-            version: 1,
+            version: INITIAL_DATA_CONTRACT_VERSION,
             owner_id,
             document_schemas: documents_map,
             schema_defs: defs,

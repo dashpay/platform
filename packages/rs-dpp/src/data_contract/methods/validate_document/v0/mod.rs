@@ -14,7 +14,7 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::ops::Deref;
 
-pub trait DataContractValidationMethodsV0 {
+pub trait DataContractDocumentValidationMethodsV0 {
     fn validate_document(
         &self,
         name: &str,

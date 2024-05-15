@@ -177,6 +177,8 @@ USAGE
   $ dashmate start [-v] [--config <value>] [-w]
 
 FLAGS
+  -f, --force               force start even if any services are already running
+  -p, --platform            start only platform
   -v, --verbose             use verbose mode for output
   -w, --wait-for-readiness  wait for nodes to be ready
   --config=<value>          configuration name to use
@@ -193,12 +195,15 @@ The `stop` command is used to stop a running node.
 
 ```
 USAGE
-  $ dashmate stop [-v] [--config <value>] [-f]
+  $ dashmate stop [--config <value>] [-v] [-f] [-p] [-s]
 
 FLAGS
-  -f, --force       force stop even if any is running
+  -f, --force       force stop even if any service is running
+  -p, --platform    stop only platform
+  -s, --safe        wait for dkg before stop
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
+
 ```
 
 To stop a node:
@@ -212,11 +217,13 @@ The `restart` command is used to restart a node with the default or specified co
 
 ```
 USAGE
-  $ dashmate restart [-v] [--config <value>]
+  $ dashmate restart [--config <value>] [-v] [-p] [-s]
 
 FLAGS
-  -v, --verbose     use verbose mode for output
-  --config=<value>  configuration name to use
+  -p, --platform        restart only platform
+  -s, --safe            wait for dkg before stop
+  -v, --verbose         use verbose mode for output
+      --config=<value>  configuration name to use
 ```
 
 ### Show node status
@@ -391,7 +398,8 @@ USAGE
   $ dashmate group stop [-v] [--group <value>] [-f]
 
 FLAGS
-  -f, --force      force stop even if any service is running
+  -f, --force      force stop even if any is running
+  -s, --safe       wait for dkg before stop
   -v, --verbose    use verbose mode for output
   --group=<value>  group name to use
 ```
@@ -402,11 +410,15 @@ The `group restart` command is used to restart group nodes belonging to the defa
 
 ```
 USAGE
-  $ dashmate group restart [-v] [--group <value>]
+  $ dashmate group restart [--group <value>] [-v] [-s]
 
 FLAGS
-  -v, --verbose    use verbose mode for output
-  --group=<value>  group name to use
+  -s, --safe           wait for dkg before stop
+  -v, --verbose        use verbose mode for output
+      --group=<value>  group name to use
+
+DESCRIPTION
+  Restart group nodes
 ```
 
 #### Show group status

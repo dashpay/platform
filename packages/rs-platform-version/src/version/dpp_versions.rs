@@ -155,6 +155,7 @@ pub struct ContractVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DataContractMethodVersions {
     pub validate_document: FeatureVersion,
+    pub validate_update: FeatureVersion,
     pub schema: FeatureVersion,
 }
 
