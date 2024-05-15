@@ -1,5 +1,6 @@
 use crate::abci::handler::error::consensus::AbciResponseInfoGetter;
 use crate::abci::handler::error::HandlerError;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -20,13 +21,16 @@ where
     let platform_version = platform_state.current_platform_version()?;
 
     let proto::RequestCheckTx { tx, r#type } = request;
-    match platform.check_tx(
+
+    let validation_result = platform.check_tx(
         tx.as_slice(),
         r#type.try_into()?,
         &platform_state,
         platform_version,
-    ) {
-        Ok(validation_result) => {
+    );
+
+    validation_result
+        .and_then(|validation_result| {
             let first_consensus_error = validation_result.errors.first();
 
             let (code, info) = if let Some(consensus_error) = first_consensus_error {
@@ -39,7 +43,11 @@ where
                 (0, "".to_string())
             };
 
-            let check_tx_result = validation_result.data.unwrap_or_default();
+            let check_tx_result = validation_result.into_data().map_err(|_| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "validation result should contain check tx result",
+                ))
+            })?;
 
             let gas_wanted = check_tx_result
                 .fee_result
@@ -62,8 +70,8 @@ where
                 sender: first_unique_identifier,
                 priority: check_tx_result.priority as i64,
             })
-        }
-        Err(error) => {
+        })
+        .or_else(|error| {
             let handler_error = HandlerError::Internal(error.to_string());
 
             tracing::error!(?error, "check_tx failed");
@@ -77,6 +85,5 @@ where
                 sender: "".to_string(),
                 priority: 0,
             })
-        }
-    }
+        })
 }

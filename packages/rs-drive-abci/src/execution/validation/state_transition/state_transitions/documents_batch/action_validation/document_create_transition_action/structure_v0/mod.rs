@@ -2,7 +2,7 @@ use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, InvalidDo
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
-use dpp::data_contract::validation::DataContractValidationMethodsV0;
+use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::identifier::Identifier;
 use dpp::validation::{SimpleConsensusValidationResult};
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;

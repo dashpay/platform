@@ -9,7 +9,9 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Can't update Document Type {data_contract_id}::{document_type_name} config: {additional_message}")]
+#[error(
+    "Can't update Document Type {data_contract_id}::{document_type_name}: {additional_message}"
+)]
 #[platform_serialize(unversioned)]
 pub struct DocumentTypeUpdateError {
     /*

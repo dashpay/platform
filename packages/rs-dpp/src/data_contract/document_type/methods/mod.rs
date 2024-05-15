@@ -4,6 +4,7 @@ mod estimated_size;
 mod index_for_types;
 mod max_size;
 mod serialize_value_for_key;
+#[cfg(feature = "validation")]
 mod validate_update;
 
 use std::collections::BTreeMap;

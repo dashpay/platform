@@ -7,33 +7,31 @@ use dpp::ProtocolError;
 #[derive(Debug, Default)]
 pub struct StateTransitionContainerV0<'a> {
     /// The asset lock state transitions
-    pub(super) valid_state_transitions: Vec<(&'a Vec<u8>, StateTransition)>,
+    pub(super) valid_state_transitions: Vec<(&'a [u8], StateTransition)>,
     /// Deserialization errors
-    pub(super) invalid_state_transitions: Vec<(&'a Vec<u8>, ConsensusError)>,
+    pub(super) invalid_state_transitions: Vec<(&'a [u8], ConsensusError)>,
     /// Deserialization errors that broke platform, these should not exist, but are still handled
-    pub(super) invalid_state_transitions_with_protocol_error: Vec<(&'a Vec<u8>, ProtocolError)>,
+    pub(super) invalid_state_transitions_with_protocol_error: Vec<(&'a [u8], ProtocolError)>,
 }
 
 pub trait StateTransitionContainerGettersV0<'a> {
-    fn valid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, StateTransition)];
-    fn invalid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, ConsensusError)];
-    fn invalid_state_transitions_with_protocol_error(
-        &'a self,
-    ) -> &'a [(&'a Vec<u8>, ProtocolError)];
+    fn valid_state_transitions(&'a self) -> &'a [(&'a [u8], StateTransition)];
+    fn invalid_state_transitions(&'a self) -> &'a [(&'a [u8], ConsensusError)];
+    fn invalid_state_transitions_with_protocol_error(&'a self) -> &'a [(&'a [u8], ProtocolError)];
 
     fn destructure(
         self,
     ) -> (
-        Vec<(&'a Vec<u8>, StateTransition)>,
-        Vec<(&'a Vec<u8>, ConsensusError)>,
-        Vec<(&'a Vec<u8>, ProtocolError)>,
+        Vec<(&'a [u8], StateTransition)>,
+        Vec<(&'a [u8], ConsensusError)>,
+        Vec<(&'a [u8], ProtocolError)>,
     );
 }
 
 impl<'a> StateTransitionContainerV0<'a> {
     pub fn push_valid_state_transition(
         &mut self,
-        raw_state_transition: &'a Vec<u8>,
+        raw_state_transition: &'a [u8],
         valid_state_transition: StateTransition,
     ) {
         self.valid_state_transitions
@@ -42,7 +40,7 @@ impl<'a> StateTransitionContainerV0<'a> {
 
     pub fn push_invalid_raw_state_transition(
         &mut self,
-        invalid_raw_state_transition: &'a Vec<u8>,
+        invalid_raw_state_transition: &'a [u8],
         error: ConsensusError,
     ) {
         self.invalid_state_transitions
@@ -51,7 +49,7 @@ impl<'a> StateTransitionContainerV0<'a> {
 
     pub fn push_invalid_raw_state_transition_with_protocol_error(
         &mut self,
-        invalid_raw_state_transition: &'a Vec<u8>,
+        invalid_raw_state_transition: &'a [u8],
         error: ProtocolError,
     ) {
         self.invalid_state_transitions_with_protocol_error

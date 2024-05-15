@@ -55,6 +55,12 @@ impl DataContractInSerializationFormat {
             DataContractInSerializationFormat::V0(v0) => v0.schema_defs.as_ref(),
         }
     }
+
+    pub fn version(&self) -> u32 {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => v0.version,
+        }
+    }
 }
 
 impl TryFromPlatformVersioned<DataContractV0> for DataContractInSerializationFormat {

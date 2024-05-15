@@ -1,7 +1,11 @@
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUpdateError;
 use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;
+#[cfg(feature = "validation")]
+use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
@@ -157,5 +161,272 @@ impl IndexLevel {
         }
 
         Ok(index_level)
+    }
+
+    #[cfg(feature = "validation")]
+    pub fn validate_update(
+        &self,
+        document_type_name: &str,
+        new_indices: &Self,
+    ) -> SimpleConsensusValidationResult {
+        // There is no changes. All good
+        if self == new_indices {
+            return SimpleConsensusValidationResult::new();
+        }
+
+        // We do not allow any index modifications now, but we want to figure out
+        // what changed, so we compare one way then the other
+
+        // If the new contract document type doesn't contain all previous indexes
+        if let Some(non_subset_path) = new_indices.contains_subset_first_non_subset_path(self) {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    non_subset_path,
+                )
+                .into(),
+            );
+        }
+
+        // If the old contract document type doesn't contain all new indexes
+        if let Some(non_subset_path) = self.contains_subset_first_non_subset_path(new_indices) {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    non_subset_path,
+                )
+                .into(),
+            );
+        }
+
+        SimpleConsensusValidationResult::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::document_type::IndexProperty;
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn should_pass_if_indices_are_the_same() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure = old_index_structure.clone();
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn should_pass_if_new_index_with_only_new_field_is_add() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+        }];
+
+        let new_indices = vec![
+            Index {
+                name: "test".to_string(),
+                properties: vec![IndexProperty {
+                    name: "test".to_string(),
+                    ascending: false,
+                }],
+                unique: false,
+            },
+            Index {
+                name: "test2".to_string(),
+                properties: vec![IndexProperty {
+                    name: "test2".to_string(),
+                    ascending: false,
+                }],
+                unique: false,
+            },
+        ];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "test2"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_some_indices_are_removed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![
+            Index {
+                name: "test".to_string(),
+                properties: vec![IndexProperty {
+                    name: "test".to_string(),
+                    ascending: false,
+                }],
+                unique: false,
+            },
+            Index {
+                name: "test2".to_string(),
+                properties: vec![IndexProperty {
+                    name: "test2".to_string(),
+                    ascending: false,
+                }],
+                unique: false,
+            },
+        ];
+
+        let new_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "test2"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_additional_property_is_added_to_existing_index() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+        }];
+
+        let new_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "test".to_string(),
+                    ascending: false,
+                },
+                IndexProperty {
+                    name: "test2".to_string(),
+                    ascending: false,
+                },
+            ],
+            unique: false,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "test -> test2"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_property_is_removed_to_existing_index() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "test".to_string(),
+                    ascending: false,
+                },
+                IndexProperty {
+                    name: "test2".to_string(),
+                    ascending: false,
+                },
+            ],
+            unique: false,
+        }];
+
+        let new_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "test -> test2"
+        );
     }
 }

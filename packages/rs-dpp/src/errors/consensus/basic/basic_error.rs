@@ -7,10 +7,10 @@ use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error
 #[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::data_contract::{
-    DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError,
-    DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
-    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
-    IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
+    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
@@ -171,9 +171,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     IncompatibleDataContractSchemaError(IncompatibleDataContractSchemaError),
-
-    #[error(transparent)]
-    DataContractEmptySchemaError(DataContractEmptySchemaError),
 
     #[error(transparent)]
     DataContractImmutablePropertiesUpdateError(DataContractImmutablePropertiesUpdateError),
@@ -372,6 +369,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidDocumentTypeNameError(InvalidDocumentTypeNameError),
+
+    #[error(transparent)]
+    IncompatibleDocumentTypeSchemaError(IncompatibleDocumentTypeSchemaError),
 }
 
 impl From<BasicError> for ConsensusError {

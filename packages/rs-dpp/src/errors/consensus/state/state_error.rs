@@ -27,6 +27,7 @@ use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
 use crate::consensus::ConsensusError;
+use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
@@ -127,6 +128,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentTypeUpdateError(DocumentTypeUpdateError),
+
+    #[error(transparent)]
+    DataContractUpdatePermissionError(DataContractUpdatePermissionError),
 }
 
 impl From<StateError> for ConsensusError {

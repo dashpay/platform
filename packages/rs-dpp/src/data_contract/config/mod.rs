@@ -133,7 +133,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
     /// Decryption key storage requirements
     fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
         match self {
-            DataContractConfig::V0(v0) => v0.requires_identity_encryption_bounded_key,
+            DataContractConfig::V0(v0) => v0.requires_identity_decryption_bounded_key,
         }
     }
 }
