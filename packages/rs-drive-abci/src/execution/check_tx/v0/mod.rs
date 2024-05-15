@@ -148,6 +148,7 @@ where
 
         check_tx_result.priority =
             user_fee_increase.saturating_mul(PRIORITY_USER_FEE_INCREASE_MULTIPLIER);
+
         check_tx_result.unique_identifiers = state_transition.unique_identifiers();
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
@@ -159,25 +160,32 @@ where
         // If there are any validation errors happen we return
         // the validation result with errors and CheckTxResult data
         if !validation_result.is_valid() {
-            return Ok(validation_result.map(|_| check_tx_result));
+            return Ok(ValidationResult::new_with_data_and_errors(
+                check_tx_result,
+                validation_result.errors,
+            ));
         }
 
-        // State transition pre-validation succeeded
+        // If we are here then state transition pre-validation succeeded
+
         // We should run the execution event in dry run (estimated fees)
         // to see if we would have enough fees for the transition
         if let Some(execution_event) = validation_result.into_data()? {
-            self.validate_fees_of_event(
+            let validation_result = self.validate_fees_of_event(
                 &execution_event,
                 platform_state.last_block_info(),
                 None,
                 platform_version,
-            )
-            .map(|validation_result| {
-                validation_result.map(|fee_result| {
-                    check_tx_result.fee_result = Some(fee_result);
-                    check_tx_result
-                })
-            })
+            )?;
+
+            let (estimated_fee_result, errors) = validation_result.into_data_and_errors()?;
+
+            check_tx_result.fee_result = Some(estimated_fee_result);
+
+            Ok(ValidationResult::new_with_data_and_errors(
+                check_tx_result,
+                errors,
+            ))
         } else {
             // In case of asset lock based transitions, we don't have execution event
             // because we already validated remaining balance
