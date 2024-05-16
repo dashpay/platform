@@ -11,7 +11,7 @@ use grovedb_storage::worst_case_costs::WorstKeyLength;
 use std::collections::HashSet;
 
 /// Path key info
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum PathKeyInfo<'a, const N: usize> {
     /// An into iter Path with a Key
     PathFixedSizeKey(([&'a [u8]; N], Vec<u8>)),

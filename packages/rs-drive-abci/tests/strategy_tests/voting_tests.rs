@@ -23,7 +23,7 @@ mod tests {
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     #[test]
-    fn run_chain_block_two_state_transitions_conflicting_unique_index() {
+    fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the dpns contract and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -199,6 +199,6 @@ mod tests {
             .expect("expected a document insert")
             .1;
 
-        assert_eq!(second_document_insert_result.code, 4009); // we expect an error
+        assert_eq!(second_document_insert_result.code, 0); // we expect the second to also be insertable as they are both contested
     }
 }

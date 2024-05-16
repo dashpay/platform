@@ -329,7 +329,7 @@ pub struct DriveDocumentInsertContestedMethodVersions {
     pub add_contested_document_for_contract_operations: FeatureVersion,
     pub add_contested_document_to_primary_storage: FeatureVersion,
     pub add_contested_indices_for_contract_operations: FeatureVersion,
-    pub add_contested_reference_to_document_operations: FeatureVersion,
+    pub add_contested_reference_and_vote_subtree_to_document_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

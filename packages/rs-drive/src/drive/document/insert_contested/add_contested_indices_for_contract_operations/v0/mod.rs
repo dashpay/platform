@@ -11,17 +11,18 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::drive::defaults::{CONTESTED_DOCUMENT_REFERENCE_SIZE, DEFAULT_HASH_SIZE_U8, U8_SIZE_U8};
 use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
 use crate::error::drive::DriveError;
 use dpp::data_contract::document_type::IndexProperty;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::AllSubtrees;
-use grovedb::EstimatedSumTrees::NoSumTrees;
+use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
+use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use crate::drive::document::document_reference_size;
 
 impl Drive {
     /// Adds indices for the top index level and calls for lower levels.
@@ -159,7 +160,17 @@ impl Drive {
             index_path_info.push(document_top_field)?;
         }
 
-        // at the end of all of this we put the identity tree that will hold the votes
+        // Under each tree we have all identifiers of identities that want the contested resource
+        // Contrary to normal secondary indexes there are no property names and there is no termination key "0"
+        // We get something like
+        //                Inter-wizard championship (event type)
+        //                             |
+        //                       Goblet of Fire (event name) <---- We just inserted this
+        //                  /                    \
+        //              Sam's ID                Ivan's ID  <---- We now need to insert at this level
+        //             /    \                  /      \
+        //         0 (ref)   1 (sum tree)    0 (ref)   1 (sum tree)
+        //
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have all the identities
@@ -167,7 +178,7 @@ impl Drive {
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
                     is_sum_tree: false,
-                    estimated_layer_count: PotentiallyAtMaxElements,
+                    estimated_layer_count: ApproximateElements(16), // very seldom would more than 16 people want the resource
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
                         NoSumTrees,
@@ -188,7 +199,18 @@ impl Drive {
             drive_version,
         )?;
         
-        self.add_contested_reference_to_document_operations(document_and_contract_info, index_path_info, previous_batch_operations, storage_flags, estimated_costs_only_with_layer_info, transaction, batch_operations, drive_version)
+        index_path_info.push(DriveKeyInfo::Key(owner_id.to_vec()))?;
+
+        //                Inter-wizard championship (event type)
+        //                             |
+        //                       Goblet of Fire (event name) 
+        //                  /                    \
+        //              Sam's ID                Ivan's ID  <---- We just inserted this 
+        //             /    \                  /      \
+        //         0 (ref)   1 (sum tree)    0 (ref)   1 (sum tree) <---- We now need to insert at this level
+        //
+        
+        self.add_contested_reference_and_vote_subtree_to_document_operations(document_and_contract_info, index_path_info, storage_flags, estimated_costs_only_with_layer_info, transaction, batch_operations, drive_version)
         
     }
 }

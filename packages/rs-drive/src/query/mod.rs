@@ -255,6 +255,7 @@ impl QueryResultEncoding {
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Drive query struct
+// todo: rename to DriveDocumentQuery
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveQuery<'a> {
     ///DataContract

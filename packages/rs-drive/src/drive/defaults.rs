@@ -75,6 +75,12 @@ pub const U32_SIZE: u32 = 4;
 /// u32 size
 pub const U32_SIZE_U16: u16 = 4;
 
+/// u8 size
+pub const U8_SIZE_U8: u8 = 1;
+
+/// u32 size
+pub const U8_SIZE_U32: u32 = 1;
+
 /// u32 size
 pub const U32_SIZE_U8: u8 = 4;
 /// Default float size as u16
@@ -119,3 +125,22 @@ pub const ESTIMATED_NON_UNIQUE_KEY_DUPLICATES: u32 = 2;
 
 /// The average size of an item that is acting as a tree reference towards the contested item vote
 pub const AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE: u32 = 150;
+
+/// Contested document reference size
+// we need to construct the reference from the split height of the contract document
+// type which is at 4
+// 0 represents document storage
+// Then we add document id
+// Then we add 0 if the document type keys history
+// vec![vec![0], Vec::from(document.id)];
+// 1 (vec size) + 1 (subvec size) + 32 (document id size) = 34
+// + 6 = 40
+// 6 because of:
+// 1 for type reference
+// 1 for reference type
+// 1 for root height offset
+// reference path size
+// 1 reference_hops options
+// 1 reference_hops count
+// 1 element flags option
+pub const CONTESTED_DOCUMENT_REFERENCE_SIZE: u32 = 40;

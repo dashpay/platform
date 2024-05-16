@@ -35,8 +35,12 @@ service Platform {
   rpc getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse);
   rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
   rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
+  // What's the state of a contested resource vote? (ie who is winning?)
   rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
-  rpc getContestedResourceVoteStatus(GetContestedResourceVoteStatusRequest) returns (GetContestedResourceVoteStatusResponse);
+  // Who voted for a contested resource to go to a specific identity?
+  rpc getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse);
+  // How did an identity vote?
+  rpc getContestedResourceIdentityVoteStatus(GetContestedResourceIdentityVoteStatusRequest) returns (GetContestedResourceIdentityVoteStatusResponse);
   rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
 }
@@ -667,14 +671,21 @@ message GetContestedResourcesResponse {
   }
 }
 
+// What's the state of a contested resource vote? (ie who is winning?)
 message GetContestedResourceVoteStateRequest {
   message GetContestedResourceVoteStateRequestV0 {
-    bool prove = 1;
-    repeated bytes resource_path = 2;
-    bytes contested_resource = 3;
-    optional bytes start_identifier = 4;
-    optional uint32 count = 5;
-    optional bool ascending = 6;
+    message StartAtIdentifierInfo {
+      bytes start_identifier = 1;
+      uint32 count = 2;
+      bool ascending = 3;
+    }
+    bytes contract_id = 1;
+    string document_type_name = 2;
+    string index_name = 3;
+    repeated bytes index_values = 4;
+    bool include_documents = 5;
+    optional StartAtIdentifierInfo start_at_identifier_info = 6;
+    bool prove = 7;
   }
 
   oneof version {
@@ -686,12 +697,12 @@ message GetContestedResourceVoteStateResponse {
   message GetContestedResourceVoteStateResponseV0 {
     message ContestedResourceContenders {
       repeated Contender contenders = 1;
-      bool finished_results = 2;
     }
 
     message Contender {
       bytes identifier = 1;
       uint32 vote_count = 2;
+      optional bytes document = 3;
     }
 
     oneof result {
@@ -706,9 +717,9 @@ message GetContestedResourceVoteStateResponse {
   }
 }
 
-
-message GetContestedResourceVoteStatusRequest {
-  message GetContestedResourceVoteStatusRequestV0 {
+// Who voted for a contested resource to go to a specific identity?
+message GetContestedResourceVotersForIdentityRequest {
+  message GetContestedResourceVotersForIdentityRequestV0 {
     bool prove = 1;
     repeated bytes resource_path = 2;
     bytes resource_identifier = 3;
@@ -718,12 +729,12 @@ message GetContestedResourceVoteStatusRequest {
   }
 
   oneof version {
-    GetContestedResourceVoteStatusRequestV0 v0 = 1;
+    GetContestedResourceVotersForIdentityRequestV0 v0 = 1;
   }
 }
 
-message GetContestedResourceVoteStatusResponse {
-  message GetContestedResourceVoteStatusResponseV0 {
+message GetContestedResourceVotersForIdentityResponse {
+  message GetContestedResourceVotersForIdentityResponseV0 {
     message ContestedResourceVoters {
       repeated Voter voters = 1;
       bool finished_results = 2;
@@ -741,7 +752,46 @@ message GetContestedResourceVoteStatusResponse {
   }
 
   oneof version {
-    GetContestedResourceVoteStatusResponseV0 v0 = 1;
+    GetContestedResourceVotersForIdentityResponseV0 v0 = 1;
+  }
+}
+
+// How did an identity vote?
+message GetContestedResourceIdentityVoteStatusRequest {
+  message GetContestedResourceIdentityVoteStatusRequestV0 {
+    bool prove = 1;
+    repeated bytes resource_path = 2;
+    bytes resource_identifier = 3;
+    optional bytes voter_identifier = 4;
+    optional uint32 count = 5;
+    optional bool ascending = 6;
+  }
+
+  oneof version {
+    GetContestedResourceIdentityVoteStatusRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceIdentityVoteStatusResponse {
+  message GetContestedResourceIdentityVoteStatusResponseV0 {
+    message ContestedResourceVoters {
+      repeated Voter voters = 1;
+      bool finished_results = 2;
+    }
+
+    message Voter {
+      bytes identifier = 1;
+    }
+
+    oneof result {
+      ContestedResourceVoters contested_resource_voters = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourceIdentityVoteStatusResponseV0 v0 = 1;
   }
 }
 

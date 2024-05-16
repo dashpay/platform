@@ -2225,6 +2225,7 @@ pub mod get_contested_resources_response {
         V0(GetContestedResourcesResponseV0),
     }
 }
+/// What's the state of a contested resource vote? (ie who is winning?)
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::Mockable)]
@@ -2244,18 +2245,38 @@ pub mod get_contested_resource_vote_state_request {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetContestedResourceVoteStateRequestV0 {
-        #[prost(bool, tag = "1")]
+        #[prost(bytes = "vec", tag = "1")]
+        pub contract_id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(string, tag = "2")]
+        pub document_type_name: ::prost::alloc::string::String,
+        #[prost(string, tag = "3")]
+        pub index_name: ::prost::alloc::string::String,
+        #[prost(bytes = "vec", repeated, tag = "4")]
+        pub index_values: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        #[prost(bool, tag = "5")]
+        pub include_documents: bool,
+        #[prost(message, optional, tag = "6")]
+        pub start_at_identifier_info: ::core::option::Option<
+            get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo,
+        >,
+        #[prost(bool, tag = "7")]
         pub prove: bool,
-        #[prost(bytes = "vec", repeated, tag = "2")]
-        pub resource_path: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-        #[prost(bytes = "vec", tag = "3")]
-        pub contested_resource: ::prost::alloc::vec::Vec<u8>,
-        #[prost(bytes = "vec", optional, tag = "4")]
-        pub start_identifier: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-        #[prost(uint32, optional, tag = "5")]
-        pub count: ::core::option::Option<u32>,
-        #[prost(bool, optional, tag = "6")]
-        pub ascending: ::core::option::Option<bool>,
+    }
+    /// Nested message and enum types in `GetContestedResourceVoteStateRequestV0`.
+    pub mod get_contested_resource_vote_state_request_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct StartAtIdentifierInfo {
+            #[prost(bytes = "vec", tag = "1")]
+            pub start_identifier: ::prost::alloc::vec::Vec<u8>,
+            #[prost(uint32, tag = "2")]
+            pub count: u32,
+            #[prost(bool, tag = "3")]
+            pub ascending: bool,
+        }
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
@@ -2305,8 +2326,6 @@ pub mod get_contested_resource_vote_state_response {
         pub struct ContestedResourceContenders {
             #[prost(message, repeated, tag = "1")]
             pub contenders: ::prost::alloc::vec::Vec<Contender>,
-            #[prost(bool, tag = "2")]
-            pub finished_results: bool,
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
@@ -2318,6 +2337,8 @@ pub mod get_contested_resource_vote_state_response {
             pub identifier: ::prost::alloc::vec::Vec<u8>,
             #[prost(uint32, tag = "2")]
             pub vote_count: u32,
+            #[prost(bytes = "vec", optional, tag = "3")]
+            pub document: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
@@ -2339,25 +2360,29 @@ pub mod get_contested_resource_vote_state_response {
         V0(GetContestedResourceVoteStateResponseV0),
     }
 }
+/// Who voted for a contested resource to go to a specific identity?
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetContestedResourceVoteStatusRequest {
-    #[prost(oneof = "get_contested_resource_vote_status_request::Version", tags = "1")]
+pub struct GetContestedResourceVotersForIdentityRequest {
+    #[prost(
+        oneof = "get_contested_resource_voters_for_identity_request::Version",
+        tags = "1"
+    )]
     pub version: ::core::option::Option<
-        get_contested_resource_vote_status_request::Version,
+        get_contested_resource_voters_for_identity_request::Version,
     >,
 }
-/// Nested message and enum types in `GetContestedResourceVoteStatusRequest`.
-pub mod get_contested_resource_vote_status_request {
+/// Nested message and enum types in `GetContestedResourceVotersForIdentityRequest`.
+pub mod get_contested_resource_voters_for_identity_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetContestedResourceVoteStatusRequestV0 {
+    pub struct GetContestedResourceVotersForIdentityRequestV0 {
         #[prost(bool, tag = "1")]
         pub prove: bool,
         #[prost(bytes = "vec", repeated, tag = "2")]
@@ -2377,7 +2402,7 @@ pub mod get_contested_resource_vote_status_request {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag = "1")]
-        V0(GetContestedResourceVoteStatusRequestV0),
+        V0(GetContestedResourceVotersForIdentityRequestV0),
     }
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -2385,32 +2410,35 @@ pub mod get_contested_resource_vote_status_request {
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetContestedResourceVoteStatusResponse {
-    #[prost(oneof = "get_contested_resource_vote_status_response::Version", tags = "1")]
+pub struct GetContestedResourceVotersForIdentityResponse {
+    #[prost(
+        oneof = "get_contested_resource_voters_for_identity_response::Version",
+        tags = "1"
+    )]
     pub version: ::core::option::Option<
-        get_contested_resource_vote_status_response::Version,
+        get_contested_resource_voters_for_identity_response::Version,
     >,
 }
-/// Nested message and enum types in `GetContestedResourceVoteStatusResponse`.
-pub mod get_contested_resource_vote_status_response {
+/// Nested message and enum types in `GetContestedResourceVotersForIdentityResponse`.
+pub mod get_contested_resource_voters_for_identity_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetContestedResourceVoteStatusResponseV0 {
+    pub struct GetContestedResourceVotersForIdentityResponseV0 {
         #[prost(message, optional, tag = "3")]
         pub metadata: ::core::option::Option<super::ResponseMetadata>,
         #[prost(
-            oneof = "get_contested_resource_vote_status_response_v0::Result",
+            oneof = "get_contested_resource_voters_for_identity_response_v0::Result",
             tags = "1, 2"
         )]
         pub result: ::core::option::Option<
-            get_contested_resource_vote_status_response_v0::Result,
+            get_contested_resource_voters_for_identity_response_v0::Result,
         >,
     }
-    /// Nested message and enum types in `GetContestedResourceVoteStatusResponseV0`.
-    pub mod get_contested_resource_vote_status_response_v0 {
+    /// Nested message and enum types in `GetContestedResourceVotersForIdentityResponseV0`.
+    pub mod get_contested_resource_voters_for_identity_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
         #[derive(::dapi_grpc_macros::Mockable)]
@@ -2448,7 +2476,126 @@ pub mod get_contested_resource_vote_status_response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag = "1")]
-        V0(GetContestedResourceVoteStatusResponseV0),
+        V0(GetContestedResourceVotersForIdentityResponseV0),
+    }
+}
+/// How did an identity vote?
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetContestedResourceIdentityVoteStatusRequest {
+    #[prost(
+        oneof = "get_contested_resource_identity_vote_status_request::Version",
+        tags = "1"
+    )]
+    pub version: ::core::option::Option<
+        get_contested_resource_identity_vote_status_request::Version,
+    >,
+}
+/// Nested message and enum types in `GetContestedResourceIdentityVoteStatusRequest`.
+pub mod get_contested_resource_identity_vote_status_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetContestedResourceIdentityVoteStatusRequestV0 {
+        #[prost(bool, tag = "1")]
+        pub prove: bool,
+        #[prost(bytes = "vec", repeated, tag = "2")]
+        pub resource_path: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        #[prost(bytes = "vec", tag = "3")]
+        pub resource_identifier: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bytes = "vec", optional, tag = "4")]
+        pub voter_identifier: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+        #[prost(uint32, optional, tag = "5")]
+        pub count: ::core::option::Option<u32>,
+        #[prost(bool, optional, tag = "6")]
+        pub ascending: ::core::option::Option<bool>,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetContestedResourceIdentityVoteStatusRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetContestedResourceIdentityVoteStatusResponse {
+    #[prost(
+        oneof = "get_contested_resource_identity_vote_status_response::Version",
+        tags = "1"
+    )]
+    pub version: ::core::option::Option<
+        get_contested_resource_identity_vote_status_response::Version,
+    >,
+}
+/// Nested message and enum types in `GetContestedResourceIdentityVoteStatusResponse`.
+pub mod get_contested_resource_identity_vote_status_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetContestedResourceIdentityVoteStatusResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(
+            oneof = "get_contested_resource_identity_vote_status_response_v0::Result",
+            tags = "1, 2"
+        )]
+        pub result: ::core::option::Option<
+            get_contested_resource_identity_vote_status_response_v0::Result,
+        >,
+    }
+    /// Nested message and enum types in `GetContestedResourceIdentityVoteStatusResponseV0`.
+    pub mod get_contested_resource_identity_vote_status_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct ContestedResourceVoters {
+            #[prost(message, repeated, tag = "1")]
+            pub voters: ::prost::alloc::vec::Vec<Voter>,
+            #[prost(bool, tag = "2")]
+            pub finished_results: bool,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct Voter {
+            #[prost(bytes = "vec", tag = "1")]
+            pub identifier: ::prost::alloc::vec::Vec<u8>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            ContestedResourceVoters(ContestedResourceVoters),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetContestedResourceIdentityVoteStatusResponseV0),
     }
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -3346,6 +3493,7 @@ pub mod platform_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// What's the state of a contested resource vote? (ie who is winning?)
         pub async fn get_contested_resource_vote_state(
             &mut self,
             request: impl tonic::IntoRequest<super::GetContestedResourceVoteStateRequest>,
@@ -3376,13 +3524,14 @@ pub mod platform_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_contested_resource_vote_status(
+        /// Who voted for a contested resource to go to a specific identity?
+        pub async fn get_contested_resource_voters_for_identity(
             &mut self,
             request: impl tonic::IntoRequest<
-                super::GetContestedResourceVoteStatusRequest,
+                super::GetContestedResourceVotersForIdentityRequest,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::GetContestedResourceVoteStatusResponse>,
+            tonic::Response<super::GetContestedResourceVotersForIdentityResponse>,
             tonic::Status,
         > {
             self.inner
@@ -3396,14 +3545,47 @@ pub mod platform_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteStatus",
+                "/org.dash.platform.dapi.v0.Platform/getContestedResourceVotersForIdentity",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
-                        "getContestedResourceVoteStatus",
+                        "getContestedResourceVotersForIdentity",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// How did an identity vote?
+        pub async fn get_contested_resource_identity_vote_status(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::GetContestedResourceIdentityVoteStatusRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::GetContestedResourceIdentityVoteStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getContestedResourceIdentityVoteStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getContestedResourceIdentityVoteStatus",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -3619,6 +3801,7 @@ pub mod platform_server {
             tonic::Response<super::GetContestedResourcesResponse>,
             tonic::Status,
         >;
+        /// What's the state of a contested resource vote? (ie who is winning?)
         async fn get_contested_resource_vote_state(
             &self,
             request: tonic::Request<super::GetContestedResourceVoteStateRequest>,
@@ -3626,11 +3809,20 @@ pub mod platform_server {
             tonic::Response<super::GetContestedResourceVoteStateResponse>,
             tonic::Status,
         >;
-        async fn get_contested_resource_vote_status(
+        /// Who voted for a contested resource to go to a specific identity?
+        async fn get_contested_resource_voters_for_identity(
             &self,
-            request: tonic::Request<super::GetContestedResourceVoteStatusRequest>,
+            request: tonic::Request<super::GetContestedResourceVotersForIdentityRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetContestedResourceVoteStatusResponse>,
+            tonic::Response<super::GetContestedResourceVotersForIdentityResponse>,
+            tonic::Status,
+        >;
+        /// How did an identity vote?
+        async fn get_contested_resource_identity_vote_status(
+            &self,
+            request: tonic::Request<super::GetContestedResourceIdentityVoteStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetContestedResourceIdentityVoteStatusResponse>,
             tonic::Status,
         >;
         async fn get_prefunded_specialized_balance(
@@ -4720,15 +4912,17 @@ pub mod platform_server {
                     };
                     Box::pin(fut)
                 }
-                "/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteStatus" => {
+                "/org.dash.platform.dapi.v0.Platform/getContestedResourceVotersForIdentity" => {
                     #[allow(non_camel_case_types)]
-                    struct getContestedResourceVoteStatusSvc<T: Platform>(pub Arc<T>);
+                    struct getContestedResourceVotersForIdentitySvc<T: Platform>(
+                        pub Arc<T>,
+                    );
                     impl<
                         T: Platform,
                     > tonic::server::UnaryService<
-                        super::GetContestedResourceVoteStatusRequest,
-                    > for getContestedResourceVoteStatusSvc<T> {
-                        type Response = super::GetContestedResourceVoteStatusResponse;
+                        super::GetContestedResourceVotersForIdentityRequest,
+                    > for getContestedResourceVotersForIdentitySvc<T> {
+                        type Response = super::GetContestedResourceVotersForIdentityResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -4736,12 +4930,14 @@ pub mod platform_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::GetContestedResourceVoteStatusRequest,
+                                super::GetContestedResourceVotersForIdentityRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_contested_resource_vote_status(request).await
+                                (*inner)
+                                    .get_contested_resource_voters_for_identity(request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -4753,7 +4949,60 @@ pub mod platform_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = getContestedResourceVoteStatusSvc(inner);
+                        let method = getContestedResourceVotersForIdentitySvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Platform/getContestedResourceIdentityVoteStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct getContestedResourceIdentityVoteStatusSvc<T: Platform>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: Platform,
+                    > tonic::server::UnaryService<
+                        super::GetContestedResourceIdentityVoteStatusRequest,
+                    > for getContestedResourceIdentityVoteStatusSvc<T> {
+                        type Response = super::GetContestedResourceIdentityVoteStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::GetContestedResourceIdentityVoteStatusRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner)
+                                    .get_contested_resource_identity_vote_status(request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getContestedResourceIdentityVoteStatusSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

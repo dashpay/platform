@@ -11,7 +11,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 /// Info about a path.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum PathInfo<'a, const N: usize> {
     /// An into iter Path
     PathFixedSizeArray([&'a [u8]; N]),

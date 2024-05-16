@@ -17,11 +17,10 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds the terminal reference.
-    pub fn add_contested_reference_to_document_operations(
+    pub fn add_contested_reference_and_vote_subtree_to_document_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -34,12 +33,11 @@ impl Drive {
             .methods
             .document
             .insert_contested
-            .add_contested_reference_to_document_operations
+            .add_contested_reference_and_vote_subtree_to_document_operations
         {
-            0 => self.add_contested_reference_to_document_operations_v0(
+            0 => self.add_contested_reference_and_vote_subtree_to_document_operations_v0(
                 document_and_contract_info,
                 index_path_info,
-                previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
                 transaction,
