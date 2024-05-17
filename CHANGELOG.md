@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* data contract transition validation issues (#1835)
+* Data Contract Create and Update transitions validation logic is changed so previously created block chain data might not be valid anymore (#1835)
 
 ### Features
 
