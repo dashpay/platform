@@ -9,7 +9,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 use crate::{
     data_contract::DataContract,
@@ -242,7 +242,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
         vec![SIGNATURE, ENTROPY]
     }
 
-    fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, skip_signature: bool) -> Result<serde_json::Value, ProtocolError> {
         self.to_cleaned_object(skip_signature)
             .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }

@@ -1,4 +1,4 @@
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
@@ -89,11 +89,11 @@ pub trait BTreeValueMapHelper {
         &'a self,
         key: &str,
     ) -> Result<I, Error>;
-    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, serde_json::Value)>>(
         &self,
         key: &str,
     ) -> Result<Option<I>, Error>;
-    fn get_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+    fn get_inner_str_json_value_map<I: FromIterator<(String, serde_json::Value)>>(
         &self,
         key: &str,
     ) -> Result<I, Error>;
@@ -356,7 +356,7 @@ where
         })
     }
 
-    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, serde_json::Value)>>(
         &self,
         key: &str,
     ) -> Result<Option<I>, Error> {
@@ -377,7 +377,7 @@ where
             .transpose()
     }
 
-    fn get_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+    fn get_inner_str_json_value_map<I: FromIterator<(String, serde_json::Value)>>(
         &self,
         key: &str,
     ) -> Result<I, Error> {

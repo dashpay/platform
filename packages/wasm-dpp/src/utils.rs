@@ -8,7 +8,7 @@ use dpp::platform_value::Value;
 use dpp::serialization::PlatformDeserializable;
 use js_sys::{Function, Uint8Array};
 use serde::de::DeserializeOwned;
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
 };
 
 pub trait ToSerdeJSONExt {
-    fn with_serde_to_json_value(&self) -> Result<JsonValue, JsValue>;
+    fn with_serde_to_json_value(&self) -> Result<serde_json::Value, JsValue>;
     fn with_serde_to_platform_value(&self) -> Result<Value, JsValue>;
     /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
     /// as `JsValue` must be stringified first
@@ -30,7 +30,7 @@ pub trait ToSerdeJSONExt {
 impl ToSerdeJSONExt for JsValue {
     /// Converts the `JsValue` into `serde_json::Value`. It's an expensive conversion,
     /// as `JsValue` must be stringified first
-    fn with_serde_to_json_value(&self) -> Result<JsonValue, JsValue> {
+    fn with_serde_to_json_value(&self) -> Result<serde_json::Value, JsValue> {
         with_serde_to_json_value(self)
     }
 
@@ -68,7 +68,7 @@ where
 
 pub fn to_vec_of_serde_values(
     values: impl IntoIterator<Item = impl AsRef<JsValue>>,
-) -> Result<Vec<JsonValue>, JsValue> {
+) -> Result<Vec<serde_json::Value>, JsValue> {
     values
         .into_iter()
         .map(|v| v.as_ref().with_serde_to_json_value())
@@ -93,9 +93,9 @@ where
         .collect()
 }
 
-pub fn with_serde_to_json_value(data: &JsValue) -> Result<JsonValue, JsValue> {
+pub fn with_serde_to_json_value(data: &JsValue) -> Result<serde_json::Value, JsValue> {
     let data = stringify(data)?;
-    let value: JsonValue = serde_json::from_str(&data)
+    let value: serde_json::Value = serde_json::from_str(&data)
         .with_context(|| format!("cant convert {data:#?} to serde json value"))
         .map_err(|e| format!("{e:#}"))?;
     Ok(value)

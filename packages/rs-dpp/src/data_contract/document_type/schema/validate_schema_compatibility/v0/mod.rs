@@ -12,10 +12,10 @@ use itertools::Itertools;
 use json_patch::PatchOperation;
 use jsonptr::{Pointer, Resolve};
 use lazy_static::lazy_static;
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 
 lazy_static! {
-    pub static ref EMPTY_JSON: JsonValue = json!({});
+    pub static ref EMPTY_JSON: serde_json::Value = json!({});
 }
 
 mod property_names {
@@ -42,8 +42,8 @@ struct RemovedItem {
 pub type IncompatibleOperations = Vec<PatchOperation>;
 
 pub fn any_schema_changes(
-    old_schema: &BTreeMap<DocumentName, JsonValue>,
-    new_schema: &JsonValue,
+    old_schema: &BTreeMap<DocumentName, serde_json::Value>,
+    new_schema: &serde_json::Value,
 ) -> bool {
     let changes = old_schema
         .iter()
@@ -58,8 +58,8 @@ pub fn any_schema_changes(
 }
 
 pub fn validate_schema_compatibility(
-    original_schema: &JsonValue,
-    new_schema: &JsonValue,
+    original_schema: &serde_json::Value,
+    new_schema: &serde_json::Value,
 ) -> Result<IncompatibleOperations, ProtocolError> {
     validate_schema_compatibility_with_options(
         original_schema,
@@ -69,8 +69,8 @@ pub fn validate_schema_compatibility(
 }
 
 pub fn validate_schema_compatibility_with_options(
-    original_schema: &JsonValue,
-    new_schema: &JsonValue,
+    original_schema: &serde_json::Value,
+    new_schema: &serde_json::Value,
     opts: ValidationOptions,
 ) -> Result<IncompatibleOperations, ProtocolError> {
     let patch = json_patch::diff(original_schema, new_schema);
@@ -186,7 +186,7 @@ pub fn validate_schema_compatibility_with_options(
 // checks if operation `move` or `remove` is backward compatible
 fn is_operation_move_remove_compatible(
     path: &str,
-    original_schema: &JsonValue,
+    original_schema: &serde_json::Value,
     opts: &ValidationOptions,
 ) -> Result<bool, anyhow::Error> {
     let is_min_items = path.ends_with(property_names::MIN_ITEMS);
@@ -278,11 +278,11 @@ mod test {
     use serde_json::json;
 
     lazy_static! {
-        static ref DATA_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+        static ref DATA_SCHEMA: serde_json::Value = serde_json::from_str(include_str!(
             "./../../../../../tests/payloads/schema/data.json"
         ))
         .unwrap();
-        static ref DATA_SCHEMA_V2: JsonValue = serde_json::from_str(include_str!(
+        static ref DATA_SCHEMA_V2: serde_json::Value = serde_json::from_str(include_str!(
             "./../../../../../tests/payloads/schema/data_v2.json"
         ))
         .unwrap();

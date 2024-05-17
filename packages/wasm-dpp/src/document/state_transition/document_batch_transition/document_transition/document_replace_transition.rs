@@ -1,7 +1,7 @@
 use std::convert;
 use std::convert::TryInto;
 
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 use dpp::platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
@@ -234,7 +234,7 @@ impl DocumentReplaceTransitionWasm {
             }
         }
 
-        let json_value: JsonValue = value
+        let json_value: serde_json::Value = value
             .clone()
             .try_into()
             .map_err(ProtocolError::ValueError)

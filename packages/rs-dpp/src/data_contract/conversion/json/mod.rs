@@ -5,11 +5,11 @@ use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DataContract;
 use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 impl DataContractJsonConversionMethodsV0 for DataContract {
     fn from_json(
-        json_value: JsonValue,
+        json_value: serde_json::Value,
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -30,7 +30,7 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
         }
     }
 
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, platform_version: &PlatformVersion) -> Result<serde_json::Value, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.to_json(platform_version),
         }
@@ -39,7 +39,7 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
     fn to_validating_json(
         &self,
         platform_version: &PlatformVersion,
-    ) -> Result<JsonValue, ProtocolError> {
+    ) -> Result<serde_json::Value, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.to_validating_json(platform_version),
         }

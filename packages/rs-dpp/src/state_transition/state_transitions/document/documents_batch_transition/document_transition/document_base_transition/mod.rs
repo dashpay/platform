@@ -13,8 +13,8 @@ use derive_more::{Display, From};
 pub use fields::*;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "state-transition-json-conversion")]
-use serde_json::Value as JsonValue;
+// #[cfg(feature = "state-transition-json-conversion")]
+// use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
@@ -37,7 +37,7 @@ impl Default for DocumentBaseTransition {
 impl DocumentTransitionObjectLike for DocumentBaseTransition {
     #[cfg(feature = "state-transition-json-conversion")]
     fn from_json_object(
-        json_str: JsonValue,
+        json_str: serde_json::Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
@@ -81,7 +81,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     }
 
     #[cfg(feature = "state-transition-json-conversion")]
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<serde_json::Value, ProtocolError> {
         self.to_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)

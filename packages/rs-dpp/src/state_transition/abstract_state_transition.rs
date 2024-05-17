@@ -1,5 +1,5 @@
 use serde::Serialize;
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 pub mod state_transition_helpers {
     use super::*;
@@ -10,7 +10,7 @@ pub mod state_transition_helpers {
     pub fn to_json<'a, I: IntoIterator<Item = &'a str>>(
         serializable: impl Serialize,
         skip_signature_paths: I,
-    ) -> Result<JsonValue, ProtocolError> {
+    ) -> Result<serde_json::Value, ProtocolError> {
         to_object(serializable, skip_signature_paths)
             .and_then(|v| v.try_into().map_err(ProtocolError::ValueError))
     }

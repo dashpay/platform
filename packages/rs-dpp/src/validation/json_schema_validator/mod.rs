@@ -1,6 +1,6 @@
 pub mod methods;
 
-use crate::data_contract::JsonValue;
+// use crate::data_contract::JsonValue;
 use crate::validation::{DataValidator, SimpleConsensusValidationResult};
 use anyhow::Context;
 use jsonschema::JSONSchema;
@@ -14,7 +14,7 @@ pub struct JsonSchemaValidator {
 
 // TODO: Remove?
 impl DataValidator for JsonSchemaValidator {
-    type Item = JsonValue;
+    type Item = serde_json::Value;
     fn validate(
         &self,
         data: &Self::Item,

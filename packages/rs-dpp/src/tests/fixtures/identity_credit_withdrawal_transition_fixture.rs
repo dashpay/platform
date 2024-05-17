@@ -5,7 +5,7 @@ use platform_value::string_encoding::{encode, Encoding};
 use platform_value::BinaryData;
 use platform_value::{platform_value, Identifier, Value};
 use platform_version::version::LATEST_VERSION;
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 
 use crate::withdrawal::Pooling;
 use crate::state_transition::StateTransitionType;
@@ -25,7 +25,7 @@ pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
     })
 }
 
-pub fn identity_credit_withdrawal_transition_fixture_json() -> JsonValue {
+pub fn identity_credit_withdrawal_transition_fixture_json() -> serde_json::Value {
     json!({
         "protocolVersion": LATEST_VERSION,
         "type": StateTransitionType::IdentityCreditWithdrawal,

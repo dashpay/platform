@@ -8,7 +8,7 @@ use std::fmt;
 
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
@@ -182,10 +182,10 @@ impl Identifier {
         Ok(Identifier::new(bytes.try_into().unwrap()))
     }
 
-    pub fn to_json_value_vec(&self) -> Vec<JsonValue> {
+    pub fn to_json_value_vec(&self) -> Vec<serde_json::Value> {
         self.to_buffer()
             .iter()
-            .map(|v| JsonValue::from(*v))
+            .map(|v| serde_json::Value::from(*v))
             .collect()
     }
 

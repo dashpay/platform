@@ -13,13 +13,13 @@ use platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{ReplacementType, Value};
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 impl DocumentTransitionObjectLike for DocumentCreateTransition {
     #[cfg(feature = "state-transition-json-conversion")]
     fn from_json_object(
-        json_value: JsonValue,
+        json_value: serde_json::Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         let value: Value = json_value.into();
@@ -95,7 +95,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
     }
 
     #[cfg(feature = "state-transition-json-conversion")]
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<serde_json::Value, ProtocolError> {
         self.to_cleaned_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)

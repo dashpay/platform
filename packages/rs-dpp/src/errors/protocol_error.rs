@@ -4,7 +4,7 @@ use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTyp
 use crate::errors::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
-use crate::errors::consensus::ConsensusError;
+use crate::errors::consensus::consensus_error::ConsensusError;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::errors::IdentityNotPresentError;

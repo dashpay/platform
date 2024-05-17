@@ -8,14 +8,14 @@ use crate::errors::ProtocolError;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use serde::Deserialize;
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 use std::convert::TryInto;
 
 impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
     fn to_json_with_identifiers_using_bytes(
         &self,
         _platform_version: &PlatformVersion,
-    ) -> Result<JsonValue, ProtocolError> {
+    ) -> Result<serde_json::Value, ProtocolError> {
         let mut value = json!({
             property_names::ID: self.id,
             property_names::OWNER_ID: self.owner_id,
@@ -24,26 +24,26 @@ impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
         if let Some(created_at) = self.created_at {
             value_mut.insert(
                 property_names::CREATED_AT.to_string(),
-                JsonValue::Number(created_at.into()),
+                serde_json::Value::Number(created_at.into()),
             );
         }
         if let Some(updated_at) = self.updated_at {
             value_mut.insert(
                 property_names::UPDATED_AT.to_string(),
-                JsonValue::Number(updated_at.into()),
+                serde_json::Value::Number(updated_at.into()),
             );
         }
         if let Some(revision) = self.revision {
             value_mut.insert(
                 property_names::REVISION.to_string(),
-                JsonValue::Number(revision.into()),
+                serde_json::Value::Number(revision.into()),
             );
         }
 
         self.properties
             .iter()
             .try_for_each(|(key, property_value)| {
-                let serde_value: JsonValue = property_value.try_to_validating_json()?;
+                let serde_value: serde_json::Value = property_value.try_to_validating_json()?;
                 value_mut.insert(key.to_string(), serde_value);
                 Ok::<(), ProtocolError>(())
             })?;
@@ -51,13 +51,13 @@ impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
         Ok(value)
     }
 
-    fn to_json(&self, _platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, _platform_version: &PlatformVersion) -> Result<serde_json::Value, ProtocolError> {
         self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 
     fn from_json_value<S>(
-        mut document_value: JsonValue,
+        mut document_value: serde_json::Value,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where

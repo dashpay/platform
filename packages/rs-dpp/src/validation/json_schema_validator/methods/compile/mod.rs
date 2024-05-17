@@ -1,4 +1,4 @@
-use crate::data_contract::JsonValue;
+// use crate::data_contract::JsonValue;
 use crate::validation::JsonSchemaValidator;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -8,7 +8,7 @@ mod v0;
 impl JsonSchemaValidator {
     pub fn compile(
         &self,
-        json_schema: &JsonValue,
+        json_schema: &serde_json::Value,
         platform_version: &PlatformVersion,
     ) -> Result<bool, ProtocolError> {
         match platform_version

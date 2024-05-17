@@ -6,9 +6,10 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
+// #[cfg(feature = "validation")]
+// pub use validator::StatelessJsonSchemaLazyValidator;
 #[cfg(feature = "validation")]
-pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
-
+use crate::data_contract::document_type::v0::validator::StatelessJsonSchemaLazyValidator;
 use crate::identity::identity_public_key::SecurityLevel;
 use platform_value::{Identifier, Value};
 

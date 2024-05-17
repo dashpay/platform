@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use jsonschema::{JSONSchema, ValidationError};
 use serde_json::json;
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 pub(crate) fn error(instance: ValidationError) -> Vec<ValidationError> {
     vec![instance]
@@ -17,7 +17,7 @@ pub fn into_owned(err: ValidationError) -> ValidationError<'static> {
     }
 }
 
-pub fn validate(json_schema: &JsonValue) -> Result<(), Vec<ValidationError>> {
+pub fn validate(json_schema: &serde_json::Value) -> Result<(), Vec<ValidationError>> {
     let byte_array_meta = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://schema.dash.org/dpp-0-4-0/meta/byte-array",

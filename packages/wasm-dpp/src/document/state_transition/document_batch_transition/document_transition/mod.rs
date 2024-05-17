@@ -16,7 +16,7 @@ use dpp::{
     util::json_value::JsonValueExt, ProtocolError,
 };
 use serde::Serialize;
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -283,7 +283,7 @@ pub(crate) fn to_object<'a>(
     identifiers_paths: impl IntoIterator<Item = &'a str>,
     binary_paths: impl IntoIterator<Item = &'a str>,
 ) -> Result<JsValue, JsValue> {
-    let mut value: JsonValue = value
+    let mut value: serde_json::Value = value
         .try_into_validating_json()
         .map_err(ProtocolError::ValueError)
         .with_js_error()?;

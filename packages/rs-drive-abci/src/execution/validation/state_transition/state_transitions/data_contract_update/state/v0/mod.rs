@@ -18,7 +18,7 @@ use dpp::data_contract::document_type::schema::{
     get_operation_and_property_name_json, validate_schema_compatibility,
 };
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::data_contract::JsonValue;
+// use dpp::data_contract::JsonValue;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::{Value, ValueMap};
 
@@ -172,11 +172,11 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 return Ok(validation_result);
             };
 
-            let old_defs_json: JsonValue = old_defs
+            let old_defs_json: serde_json::Value = old_defs
                 .to_json_value()
                 .map_err(ProtocolError::ValueError)?;
 
-            let new_defs_json: JsonValue = new_defs
+            let new_defs_json: serde_json::Value = new_defs
                 .to_json_value()
                 .map_err(ProtocolError::ValueError)?;
 
@@ -202,7 +202,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         }
 
         for (document_type_name, old_document_schema) in old_data_contract.document_schemas() {
-            let old_document_schema_json: JsonValue = old_document_schema
+            let old_document_schema_json: serde_json::Value = old_document_schema
                 .clone()
                 .try_into()
                 .map_err(ProtocolError::ValueError)?;
@@ -212,7 +212,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 .map(|document_type| document_type.schema().clone())
                 .unwrap_or(ValueMap::new().into());
 
-            let new_document_schema_json: JsonValue = new_document_schema
+            let new_document_schema_json: serde_json::Value = new_document_schema
                 .clone()
                 .try_into()
                 .map_err(ProtocolError::ValueError)?;

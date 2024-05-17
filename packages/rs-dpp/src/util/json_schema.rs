@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail};
 use platform_value::Value;
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
 
@@ -14,7 +14,7 @@ pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'string'
     fn is_type_of_string(&self) -> bool;
     /// returns the properties of Json Schema object
-    fn get_schema_properties(&self) -> Result<&JsonValue, anyhow::Error>;
+    fn get_schema_properties(&self) -> Result<&serde_json::Value, anyhow::Error>;
     /// returns the required fields of Json Schema object
     fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error>;
     /// returns the indexes from Json Schema
@@ -38,14 +38,14 @@ pub fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, Protoco
         .map_err(ProtocolError::ValueError)
 }
 
-impl JsonSchemaExt for JsonValue {
+impl JsonSchemaExt for serde_json::Value {
     fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error> {
-        if let JsonValue::Object(ref map) = self {
+        if let serde_json::Value::Object(ref map) = self {
             let required = map.get("required");
             if required.is_none() {
                 return Ok(vec![]);
             }
-            if let JsonValue::Array(required_list) = required.unwrap() {
+            if let serde_json::Value::Array(required_list) = required.unwrap() {
                 return required_list
                     .iter()
                     .map(|v| v.as_str())
@@ -58,8 +58,8 @@ impl JsonSchemaExt for JsonValue {
     }
 
     fn is_type_of_string(&self) -> bool {
-        if let JsonValue::Object(ref map) = self {
-            if let Some(JsonValue::String(schema_type)) = map.get("type") {
+        if let serde_json::Value::Object(ref map) = self {
+            if let Some(serde_json::Value::String(schema_type)) = map.get("type") {
                 return schema_type == "string";
             }
         }
@@ -67,8 +67,8 @@ impl JsonSchemaExt for JsonValue {
     }
 
     fn is_type_of_object(&self) -> bool {
-        if let JsonValue::Object(ref map) = self {
-            if let Some(JsonValue::String(schema_type)) = map.get("type") {
+        if let serde_json::Value::Object(ref map) = self {
+            if let Some(serde_json::Value::String(schema_type)) = map.get("type") {
                 return schema_type == "object";
             }
         }
@@ -76,8 +76,8 @@ impl JsonSchemaExt for JsonValue {
     }
 
     fn is_type_of_array(&self) -> bool {
-        if let JsonValue::Object(ref map) = self {
-            if let Some(JsonValue::String(schema_type)) = map.get("type") {
+        if let serde_json::Value::Object(ref map) = self {
+            if let Some(serde_json::Value::String(schema_type)) = map.get("type") {
                 return schema_type == "array";
             }
         }
@@ -85,16 +85,16 @@ impl JsonSchemaExt for JsonValue {
     }
 
     fn is_type_of_byte_array(&self) -> bool {
-        if let JsonValue::Object(ref map) = self {
-            if let Some(JsonValue::Bool(is_byte_array)) = map.get("byteArray") {
+        if let serde_json::Value::Object(ref map) = self {
+            if let Some(serde_json::Value::Bool(is_byte_array)) = map.get("byteArray") {
                 return *is_byte_array;
             }
         }
         false
     }
 
-    fn get_schema_properties(&self) -> Result<&JsonValue, anyhow::Error> {
-        if let JsonValue::Object(ref map) = self {
+    fn get_schema_properties(&self) -> Result<&serde_json::Value, anyhow::Error> {
+        if let serde_json::Value::Object(ref map) = self {
             return map
                 .get("properties")
                 .ok_or_else(|| anyhow!("Couldn't find 'properties' in '{:?}'", map));
@@ -117,8 +117,8 @@ impl JsonSchemaExt for JsonValue {
     // }
 
     fn is_type_of_identifier(&self) -> bool {
-        if let JsonValue::Object(ref map) = self {
-            if let Some(JsonValue::String(media_type)) = map.get("contentMediaType") {
+        if let serde_json::Value::Object(ref map) = self {
+            if let Some(serde_json::Value::String(media_type)) = map.get("contentMediaType") {
                 return media_type == platform_value::IDENTIFIER_MEDIA_TYPE;
             }
         }

@@ -2,7 +2,7 @@ use std::convert::TryInto;
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
-use serde_json::{Map, Value as JsonValue};
+use serde_json::Map;
 
 use crate::errors::ProtocolError;
 mod convert;
@@ -127,18 +127,18 @@ impl CborMapExtension for &Vec<(CborValue, CborValue)> {
 // TODO: the issue with stack overflow should be address through re-implemtation of the algorithm
 pub fn cbor_value_to_json_value(cbor: &CborValue) -> Result<serde_json::Value, anyhow::Error> {
     match cbor {
-        CborValue::Integer(num) => Ok(JsonValue::from(i128::from(*num) as i64)),
-        CborValue::Bytes(bytes) => Ok(JsonValue::Array(
-            bytes.iter().map(|byte| JsonValue::from(*byte)).collect(),
+        CborValue::Integer(num) => Ok(serde_json::Value::from(i128::from(*num) as i64)),
+        CborValue::Bytes(bytes) => Ok(serde_json::Value::Array(
+            bytes.iter().map(|byte| serde_json::Value::from(*byte)).collect(),
         )),
-        CborValue::Float(float) => Ok(JsonValue::from(*float)),
-        CborValue::Text(text) => Ok(JsonValue::from(text.clone())),
-        CborValue::Bool(boolean) => Ok(JsonValue::from(*boolean)),
-        CborValue::Null => Ok(JsonValue::Null),
-        CborValue::Array(arr) => Ok(JsonValue::Array(
+        CborValue::Float(float) => Ok(serde_json::Value::from(*float)),
+        CborValue::Text(text) => Ok(serde_json::Value::from(text.clone())),
+        CborValue::Bool(boolean) => Ok(serde_json::Value::from(*boolean)),
+        CborValue::Null => Ok(serde_json::Value::Null),
+        CborValue::Array(arr) => Ok(serde_json::Value::Array(
             arr.iter()
                 .map(cbor_value_to_json_value)
-                .collect::<Result<Vec<JsonValue>, anyhow::Error>>()?,
+                .collect::<Result<Vec<serde_json::Value>, anyhow::Error>>()?,
         )),
         CborValue::Map(map) => cbor_map_to_json_map(map),
         _ => Err(anyhow!("Can't convert CBOR to JSON: unknown type")),
@@ -147,18 +147,18 @@ pub fn cbor_value_to_json_value(cbor: &CborValue) -> Result<serde_json::Value, a
 
 pub fn cbor_value_into_json_value(cbor: CborValue) -> Result<serde_json::Value, anyhow::Error> {
     match cbor {
-        CborValue::Integer(num) => Ok(JsonValue::from(i128::from(num) as i64)),
-        CborValue::Bytes(bytes) => Ok(JsonValue::Array(
-            bytes.into_iter().map(JsonValue::from).collect(),
+        CborValue::Integer(num) => Ok(serde_json::Value::from(i128::from(num) as i64)),
+        CborValue::Bytes(bytes) => Ok(serde_json::Value::Array(
+            bytes.into_iter().map(serde_json::Value::from).collect(),
         )),
-        CborValue::Float(float) => Ok(JsonValue::from(float)),
-        CborValue::Text(text) => Ok(JsonValue::from(text)),
-        CborValue::Bool(boolean) => Ok(JsonValue::from(boolean)),
-        CborValue::Null => Ok(JsonValue::Null),
-        CborValue::Array(arr) => Ok(JsonValue::Array(
+        CborValue::Float(float) => Ok(serde_json::Value::from(float)),
+        CborValue::Text(text) => Ok(serde_json::Value::from(text)),
+        CborValue::Bool(boolean) => Ok(serde_json::Value::from(boolean)),
+        CborValue::Null => Ok(serde_json::Value::Null),
+        CborValue::Array(arr) => Ok(serde_json::Value::Array(
             arr.into_iter()
                 .map(cbor_value_into_json_value)
-                .collect::<Result<Vec<JsonValue>, anyhow::Error>>()?,
+                .collect::<Result<Vec<serde_json::Value>, anyhow::Error>>()?,
         )),
         CborValue::Map(map) => cbor_map_into_json_map(map),
         _ => Err(anyhow!("Can't convert CBOR to JSON: unknown type")),
@@ -178,7 +178,7 @@ pub fn cbor_map_to_json_map(
                 cbor_value_to_json_value(value)?,
             ))
         })
-        .collect::<Result<Vec<(String, JsonValue)>, anyhow::Error>>()?;
+        .collect::<Result<Vec<(String, serde_json::Value)>, anyhow::Error>>()?;
 
     let mut json_map = Map::new();
 
@@ -201,7 +201,7 @@ pub fn cbor_map_into_json_map(
                 cbor_value_into_json_value(value)?,
             ))
         })
-        .collect::<Result<Vec<(String, JsonValue)>, anyhow::Error>>()?;
+        .collect::<Result<Vec<(String, serde_json::Value)>, anyhow::Error>>()?;
 
     let mut json_map = Map::new();
 

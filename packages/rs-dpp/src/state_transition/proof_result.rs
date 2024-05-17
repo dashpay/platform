@@ -1,7 +1,7 @@
 use crate::data_contract::DataContract;
 use crate::document::Document;
 use crate::identity::{Identity, PartialIdentity};
-use platform_value::Identifier;
+use platform_value::types::identifier::Identifier;
 use std::collections::BTreeMap;
 
 #[derive(Debug)]

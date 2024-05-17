@@ -4,8 +4,8 @@ use dashcore::hashes::Hash;
 use dashcore::{Block, BlockHash, CompactTarget, Header, TxMerkleNode};
 use getrandom::getrandom;
 use platform_value::{Identifier, Value};
-#[cfg(test)]
-use serde_json::Value as JsonValue;
+// #[cfg(test)]
+// use serde_json::Value as JsonValue;
 
 #[cfg(test)]
 #[macro_export]
@@ -92,8 +92,8 @@ impl SerdeTestExtension for serde_json::Value {
     fn set_key_value<T, S>(&mut self, key: T, value: S)
     where
         T: Into<String>,
-        S: Into<JsonValue>,
-        JsonValue: From<S>,
+        S: Into<serde_json::Value>,
+        serde_json::Value: From<S>,
     {
         let map = self
             .as_object_mut()
@@ -101,14 +101,14 @@ impl SerdeTestExtension for serde_json::Value {
         map.insert(key.into(), serde_json::Value::from(value));
     }
 
-    fn get_value(&self, key: impl Into<String>) -> &JsonValue {
+    fn get_value(&self, key: impl Into<String>) -> &serde_json::Value {
         self.as_object()
             .expect("Expected key to exist")
             .get(&key.into())
             .expect("Expected key to exist")
     }
 
-    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut JsonValue {
+    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut serde_json::Value {
         self.as_object_mut()
             .expect("Expected key to exist")
             .get_mut(&key.into())

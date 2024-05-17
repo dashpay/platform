@@ -3,24 +3,24 @@ use crate::identity::conversion::platform_value::IdentityPlatformValueConversion
 use crate::identity::{identity_public_key, v0::IdentityV0, IDENTIFIER_FIELDS_RAW_OBJECT};
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
 impl IdentityJsonConversionMethodsV0 for IdentityV0 {
-    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json_object(&self) -> Result<serde_json::Value, ProtocolError> {
         self.to_cleaned_object()?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<serde_json::Value, ProtocolError> {
         self.to_cleaned_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
 
     /// Creates an identity from a json structure
-    fn from_json(json_object: JsonValue) -> Result<Self, ProtocolError> {
+    fn from_json(json_object: serde_json::Value) -> Result<Self, ProtocolError> {
         let mut platform_value: Value = json_object.into();
 
         platform_value

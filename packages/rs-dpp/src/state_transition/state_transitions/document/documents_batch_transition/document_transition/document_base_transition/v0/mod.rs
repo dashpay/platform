@@ -9,7 +9,7 @@ use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::property_names;
@@ -72,7 +72,7 @@ pub trait DocumentTransitionObjectLike {
     /// Creates the Document Transition from JSON representation. The JSON representation contains
     /// binary data encoded in base64, Identifiers encoded in base58
     fn from_json_object(
-        json_str: JsonValue,
+        json_str: serde_json::Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
@@ -106,7 +106,7 @@ pub trait DocumentTransitionObjectLike {
     /// Object is an [`serde_json::Value`] instance that replaces the binary data with
     ///  - base58 string for Identifiers
     ///  - base64 string for other binary data
-    fn to_json(&self) -> Result<JsonValue, ProtocolError>;
+    fn to_json(&self) -> Result<serde_json::Value, ProtocolError>;
     #[cfg(feature = "state-transition-value-conversion")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError>;
 }

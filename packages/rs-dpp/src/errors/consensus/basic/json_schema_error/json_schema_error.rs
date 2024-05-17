@@ -6,7 +6,7 @@ use bincode::{Decode, Encode};
 use jsonschema::ValidationError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Value;
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
@@ -41,7 +41,7 @@ impl<'a> From<ValidationError<'a>> for JsonSchemaError {
             error_summary: error_message,
             instance_path: validation_error.instance_path.to_string(),
             schema_path: validation_error.schema_path.to_string(),
-            params: JsonValue::Object(params).into(),
+            params: serde_json::Value::Object(params).into(),
             property_name,
         }
     }

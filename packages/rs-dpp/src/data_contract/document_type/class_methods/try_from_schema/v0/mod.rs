@@ -1,6 +1,6 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+use crate::data_contract::document_type::v0::validator::StatelessJsonSchemaLazyValidator;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
