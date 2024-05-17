@@ -1,7 +1,6 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::DriveQuery;
 use derive_more::From;
 use dpp::block::epoch::Epoch;
 use dpp::document::Document;
@@ -10,6 +9,7 @@ use grovedb::TransactionArg;
 
 mod v0;
 
+use crate::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 pub use v0::*;
 
 /// Represents the outcome of a query to retrieve documents.
@@ -18,36 +18,30 @@ pub use v0::*;
 /// As the system evolves, new versions of the outcome structure can be
 /// added to this enum without breaking existing implementations.
 #[derive(From, Debug)]
-pub enum QueryDocumentsOutcome {
+pub enum QueryContestedDocumentsVoteStateOutcome {
     /// Version 0 of the `QueryDocumentsOutcome`.
     ///
     /// This version contains a list of documents retrieved, the number of
     /// skipped documents, and the cost associated with the query.
-    V0(QueryDocumentsOutcomeV0),
+    V0(QueryContestedDocumentsVoteStateOutcomeV0),
 }
 
-impl QueryDocumentsOutcomeV0Methods for QueryDocumentsOutcome {
+impl QueryContestedDocumentsVoteStateOutcomeV0Methods for QueryContestedDocumentsVoteStateOutcome {
     fn documents(&self) -> &Vec<Document> {
         match self {
-            QueryDocumentsOutcome::V0(outcome) => outcome.documents(),
+            QueryContestedDocumentsVoteStateOutcome::V0(outcome) => outcome.documents(),
         }
     }
 
     fn documents_owned(self) -> Vec<Document> {
         match self {
-            QueryDocumentsOutcome::V0(outcome) => outcome.documents_owned(),
-        }
-    }
-
-    fn skipped(&self) -> u16 {
-        match self {
-            QueryDocumentsOutcome::V0(outcome) => outcome.skipped(),
+            QueryContestedDocumentsVoteStateOutcome::V0(outcome) => outcome.documents_owned(),
         }
     }
 
     fn cost(&self) -> u64 {
         match self {
-            QueryDocumentsOutcome::V0(outcome) => outcome.cost(),
+            QueryContestedDocumentsVoteStateOutcome::V0(outcome) => outcome.cost(),
         }
     }
 }
@@ -71,14 +65,13 @@ impl Drive {
     ///
     /// * `Result<QueryDocumentsOutcome, Error>` - Returns `QueryDocumentsOutcome` on success with the list of documents,
     ///    number of skipped items, and cost. If the operation fails, it returns an `Error`.
-    pub fn query_documents(
+    pub fn query_contested_documents_vote_state(
         &self,
-        query: DriveQuery,
+        query: ContestedDocumentVotePollDriveQuery,
         epoch: Option<&Epoch>,
-        dry_run: bool,
         transaction: TransactionArg,
         protocol_version: Option<u32>,
-    ) -> Result<QueryDocumentsOutcome, Error> {
+    ) -> Result<QueryContestedDocumentsVoteStateOutcome, Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
 
         match platform_version
@@ -88,7 +81,7 @@ impl Drive {
             .query
             .query_documents
         {
-            0 => self.query_documents_v0(query, epoch, dry_run, transaction, platform_version),
+            0 => self.query_contested_documents_v0(query, epoch, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "query_documents".to_string(),
                 known_versions: vec![0],

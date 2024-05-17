@@ -5,7 +5,9 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contested_resources_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_contested_resources_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse};
+use dapi_grpc::platform::v0::{
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
+};
 use dpp::version::PlatformVersion;
 
 mod v0;
@@ -20,11 +22,17 @@ impl<C> Platform<C> {
     ) -> Result<QueryValidationResult<GetContestedResourceVotersForIdentityResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError("could not decode contested resource vote state query".to_string()),
+                QueryError::DecodingError(
+                    "could not decode contested resource vote state query".to_string(),
+                ),
             ));
         };
 
-        let feature_version_bounds = &platform_version.drive_abci.query.voting_based_queries.contested_resources;
+        let feature_version_bounds = &platform_version
+            .drive_abci
+            .query
+            .voting_based_queries
+            .contested_resources;
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,
@@ -42,14 +50,18 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result =
-                    self.query_contested_resources_v0(request_v0, platform_state, platform_version)?;
+                let result = self.query_contested_resources_v0(
+                    request_v0,
+                    platform_state,
+                    platform_version,
+                )?;
 
-                Ok(result.map(|response_v0| GetContestedResourceVotersForIdentityResponse {
-                    version: Some(ResponseVersion::V0(response_v0)),
-                }))
+                Ok(result.map(
+                    |response_v0| GetContestedResourceVotersForIdentityResponse {
+                        version: Some(ResponseVersion::V0(response_v0)),
+                    },
+                ))
             }
         }
     }
 }
-

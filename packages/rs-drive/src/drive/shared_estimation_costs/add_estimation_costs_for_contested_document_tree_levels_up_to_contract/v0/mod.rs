@@ -3,15 +3,13 @@ use crate::drive::defaults::{
     ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
 };
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::{contract_documents_path, Drive};
+use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 
-use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::votes::paths::{
     vote_contested_resource_active_polls_contract_document_tree_path,
     vote_contested_resource_active_polls_contract_tree_path,

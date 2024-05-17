@@ -7,7 +7,6 @@ use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
-use std::mem;
 
 use dpp::document::Document;
 use dpp::fee::Credits;

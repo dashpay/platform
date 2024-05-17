@@ -7,7 +7,6 @@
 #[cfg(feature = "server")]
 use crate::drive::flags::StorageFlags;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "server")]

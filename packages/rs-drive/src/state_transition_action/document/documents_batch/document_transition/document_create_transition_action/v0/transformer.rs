@@ -1,6 +1,5 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 

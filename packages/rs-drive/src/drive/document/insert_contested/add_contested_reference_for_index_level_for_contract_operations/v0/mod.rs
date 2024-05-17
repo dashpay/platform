@@ -1,15 +1,15 @@
-use crate::drive::defaults::{CONTESTED_DOCUMENT_REFERENCE_SIZE, DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE, U8_SIZE_U32, U8_SIZE_U8};
-use crate::drive::document::{
-    document_reference_size, make_document_contested_reference, make_document_reference,
+use crate::drive::defaults::{
+    CONTESTED_DOCUMENT_REFERENCE_SIZE, DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE, U8_SIZE_U32,
+    U8_SIZE_U8,
 };
+use crate::drive::document::make_document_contested_reference;
 use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
     DocumentRefAndSerialization, DocumentRefInfo,
 };
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
+use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
 use crate::drive::Drive;
@@ -17,13 +17,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::document::DocumentV0Getters;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees, Mix};
-use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees};
+use grovedb::EstimatedLayerSizes::{AllItems, Mix};
+use grovedb::EstimatedSumTrees::AllSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
@@ -44,7 +43,7 @@ impl Drive {
     ) -> Result<(), Error> {
         //                Inter-wizard championship (event type)
         //                             |
-        //                       Goblet of Fire (event name) 
+        //                       Goblet of Fire (event name)
         //                  /                    \
         //              Sam's ID                Ivan's ID
         //             /    \                  /      \
@@ -60,22 +59,28 @@ impl Drive {
                     estimated_layer_count: ApproximateElements(2),
                     estimated_layer_sizes: Mix {
                         // The votes don't have storage flags
-                        subtrees_size: Some((U8_SIZE_U8,
-                                             AllSumTrees, // There is 1 tree that is a sum tree, so all are sum trees
-                                             None, 1)),
+                        subtrees_size: Some((
+                            U8_SIZE_U8,
+                            AllSumTrees, // There is 1 tree that is a sum tree, so all are sum trees
+                            None,
+                            1,
+                        )),
                         items_size: None,
                         // The references do have storage flags
                         // We keep storage flags because when the item is moved after being won,
-                        //  a transformation needs to take place on the storage flags to be able to 
+                        //  a transformation needs to take place on the storage flags to be able to
                         //  allow the refund of credits on delete later.
-                        references_size: Some((U8_SIZE_U8,
-                                               CONTESTED_DOCUMENT_REFERENCE_SIZE,
-                                               storage_flags.map(|s| s.serialized_size()), 1)),
+                        references_size: Some((
+                            U8_SIZE_U8,
+                            CONTESTED_DOCUMENT_REFERENCE_SIZE,
+                            storage_flags.map(|s| s.serialized_size()),
+                            1,
+                        )),
                     },
                 },
             );
         }
-        
+
         // We create the reference
 
         // Here we are getting the document id and the reference
@@ -100,18 +105,18 @@ impl Drive {
                 DocumentEstimatedAverageSize(max_size) => {
                     let unique_id = document_and_contract_info
                         .document_type
-                        .unique_id_for_storage().to_vec();
-                        KeyUnknownElementSize((
-                            KeyInfo::MaxKeySize {
-                                unique_id,
-                                max_size: DEFAULT_HASH_SIZE_U8,
-                            },
-                            Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
-                        ))
-                    
+                        .unique_id_for_storage()
+                        .to_vec();
+                    KeyUnknownElementSize((
+                        KeyInfo::MaxKeySize {
+                            unique_id,
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        },
+                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                    ))
                 }
             };
-        
+
         // Now let's insert the reference, the reference is a key element that already has the 0
 
         let reference_path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
@@ -139,11 +144,7 @@ impl Drive {
                 EstimatedLayerInformation {
                     is_sum_tree: true,
                     estimated_layer_count: PotentiallyAtMaxElements,
-                    estimated_layer_sizes: AllItems(
-                        DEFAULT_HASH_SIZE_U8,
-                        U8_SIZE_U32,
-                        None,
-                    ),
+                    estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U8_SIZE_U32, None),
                 },
             );
         }

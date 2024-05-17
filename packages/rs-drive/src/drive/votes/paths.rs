@@ -1,5 +1,12 @@
+use crate::drive::votes::resolve_contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::RootTree;
+use crate::error::Error;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::IndexProperty;
+use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
+use platform_version::version::PlatformVersion;
 
 /// The votes tree structure looks like this
 ///
@@ -27,6 +34,120 @@ pub const ACTIVE_POLLS_TREE_KEY: char = 'p';
 
 /// A subtree made for being able to query votes that an identity has made
 pub const IDENTITY_VOTES_TREE_KEY: char = 'i';
+
+/// Convenience methods to be easily able to get a path when we know the vote poll
+pub trait VotePollPaths {
+    /// The root path, under this there should be the documents area and the contract itself
+    fn contract_path(&self) -> [&[u8]; 4];
+
+    /// The root path, under this there should be the documents area and the contract itself as a vec
+    fn contract_path_vec(&self) -> Vec<Vec<u8>>;
+
+    /// The documents path, under this you should have the various document types
+    fn document_type_path(&self) -> [&[u8]; 5];
+
+    /// The documents path, under this you should have the various document types as a vec
+    fn document_type_path_vec(&self) -> Vec<Vec<u8>>;
+
+    /// The documents storage path
+    fn documents_storage_path(&self) -> [&[u8]; 6];
+
+    /// The documents storage path as a vec
+    fn documents_storage_path_vec(&self) -> Vec<Vec<u8>>;
+
+    /// The contenders path as a vec
+    fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error>;
+
+    /// The path that would store the contender information for a single contender
+    fn contender_path(
+        &self,
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error>;
+
+    /// The path that would store the votes for a single contender
+    fn contender_voting_path(
+        &self,
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error>;
+}
+
+impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
+    fn contract_path(&self) -> [&[u8]; 4] {
+        vote_contested_resource_active_polls_contract_tree_path(
+            self.contract.contract.id_ref().as_slice(),
+        )
+    }
+
+    fn contract_path_vec(&self) -> Vec<Vec<u8>> {
+        vote_contested_resource_active_polls_contract_tree_path_vec(
+            self.contract.contract.id_ref().as_slice(),
+        )
+    }
+
+    fn document_type_path(&self) -> [&[u8]; 5] {
+        vote_contested_resource_active_polls_contract_document_tree_path(
+            self.contract.contract.id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        )
+    }
+
+    fn document_type_path_vec(&self) -> Vec<Vec<u8>> {
+        vote_contested_resource_active_polls_contract_document_tree_path_vec(
+            self.contract.contract.id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        )
+    }
+
+    fn documents_storage_path(&self) -> [&[u8]; 6] {
+        vote_contested_resource_contract_documents_storage_path(
+            self.contract.contract.id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        )
+    }
+
+    fn documents_storage_path_vec(&self) -> Vec<Vec<u8>> {
+        vote_contested_resource_contract_documents_storage_path_vec(
+            self.contract.contract.id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        )
+    }
+
+    fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
+        let document_type = self.document_type()?;
+        self.index()?
+            .properties
+            .iter()
+            .zip(self.index_values.iter())
+            .map(|(IndexProperty { name, .. }, value)| {
+                document_type
+                    .serialize_value_for_key(name, value, platform_version)
+                    .map_err(Error::Protocol)
+            })
+            .collect::<Result<Vec<Vec<u8>>, Error>>()
+    }
+
+    fn contender_path(
+        &self,
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let mut contenders_path = self.contenders_path(platform_version)?;
+        contenders_path.push(identity_id.to_vec());
+        Ok(contenders_path)
+    }
+
+    fn contender_voting_path(
+        &self,
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let mut contender_path = self.contender_path(identity_id, platform_version)?;
+        contender_path.push(vec![1]);
+        Ok(contender_path)
+    }
+}
 
 /// the root path of the voting branch
 pub fn vote_root_path<'a>() -> [&'a [u8]; 1] {
@@ -106,8 +227,7 @@ pub fn vote_contested_resource_active_polls_tree_path_vec() -> Vec<Vec<u8>> {
     ]
 }
 
-#[cfg(feature = "server")]
-/// Returns the path to the primary keys of a contract document type.
+/// Returns the path to root of a contract in the contested resource active polls.
 pub fn vote_contested_resource_active_polls_contract_tree_path(contract_id: &[u8]) -> [&[u8]; 4] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes), // 1
@@ -117,7 +237,18 @@ pub fn vote_contested_resource_active_polls_contract_tree_path(contract_id: &[u8
     ]
 }
 
-#[cfg(feature = "server")]
+/// Returns the path to root of a contract in the contested resource active polls.
+pub fn vote_contested_resource_active_polls_contract_tree_path_vec(
+    contract_id: &[u8],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+        contract_id.to_vec(),
+    ]
+}
+
 /// Returns the path to the primary keys of a contract document type.
 pub fn vote_contested_resource_active_polls_contract_document_tree_path<'a>(
     contract_id: &'a [u8],
@@ -132,7 +263,6 @@ pub fn vote_contested_resource_active_polls_contract_document_tree_path<'a>(
     ]
 }
 
-#[cfg(feature = "server")]
 /// Returns the path to the root of document type in the contested tree
 pub fn vote_contested_resource_active_polls_contract_document_tree_path_vec(
     contract_id: &[u8],
@@ -147,9 +277,8 @@ pub fn vote_contested_resource_active_polls_contract_document_tree_path_vec(
     ]
 }
 
-#[cfg(feature = "server")]
 /// Returns the path to the primary keys of a contract document type.
-pub fn vote_contested_resource_contract_documents_primary_key_path<'a>(
+pub fn vote_contested_resource_contract_documents_storage_path<'a>(
     contract_id: &'a [u8],
     document_type_name: &'a str,
 ) -> [&'a [u8]; 6] {
@@ -163,9 +292,8 @@ pub fn vote_contested_resource_contract_documents_primary_key_path<'a>(
     ]
 }
 
-#[cfg(feature = "server")]
 /// Returns the path to the primary keys of a contract document type as a vec.
-pub fn vote_contested_resource_active_polls_contract_documents_primary_key_path_vec(
+pub fn vote_contested_resource_contract_documents_storage_path_vec(
     contract_id: &[u8],
     document_type_name: &str,
 ) -> Vec<Vec<u8>> {

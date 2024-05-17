@@ -104,8 +104,10 @@ impl SingleDocumentDriveQuery {
     /// Operations to construct the contested path query.
     fn construct_contested_path_query(&self, with_limit_1: bool) -> PathQuery {
         // First we should get the overall document_type_path
-        let path =
-            votes::paths::vote_contested_resource_active_polls_contract_documents_primary_key_path_vec(&self.contract_id, self.document_type_name.as_str());
+        let path = votes::paths::vote_contested_resource_contract_documents_storage_path_vec(
+            &self.contract_id,
+            self.document_type_name.as_str(),
+        );
 
         let mut query = Query::new();
         query.insert_key(self.document_id.to_vec());

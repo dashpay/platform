@@ -7,11 +7,9 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
-use dpp::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
-};
+use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
 /// This simple signer is only to be used in tests

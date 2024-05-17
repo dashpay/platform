@@ -12,7 +12,26 @@ use crate::version::dpp_versions::{
     StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
     VotingVersions,
 };
-use crate::version::drive_abci_versions::{DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciCoreSubsidyMethodVersions, DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions, DriveAbciFeePoolOutwardsDistributionMethodVersions, DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions, DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions, DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions, DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions, DriveAbciStateTransitionCommonValidationVersions, DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions, DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion, PenaltyAmounts};
+use crate::version::drive_abci_versions::{
+    DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
+    DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
+    DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreChainLockMethodVersionsAndConstants,
+    DriveAbciCoreSubsidyMethodVersions, DriveAbciDocumentsStateTransitionValidationVersions,
+    DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions,
+    DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciFeePoolOutwardsDistributionMethodVersions,
+    DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
+    DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
+    DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
+    DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions,
+    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciStateTransitionCommonValidationVersions,
+    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
+    DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
+    DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
+    DriveAbciValidationVersions, DriveAbciVersion, PenaltyAmounts,
+};
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
     DriveContractApplyMethodVersions, DriveContractCostsMethodVersions,
@@ -836,11 +855,12 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
             },
-            voting_based_queries: DriveAbciQueryVotingVersions { contested_resource_vote_state: FeatureVersionBounds {
-                min_version: 0,
-                max_version: 0,
-                default_current_version: 0,
-            },
+            voting_based_queries: DriveAbciQueryVotingVersions {
+                contested_resource_vote_state: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
                 contested_resource_voters_for_identity: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,

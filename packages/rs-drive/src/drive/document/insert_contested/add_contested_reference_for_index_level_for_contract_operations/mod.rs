@@ -11,7 +11,6 @@ use dpp::version::drive_versions::DriveVersion;
 
 use grovedb::batch::KeyInfoPath;
 
-use dpp::data_contract::document_type::IndexType;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 

@@ -75,7 +75,9 @@ mod single_document_drive_query;
 mod test_index;
 
 #[cfg(any(feature = "server", feature = "verify"))]
-mod vote_query;
+pub mod vote_poll_vote_state_query;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod vote_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
@@ -270,7 +272,7 @@ pub struct DriveQuery<'a> {
     pub limit: Option<u16>,
     /// Order by
     pub order_by: IndexMap<String, OrderClause>,
-    /// Start at
+    /// Start at document id
     pub start_at: Option<[u8; 32]>,
     /// Start at included
     pub start_at_included: bool,

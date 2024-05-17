@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::DriveQuery;
+use crate::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use dpp::block::epoch::Epoch;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
@@ -11,9 +11,8 @@ use grovedb::TransactionArg;
 
 /// The outcome of a query
 #[derive(Debug, Default)]
-pub struct QueryDocumentsOutcomeV0 {
+pub struct QueryContestedDocumentsVoteStateOutcomeV0 {
     documents: Vec<Document>,
-    skipped: u16,
     cost: u64,
 }
 
@@ -23,28 +22,24 @@ pub struct QueryDocumentsOutcomeV0 {
 /// details from an instance of `QueryDocumentsOutcomeV0`. These methods
 /// include retrieving the documents, skipped count, and the associated cost
 /// of the query.
-pub trait QueryDocumentsOutcomeV0Methods {
+pub trait QueryContestedDocumentsVoteStateOutcomeV0Methods {
     /// Returns a reference to the documents found from the query.
     fn documents(&self) -> &Vec<Document>;
     /// Consumes the instance to return the owned documents.
     fn documents_owned(self) -> Vec<Document>;
-    /// Returns the count of items that were skipped during the query.
-    fn skipped(&self) -> u16;
     /// Returns the processing cost associated with the query.
     fn cost(&self) -> u64;
 }
 
-impl QueryDocumentsOutcomeV0Methods for QueryDocumentsOutcomeV0 {
+impl QueryContestedDocumentsVoteStateOutcomeV0Methods
+    for QueryContestedDocumentsVoteStateOutcomeV0
+{
     fn documents(&self) -> &Vec<Document> {
         &self.documents
     }
 
     fn documents_owned(self) -> Vec<Document> {
         self.documents
-    }
-
-    fn skipped(&self) -> u16 {
-        self.skipped
     }
 
     fn cost(&self) -> u64 {
@@ -71,17 +66,13 @@ impl Drive {
     /// * `Result<QueryDocumentsOutcome, Error>` - Returns `QueryDocumentsOutcome` on success with the list of documents,
     ///    number of skipped items, and cost. If the operation fails, it returns an `Error`.
     #[inline(always)]
-    pub(super) fn query_documents_v0(
+    pub(super) fn query_contested_documents_v0(
         &self,
-        query: DriveQuery,
+        query: ContestedDocumentVotePollDriveQuery,
         epoch: Option<&Epoch>,
-        dry_run: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryDocumentsOutcomeV0, Error> {
-        if dry_run {
-            return Ok(QueryDocumentsOutcomeV0::default());
-        }
+    ) -> Result<QueryContestedDocumentsVoteStateOutcomeV0, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = query.execute_raw_results_no_proof_internal(
             self,
@@ -108,10 +99,6 @@ impl Drive {
             0
         };
 
-        Ok(QueryDocumentsOutcomeV0 {
-            documents,
-            skipped,
-            cost,
-        })
+        Ok(QueryContestedDocumentsVoteStateOutcomeV0 { documents, cost })
     }
 }

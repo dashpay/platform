@@ -1,7 +1,5 @@
 mod v0;
 
-use dpp::block::block_info::BlockInfo;
-
 use grovedb::batch::KeyInfoPath;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};

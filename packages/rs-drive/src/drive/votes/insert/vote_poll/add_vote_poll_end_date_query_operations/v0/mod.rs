@@ -1,6 +1,5 @@
 use crate::drive::defaults::{
-    AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE, DEFAULT_HASH_SIZE_U8,
-    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE, U64_SIZE_U8,
+    AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8,
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -8,7 +7,6 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::drive::object_size_info::PathKeyElementInfo::{PathKeyElementSize, PathKeyRefElement};
 use crate::drive::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
 use crate::drive::votes::paths::{
-    vote_contested_resource_active_polls_contract_tree_path,
     vote_contested_resource_end_date_queries_at_time_tree_path_vec,
     vote_contested_resource_end_date_queries_tree_path,
     vote_contested_resource_end_date_queries_tree_path_vec,
@@ -17,7 +15,6 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::serialization::PlatformSerializable;
 use dpp::voting::vote_polls::VotePoll;

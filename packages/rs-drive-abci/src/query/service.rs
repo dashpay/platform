@@ -8,7 +8,29 @@ use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
-use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest, GetConsensusParamsResponse, GetContestedResourceIdentityVoteStateRequest, GetContestedResourceIdentityVoteStateResponse, GetContestedResourceVoteStatusRequest, GetContestedResourceVoteStatusResponse, GetContestedResourcesRequest, GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetContestedResourceIdentityVoteStatusRequest, GetContestedResourceIdentityVoteStatusResponse};
+use dapi_grpc::platform::v0::{
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
+    GetConsensusParamsResponse, GetContestedResourceIdentityVoteStateRequest,
+    GetContestedResourceIdentityVoteStateResponse, GetContestedResourceIdentityVoteStatusRequest,
+    GetContestedResourceIdentityVoteStatusResponse, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVoteStateResponse, GetContestedResourceVoteStatusRequest,
+    GetContestedResourceVoteStatusResponse, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
+    GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
+    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
+    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
+    GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
+    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
+    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
+    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+};
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::sync::atomic::Ordering;
@@ -396,18 +418,27 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_prefunded_specialized_balance,
             "get_contested_resource_vote_status",
         )
-            .await
+        .await
     }
 
-    async fn get_contested_resource_vote_state(&self, request: Request<GetContestedResourceVoteStateRequest>) -> Result<Response<GetContestedResourceVoteStateResponse>, Status> {
+    async fn get_contested_resource_vote_state(
+        &self,
+        request: Request<GetContestedResourceVoteStateRequest>,
+    ) -> Result<Response<GetContestedResourceVoteStateResponse>, Status> {
         todo!()
     }
 
-    async fn get_contested_resource_voters_for_identity(&self, request: Request<GetContestedResourceVotersForIdentityRequest>) -> Result<Response<GetContestedResourceVotersForIdentityResponse>, Status> {
+    async fn get_contested_resource_voters_for_identity(
+        &self,
+        request: Request<GetContestedResourceVotersForIdentityRequest>,
+    ) -> Result<Response<GetContestedResourceVotersForIdentityResponse>, Status> {
         todo!()
     }
 
-    async fn get_contested_resource_identity_vote_status(&self, request: Request<GetContestedResourceIdentityVoteStatusRequest>) -> Result<Response<GetContestedResourceIdentityVoteStatusResponse>, Status> {
+    async fn get_contested_resource_identity_vote_status(
+        &self,
+        request: Request<GetContestedResourceIdentityVoteStatusRequest>,
+    ) -> Result<Response<GetContestedResourceIdentityVoteStatusResponse>, Status> {
         todo!()
     }
 
@@ -420,7 +451,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_prefunded_specialized_balance,
             "get_prefunded_specialized_balance",
         )
-            .await
+        .await
     }
 }
 

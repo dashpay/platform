@@ -12,34 +12,25 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentRefInfo,
 };
 
+use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyUnknownElementSize,
 };
-use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
+use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 
-use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
-use crate::drive::document::paths::{
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
-    contract_documents_keeping_history_storage_time_reference_path_size,
-    contract_documents_primary_key_path,
-};
-use crate::drive::votes::paths::vote_contested_resource_contract_documents_primary_key_path;
+use crate::drive::votes::paths::vote_contested_resource_contract_documents_storage_path;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -60,7 +51,7 @@ impl Drive {
         let drive_version = &platform_version.drive;
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
-        let primary_key_path = vote_contested_resource_contract_documents_primary_key_path(
+        let primary_key_path = vote_contested_resource_contract_documents_storage_path(
             contract.id_ref().as_bytes(),
             document_type.name().as_str(),
         );

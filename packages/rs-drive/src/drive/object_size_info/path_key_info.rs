@@ -1,7 +1,6 @@
 use crate::drive::object_size_info::path_key_info::PathKeyInfo::{
     PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
 };
-use crate::drive::object_size_info::PathInfo;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use grovedb::batch::key_info::KeyInfo;
