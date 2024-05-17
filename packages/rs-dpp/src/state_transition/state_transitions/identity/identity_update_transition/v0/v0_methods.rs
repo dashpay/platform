@@ -31,7 +31,7 @@ use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTr
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use platform_value::Identifier;
 use crate::{
-    identity::KeyID,
+    identity::identity_public_key::KeyID,
     prelude::Revision,
 };
 #[cfg(feature = "state-transition-signing")]

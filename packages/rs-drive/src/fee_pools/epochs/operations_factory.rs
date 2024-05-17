@@ -45,7 +45,7 @@ use crate::fee_pools::epochs::epoch_key_constants::{
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::balances::credits::Creditable;
 use dpp::block::epoch::Epoch;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::GroveDbOp;

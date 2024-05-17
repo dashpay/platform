@@ -1,6 +1,6 @@
 mod transformer;
 
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::platform_value::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 

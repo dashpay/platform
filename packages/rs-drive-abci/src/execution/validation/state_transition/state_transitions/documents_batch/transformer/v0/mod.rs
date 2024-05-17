@@ -19,7 +19,7 @@ use dpp::consensus::state::document::document_incorrect_purchase_price_error::Do
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::Revision;
 use dpp::validation::SimpleConsensusValidationResult;

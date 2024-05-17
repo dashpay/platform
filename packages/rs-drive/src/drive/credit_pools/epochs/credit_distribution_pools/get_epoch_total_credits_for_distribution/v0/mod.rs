@@ -5,7 +5,7 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 use dpp::version::PlatformVersion;
 
@@ -42,7 +42,7 @@ mod tests {
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
-    use dpp::fee::Credits;
+    use dpp::balances::credits::Credits;
 
     use dpp::version::PlatformVersion;
 

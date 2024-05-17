@@ -1,15 +1,14 @@
-use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
-use crate::consensus::basic::decode::DecodingError;
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::data_contract::DocumentTypesAreMissingError;
+use crate::errors::consensus::basic::decode::DecodingError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use platform_value::Identifier;
 use thiserror::Error;
 
 use crate::errors::consensus::basic::document::InvalidDocumentTypeError;
 use crate::errors::consensus::ConsensusError;
 use crate::data_contract::errors::json_schema_error::JsonSchemaError;
-use crate::errors::ProtocolError;
 
 // @append_only
 #[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]

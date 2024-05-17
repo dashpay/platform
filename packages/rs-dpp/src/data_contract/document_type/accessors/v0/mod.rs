@@ -7,7 +7,7 @@ use platform_value::{Identifier, Value};
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::document::transfer::Transferable;
-use crate::identity::SecurityLevel;
+use crate::identity::identity_public_key::SecurityLevel;
 use crate::nft::TradeMode;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;

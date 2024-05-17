@@ -4,10 +4,10 @@ use ciborium::value::Value as CborValue;
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use crate::consensus::basic::data_contract::UnknownSecurityLevelError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::errors::consensus::basic::data_contract::UnknownSecurityLevelError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use std::convert::TryFrom;
 
 #[repr(u8)]

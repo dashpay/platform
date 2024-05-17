@@ -7,7 +7,7 @@ use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::document::DocumentV0Getters;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;

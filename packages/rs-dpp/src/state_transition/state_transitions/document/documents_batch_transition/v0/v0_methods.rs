@@ -22,10 +22,10 @@ use crate::state_transition::state_transitions::document::documents_batch_transi
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::{
     DocumentReplaceTransition, DocumentTransferTransition, DocumentPurchaseTransition, DocumentUpdatePriceTransition,
 };
-use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::documents_batch_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::{
     DocumentDeleteTransition, DocumentsBatchTransition,
 };
 #[cfg(feature = "state-transition-signing")]
@@ -36,7 +36,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
-use crate::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 
 impl DocumentsBatchTransitionAccessorsV0 for DocumentsBatchTransitionV0 {
     fn transitions(&self) -> &Vec<DocumentTransition> {

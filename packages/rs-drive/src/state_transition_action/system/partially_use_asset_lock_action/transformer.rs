@@ -2,10 +2,10 @@ use crate::state_transition_action::identity::identity_create::IdentityCreateTra
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use crate::state_transition_action::system::partially_use_asset_lock_action::v0::PartiallyUseAssetLockActionV0;
 use crate::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
-use dpp::consensus::basic::value_error::ValueError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
-use dpp::fee::Credits;
+use dpp::errors::consensus::basic::value_error::ValueError;
+use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::balances::credits::Credits;
 use dpp::platform_value::Bytes32;
 use dpp::serialization::Signable;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;

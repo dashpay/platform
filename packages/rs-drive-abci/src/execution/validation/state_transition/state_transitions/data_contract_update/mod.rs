@@ -57,9 +57,9 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::basic::BasicError;
-    use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
+    use dpp::errors::consensus::basic::BasicError;
+    use dpp::errors::consensus::state::state_error::StateError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use rand::prelude::StdRng;
@@ -67,15 +67,15 @@ mod tests {
     use std::collections::BTreeMap;
 
     use dpp::data_contract::DataContract;
-    use dpp::fee::Credits;
+    use dpp::balances::credits::Credits;
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
-    use dpp::state_transition::data_contract_update_transition::{
+    use dpp::state_transition::state_transitions::contract::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::contract::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
 

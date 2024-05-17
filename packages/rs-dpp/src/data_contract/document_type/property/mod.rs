@@ -4,7 +4,7 @@ use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
 
-use crate::consensus::basic::decode::DecodingError;
+use crate::errors::consensus::basic::decode::DecodingError;
 use crate::prelude::TimestampMillis;
 use crate::errors::ProtocolError;
 use array::ArrayItemType;

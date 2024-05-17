@@ -6,7 +6,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::balances::credits::MAX_CREDITS;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;

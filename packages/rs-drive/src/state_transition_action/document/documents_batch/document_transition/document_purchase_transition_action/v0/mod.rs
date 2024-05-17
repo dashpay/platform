@@ -1,7 +1,7 @@
 pub mod transformer;
 
 use dpp::document::Document;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::identifier::Identifier;
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;

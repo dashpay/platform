@@ -6,7 +6,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::block::epoch::Epoch;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;

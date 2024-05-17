@@ -3,8 +3,8 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::rpc::signature::CoreSignatureVerification;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
-use dpp::fee::Credits;
+use dpp::errors::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+use dpp::balances::credits::Credits;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 

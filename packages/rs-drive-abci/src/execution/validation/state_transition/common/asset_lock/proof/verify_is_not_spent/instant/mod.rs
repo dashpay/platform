@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::validation::ConsensusValidationResult;

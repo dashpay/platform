@@ -1,8 +1,8 @@
 use thiserror::Error;
 
-use crate::consensus::signature::signature_error::SignatureError;
-use crate::consensus::ConsensusError;
-use crate::identity::Purpose;
+use crate::errors::consensus::signature::signature_error::SignatureError;
+use crate::errors::consensus::ConsensusError;
+use crate::identity::identity_public_key::Purpose;
 
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -14,14 +14,15 @@ use bincode::{Decode, Encode};
 )]
 #[error("Invalid public key purpose {public_key_purpose}. The state transition requires {allowed_key_purpose}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidSignaturePublicKeyPurposeError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    public_key_purpose: Purpose,
-    allowed_key_purpose: Purpose,
+    pub public_key_purpose: Purpose,
+    pub allowed_key_purpose: Purpose,
 }
 
 impl InvalidSignaturePublicKeyPurposeError {

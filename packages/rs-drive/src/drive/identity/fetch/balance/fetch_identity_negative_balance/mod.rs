@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 use dpp::version::PlatformVersion;
 

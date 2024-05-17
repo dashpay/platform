@@ -1,7 +1,7 @@
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::validation::ConsensusValidationResult;

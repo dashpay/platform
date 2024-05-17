@@ -2,7 +2,7 @@ use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use dpp::balances::credits::Creditable;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use grovedb::{Element, TransactionArg};
 
 use crate::error::Error;

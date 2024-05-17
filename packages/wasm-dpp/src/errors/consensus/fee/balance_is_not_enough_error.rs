@@ -1,8 +1,8 @@
 use crate::buffer::Buffer;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
-use dpp::consensus::ConsensusError;
-use dpp::fee::Credits;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::balances::credits::Credits;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;

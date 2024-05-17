@@ -3,7 +3,7 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 

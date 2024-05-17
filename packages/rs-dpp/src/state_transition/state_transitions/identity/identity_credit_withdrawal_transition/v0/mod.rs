@@ -18,12 +18,10 @@ use serde::{Deserialize, Serialize};
 use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
-    identity::{core_script::CoreScript, KeyID},
+    identity::{core_script::CoreScript, identity_public_key::KeyID},
     withdrawal::Pooling,
     ProtocolError,
 };
-use crate::prelude::Revision;
-use crate::identity::identity_public_key::KeyID;
 
 // TODO: unsafe - we must use actual relay fee from core
 /// Minimal core per byte. Must be a fibonacci number

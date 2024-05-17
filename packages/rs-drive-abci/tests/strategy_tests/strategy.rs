@@ -18,7 +18,7 @@ use strategy_tests::operations::{
 };
 
 use dpp::document::DocumentV0Getters;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;

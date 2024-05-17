@@ -1,4 +1,4 @@
-mod protocol_version;
+pub mod protocol_version;
 use crate::version::v1::PROTOCOL_VERSION_1;
 pub use protocol_version::{AbciStructureVersion, FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion, PlatformArchitectureVersion, PlatformVersion, PLATFORM_VERSIONS, LATEST_PLATFORM_VERSION};
 

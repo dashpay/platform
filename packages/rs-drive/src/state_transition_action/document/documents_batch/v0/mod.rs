@@ -1,4 +1,4 @@
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::identifier::Identifier;
 use dpp::prelude::UserFeeIncrease;

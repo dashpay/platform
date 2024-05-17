@@ -108,7 +108,7 @@ mod tests {
 
     mod prove_many_identity_balances {
         use super::*;
-        use dpp::fee::Credits;
+        use dpp::balances::credits::Credits;
         use dpp::identity::accessors::IdentityGettersV0;
         use platform_version::version::PlatformVersion;
         use std::collections::BTreeMap;

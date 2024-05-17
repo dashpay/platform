@@ -1316,6 +1316,8 @@ dependencies = [
  "dpp",
  "ed25519-dalek",
  "env_logger 0.9.3",
+ "ferment-interfaces",
+ "ferment-macro",
  "getrandom",
  "hex",
  "indexmap 2.2.6",
@@ -1648,6 +1650,21 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "ferment-interfaces"
+version = "0.1.4"
+dependencies = [
+ "indexmap 2.2.6",
+]
+
+[[package]]
+name = "ferment-macro"
+version = "0.1.4"
+dependencies = [
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3188,6 +3205,7 @@ dependencies = [
  "bincode",
  "bs58 0.5.1",
  "ciborium",
+ "ferment-macro",
  "hex",
  "indexmap 2.2.6",
  "lazy_static",
@@ -3213,6 +3231,7 @@ dependencies = [
 name = "platform-version"
 version = "1.0.0-dev.14"
 dependencies = [
+ "ferment-macro",
  "thiserror",
 ]
 

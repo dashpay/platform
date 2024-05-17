@@ -1,6 +1,6 @@
-use crate::consensus::basic::data_contract::UnknownDocumentCreationRestrictionModeError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::data_contract::UnknownDocumentCreationRestrictionModeError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::ProtocolError;
 use std::fmt;

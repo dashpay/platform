@@ -5,7 +5,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::identity::{
     InvalidAssetLockProofCoreChainHeightError,
 };
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::validation::ConsensusValidationResult;

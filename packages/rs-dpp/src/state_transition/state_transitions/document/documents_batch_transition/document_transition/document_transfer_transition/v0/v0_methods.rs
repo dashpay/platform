@@ -2,9 +2,9 @@ use platform_value::Identifier;
 
 use crate::prelude::Revision;
 
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 
-use crate::state_transition::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
 
 pub trait DocumentTransferTransitionV0Methods {
     /// Returns a reference to the `base` field of the `DocumentReplaceTransitionV0`.

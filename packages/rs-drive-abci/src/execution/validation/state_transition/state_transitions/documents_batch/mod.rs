@@ -249,7 +249,7 @@ mod tests {
     use dpp::document::transfer::Transferable;
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::fee_result::BalanceChange;
-    use dpp::fee::Credits;
+    use dpp::balances::credits::Credits;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::nft::TradeMode;

@@ -1,6 +1,6 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -14,14 +14,15 @@ use thiserror::Error;
     received
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct UnknownStorageKeyRequirementsError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    allowed_values: Vec<u8>,
-    received: i128,
+    pub allowed_values: Vec<u8>,
+    pub received: i128,
 }
 
 impl UnknownStorageKeyRequirementsError {

@@ -1,7 +1,7 @@
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use grovedb::Element;
 
 impl Drive {

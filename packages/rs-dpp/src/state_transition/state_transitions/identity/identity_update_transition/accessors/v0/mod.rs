@@ -1,7 +1,7 @@
 use crate::prelude::IdentityNonce;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::{
-    identity::KeyID,
+    identity::identity_public_key::KeyID,
     prelude::Revision,
 };
 use platform_value::Identifier;

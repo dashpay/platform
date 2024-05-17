@@ -1,18 +1,14 @@
 use thiserror::Error as ThisError;
-
+use crate::data_contract::errors::{DataContractError, DataContractNotPresentError, IdentityNotPresentError, InvalidDocumentTypeError};
+use crate::document::errors::DocumentError;
+use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
 use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::errors::consensus::signature::{
-    InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
-};
-// use crate::errors::consensus::ConsensusError;
-// use crate::data_contract::errors::DataContractError;
-// use crate::data_contract::errors::DataContractNotPresentError;
-// use crate::data_contract::errors::IdentityNotPresentError;
-// use crate::data_contract::errors::InvalidDataContractError;
-// use crate::data_contract::errors::InvalidDocumentTypeError;
-// use crate::data_contract::errors::StructureError;
-// use crate::document::errors::DocumentError;
-
+use crate::errors::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError};
+use crate::errors::consensus::ConsensusError;
+use crate::errors::dpp_init_error::DashPlatformProtocolInitError;
+use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
+use crate::errors::non_consensus_error::NonConsensusError;
+use crate::errors::serde_parsing_error::SerdeParsingError;
 #[cfg(any(
     feature = "state-transition-validation",
     feature = "state-transition-signing"
@@ -24,35 +20,6 @@ use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
     feature = "state-transition-validation"
 ))]
 use crate::state_transition::errors::StateTransitionError;
-
-#[cfg(any(
-    all(feature = "state-transitions", feature = "validation"),
-    feature = "state-transition-validation",
-    feature = "state-transition-signing",
-    feature = "state-transition-validation"
-))]
-use crate::state_transition::errors::WrongPublicKeyPurposeError;
-
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::{
-    InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
-    StateTransitionIsNotSignedError,
-};
-use crate::errors::{
-    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
-    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
-};
-/*use crate::errors::consensus::consensus_error::ConsensusError;
-use crate::data_contract::errors::DataContractError;
-use crate::data_contract::errors::DataContractNotPresentError;
-use crate::data_contract::errors::IdentityNotPresentError;
-use crate::data_contract::errors::InvalidDataContractError;
-use crate::data_contract::errors::InvalidDocumentTypeError;
-use crate::data_contract::errors::StructureError;
-*/
-use crate::document::errors::DocumentError;
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::invalid_identity_public_key_type_error::InvalidIdentityPublicKeyTypeError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::invalid_signature_public_key_error::InvalidSignaturePublicKeyError;
 #[cfg(feature = "state-transition-validation")]
@@ -60,17 +27,14 @@ use crate::state_transition::errors::public_key_mismatch_error::PublicKeyMismatc
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::public_key_security_level_not_met_error::PublicKeySecurityLevelNotMetError;
 #[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::state_transition_error::StateTransitionError;
-#[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::state_transition_is_not_signed_error::StateTransitionIsNotSignedError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::wrong_public_key_purpose_error::WrongPublicKeyPurposeError;
 
 //use dashcore::consensus::encode::Error as DashCoreError;
 
-use platform_version::version::FeatureVersion;
 use platform_value::{Error, Value};
-use platform_version::error::PlatformVersionError;
+use platform_version::{error::PlatformVersionError, version::FeatureVersion};
 
 #[derive(ThisError, Debug)]
 #[ferment_macro::export]

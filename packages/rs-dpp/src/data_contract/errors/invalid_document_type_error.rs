@@ -30,6 +30,6 @@ impl InvalidDocumentTypeError {
 
 impl From<InvalidDocumentTypeError> for ProtocolError {
     fn from(err: InvalidDocumentTypeError) -> Self {
-        Self::InvalidDocumentTypeError(err)
+        ProtocolError::InvalidDocumentTypeError(err)
     }
 }

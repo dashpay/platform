@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::block::epoch::Epoch;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 use dpp::version::PlatformVersion;
 

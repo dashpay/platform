@@ -1,9 +1,6 @@
 use anyhow::{anyhow, bail};
 use platform_value::Value;
-// use serde_json::Value as JsonValue;
-
 use crate::data_contract::errors::DataContractError;
-use crate::identifier;
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'

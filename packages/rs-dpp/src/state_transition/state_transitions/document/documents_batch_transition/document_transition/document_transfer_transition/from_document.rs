@@ -4,7 +4,7 @@ use crate::data_contract::document_type::{DocumentTypeRef};
 use crate::document::{Document};
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use crate::state_transition::documents_batch_transition::document_transition::document_transfer_transition::{DocumentTransferTransition, DocumentTransferTransitionV0};
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_transfer_transition::{DocumentTransferTransition, DocumentTransferTransitionV0};
 
 impl DocumentTransferTransition {
     pub fn from_document(

@@ -1,5 +1,5 @@
-use crate::identity::SecurityLevel::CRITICAL;
-use crate::identity::{KeyID, Purpose, SecurityLevel};
+use crate::identity::identity_public_key::SecurityLevel::CRITICAL;
+use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
 
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use crate::state_transition::StateTransitionIdentitySigned;

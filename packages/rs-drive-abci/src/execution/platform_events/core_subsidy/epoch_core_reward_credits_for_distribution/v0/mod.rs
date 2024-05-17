@@ -4,7 +4,7 @@ use crate::execution::platform_events::core_subsidy::{
 };
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::EpochIndex;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 use lazy_static::lazy_static;
 use std::collections::HashMap;

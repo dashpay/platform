@@ -7,7 +7,7 @@ use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::balances::credits::MAX_CREDITS;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;

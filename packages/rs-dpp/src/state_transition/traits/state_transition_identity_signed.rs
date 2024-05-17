@@ -22,12 +22,10 @@ use crate::state_transition::StateTransitionLike;
     feature = "state-transition-signing",
     feature = "state-transition-validation"
 ))]
-use crate::identity::IdentityPublicKey;
-use crate::identity::Purpose;
-use crate::{
-    identity::{KeyID, SecurityLevel},
-    prelude::*,
-};
+use crate::identity::identity_public_key::IdentityPublicKey;
+use crate::identity::identity_public_key::Purpose;
+use crate::identity::identity_public_key::{KeyID, SecurityLevel};
+use crate::errors::ProtocolError;
 
 pub trait StateTransitionIdentitySigned: StateTransitionLike {
     fn signature_public_key_id(&self) -> KeyID;

@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::prelude::IdentityNonce;
 use bincode::{Decode, Encode};
@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("Nonce is out of bounds: {}", nonce)]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct NonceOutOfBoundsError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    nonce: IdentityNonce,
+    pub nonce: IdentityNonce,
 }
 
 impl NonceOutOfBoundsError {

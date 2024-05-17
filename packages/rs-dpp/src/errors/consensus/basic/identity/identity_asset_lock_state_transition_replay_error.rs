@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use dashcore::Txid;
@@ -12,6 +12,7 @@ use thiserror::Error;
 )]
 #[error("Asset lock transaction {transaction_id} is trying to be replayed and will be discarded")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IdentityAssetLockStateTransitionReplayError {
     /*
 
@@ -20,11 +21,11 @@ pub struct IdentityAssetLockStateTransitionReplayError {
     */
     #[platform_serialize(with_serde)]
     #[bincode(with_serde)]
-    transaction_id: Txid,
+    pub transaction_id: Txid,
 
-    output_index: usize,
+    pub output_index: usize,
 
-    state_transition_id: Bytes32,
+    pub state_transition_id: Bytes32,
 }
 
 impl IdentityAssetLockStateTransitionReplayError {

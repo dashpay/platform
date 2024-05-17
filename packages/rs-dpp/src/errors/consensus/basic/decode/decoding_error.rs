@@ -1,22 +1,23 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 use crate::data_contract::errors::DataContractError;
 use bincode::{Decode, Encode};
 
 #[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[error("Decoding error: {error}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DecodingError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    error: String,
+    pub error: String,
 }
 
 impl DecodingError {

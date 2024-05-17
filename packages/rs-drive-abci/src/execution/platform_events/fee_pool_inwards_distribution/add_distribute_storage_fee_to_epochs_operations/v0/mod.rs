@@ -83,7 +83,7 @@ mod tests {
         use dpp::fee::epoch::{
             perpetual_storage_epochs, CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX,
         };
-        use dpp::fee::Credits;
+        use dpp::balances::credits::Credits;
         use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::DriveOperation;
         use drive::drive::config::DriveConfig;

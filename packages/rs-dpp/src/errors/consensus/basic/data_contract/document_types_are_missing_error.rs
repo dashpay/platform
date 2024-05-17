@@ -1,10 +1,10 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
-use crate::prelude::Identifier;
+use crate::errors::consensus::ConsensusError;
+use platform_value::Identifier;
 
 use crate::data_contract::errors::DataContractError;
 use bincode::{Decode, Encode};

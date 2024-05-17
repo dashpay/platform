@@ -1,6 +1,6 @@
 use crate::state_transition_action::system::partially_use_asset_lock_action::v0::PartiallyUseAssetLockActionV0;
 use derive_more::From;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::platform_value::{Bytes32, Bytes36};
 use dpp::prelude::UserFeeIncrease;
 

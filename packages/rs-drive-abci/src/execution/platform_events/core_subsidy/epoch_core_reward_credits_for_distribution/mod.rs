@@ -5,7 +5,7 @@ use crate::error::Error;
 
 use crate::platform_types::platform::Platform;
 
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C> {

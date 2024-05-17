@@ -1,7 +1,7 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
@@ -12,17 +12,18 @@ use thiserror::Error;
 )]
 #[error("Document Creation on {data_contract_id}:{document_type_name} is not allowed because of the document type's creation restriction mode {creation_restriction_mode}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentCreationNotAllowedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    data_contract_id: Identifier,
+    pub data_contract_id: Identifier,
 
-    document_type_name: String,
+    pub document_type_name: String,
 
-    creation_restriction_mode: CreationRestrictionMode,
+    pub creation_restriction_mode: CreationRestrictionMode,
 }
 
 impl DocumentCreationNotAllowedError {

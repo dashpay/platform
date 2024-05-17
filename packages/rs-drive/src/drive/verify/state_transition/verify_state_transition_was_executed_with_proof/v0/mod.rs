@@ -7,7 +7,7 @@ use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::property_names::PRICE;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::identity::PartialIdentity;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::data_contract::DataContract;

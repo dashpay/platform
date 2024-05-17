@@ -1,11 +1,10 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
-
+use crate::errors::ProtocolError;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
@@ -13,15 +12,16 @@ use thiserror::Error;
     "Can't update Document Type {data_contract_id}::{document_type_name}: {additional_message}"
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentTypeUpdateError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    data_contract_id: Identifier,
-    document_type_name: String,
-    additional_message: String,
+    pub data_contract_id: Identifier,
+    pub document_type_name: String,
+    pub additional_message: String,
 }
 
 impl DocumentTypeUpdateError {

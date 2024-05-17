@@ -21,7 +21,7 @@ use crate::state_transition::state_transitions::identity::public_key_in_creation
 
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
-    identity::KeyID,
+    identity::identity_public_key::KeyID,
     prelude::Revision,
     ProtocolError,
 };

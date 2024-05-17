@@ -2,13 +2,13 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::asset_lock::StoredAssetLockInfo;
-use dpp::consensus::basic::identity::{
+use dpp::errors::consensus::basic::identity::{
     IdentityAssetLockStateTransitionReplayError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
 };
 use dpp::dashcore::OutPoint;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;

@@ -1,4 +1,4 @@
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use serde::{Deserialize, Serialize};
 
 /// Struct containing the amount of processing and storage fees in the distribution pools

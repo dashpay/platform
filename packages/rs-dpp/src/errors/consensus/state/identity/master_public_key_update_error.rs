@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -20,10 +20,11 @@ use bincode::{Decode, Encode};
 )]
 #[error("Failed to update the master public key: {description}. Ensure the operation is valid and permissible under current system rules.")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct MasterPublicKeyUpdateError {
-    adding: usize,
-    removing: usize,
-    description: String,
+    pub adding: usize,
+    pub removing: usize,
+    pub description: String,
 }
 
 /*

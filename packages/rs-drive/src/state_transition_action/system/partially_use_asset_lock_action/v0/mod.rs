@@ -1,4 +1,4 @@
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::platform_value::{Bytes32, Bytes36};
 use dpp::prelude::UserFeeIncrease;
 mod transformer;

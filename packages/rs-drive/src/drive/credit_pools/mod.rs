@@ -203,7 +203,7 @@ mod tests {
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
         use dpp::block::epoch::EpochIndex;
         use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
-        use dpp::fee::Credits;
+        use dpp::balances::credits::Credits;
         use dpp::version::PlatformVersion;
         use grovedb::batch::Op;
 

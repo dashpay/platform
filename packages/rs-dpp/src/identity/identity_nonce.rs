@@ -2,9 +2,9 @@ use crate::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use std::fmt::{Debug, Display, Formatter};
 
-use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::prelude::IdentityNonce;
 use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, Encode};

@@ -13,7 +13,7 @@ pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
 
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::document::transfer::Transferable;
-use crate::identity::SecurityLevel;
+use crate::identity::identity_public_key::SecurityLevel;
 use crate::nft::TradeMode;
 use platform_value::{Identifier, Value};
 

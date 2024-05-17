@@ -60,14 +60,14 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
-use crate::identity::Purpose;
+use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
 ))]
-use crate::identity::{IdentityPublicKey, KeyType};
-use crate::identity::{KeyID, SecurityLevel};
-use crate::prelude::{AssetLockProof, UserFeeIncrease};
+use crate::identity::identity_public_key::{IdentityPublicKey, KeyType};
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::prelude::UserFeeIncrease;
 pub use state_transitions::*;
 
 use crate::serialization::Signable;

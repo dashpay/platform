@@ -29,11 +29,11 @@ use platform_version::version::FeatureVersion;
 
 use std::collections::BTreeMap;
 
-use crate::consensus::basic::decode::DecodingError;
+use crate::errors::consensus::basic::decode::DecodingError;
 #[cfg(feature = "validation")]
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 #[cfg(feature = "validation")]
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 use std::io::{BufReader, Read};
 
 impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
