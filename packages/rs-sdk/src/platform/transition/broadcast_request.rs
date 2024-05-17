@@ -36,7 +36,7 @@ use crate::error::Error;
 ///
 /// ```rust, ignore
 ///
-/// use rs_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
+/// use dash_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
 /// use dpp::identity::signer::Signer;
 /// use dpp::prelude::{AssetLockProof, PrivateKey};
 /// use dpp::version::PlatformVersion;
@@ -62,7 +62,7 @@ use crate::error::Error;
 ///
 /// As [BroadcastRequestForStateTransition] is a trait, it can be implemented for any type that represents
 /// a new identity creation operation, allowing for flexibility in how new identities are broadcasted.
-pub(crate) trait BroadcastRequestForStateTransition: Send + Debug + Clone {
+pub trait BroadcastRequestForStateTransition: Send + Debug + Clone {
     /// Converts the current instance into an instance of the `TransportRequest` type, ready for broadcasting.
     ///
     /// This method takes ownership of the instance upon which it's called (hence `self`), and attempts to perform the conversion,

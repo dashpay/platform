@@ -5,7 +5,7 @@ use crate::errors::ProtocolError;
 pub trait DataContractJsonConversionMethodsV0 {
     fn from_json(
         json_value: serde_json::Value,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where

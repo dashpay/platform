@@ -1,7 +1,6 @@
 // Entry point for DAPI.
 const dotenv = require('dotenv');
 const grpc = require('@grpc/grpc-js');
-// const loadBLS = require('@dashevo/bls');
 
 const {
   server: {
@@ -12,6 +11,9 @@ const {
 const {
   getCoreDefinition,
   getPlatformDefinition,
+  v0: {
+    PlatformPromiseClient,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
@@ -27,10 +29,8 @@ const config = require('../lib/config');
 const { validateConfig } = require('../lib/config/validator');
 const logger = require('../lib/logger');
 const rpcServer = require('../lib/rpcServer/server');
-const DriveClient = require('../lib/externalApis/drive/DriveClient');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 const BlockchainListener = require('../lib/externalApis/tenderdash/BlockchainListener');
-// const DriveStateRepository = require('../lib/dpp/DriveStateRepository');
 
 const coreHandlersFactory = require(
   '../lib/grpcServer/handlers/core/coreHandlersFactory',
@@ -53,11 +53,7 @@ async function main() {
 
   const isProductionEnvironment = process.env.NODE_ENV === 'production';
 
-  logger.info('Connecting to Drive');
-  const driveClient = new DriveClient({
-    host: config.tendermintCore.host,
-    port: config.tendermintCore.port,
-  });
+  const driveClient = new PlatformPromiseClient(`http://${config.driveRpc.host}:${config.driveRpc.port}`, undefined);
 
   const rpcClient = RpcClient.http({
     host: config.tendermintCore.host,

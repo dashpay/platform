@@ -1,4 +1,4 @@
-use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyExistsError;
+use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
@@ -9,13 +9,13 @@ use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=IdentityAssetLockTransactionOutPointAlreadyExistsError)]
 pub struct IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm {
-    inner: IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    inner: IdentityAssetLockTransactionOutPointAlreadyConsumedError,
 }
 
-impl From<&IdentityAssetLockTransactionOutPointAlreadyExistsError>
+impl From<&IdentityAssetLockTransactionOutPointAlreadyConsumedError>
     for IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm
 {
-    fn from(e: &IdentityAssetLockTransactionOutPointAlreadyExistsError) -> Self {
+    fn from(e: &IdentityAssetLockTransactionOutPointAlreadyConsumedError) -> Self {
         Self { inner: e.clone() }
     }
 }

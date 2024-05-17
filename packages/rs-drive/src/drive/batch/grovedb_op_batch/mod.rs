@@ -245,7 +245,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         );
 
         self.operations.iter().find_map(|op| {
-            if &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()) {
+            if op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()) {
                 Some(&op.op)
             } else {
                 None

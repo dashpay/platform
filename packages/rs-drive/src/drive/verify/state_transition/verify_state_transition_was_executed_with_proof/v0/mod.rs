@@ -1,11 +1,15 @@
 use std::collections::{BTreeMap};
 use std::sync::Arc;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::property_names::PRICE;
+use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
-use dpp::platform_value;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::data_contract::DataContract;
 use dpp::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::state_transitions::contract::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
@@ -23,6 +27,9 @@ use dpp::state_transition::state_transitions::document::documents_batch_transiti
 use dpp::state_transition::state_transitions::document::documents_batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
 use dpp::state_transition::state_transitions::document::documents_batch_transition::document_replace_transition::DocumentFromReplaceTransition;
 use dpp::state_transition::state_transitions::document::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedPartialIdentity};
 use platform_value::Identifier;
@@ -36,8 +43,10 @@ use crate::error::proof::ProofError;
 use crate::query::SingleDocumentDriveQuery;
 
 impl Drive {
+    #[inline(always)]
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
+        block_info: &BlockInfo,
         proof: &[u8],
         known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
         platform_version: &PlatformVersion,
@@ -91,6 +100,8 @@ impl Drive {
                     )));
                 };
 
+                let owner_id = documents_batch_transition.owner_id();
+
                 let data_contract_id = transition.data_contract_id();
 
                 let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
@@ -126,12 +137,16 @@ impl Drive {
                         let expected_document = Document::try_from_create_transition(
                             create_transition,
                             documents_batch_transition.owner_id(),
-                            &contract,
+                            block_info,
+                            &document_type,
                             platform_version,
                         )?;
 
-                        if document != expected_document {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected document after create with id {}", create_transition.base().id()))));
+                        if !document.is_equal_ignoring_time_based_fields(
+                            &expected_document,
+                            platform_version,
+                        )? {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after create with id {}", create_transition.base().id()))));
                         }
                         Ok((
                             root_hash,
@@ -144,12 +159,36 @@ impl Drive {
                             replace_transition,
                             documents_batch_transition.owner_id(),
                             document.created_at(), //we can trust the created at (as we don't care)
+                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
+                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
+                            document.created_at(), //we can trust the created at (as we don't care)
+                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
+                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
+                            block_info,
+                            &document_type,
                             platform_version,
                         )?;
 
-                        if document != expected_document {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected document after replace with id {}", replace_transition.base().id()))));
+                        if !document.is_equal_ignoring_time_based_fields(
+                            &expected_document,
+                            platform_version,
+                        )? {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after replace with id {}", replace_transition.base().id()))));
                         }
+
+                        Ok((
+                            root_hash,
+                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
+                        ))
+                    }
+                    DocumentTransition::Transfer(transfer_transition) => {
+                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (transfer)", transfer_transition.base().id()))))?;
+                        let recipient_owner_id = transfer_transition.recipient_owner_id();
+
+                        if document.owner_id() != recipient_owner_id {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", transfer_transition.base().id()))));
+                        }
+
                         Ok((
                             root_hash,
                             VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
@@ -165,6 +204,29 @@ impl Drive {
                                 delete_transition.base().id(),
                                 None,
                             )])),
+                        ))
+                    }
+                    DocumentTransition::UpdatePrice(update_price_transition) => {
+                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (update price)", update_price_transition.base().id()))))?;
+                        let new_document_price : Credits = document.properties().get_integer(PRICE).map_err(|e| Error::Proof(ProofError::IncorrectProof(format!("proof did not contain a document that contained a price field with id {} expected to exist because of state transition (update price): {}", update_price_transition.base().id(), e))))?;
+                        if new_document_price != update_price_transition.price() {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document update of price after price update with id {}", update_price_transition.base().id()))));
+                        }
+                        Ok((
+                            root_hash,
+                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
+                        ))
+                    }
+                    DocumentTransition::Purchase(purchase_transition) => {
+                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (purchase)", purchase_transition.base().id()))))?;
+
+                        if document.owner_id() != owner_id {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", purchase_transition.base().id()))));
+                        }
+
+                        Ok((
+                            root_hash,
+                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
                         ))
                     }
                 }
@@ -200,6 +262,7 @@ impl Drive {
                         loaded_public_keys: Default::default(),
                         balance: Some(balance),
                         revision: Some(revision),
+
                         not_found_public_keys: Default::default(),
                     }),
                 ))
@@ -222,6 +285,7 @@ impl Drive {
                         loaded_public_keys: Default::default(),
                         balance: Some(balance),
                         revision: None,
+
                         not_found_public_keys: Default::default(),
                     }),
                 ))
@@ -275,6 +339,7 @@ impl Drive {
                             loaded_public_keys: Default::default(),
                             balance: Some(balance_identity),
                             revision: None,
+
                             not_found_public_keys: Default::default(),
                         },
                         PartialIdentity {
@@ -282,6 +347,7 @@ impl Drive {
                             loaded_public_keys: Default::default(),
                             balance: Some(balance_recipient),
                             revision: None,
+
                             not_found_public_keys: Default::default(),
                         },
                     ),

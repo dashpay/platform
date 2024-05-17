@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Delete Documents.
 //!
 //! This module implements functions in Drive for deleting documents.
@@ -74,7 +45,7 @@ mod delete_document_for_contract_operations;
 
 mod internal;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use dpp::balances::credits::Creditable;
@@ -836,8 +807,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1557 bytes
-        assert_eq!(added_bytes, 1557);
+        // We added 1559 bytes
+        assert_eq!(added_bytes, 1559);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -866,14 +837,14 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        assert_eq!(*removed_credits, 41827688);
+        assert_eq!(*removed_credits, 41881536);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(added_bytes > refund_equivalent_bytes);
-        assert_eq!(refund_equivalent_bytes, 1549); // we refunded 1549 instead of 1556
+        assert_eq!(refund_equivalent_bytes, 1551); // we refunded 1551 instead of 1559
     }
 
     #[test]
@@ -932,8 +903,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1553 bytes
-        assert_eq!(added_bytes, 1557);
+        // We added 1558 bytes
+        assert_eq!(added_bytes, 1559);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()

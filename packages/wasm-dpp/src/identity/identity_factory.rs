@@ -18,7 +18,7 @@ use crate::{
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
-use dpp::prelude::{Identity, Revision};
+use dpp::prelude::{Identity, IdentityNonce};
 
 use serde::Deserialize;
 use std::convert::TryInto;
@@ -190,12 +190,14 @@ impl IdentityFactoryWasm {
         identity: &IdentityWasm,
         recipient_id: &IdentifierWrapper,
         amount: u64,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
         self.0
             .create_identity_credit_transfer_transition(
                 identity.inner(),
                 recipient_id.to_owned().into(),
                 amount,
+                identity_nonce,
             )
             .map(Into::into)
             .with_js_error()
@@ -209,7 +211,7 @@ impl IdentityFactoryWasm {
         core_fee_per_byte: u32,
         pooling: u8,
         output_script: Vec<u8>,
-        revision: u64,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
         let pooling = match pooling {
             0 => Pooling::Never,
@@ -225,7 +227,7 @@ impl IdentityFactoryWasm {
                 core_fee_per_byte,
                 pooling,
                 CoreScript::from_bytes(output_script),
-                revision as Revision,
+                identity_nonce as IdentityNonce,
             )
             .map(Into::into)
             .with_js_error()
@@ -235,19 +237,18 @@ impl IdentityFactoryWasm {
     pub fn create_identity_update_transition(
         &self,
         identity: &IdentityWasm,
+        identity_nonce: u64,
         public_keys: &JsValue,
     ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let (add_public_keys, disable_public_keys) =
             super::factory_utils::parse_create_identity_update_transition_keys(public_keys)?;
 
-        let now = js_sys::Date::now() as u64;
-
         self.0
             .create_identity_update_transition(
                 identity.to_owned().into(),
+                identity_nonce,
                 add_public_keys,
                 disable_public_keys,
-                Some(now),
             )
             .map(Into::into)
             .with_js_error()

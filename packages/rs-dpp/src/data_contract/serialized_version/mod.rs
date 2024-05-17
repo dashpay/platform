@@ -4,12 +4,14 @@ use crate::data_contract::{DataContract, DefinitionName, DocumentName};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_value::{Identifier, Value};
 use platform_version::TryFromPlatformVersioned;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "data-contract-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub mod v0;
@@ -52,6 +54,12 @@ impl DataContractInSerializationFormat {
     pub fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.schema_defs.as_ref(),
+        }
+    }
+
+    pub fn version(&self) -> u32 {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => v0.version,
         }
     }
 }
@@ -164,7 +172,8 @@ impl TryFromPlatformVersioned<DataContract> for DataContractInSerializationForma
 impl DataContract {
     pub fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
-        validate: bool,
+        full_validation: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match value {
@@ -177,7 +186,8 @@ impl DataContract {
                     0 => {
                         let data_contract = DataContractV0::try_from_platform_versioned_v0(
                             serialization_format_v0,
-                            validate,
+                            full_validation,
+                            validation_operations,
                             platform_version,
                         )?;
                         Ok(data_contract.into())

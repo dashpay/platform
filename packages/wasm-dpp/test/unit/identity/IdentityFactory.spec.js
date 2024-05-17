@@ -236,6 +236,8 @@ describe('IdentityFactory', () => {
       const stateTransition = factory
         .createIdentityUpdateTransition(
           identity,
+          // eslint-disable-next-line
+          BigInt(1),
           {
             add: addPublicKeys,
             disable: disablePublicKeys,
@@ -248,7 +250,6 @@ describe('IdentityFactory', () => {
       expect(stateTransition.getPublicKeysToAdd().map((k) => k.toObject()))
         .to.deep.equal(addPublicKeys.map((k) => k.toObject()));
       expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([0]);
-      expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(new Date());
     });
   });
 
@@ -262,7 +263,7 @@ describe('IdentityFactory', () => {
           stateTransitionFixture.getCoreFeePerByte(),
           stateTransitionFixture.getPooling(),
           stateTransitionFixture.getOutputScript(),
-          stateTransitionFixture.getRevision(),
+          stateTransitionFixture.getNonce(),
         );
 
       expect(stateTransition.toObject())

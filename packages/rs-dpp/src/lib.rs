@@ -36,9 +36,11 @@ mod bls;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
 
+pub mod asset_lock;
 pub mod balances;
 pub mod block;
 pub mod fee;
+pub mod nft;
 pub mod serialization;
 #[cfg(any(
     feature = "message-signing",
@@ -50,6 +52,7 @@ pub mod system_data_contracts;
 pub mod withdrawal;
 
 pub use async_trait;
+
 pub use bls::*;
 
 pub mod prelude {
@@ -62,16 +65,29 @@ pub mod prelude {
     // pub use crate::identity::identity_public_key::IdentityPublicKey;
     #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
+
+    pub type BlockHeight = u64;
+
+    pub type CoreBlockHeight = u32;
     #[ferment_macro::export]
     pub type TimestampMillis = u64;
     #[ferment_macro::export]
     pub type Revision = u64;
+    pub type IdentityNonce = u64;
+
+    /// UserFeeIncrease is the additional percentage of the processing fee.
+    /// A 1 here means we pay 1% more in processing fees. A 100 means we pay 100% more.
+    pub type UserFeeIncrease = u16;
 }
 
 pub use bincode;
+#[cfg(all(not(target_arch = "wasm32"), feature = "bls-signatures"))]
 pub use bls_signatures;
+#[cfg(feature = "system_contracts")]
 pub use data_contracts;
+#[cfg(feature = "ed25519-dalek")]
 pub use ed25519_dalek;
+#[cfg(feature = "jsonschema")]
 pub use jsonschema;
 pub use platform_serialization;
 pub use platform_value;

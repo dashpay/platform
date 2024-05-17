@@ -5,33 +5,40 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::errors::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
+#[cfg(feature = "json-schema-validation")]
+use crate::errors::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::errors::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
     DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
-    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
-    InvalidDataContractVersionError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
+    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError,
+    UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError,
 };
 use crate::errors::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
 use crate::errors::consensus::basic::document::{
-    DataContractNotPresentError, DocumentTransitionsAreAbsentError,
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
-    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
-    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
-    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError,
+    DataContractNotPresentError, DocumentCreationNotAllowedError,
+    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
+    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
+    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
+    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::errors::consensus::basic::identity::{
-    DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyBasicError,
-    DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError,
-    IdentityAssetLockTransactionIsNotFoundError,
-    IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
+    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
+    IdentityAssetLockProofLockedTransactionMismatchError,
+    IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
+    IdentityAssetLockTransactionOutPointAlreadyConsumedError,
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
     InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
     InvalidAssetLockTransactionOutputReturnSizeError,
@@ -44,6 +51,7 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
     MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    TooManyMasterPublicKeyError,
 };
 use crate::errors::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::errors::consensus::basic::state_transition::{
@@ -53,10 +61,14 @@ use crate::errors::consensus::basic::state_transition::{
 use crate::errors::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
 use crate::errors::consensus::ConsensusError;
 
-use crate::errors::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
-use crate::errors::consensus::basic::json_schema_error::JsonSchemaError;
-use crate::errors::consensus::basic::UnsupportedVersionError;
+use crate::errors::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::errors::consensus::basic::value_error::ValueError;
+#[cfg(feature = "json-schema-validation")]
+use crate::errors::consensus::basic::{
+    json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
+};
+use crate::errors::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
+use crate::data_contract::errors::DataContractError;
 
 #[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
 #[ferment_macro::export]
@@ -74,6 +86,24 @@ pub enum BasicError {
     VersionError(VersionError),
 
     #[error(transparent)]
+    ContractError(DataContractError),
+
+    #[error(transparent)]
+    UnknownSecurityLevelError(UnknownSecurityLevelError),
+
+    #[error(transparent)]
+    UnknownStorageKeyRequirementsError(UnknownStorageKeyRequirementsError),
+
+    #[error(transparent)]
+    UnknownTransferableTypeError(UnknownTransferableTypeError),
+
+    #[error(transparent)]
+    UnknownTradeModeError(UnknownTradeModeError),
+
+    #[error(transparent)]
+    UnknownDocumentCreationRestrictionModeError(UnknownDocumentCreationRestrictionModeError),
+
+    #[error(transparent)]
     SerializedObjectParsingError(SerializedObjectParsingError),
 
     #[error(transparent)]
@@ -85,10 +115,12 @@ pub enum BasicError {
     #[error(transparent)]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
+    #[cfg(feature = "json-schema-validation")]
     // Structure error
     #[error(transparent)]
     JsonSchemaCompilationError(JsonSchemaCompilationError),
 
+    #[cfg(feature = "json-schema-validation")]
     #[error(transparent)]
     JsonSchemaError(JsonSchemaError),
 
@@ -120,6 +152,7 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError),
 
+    #[cfg(feature = "json-schema-validation")]
     #[error(transparent)]
     InvalidJsonSchemaRefError(InvalidJsonSchemaRefError),
 
@@ -158,6 +191,9 @@ pub enum BasicError {
     DataContractNotPresentError(DataContractNotPresentError),
 
     #[error(transparent)]
+    DocumentCreationNotAllowedError(DocumentCreationNotAllowedError),
+
+    #[error(transparent)]
     DataContractBoundsNotPresentError(DataContractBoundsNotPresentError),
 
     #[error(transparent)]
@@ -165,6 +201,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     DuplicateDocumentTransitionsWithIndicesError(DuplicateDocumentTransitionsWithIndicesError),
+
+    #[error(transparent)]
+    NonceOutOfBoundsError(NonceOutOfBoundsError),
 
     #[error(transparent)]
     InconsistentCompoundIndexDataError(InconsistentCompoundIndexDataError),
@@ -204,6 +243,11 @@ pub enum BasicError {
     DuplicatedIdentityPublicKeyIdBasicError(DuplicatedIdentityPublicKeyIdBasicError),
 
     #[error(transparent)]
+    DisablingKeyIdAlsoBeingAddedInSameTransitionError(
+        DisablingKeyIdAlsoBeingAddedInSameTransitionError,
+    ),
+
+    #[error(transparent)]
     IdentityAssetLockProofLockedTransactionMismatchError(
         IdentityAssetLockProofLockedTransactionMismatchError,
     ),
@@ -212,9 +256,17 @@ pub enum BasicError {
     IdentityAssetLockTransactionIsNotFoundError(IdentityAssetLockTransactionIsNotFoundError),
 
     #[error(transparent)]
-    IdentityAssetLockTransactionOutPointAlreadyExistsError(
-        IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutPointAlreadyConsumedError(
+        IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     ),
+
+    #[error(transparent)]
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError(
+        IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
+    ),
+
+    #[error(transparent)]
+    IdentityAssetLockStateTransitionReplayError(IdentityAssetLockStateTransitionReplayError),
 
     #[error(transparent)]
     IdentityAssetLockTransactionOutputNotFoundError(
@@ -254,6 +306,15 @@ pub enum BasicError {
 
     #[error(transparent)]
     MissingMasterPublicKeyError(MissingMasterPublicKeyError),
+
+    #[error(transparent)]
+    TooManyMasterPublicKeyError(TooManyMasterPublicKeyError),
+
+    #[error(transparent)]
+    MasterPublicKeyUpdateError(MasterPublicKeyUpdateError),
+
+    #[error(transparent)]
+    InvalidDocumentTypeRequiredSecurityLevelError(InvalidDocumentTypeRequiredSecurityLevelError),
 
     #[error(transparent)]
     InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),
@@ -307,6 +368,12 @@ pub enum BasicError {
 
     #[error(transparent)]
     IdentityCreditTransferToSelfError(IdentityCreditTransferToSelfError),
+
+    #[error(transparent)]
+    InvalidDocumentTypeNameError(InvalidDocumentTypeNameError),
+
+    #[error(transparent)]
+    IncompatibleDocumentTypeSchemaError(IncompatibleDocumentTypeSchemaError),
 }
 
 impl From<BasicError> for ConsensusError {

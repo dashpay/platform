@@ -74,7 +74,8 @@ describe('Document', () => {
       },
     };
 
-    dataContract = dataContractFactory.create(ownerId, rawDataContract);
+    // eslint-disable-next-line
+    dataContract = dataContractFactory.create(ownerId, BigInt(1), rawDataContract);
 
     rawDocument = {
       $protocolVersion: getLatestProtocolVersion(),
@@ -84,7 +85,14 @@ describe('Document', () => {
       $ownerId: ownerId,
       $revision: DocumentCreateTransition.INITIAL_REVISION,
       $createdAt: now,
+      $createdAtBlockHeight: 1,
+      $createdAtCoreBlockHeight: 1,
       $updatedAt: now,
+      $updatedAtBlockHeight: 1,
+      $updatedAtCoreBlockHeight: 1,
+      $transferredAt: null,
+      $transferredAtBlockHeight: null,
+      $transferredAtCoreBlockHeight: null,
     };
 
     rawDocumentWithBuffers = {
@@ -95,7 +103,14 @@ describe('Document', () => {
       $ownerId: ownerId.toBuffer(),
       $revision: DocumentCreateTransition.INITIAL_REVISION,
       $createdAt: now,
+      $createdAtBlockHeight: 1,
+      $createdAtCoreBlockHeight: 1,
       $updatedAt: now,
+      $updatedAtBlockHeight: 1,
+      $updatedAtCoreBlockHeight: 1,
+      $transferredAt: null,
+      $transferredAtBlockHeight: null,
+      $transferredAtCoreBlockHeight: null,
     };
 
     document = new ExtendedDocument(rawDocument, dataContract);
@@ -282,6 +297,9 @@ describe('Document', () => {
         $ownerId: await generateRandomIdentifierAsync(),
         $id: await generateRandomIdentifierAsync(),
         $updatedAt: updatedAt,
+        $transferredAt: null,
+        $transferredAtBlockHeight: null,
+        $transferredAtCoreBlockHeight: null,
         $type: 'test',
         ...data,
       };
@@ -406,7 +424,7 @@ describe('Document', () => {
     it('should return serialized Document', () => {
       const buffer = document.toBuffer();
       expect(buffer).to.be.instanceOf(Buffer);
-      expect(buffer.length).to.equal(624);
+      expect(buffer.length).to.equal(649);
     });
 
     // TODO: remove or replace?

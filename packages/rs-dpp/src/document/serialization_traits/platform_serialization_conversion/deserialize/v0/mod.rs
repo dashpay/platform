@@ -1,4 +1,6 @@
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::errors::DataContractError;
+#[cfg(feature = "extended-document")]
 use crate::errors::ProtocolError;
 use platform_version::version::PlatformVersion;
 
@@ -8,7 +10,7 @@ pub(in crate::document) trait DocumentPlatformDeserializationMethodsV0 {
         serialized_document: &[u8],
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
+    ) -> Result<Self, DataContractError>
     where
         Self: Sized;
 }

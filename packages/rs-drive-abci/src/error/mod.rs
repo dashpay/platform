@@ -4,6 +4,7 @@ use crate::error::serialization::SerializationError;
 use crate::logging;
 use dashcore_rpc::Error as CoreRpcError;
 use dpp::bls_signatures::BlsError;
+use dpp::data_contract::errors::DataContractError;
 use dpp::platform_value::Error as ValueError;
 use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
@@ -58,6 +59,12 @@ impl From<PlatformVersionError> for Error {
     fn from(value: PlatformVersionError) -> Self {
         let platform_error: ProtocolError = value.into();
         platform_error.into()
+    }
+}
+
+impl From<DataContractError> for Error {
+    fn from(value: DataContractError) -> Self {
+        Self::Protocol(ProtocolError::DataContractError(value))
     }
 }
 

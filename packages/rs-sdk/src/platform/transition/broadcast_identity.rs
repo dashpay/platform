@@ -12,11 +12,11 @@ use dpp::dashcore::PrivateKey;
 use dpp::identity::Identity;
 use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use dpp::native_bls::NativeBlsModule;
 use dpp::state_transition::state_transitions::identity::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
-use dpp::NativeBlsModule;
 use rs_dapi_client::transport::TransportRequest;
 
 use super::broadcast_request::BroadcastRequestForStateTransition;
@@ -38,7 +38,7 @@ use crate::error::Error;
 ///
 /// ```rust, ignore
 ///
-/// use rs_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
+/// use dash_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
 /// use dpp::identity::signer::Signer;
 /// use dpp::prelude::{AssetLockProof, PrivateKey};
 /// use dpp::version::PlatformVersion;
@@ -111,6 +111,7 @@ impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRe
             asset_lock_proof_private_key.inner.as_ref(),
             signer,
             &NativeBlsModule,
+            0,
             platform_version,
         )?;
         let request = identity_create_transition.broadcast_request_for_state_transition()?;

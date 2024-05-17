@@ -1,5 +1,4 @@
-use crate::identity::identity_public_key::SecurityLevel;
-use crate::identity::identity_public_key::KeyID;
+use crate::identity::{KeyID, Purpose, SecurityLevel};
 use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 
@@ -25,6 +24,12 @@ impl StateTransitionIdentitySigned for IdentityCreditTransferTransition {
             IdentityCreditTransferTransition::V0(transition) => {
                 transition.security_level_requirement()
             }
+        }
+    }
+
+    fn purpose_requirement(&self) -> Purpose {
+        match self {
+            IdentityCreditTransferTransition::V0(transition) => transition.purpose_requirement(),
         }
     }
 }

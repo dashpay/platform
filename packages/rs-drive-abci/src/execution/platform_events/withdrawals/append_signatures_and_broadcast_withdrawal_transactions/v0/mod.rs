@@ -9,8 +9,13 @@ use crate::rpc::core::{
 use dashcore_rpc::jsonrpc;
 use dashcore_rpc::Error as CoreRPCError;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
-use dpp::dashcore::consensus;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dpp::dashcore::{consensus, Txid};
+
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 impl<C> Platform<C>
 where
@@ -35,6 +40,8 @@ where
             "Broadcasting {} withdrawal transactions",
             unsigned_withdrawal_transactions.len(),
         );
+
+        let mut transaction_submission_failures = vec![];
 
         for (mut transaction, signature) in
             unsigned_withdrawal_transactions.into_iter().zip(signatures)
@@ -65,12 +72,15 @@ where
                         index
                     );
                 }
-                // Ignore errors that can happen during blockchain catching.
+                // Ignore errors that can happen during blockchain synchronization.
                 // They will be logged with dashcore_rpc
                 Err(CoreRPCError::JsonRpc(jsonrpc::error::Error::Rpc(e)))
                     if e.code == CORE_RPC_TX_ALREADY_IN_CHAIN
                         || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM
-                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED => {}
+                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED =>
+                {
+                    // These will never work again
+                }
                 // Errors that can happen if we created invalid tx or Core isn't responding
                 Err(e) => {
                     tracing::error!(
@@ -80,12 +90,62 @@ where
                         index,
                         e
                     );
-
-                    return Err(e.into());
+                    // These errors might allow the state transition to be broadcast in the future
+                    transaction_submission_failures.push((transaction.txid(), tx_bytes));
                 }
             }
         }
 
+        if let Some(ref rejections_path) = self.config.rejections_path {
+            store_transaction_failures(transaction_submission_failures, rejections_path)
+                .map_err(|e| Error::Execution(e.into()))?;
+        }
+
         Ok(())
     }
+}
+
+// Function to handle the storage of transaction submission failures
+fn store_transaction_failures(
+    failures: Vec<(Txid, Vec<u8>)>,
+    dir_path: &Path,
+) -> std::io::Result<()> {
+    if failures.is_empty() {
+        return Ok(());
+    }
+
+    // Ensure the directory exists
+    fs::create_dir_all(dir_path).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("cannot create dir {}: {}", dir_path.display(), e),
+        )
+    })?;
+
+    // Get the current timestamp
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("expected system time to be after unix epoch time")
+        .as_secs();
+
+    for (tx_id, transaction) in failures {
+        // Create the file name
+        let file_name = dir_path.join(format!("tx_{}_{}.dat", timestamp, tx_id));
+
+        // Write the bytes to the file
+        let mut file = File::create(&file_name).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("cannot create file {}: {}", file_name.display(), e),
+            )
+        })?;
+        file.write_all(&transaction).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("cannot write to file {}: {}", file_name.display(), e),
+            )
+        })?;
+    }
+
+    Ok(())
 }

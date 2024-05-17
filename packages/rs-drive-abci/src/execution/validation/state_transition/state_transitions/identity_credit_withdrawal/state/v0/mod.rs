@@ -5,9 +5,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::signature::IdentityNotFoundError;
-use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
@@ -57,29 +55,6 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
                     existing_identity_balance,
                     self.amount(),
                 )
-                .into(),
-            ));
-        }
-
-        let Some(revision) = platform.drive.fetch_identity_revision(
-            self.identity_id().to_buffer(),
-            true,
-            tx,
-            platform_version,
-        )?
-        else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                IdentityNotFoundError::new(self.identity_id()).into(),
-            ));
-        };
-
-        // Check revision
-        if revision + 1 != self.revision() {
-            return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidIdentityRevisionError(InvalidIdentityRevisionError::new(
-                    self.identity_id(),
-                    revision,
-                ))
                 .into(),
             ));
         }

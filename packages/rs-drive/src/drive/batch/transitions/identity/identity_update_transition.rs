@@ -18,7 +18,6 @@ impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let identity_id = self.identity_id();
         let revision = self.revision();
-        let public_keys_disabled_at = self.public_keys_disabled_at();
         let (add_public_keys, disable_public_keys) = self.public_keys_to_add_and_disable_owned();
 
         let (unique_keys, non_unique_keys): (Vec<IdentityPublicKey>, Vec<IdentityPublicKey>) =
@@ -44,16 +43,13 @@ impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
                 },
             ));
         }
-        if let Some(public_keys_disabled_at) = public_keys_disabled_at {
-            if !disable_public_keys.is_empty() {
-                drive_operations.push(IdentityOperation(
-                    IdentityOperationType::DisableIdentityKeys {
-                        identity_id: identity_id.to_buffer(),
-                        keys_ids: disable_public_keys,
-                        disable_at: public_keys_disabled_at,
-                    },
-                ));
-            }
+        if !disable_public_keys.is_empty() {
+            drive_operations.push(IdentityOperation(
+                IdentityOperationType::DisableIdentityKeys {
+                    identity_id: identity_id.to_buffer(),
+                    keys_ids: disable_public_keys,
+                },
+            ));
         }
 
         Ok(drive_operations)

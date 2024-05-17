@@ -12,7 +12,8 @@ use crate::{
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetIdentitiesContractKeysRequest, GetIdentityKeysRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
@@ -37,7 +38,7 @@ use super::LimitQuery;
 /// To fetch multiple objects from the platform, you need to define some query (criteria that fetched objects must match)
 /// and use [FetchMany::fetch_many()] for your object type.
 ///
-/// You can also use conveniance methods:
+/// You can also use convenience methods:
 /// * [FetchMany::fetch_many_by_identifiers()] - to fetch multiple objects by their identifiers,
 /// * [FetchMany::fetch_many_with_limit()] - to fetch not more than `limit` objects.
 ///
@@ -55,7 +56,7 @@ use super::LimitQuery;
 /// * call [DataContract::fetch_many()](FetchMany::fetch_many()) with the query and an instance of [Sdk].
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
+/// use dash_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
 ///
 /// # const SOME_IDENTIFIER_1 : [u8; 32] = [1; 32];
 /// # const SOME_IDENTIFIER_2 : [u8; 32] = [2; 32];
@@ -142,7 +143,8 @@ where
         let object: BTreeMap<K, Option<Self>> = sdk
             .parse_proof::<<Self as FetchMany<K>>::Request, BTreeMap<K, Option<Self>>>(
                 request, response,
-            )?
+            )
+            .await?
             .unwrap_or_default();
 
         Ok(object)
@@ -150,7 +152,7 @@ where
 
     /// Fetch multiple objects from the Platform by their identifiers.
     ///
-    /// Conveniance method to fetch multiple objects by their identifiers.
+    /// Convenience method to fetch multiple objects by their identifiers.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
     ///
     /// ## Parameters
@@ -227,7 +229,8 @@ impl FetchMany<Identifier> for Document {
 
         // let object: Option<BTreeMap<K,Document>> = sdk
         let documents: BTreeMap<Identifier, Option<Document>> = sdk
-            .parse_proof::<DocumentQuery, Documents>(document_query, response)?
+            .parse_proof::<DocumentQuery, Documents>(document_query, response)
+            .await?
             .unwrap_or_default();
 
         Ok(documents)
@@ -273,7 +276,7 @@ impl FetchMany<EpochIndex> for ExtendedEpochInfo {
 /// ## Example
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::FetchMany};
+/// use dash_sdk::{Sdk, platform::FetchMany};
 /// use drive_proof_verifier::types::ProtocolVersionVoteCount;
 ///
 /// # tokio_test::block_on(async {

@@ -1,0 +1,54 @@
+version: '3.7'
+
+services:
+  gateway:
+    depends_on:
+      - dapi_api
+      - dapi_core_streams
+      - drive_abci
+      - gateway_rate_limiter
+
+  gateway_rate_limiter:
+    labels:
+      org.dashmate.service.title: "Gateway rate limiter"
+    restart: unless-stopped
+    image: ${PLATFORM_GATEWAY_RATE_LIMITER_DOCKER_IMAGE:?err}
+    command: /bin/ratelimit
+    depends_on:
+      - gateway_rate_limiter_redis
+    networks:
+      - gateway_rate_limiter
+    volumes:
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/rate_limiter/rate_limiter.yaml:/data/ratelimit/config/config.yaml:ro
+    environment:
+      - LOG_LEVEL=info
+      - LOG_FORMAT=text
+      - BACKEND_TYPE=redis
+      - REDIS_SOCKET_TYPE=tcp
+      - REDIS_URL=gateway_rate_limiter_redis:6379
+      - RUNTIME_ROOT=/data
+      - RUNTIME_SUBDIRECTORY=ratelimit
+      - RUNTIME_WATCH_ROOT=false
+      - DISABLE_STATS=${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DISABLED:?err}
+      - STATSD_HOST=gateway_rate_limiter_metrics
+      - STATSD_PORT=9125
+      - CONFIG_TYPE=FILE
+      - GRPC_MAX_CONNECTION_AGE=1h
+      - GRPC_MAX_CONNECTION_AGE_GRACE=10m
+      - GRPC_PORT=8081
+    expose:
+      - 8081
+    profiles:
+      - platform
+
+  gateway_rate_limiter_redis:
+    labels:
+      org.dashmate.service.title: "Gateway rate limiter storage"
+    restart: unless-stopped
+    image: redis:alpine
+    expose:
+      - 6379
+    networks:
+      - gateway_rate_limiter
+    profiles:
+      - platform

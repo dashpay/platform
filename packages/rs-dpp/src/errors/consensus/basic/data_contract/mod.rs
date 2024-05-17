@@ -3,43 +3,35 @@ pub mod data_contract_immutable_properties_update_error;
 pub mod data_contract_invalid_index_definition_update_error;
 pub mod data_contract_max_depth_exceed_error;
 pub mod data_contract_unique_indices_changed_error;
+pub mod document_types_are_missing_error;
 pub mod duplicate_index_error;
 pub mod duplicate_index_name_error;
 pub mod incompatible_data_contract_schema_error;
+pub mod incompatible_document_type_schema_error;
 pub mod incompatible_re2_pattern_error;
 pub mod invalid_compound_index_error;
 pub mod invalid_data_contract_id_error;
 pub mod invalid_data_contract_version_error;
+pub mod invalid_document_type_name_error;
+pub mod invalid_document_type_required_security_level;
 pub mod invalid_index_property_type_error;
 pub mod invalid_indexed_property_constraint_error;
+#[cfg(feature = "json-schema-validation")]
 pub mod invalid_json_schema_ref_error;
 pub mod system_property_index_already_present_error;
 pub mod undefined_index_property_error;
 pub mod unique_indices_limit_reached_error;
-
-// pub use data_contract_have_new_unique_index_error::*;
-// pub use data_contract_immutable_properties_update_error::*;
-// pub use data_contract_invalid_index_definition_update_error::*;
-// pub use data_contract_unique_indices_changed_error::*;
-// pub use duplicate_index_error::*;
-// pub use duplicate_index_name_error::*;
-// pub use incompatible_data_contract_schema_error::*;
-// pub use incompatible_re2_pattern_error::*;
-// pub use invalid_compound_index_error::*;
-// pub use invalid_data_contract_id_error::*;
-// pub use invalid_data_contract_version_error::*;
-// pub use invalid_index_property_type_error::*;
-// pub use invalid_indexed_property_constraint_error::*;
-// pub use invalid_json_schema_ref_error::*;
-//
-// pub use system_property_index_already_present_error::*;
-// pub use undefined_index_property_error::*;
-// pub use unique_indices_limit_reached_error::*;
+pub mod unknown_document_creation_restriction_mode_error;
+pub mod unknown_security_level_error;
+pub mod unknown_storage_key_requirements_error;
+pub mod unknown_trade_mode_error;
+pub mod unknown_transferable_type_error;
 
 pub use data_contract_have_new_unique_index_error::DataContractHaveNewUniqueIndexError;
 pub use data_contract_immutable_properties_update_error::DataContractImmutablePropertiesUpdateError;
 pub use data_contract_invalid_index_definition_update_error::DataContractInvalidIndexDefinitionUpdateError;
 pub use data_contract_unique_indices_changed_error::DataContractUniqueIndicesChangedError;
+pub use document_types_are_missing_error::DocumentTypesAreMissingError;
 pub use duplicate_index_error::DuplicateIndexError;
 pub use duplicate_index_name_error::DuplicateIndexNameError;
 pub use incompatible_data_contract_schema_error::IncompatibleDataContractSchemaError;
@@ -47,9 +39,20 @@ pub use incompatible_re2_pattern_error::IncompatibleRe2PatternError;
 pub use invalid_compound_index_error::InvalidCompoundIndexError;
 pub use invalid_data_contract_id_error::InvalidDataContractIdError;
 pub use invalid_data_contract_version_error::InvalidDataContractVersionError;
+pub use invalid_document_type_required_security_level::InvalidDocumentTypeRequiredSecurityLevelError;
 pub use invalid_index_property_type_error::InvalidIndexPropertyTypeError;
 pub use invalid_indexed_property_constraint_error::InvalidIndexedPropertyConstraintError;
+#[cfg(feature = "json-schema-validation")]
 pub use invalid_json_schema_ref_error::InvalidJsonSchemaRefError;
+
 pub use system_property_index_already_present_error::SystemPropertyIndexAlreadyPresentError;
 pub use undefined_index_property_error::UndefinedIndexPropertyError;
 pub use unique_indices_limit_reached_error::UniqueIndicesLimitReachedError;
+
+pub use incompatible_document_type_schema_error::IncompatibleDocumentTypeSchemaError;
+pub use invalid_document_type_name_error::InvalidDocumentTypeNameError;
+pub use unknown_document_creation_restriction_mode_error::UnknownDocumentCreationRestrictionModeError;
+pub use unknown_security_level_error::UnknownSecurityLevelError;
+pub use unknown_storage_key_requirements_error::UnknownStorageKeyRequirementsError;
+pub use unknown_trade_mode_error::UnknownTradeModeError;
+pub use unknown_transferable_type_error::UnknownTransferableTypeError;

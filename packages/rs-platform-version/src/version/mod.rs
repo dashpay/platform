@@ -1,12 +1,14 @@
-pub mod protocol_version;
-// pub use protocol_version::*;
+mod protocol_version;
+use crate::version::v1::PROTOCOL_VERSION_1;
 pub use protocol_version::{AbciStructureVersion, FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion, PlatformArchitectureVersion, PlatformVersion, PLATFORM_VERSIONS, LATEST_PLATFORM_VERSION};
+
 pub mod contracts;
 pub mod dpp_versions;
 pub mod drive_abci_versions;
 pub mod drive_versions;
+pub mod fee;
 #[cfg(feature = "mock-versions")]
 pub mod mocks;
-mod v1;
+pub mod v1;
 
-pub const LATEST_VERSION: u32 = 1;
+pub const LATEST_VERSION: u32 = PROTOCOL_VERSION_1;

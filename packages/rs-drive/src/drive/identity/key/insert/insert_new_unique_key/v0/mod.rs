@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Insert a new key into an identity operations
+    #[inline(always)]
     pub(super) fn insert_new_unique_key_operations_v0(
         &self,
         identity_id: [u8; 32],
@@ -58,7 +59,7 @@ impl Drive {
         if with_searchable_inner_references
             && matches!(
                 identity_key.purpose(),
-                Purpose::AUTHENTICATION | Purpose::WITHDRAW
+                Purpose::AUTHENTICATION | Purpose::TRANSFER
             )
         {
             self.insert_key_searchable_references_operations(

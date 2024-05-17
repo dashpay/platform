@@ -47,6 +47,7 @@ impl Drive {
     /// * If the contract cannot be deserialized due to protocol errors.
     ///
     /// * If the queried contract path does not refer to a contract element.
+    #[inline(always)]
     pub(super) fn fetch_contract_with_history_v0(
         &self,
         contract_id: [u8; 32],

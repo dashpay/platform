@@ -2,7 +2,7 @@ const Dash = require('dash');
 
 const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock');
 
-const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
+const { hash, sha256 } = require('@dashevo/wasm-dpp/lib/utils/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
@@ -22,8 +22,8 @@ const {
     Identifier,
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
-    InvalidAssetLockProofValueError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     BasicECDSAError,
     IdentityPublicKeyWithWitness,
     IdentityInsufficientBalanceError,
@@ -60,15 +60,15 @@ describe('Platform', () => {
       let broadcastError;
 
       try {
-        await client.platform.identities.register(117000);
+        await client.platform.identities.register(197000);
       } catch (e) {
         broadcastError = e;
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(4028);
+      expect(broadcastError.getCause().getCode()).to.equal(10530);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
-        InvalidAssetLockProofValueError,
+        IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
       );
     });
 
@@ -79,7 +79,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(1);
+      } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
       const assetLockProof = await client.platform.dpp.identity.createInstantAssetLockProof(
@@ -104,7 +104,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1042);
+      expect(broadcastError.getCause().getCode()).to.equal(10513);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         InvalidInstantAssetLockProofSignatureError,
       );
@@ -118,7 +118,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(150000);
+      } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
       const account = await client.getWalletAccount();
 
@@ -158,7 +158,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1033);
+      expect(broadcastError.getCause().getCode()).to.equal(10504);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         IdentityAssetLockTransactionOutPointAlreadyExistsError,
       );
@@ -169,7 +169,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(15);
+      } = await client.platform.identities.utils.createAssetLockTransaction(210000);
 
       const account = await client.getWalletAccount();
 
@@ -209,7 +209,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(2009);
+      expect(broadcastError.getCause().getCode()).to.equal(20009);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         BasicECDSAError,
       );
@@ -234,13 +234,13 @@ describe('Platform', () => {
     });
 
     it('should be able to get newly created identity by it\'s public key', async () => {
-      const response = await client.getDAPIClient().platform.getIdentitiesByPublicKeyHashes(
-        [identity.getPublicKeyById(0).hash()],
+      const response = await client.getDAPIClient().platform.getIdentityByPublicKeyHash(
+        identity.getPublicKeyById(0).hash(),
       );
 
-      const [fetchedIdentity] = response.getIdentities();
+      const fetchedIdentity = response.getIdentity();
 
-      expect(fetchedIdentity).to.be.not.null();
+      expect(fetchedIdentity.length).to.be.greaterThan(0);
 
       // TODO(rs-drive-abci): fix. rs-drive-abci now only returning identity bytes without the
       //   asset lock proof. We would also want to do the same in rs-dpp and wasm-dpp, but
@@ -262,7 +262,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(150000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
         const account = await client.getWalletAccount();
 
@@ -326,7 +326,9 @@ describe('Platform', () => {
       let dataContractFixture;
 
       before(async () => {
-        dataContractFixture = await getDataContractFixture(identity.getId());
+        const nextNonce = await client.platform.nonceManager
+          .bumpIdentityNonce(identity.getId());
+        dataContractFixture = await getDataContractFixture(nextNonce, identity.getId());
 
         await client.platform.contracts.publish(dataContractFixture, identity);
 
@@ -340,7 +342,7 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
-        const lowBalanceIdentity = await client.platform.identities.register(150000);
+        const lowBalanceIdentity = await client.platform.identities.register(200000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
@@ -375,7 +377,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(15);
+        } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
         const instantLock = createFakeInstantLock(transaction.hash);
         const assetLockProof = await client.platform.dpp.identity
@@ -457,7 +459,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(1000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
         const account = await client.getWalletAccount();
 
@@ -474,7 +476,7 @@ describe('Platform', () => {
 
         // Creating ST that tries to spend the same output
 
-        const anotherIdentity = await client.platform.identities.register(150000);
+        const anotherIdentity = await client.platform.identities.register(200000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
@@ -583,7 +585,7 @@ describe('Platform', () => {
       it('should be able to add public key to the identity', async () => {
         const identityBeforeUpdate = identity.toObject();
 
-        expect(identityBeforeUpdate.publicKeys[3]).to.not.exist();
+        const nextKeyId = identityBeforeUpdate.publicKeys.length;
 
         const account = await client.platform.client.getWalletAccount();
         const identityIndex = await account.getUnusedIdentityIndex();
@@ -595,7 +597,7 @@ describe('Platform', () => {
         const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
 
         const newPublicKey = new IdentityPublicKeyWithWitness(1);
-        newPublicKey.setId(3);
+        newPublicKey.setId(nextKeyId);
         newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
         newPublicKey.setData(identityPublicKey);
 
@@ -621,7 +623,7 @@ describe('Platform', () => {
         expect(identity.getPublicKeyById(2)).to.exist();
 
         const newPublicKeyObject = newPublicKey.toObject(true);
-        const expectedPublicKey = identity.getPublicKeyById(3).toObject(true);
+        const expectedPublicKey = identity.getPublicKeyById(4).toObject(true);
         delete expectedPublicKey.disabledAt;
         expect(expectedPublicKey).to.deep.equal(
           newPublicKeyObject,
@@ -658,9 +660,7 @@ describe('Platform', () => {
       });
     });
 
-    // TODO(rs-drive-abci): fix
-    //   fetching by opreatorIdentityId returns empty bytes and serialization fails
-    describe.skip('Masternodes', () => {
+    describe('Masternodes', () => {
       let dapiClient;
       const network = process.env.NETWORK;
 
@@ -707,7 +707,7 @@ describe('Platform', () => {
           if (transaction.extraPayload.operatorReward > 0) {
             const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
 
-            const operatorIdentityHash = hash(
+            const operatorIdentityHash = sha256(
               Buffer.concat([
                 Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
                 operatorPubKey,

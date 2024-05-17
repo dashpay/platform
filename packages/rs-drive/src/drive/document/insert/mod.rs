@@ -76,7 +76,7 @@ mod tests {
     use std::option::Option::None;
 
     use dpp::block::block_info::BlockInfo;
-    use rand::Rng;
+    use rand::{random, Rng};
 
     use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
@@ -201,7 +201,7 @@ mod tests {
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
@@ -328,11 +328,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 3057
+                storage_fee: 3058
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2316870,
+                processing_fee: 2317270,
                 ..Default::default()
             }
         );
@@ -391,11 +391,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1303
+                storage_fee: 1305
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 1481210,
+                processing_fee: 1482010,
                 ..Default::default()
             }
         );
@@ -460,8 +460,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        assert_eq!(1303, added_bytes);
-        assert_eq!(142936000, processing_fee);
+        assert_eq!(1305, added_bytes);
+        assert_eq!(142936800, processing_fee);
     }
 
     #[test]
@@ -479,7 +479,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -553,7 +553,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -881,7 +881,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let created_contract =
-            get_dpns_data_contract_fixture(None, platform_version.protocol_version);
+            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
 
         drive
             .apply_contract(

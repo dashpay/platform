@@ -1,5 +1,7 @@
 use crate::value_map::ValueMap;
 use crate::{Error, Value};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use serde_json::{Map, Number};
 use std::collections::BTreeMap;
 
@@ -90,8 +92,16 @@ impl Value {
                     .map(|byte| serde_json::Value::Number(byte.into()))
                     .collect(),
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 
@@ -178,8 +188,16 @@ impl Value {
                     .map(|byte| serde_json::Value::Number((*byte).into()))
                     .collect(),
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 }
@@ -294,10 +312,10 @@ impl TryInto<serde_json::Value> for Value {
             Value::I16(i) => serde_json::Value::Number(i.into()),
             Value::U8(i) => serde_json::Value::Number(i.into()),
             Value::I8(i) => serde_json::Value::Number(i.into()),
-            Value::Bytes(bytes) => serde_json::Value::String(base64::encode(bytes.as_slice())),
-            Value::Bytes20(bytes) => serde_json::Value::String(base64::encode(bytes.as_slice())),
-            Value::Bytes32(bytes) => serde_json::Value::String(base64::encode(bytes.as_slice())),
-            Value::Bytes36(bytes) => serde_json::Value::String(base64::encode(bytes.as_slice())),
+            Value::Bytes(bytes) => serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice())),
+            Value::Bytes20(bytes) => serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice())),
+            Value::Bytes32(bytes) => serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice())),
+            Value::Bytes36(bytes) => serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice())),
             Value::Float(float) => serde_json::Value::Number(Number::from_f64(float).unwrap_or(0.into())),
             Value::Text(string) => serde_json::Value::String(string),
             Value::Bool(value) => serde_json::Value::Bool(value),
@@ -319,8 +337,16 @@ impl TryInto<serde_json::Value> for Value {
             Value::Identifier(bytes) => {
                 serde_json::Value::String(bs58::encode(bytes.as_slice()).into_string())
             }
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 }
@@ -413,7 +439,6 @@ mod tests {
           "revision": 0,
           "signature": "HxtcTSpRdACokorvpx/f4ezM40e0WtgW2GUvjiwNkHPwKDppkIoS2cirhqpZURlhDuYdu+E0KllbHNlYghcK9Bg=",
           "signaturePublicKeyId": 1,
-          "publicKeysDisabledAt": 1234567,
           "addPublicKeys": [
             {
               "id": 0,

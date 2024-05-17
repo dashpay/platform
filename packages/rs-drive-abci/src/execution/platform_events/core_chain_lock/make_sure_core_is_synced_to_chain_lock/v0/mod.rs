@@ -1,10 +1,9 @@
 use crate::error::Error;
+use crate::execution::platform_events::core_chain_lock::make_sure_core_is_synced_to_chain_lock::CoreSyncStatus;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::ChainLock;
 use dpp::version::PlatformVersion;
-use crate::execution::platform_events::core_chain_lock::make_sure_core_is_synced_to_chain_lock::CoreSyncStatus;
-use crate::execution::platform_events::core_chain_lock::make_sure_core_is_synced_to_chain_lock::CoreSyncStatus::{CoreIsSynced, CoreAlmostSynced, CoreNotSynced};
 
 impl<C> Platform<C>
 where
@@ -21,7 +20,7 @@ where
         // We need to make sure core is synced to the core height we see as valid for the state transitions
         let best_chain_locked_height = self.core_rpc.submit_chain_lock(chain_lock)?;
         Ok(if best_chain_locked_height >= given_chain_lock_height {
-            CoreIsSynced
+            CoreSyncStatus::Done
         } else if best_chain_locked_height - given_chain_lock_height
             <= platform_version
                 .drive_abci
@@ -29,9 +28,9 @@ where
                 .core_chain_lock
                 .recent_block_count_amount
         {
-            CoreAlmostSynced
+            CoreSyncStatus::Almost
         } else {
-            CoreNotSynced
+            CoreSyncStatus::Not
         })
     }
 }

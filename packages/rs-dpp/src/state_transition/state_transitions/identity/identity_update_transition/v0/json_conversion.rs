@@ -15,6 +15,7 @@ mod test {
     };
     use crate::tests::fixtures::identity_v0_fixture;
     use crate::tests::utils::generate_random_identifier_struct;
+    use assert_matches::assert_matches;
     use platform_value::BinaryData;
     // use serde_json::Value as JsonValue;
 
@@ -25,9 +26,10 @@ mod test {
         let transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: generate_random_identifier_struct(),
             revision: 0,
+            nonce: 1,
             add_public_keys: vec![public_key.into()],
             disable_public_keys: vec![],
-            public_keys_disabled_at: None,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: BinaryData::new(buffer.to_vec()),
         }
@@ -39,11 +41,8 @@ mod test {
                 into_validating_json: false,
             })
             .expect("conversion to json shouldn't fail");
-        assert!(matches!(result[IDENTITY_ID], serde_json::Value::String(_)));
-        assert!(matches!(result[SIGNATURE], serde_json::Value::String(_)));
-        assert!(matches!(
-            result[ADD_PUBLIC_KEYS][0]["data"],
-            serde_json::Value::String(_)
-        ));
+        assert_matches!(result[IDENTITY_ID], serde_json::Value::String(_));
+        assert_matches!(result[SIGNATURE], serde_json::Value::String(_));
+        assert_matches!(result[ADD_PUBLIC_KEYS][0]["data"], serde_json::Value::String(_));
     }
 }

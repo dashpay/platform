@@ -32,7 +32,6 @@ use dpp::document::{Document, DocumentV0Setters, EXTENDED_DOCUMENT_IDENTIFIER_FI
 pub use extended_document::ExtendedDocumentWasm;
 
 use dpp::identity::TimestampMillis;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
@@ -51,6 +50,9 @@ pub(crate) struct ConversionOptions {
     pub skip_identifiers_conversion: bool,
 }
 
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub(super) enum BinaryType {
     Identifier,
     Buffer,
@@ -82,6 +84,7 @@ impl DocumentWasm {
         let document_type = js_data_contract
             .inner()
             .document_type_for_name(document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
 
         let identifier_paths = document_type.identifier_paths().iter().map(|s| s.as_str());
@@ -296,6 +299,7 @@ impl DocumentWasm {
         let document_type = data_contract
             .inner()
             .document_type_for_name(document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
         let bytes = self
             .0
@@ -315,6 +319,9 @@ impl DocumentWasm {
 }
 
 impl DocumentWasm {
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn get_binary_type_of_path(
         &self,
         path: &String,
@@ -324,6 +331,7 @@ impl DocumentWasm {
         let document_type = data_contract
             .inner()
             .document_type_for_name(document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
 
         if document_type.binary_paths().contains(path) {

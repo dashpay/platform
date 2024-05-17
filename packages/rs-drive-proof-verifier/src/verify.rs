@@ -75,7 +75,7 @@ pub(crate) fn verify_tenderdash_proof(
 
     // Verify signature
     let sign_digest = commit
-        .sign_digest(
+        .calculate_sign_hash(
             &chain_id,
             quorum_type.try_into().expect("quorum type out of range"),
             &quorum_hash,

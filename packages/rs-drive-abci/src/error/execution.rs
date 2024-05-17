@@ -53,7 +53,7 @@ pub enum ExecutionError {
 
     /// The platform encountered a corrupted cache state error.
     #[error("platform corrupted cached state error: {0}")]
-    CorruptedCachedState(&'static str),
+    CorruptedCachedState(String),
 
     /// The fork is not yet active for core.
     #[error("initialization fork not active: {0}")]
@@ -121,4 +121,8 @@ pub enum ExecutionError {
     /// General Bls Error
     #[error("bls error: {0}")]
     BlsErrorGeneral(#[from] BlsError),
+
+    /// General IO Error
+    #[error("io error: {0}")]
+    IOError(#[from] std::io::Error),
 }

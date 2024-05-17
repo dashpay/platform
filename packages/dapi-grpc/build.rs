@@ -10,6 +10,7 @@ fn main() {
         PathBuf::from("protos/core/v0/core.proto"),
         PathBuf::from("src/core/proto"),
     );
+
     configure_core(core)
         .generate()
         .expect("generate core proto");
@@ -18,6 +19,7 @@ fn main() {
         PathBuf::from("protos/platform/v0/platform.proto"),
         PathBuf::from("src/platform/proto"),
     );
+
     configure_platform(platform)
         .generate()
         .expect("generate platform proto");
@@ -37,13 +39,15 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 15] = [
+    const VERSIONED_REQUESTS: [&str; 19] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesRequest",
+        "GetIdentityNonceRequest",
+        "GetIdentityContractNonceRequest",
         "GetIdentityBalanceAndRevisionRequest",
         "GetIdentityBalanceRequest",
         "GetIdentityByPublicKeyHashRequest",
@@ -53,10 +57,12 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "WaitForStateTransitionResultRequest",
         "GetProtocolVersionUpgradeStateRequest",
         "GetProtocolVersionUpgradeVoteStatusRequest",
+        "GetPathElementsRequest",
+        "GetIdentitiesContractKeysRequest",
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 16] = [
+    const VERSIONED_RESPONSES: [&str; 20] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -65,6 +71,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentitiesResponse",
         "GetIdentityBalanceAndRevisionResponse",
         "GetIdentityBalanceResponse",
+        "GetIdentityNonceResponse",
+        "GetIdentityContractNonceResponse",
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",
@@ -73,6 +81,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetEpochsInfoResponse",
         "GetProtocolVersionUpgradeStateResponse",
         "GetProtocolVersionUpgradeVoteStatusResponse",
+        "GetPathElementsResponse",
+        "GetIdentitiesContractKeysResponse",
     ];
 
     // Derive VersionedGrpcMessage on requests
@@ -160,15 +170,15 @@ impl MappingConfig {
         let protobuf_file = abs_path(&protobuf_file);
         let out_dir = abs_path(&out_dir);
 
+        let build_server = cfg!(feature = "server");
+        let build_client = cfg!(feature = "client");
+
         let builder = tonic_build::configure()
-            .build_server(false)
+            .build_server(build_server)
+            .build_client(build_client)
+            .build_transport(build_server || build_client)
             .out_dir(out_dir.clone())
             .protoc_arg("--experimental_allow_proto3_optional");
-
-        #[cfg(feature = "client")]
-        let builder = builder.build_client(true).build_transport(true);
-        #[cfg(not(feature = "client"))]
-        let builder = builder.build_client(false).build_transport(false);
 
         Self {
             protobuf_file,

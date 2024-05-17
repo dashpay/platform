@@ -129,8 +129,16 @@ impl TryInto<CborValue> for Value {
                 )
             }
             Value::Identifier(bytes) => CborValue::Bytes(bytes.to_vec()),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 }

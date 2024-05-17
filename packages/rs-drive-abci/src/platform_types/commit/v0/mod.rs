@@ -107,7 +107,7 @@ impl CommitV0 {
 
         let hash = match self
             .inner
-            .sign_digest(
+            .calculate_sign_hash(
                 &self.chain_id,
                 self.quorum_type as u8,
                 quorum_hash,

@@ -10,6 +10,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use crate::rpc::core::CoreRPCLike;
+use itertools::Itertools;
 
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
@@ -19,6 +20,7 @@ where
 {
     /// We need to validate against the platform state for rotation and not the block execution
     /// context state
+    #[inline(always)]
     pub(super) fn validator_set_update_v0(
         &self,
         platform_state: &PlatformState,
@@ -64,13 +66,15 @@ where
                 .validator_sets()
                 .get_index_of(&platform_state.current_validator_set_quorum_hash())
                 .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
-                    "current quorums do not contain current validator set",
-                )))?;
+                    format!("perform_rotation: current validator set quorum hash {} not in current known validator sets [{}] processing block {}", platform_state.current_validator_set_quorum_hash(), platform_state
+                        .validator_sets().keys().map(|quorum_hash| quorum_hash.to_string()).join(" | "),
+                            platform_state.last_committed_block_height() + 1,
+                ))))?;
             // we should rotate the quorum
             let quorum_count = platform_state.validator_sets().len();
             match quorum_count {
                 0 => Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                    "no current quorums",
+                    "no current quorums".to_string(),
                 ))),
                 1 => Ok(None),
                 count => {

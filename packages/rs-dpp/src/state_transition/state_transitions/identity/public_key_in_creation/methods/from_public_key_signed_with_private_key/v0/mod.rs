@@ -6,6 +6,7 @@ use crate::state_transition::state_transitions::identity::public_key_in_creation
 use crate::{BlsModule, errors::ProtocolError};
 
 impl IdentityPublicKeyInCreation {
+    #[inline(always)]
     pub(super) fn from_public_key_signed_with_private_key_v0(
         public_key: IdentityPublicKey,
         state_transition_bytes: &[u8],

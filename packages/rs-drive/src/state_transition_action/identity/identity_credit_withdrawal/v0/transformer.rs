@@ -13,7 +13,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         creation_time_ms: u64,
     ) -> Self {
         let mut entropy = Vec::new();
-        entropy.extend_from_slice(&identity_credit_withdrawal.revision.to_be_bytes());
+        entropy.extend_from_slice(&identity_credit_withdrawal.nonce.to_be_bytes());
         entropy.extend_from_slice(identity_credit_withdrawal.output_script.as_bytes());
 
         let document_id = Document::generate_document_id_v0(
@@ -39,14 +39,22 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             revision: Some(1),
             created_at: Some(creation_time_ms),
             updated_at: Some(creation_time_ms),
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
         }
         .into();
 
         IdentityCreditWithdrawalTransitionActionV0 {
             identity_id: identity_credit_withdrawal.identity_id,
-            revision: identity_credit_withdrawal.revision,
+            nonce: identity_credit_withdrawal.nonce,
             prepared_withdrawal_document: withdrawal_document,
             amount: identity_credit_withdrawal.amount,
+            user_fee_increase: identity_credit_withdrawal.user_fee_increase,
         }
     }
 }

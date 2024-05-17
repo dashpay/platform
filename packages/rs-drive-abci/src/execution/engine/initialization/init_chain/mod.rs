@@ -6,7 +6,6 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::error::execution::ExecutionError;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
@@ -21,10 +20,11 @@ where
         request: RequestInitChain,
         transaction: &Transaction,
     ) -> Result<ResponseInitChain, Error> {
-        let state = self.state.read().expect("expected to get state");
-        let current_protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
-        let platform_version = PlatformVersion::get(current_protocol_version)?;
+        // We don't have platform state at this point, so we should
+        // use initial protocol version from genesis
+        let protocol_version = self.config.initial_protocol_version;
+        let platform_version = PlatformVersion::get(protocol_version)?;
+
         match platform_version.drive_abci.methods.engine.init_chain {
             0 => self.init_chain_v0(request, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

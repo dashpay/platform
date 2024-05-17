@@ -2,16 +2,22 @@ use crate::identity::v0::IdentityV0;
 use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
 use crate::prelude::Revision;
 
+#[cfg(feature = "identity-hashing")]
 use crate::serialization::PlatformSerializable;
+#[cfg(feature = "identity-hashing")]
 use crate::util::hash;
 use platform_version::version::PlatformVersion;
 
 use crate::errors::ProtocolError;
+#[cfg(feature = "identity-serialization")]
 use bincode::{Decode, Encode};
 use derive_more::From;
+#[cfg(feature = "identity-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 
+use crate::balances::credits::Credits;
+#[cfg(feature = "identity-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -42,7 +48,7 @@ pub enum Identity {
 pub struct PartialIdentity {
     pub id: Identifier,
     pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
-    pub balance: Option<u64>,
+    pub balance: Option<Credits>,
     pub revision: Option<Revision>,
     /// These are keys that were requested but didn't exist
     pub not_found_public_keys: BTreeSet<KeyID>,

@@ -8,6 +8,7 @@ use crate::version::PlatformVersionCurrentVersion;
 use crate::errors::ProtocolError;
 use platform_version::version::PlatformVersion;
 
+use crate::validation::operations::ProtocolValidationOperation;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod bincode;
@@ -32,15 +33,21 @@ impl<'de> Deserialize<'de> for DataContractV0 {
         let current_version =
             PlatformVersion::get_current().map_err(|e| serde::de::Error::custom(e.to_string()))?;
         // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
-        DataContractV0::try_from_platform_versioned_v0(serialization_format, true, current_version)
-            .map_err(serde::de::Error::custom)
+        DataContractV0::try_from_platform_versioned_v0(
+            serialization_format,
+            true,
+            &mut vec![],
+            current_version,
+        )
+        .map_err(serde::de::Error::custom)
     }
 }
 
 impl DataContractV0 {
     pub(in crate::data_contract) fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
-        validate: bool,
+        full_validation: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match value {
@@ -53,7 +60,8 @@ impl DataContractV0 {
                     0 => {
                         let data_contract = DataContractV0::try_from_platform_versioned_v0(
                             serialization_format_v0,
-                            validate,
+                            full_validation,
+                            validation_operations,
                             platform_version,
                         )?;
 
@@ -71,7 +79,8 @@ impl DataContractV0 {
 
     pub(in crate::data_contract) fn try_from_platform_versioned_v0(
         data_contract_data: DataContractInSerializationFormatV0,
-        validate: bool,
+        full_validation: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let DataContractInSerializationFormatV0 {
@@ -89,7 +98,9 @@ impl DataContractV0 {
             schema_defs.as_ref(),
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
-            validate,
+            config.documents_can_be_deleted_contract_default(),
+            full_validation,
+            validation_operations,
             platform_version,
         )?;
 

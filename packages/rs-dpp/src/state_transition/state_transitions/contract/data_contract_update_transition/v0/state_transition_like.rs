@@ -1,5 +1,8 @@
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use platform_value::{BinaryData, Identifier};
 
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 
 use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransitionV0;
@@ -36,5 +39,22 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
     /// Get owner ID
     fn owner_id(&self) -> Identifier {
         self.data_contract.owner_id()
+    }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        vec![format!(
+            "{}-{}-{:x}",
+            BASE64_STANDARD.encode(self.data_contract.owner_id()),
+            BASE64_STANDARD.encode(self.data_contract.id()),
+            self.identity_contract_nonce
+        )]
+    }
+
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        self.user_fee_increase
+    }
+
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        self.user_fee_increase = fee_multiplier
     }
 }

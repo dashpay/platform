@@ -19,6 +19,11 @@ export default class StopCommand extends ConfigBaseCommand {
       description: 'stop only platform',
       default: false,
     }),
+    safe: Flags.boolean({
+      char: 's',
+      description: 'wait for dkg before stop',
+      default: false,
+    }),
   };
 
   /**
@@ -32,6 +37,7 @@ export default class StopCommand extends ConfigBaseCommand {
     args,
     {
       force: isForce,
+      safe: isSafe,
       verbose: isVerbose,
       platform: platformOnly,
     },
@@ -59,6 +65,7 @@ export default class StopCommand extends ConfigBaseCommand {
       await tasks.run({
         isForce,
         isVerbose,
+        isSafe,
         platformOnly: platformOnly === true,
       });
     } catch (e) {

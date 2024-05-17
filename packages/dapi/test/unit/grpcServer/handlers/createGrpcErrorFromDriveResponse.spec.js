@@ -66,23 +66,23 @@ describe('createGrpcErrorFromDriveResponse', () => {
     });
   });
 
-  it('should throw basic consensus error if error code = 1000', async () => {
+  it('should throw basic consensus error if error code = 10000', async () => {
     const consensusError = new ProtocolVersionParsingError('test');
 
     const data = { serializedError: consensusError.serialize() };
     info = { data };
 
-    const error = await createGrpcErrorFromDriveResponse(1000, cbor.encode(info).toString('base64'));
+    const error = await createGrpcErrorFromDriveResponse(10000, cbor.encode(info).toString('base64'));
 
     expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
     expect(error.message).to.be.equals(consensusError.message);
     expect(error.getRawMetadata()).to.deep.equal({
-      code: 1000,
+      code: 10000,
       'drive-error-data-bin': cbor.encode(data),
     });
   });
 
-  it('should throw signature consensus error if error code = 2000', async () => {
+  it('should throw signature consensus error if error code = 20000', async () => {
     const id = await generateRandomIdentifierAsync();
 
     const consensusError = new IdentityNotFoundError(id);
@@ -91,7 +91,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
     info = { data };
 
     const error = await createGrpcErrorFromDriveResponse(
-      2000,
+      20000,
       cbor.encode(info).toString('base64'),
     );
 
@@ -99,27 +99,27 @@ describe('createGrpcErrorFromDriveResponse', () => {
     expect(error.message).to.be.equals(consensusError.message);
     expect(error.getCode()).to.equal(GrpcErrorCodes.UNAUTHENTICATED);
     expect(error.getRawMetadata()).to.deep.equal({
-      code: 2000,
+      code: 20000,
       'drive-error-data-bin': cbor.encode(data),
     });
   });
 
-  it('should throw fee consensus error if error code = 3000', async () => {
+  it('should throw fee consensus error if error code = 30000', async () => {
     const consensusError = new BalanceIsNotEnoughError(BigInt(20), BigInt(10));
 
     const data = { serializedError: consensusError.serialize() };
     info = { data };
 
-    const error = await createGrpcErrorFromDriveResponse(3000, cbor.encode(info).toString('base64'));
+    const error = await createGrpcErrorFromDriveResponse(30000, cbor.encode(info).toString('base64'));
 
     expect(error).to.be.an.instanceOf(FailedPreconditionGrpcError);
     expect(error.getRawMetadata()).to.deep.equal({
-      code: 3000,
+      code: 30000,
       'drive-error-data-bin': cbor.encode(data),
     });
   });
 
-  it('should throw state consensus error if error code = 4000', async () => {
+  it('should throw state consensus error if error code = 40000', async () => {
     const dataContractId = await generateRandomIdentifierAsync();
 
     const consensusError = new DataContractAlreadyPresentError(dataContractId);
@@ -128,23 +128,23 @@ describe('createGrpcErrorFromDriveResponse', () => {
     info = { data };
 
     const error = await createGrpcErrorFromDriveResponse(
-      4000,
+      40000,
       cbor.encode(info).toString('base64'),
     );
 
     expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
     expect(error.getRawMetadata()).to.deep.equal({
-      code: 4000,
+      code: 40000,
       'drive-error-data-bin': cbor.encode(data),
     });
   });
 
-  it('should throw Unknown error code >= 5000', async () => {
-    const error = await createGrpcErrorFromDriveResponse(5000, encodedInfo);
+  it('should throw Unknown error code >= 50000', async () => {
+    const error = await createGrpcErrorFromDriveResponse(50000, encodedInfo);
 
     expect(error).to.be.an.instanceOf(GrpcError);
     expect(error.getMessage()).to.equal('Internal error');
-    expect(error.getError().message).to.deep.equal('Unknown Drive’s error code: 5000');
+    expect(error.getError().message).to.deep.equal('Unknown Drive’s error code: 50000');
   });
 
   it('should return InternalGrpcError if codes is undefined', async () => {

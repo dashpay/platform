@@ -1,7 +1,7 @@
 mod fetch_full_identities;
 mod fetch_full_identity;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
 

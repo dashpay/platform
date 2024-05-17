@@ -1,11 +1,9 @@
 use crate::strategy::StrategyRandomness;
-use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::GetIdentitiesByPublicKeyHashesRequestV0;
-use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response::PublicKeyHashIdentityEntry;
+use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::{
-    get_identities_by_public_key_hashes_request, get_identities_by_public_key_hashes_response,
-    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse, Proof,
+    get_identity_by_public_key_hash_request, get_identity_by_public_key_hash_response,
+    GetIdentityByPublicKeyHashRequest, Proof,
 };
-use dapi_grpc::Message;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -16,12 +14,13 @@ use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::verify::RootHash;
 use drive::drive::Drive;
-use drive_abci::abci::{AbciApplication, AbciError};
+use drive_abci::abci::app::FullAbciApplication;
+use drive_abci::abci::AbciError;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use strategy_tests::frequency::Frequency;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
@@ -95,7 +94,7 @@ impl<'a> ProofVerification<'a> {
             r#type: SignedMsgType::Precommit.into(),
         };
 
-        let digest = match v.sign_digest(
+        let digest = match v.calculate_sign_hash(
             &self.chain_id,
             self.quorum_type as u8,
             self.quorum_hash,
@@ -114,7 +113,7 @@ impl<'a> ProofVerification<'a> {
                         e,
                         format!("Malformed signature data: {}", hex::encode(self.signature)),
                     ),
-                )
+                );
             }
         };
         tracing::trace!(
@@ -169,7 +168,7 @@ impl QueryStrategy {
         &self,
         proof_verification: &ProofVerification,
         current_identities: &Vec<Identity>,
-        abci_app: &AbciApplication<MockCoreRPCLike>,
+        abci_app: &FullAbciApplication<MockCoreRPCLike>,
         seed: StrategyRandomness,
         platform_version: &PlatformVersion,
     ) {
@@ -196,11 +195,13 @@ impl QueryStrategy {
         proof_verification: &ProofVerification,
         current_identities: &Vec<Identity>,
         frequency: &Frequency,
-        abci_app: &AbciApplication<MockCoreRPCLike>,
+        abci_app: &FullAbciApplication<MockCoreRPCLike>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) {
         let events = frequency.events_if_hit(rng);
+
+        let platform_state = abci_app.platform.state.load();
 
         for _i in 0..events {
             let identity_count = rng.gen_range(1..10);
@@ -229,95 +230,63 @@ impl QueryStrategy {
 
             let prove: bool = rng.gen();
 
-            let request = GetIdentitiesByPublicKeyHashesRequest {
-                version: Some(get_identities_by_public_key_hashes_request::Version::V0(
-                    GetIdentitiesByPublicKeyHashesRequestV0 {
-                        public_key_hashes: public_key_hashes
-                            .keys()
-                            .map(|hash| hash.to_vec())
-                            .collect(),
-                        prove,
-                    },
-                )),
-            };
-            let encoded_request = request.encode_to_vec();
-            let query_validation_result = abci_app
-                .platform
-                .query(
-                    "/identities/by-public-key-hash",
-                    encoded_request.as_slice(),
-                    platform_version,
-                )
-                .expect("expected to run query");
+            for (key_hash, expected_identity) in public_key_hashes {
+                let request = GetIdentityByPublicKeyHashRequest {
+                    version: Some(get_identity_by_public_key_hash_request::Version::V0(
+                        GetIdentityByPublicKeyHashRequestV0 {
+                            public_key_hash: key_hash.to_vec(),
+                            prove,
+                        },
+                    )),
+                };
 
-            assert!(
-                query_validation_result.errors.is_empty(),
-                "{:?}",
-                query_validation_result.errors
-            );
+                let query_validation_result = abci_app
+                    .platform
+                    .query_identity_by_public_key_hash(request, &platform_state, platform_version)
+                    .expect("expected to run query");
 
-            let query_data = query_validation_result
-                .into_data()
-                .expect("expected data on query_validation_result");
-            let response = GetIdentitiesByPublicKeyHashesResponse::decode(query_data.as_slice())
-                .expect("expected to deserialize");
+                assert!(
+                    query_validation_result.errors.is_empty(),
+                    "{:?}",
+                    query_validation_result.errors
+                );
 
-            let versioned_result = response.version.expect("expected a result");
-            match versioned_result {
-                get_identities_by_public_key_hashes_response::Version::V0(v0) => {
-                    let result = v0.result.expect("expected a result");
+                let response = query_validation_result
+                    .into_data()
+                    .expect("expected data on query_validation_result");
 
-                    match result {
-                get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Proof(proof) => {
-                    let (proof_root_hash, identities): (
-                        RootHash,
-                        HashMap<[u8; 20], Option<Identity>>,
-                    ) = Drive::verify_full_identities_by_public_key_hashes(
-                        &proof.grovedb_proof,
-                        public_key_hashes
-                            .keys()
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .as_slice(),
-                        platform_version,
-                    )
-                    .expect("expected to verify proof");
-                    let identities: HashMap<[u8; 20], PartialIdentity> = identities
-                        .into_iter()
-                        .map(|(k, v)| {
-                            (
-                                k,
-                                v.expect("expect an identity")
-                                    .into_partial_identity_info_no_balance(),
-                            )
-                        })
-                        .collect();
-                    assert_eq!(proof_verification.app_hash, &proof_root_hash);
-                    assert!(proof_verification
-                        .verify_proof(&proof_root_hash, proof)
-                        .is_valid());
-                    assert_eq!(identities, public_key_hashes);
-                }
-                get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Identities(data) => {
-                    let identities_returned = data
-                        .identity_entries
-                        .into_iter()
-                        .map(|entry| {
-                            let PublicKeyHashIdentityEntry{  value, .. } = entry;
-                            Identity::deserialize_from_bytes(&value.expect("expected a value"))
-                                .expect("expected to deserialize identity")
-                                .id()
-                        })
-                        .collect::<HashSet<_>>();
-                    assert_eq!(
-                        identities_returned,
-                        public_key_hashes
-                            .values()
-                            .map(|partial_identity| partial_identity.id)
-                            .collect()
-                    );
-                }
-            }
+                let versioned_result = response.version.expect("expected a result");
+                match versioned_result {
+                    get_identity_by_public_key_hash_response::Version::V0(v0) => {
+                        let result = v0.result.expect("expected a result");
+
+                        match result {
+                            get_identity_by_public_key_hash_response::get_identity_by_public_key_hash_response_v0::Result::Proof(proof) => {
+                                let (proof_root_hash, identity): (
+                                    RootHash,
+                                    Option<Identity>,
+                                ) = Drive::verify_full_identity_by_public_key_hash(
+                                    &proof.grovedb_proof,
+                                    key_hash,
+                                    platform_version,
+                                )
+                                    .expect("expected to verify proof");
+                                let identity = identity.expect("expected an identity")
+                                    .into_partial_identity_info_no_balance();
+                                assert_eq!(proof_verification.app_hash, &proof_root_hash);
+                                assert!(proof_verification
+                                    .verify_proof(&proof_root_hash, proof)
+                                    .is_valid());
+                                assert_eq!(identity, expected_identity);
+                            }
+                            get_identity_by_public_key_hash_response::get_identity_by_public_key_hash_response_v0::Result::Identity(data) => {
+                                let identity_id = Identity::deserialize_from_bytes(&data)
+                                    .expect("expected to deserialize identity").id();
+
+                                assert_eq!(identity_id, expected_identity.id);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -332,27 +301,19 @@ mod tests {
     use crate::strategy::NetworkStrategy;
 
     use dapi_grpc::platform::v0::get_epochs_info_request::{GetEpochsInfoRequestV0, Version};
-    use dapi_grpc::platform::v0::{
-        get_epochs_info_response, GetEpochsInfoRequest, GetEpochsInfoResponse,
-    };
+    use dapi_grpc::platform::v0::{get_epochs_info_response, GetEpochsInfoRequest};
     use dpp::block::epoch::EpochIndex;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
     use dpp::version::PlatformVersion;
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
-
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
-    use strategy_tests::Strategy;
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
-
-    use tenderdash_abci::Application;
 
     macro_rules! extract_single_variant_or_panic {
         ($expression:expr, $pattern:pat, $binding:ident) => {
@@ -382,13 +343,12 @@ mod tests {
     fn run_chain_query_epoch_info() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -441,28 +401,22 @@ mod tests {
                 ascending: true,
                 prove: false,
             })),
-        }
-        .encode_to_vec();
+        };
 
-        let platform_state = outcome
-            .abci_app
-            .platform
-            .state
-            .read()
-            .expect("expected to read state");
+        let platform_state = outcome.abci_app.platform.state.load();
+
         let protocol_version = platform_state.current_protocol_version_in_consensus();
-        drop(platform_state);
+
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");
+
         let validation_result = outcome
             .abci_app
             .platform
-            .query("/epochInfos", &request, platform_version)
+            .query_epoch_infos(request, &platform_state, platform_version)
             .expect("expected query to succeed");
-        let response = GetEpochsInfoResponse::decode(
-            validation_result.data.expect("expected data").as_slice(),
-        )
-        .expect("expected to decode response");
+
+        let response = validation_result.into_data().expect("expected data");
 
         let result = extract_single_variant_or_panic!(
             response.version.expect("expected a versioned response"),
@@ -487,13 +441,12 @@ mod tests {
     fn run_chain_query_epoch_info_latest() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -546,28 +499,22 @@ mod tests {
                 ascending: false,
                 prove: false,
             })),
-        }
-        .encode_to_vec();
+        };
 
-        let platform_state = outcome
-            .abci_app
-            .platform
-            .state
-            .read()
-            .expect("expected to read state");
+        let platform_state = outcome.abci_app.platform.state.load();
+
         let protocol_version = platform_state.current_protocol_version_in_consensus();
-        drop(platform_state);
+
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");
+
         let validation_result = outcome
             .abci_app
             .platform
-            .query("/epochInfos", &request, platform_version)
+            .query_epoch_infos(request, &platform_state, platform_version)
             .expect("expected query to succeed");
-        let response = GetEpochsInfoResponse::decode(
-            validation_result.data.expect("expected data").as_slice(),
-        )
-        .expect("expected to decode response");
+
+        let response = validation_result.into_data().expect("expected data");
 
         let result = extract_single_variant_or_panic!(
             response.version.expect("expected a versioned response"),
@@ -593,13 +540,12 @@ mod tests {
     fn run_chain_prove_epoch_info() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -652,29 +598,24 @@ mod tests {
                 ascending: true,
                 prove: true,
             })),
-        }
-        .encode_to_vec();
+        };
 
-        let platform_state = outcome
-            .abci_app
-            .platform
-            .state
-            .read()
-            .expect("expected to read state");
+        let platform_state = outcome.abci_app.platform.state.load();
+
         let protocol_version = platform_state.current_protocol_version_in_consensus();
+
         let current_epoch = platform_state.last_committed_block_epoch_ref().index;
-        drop(platform_state);
+
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");
+
         let validation_result = outcome
             .abci_app
             .platform
-            .query("/epochInfos", &request, platform_version)
+            .query_epoch_infos(request, &platform_state, platform_version)
             .expect("expected query to succeed");
-        let response = GetEpochsInfoResponse::decode(
-            validation_result.data.expect("expected data").as_slice(),
-        )
-        .expect("expected to decode response");
+
+        let response = validation_result.data.expect("expected data");
 
         let result = extract_single_variant_or_panic!(
             response.version.expect("expected a versioned response"),
@@ -712,18 +653,15 @@ mod tests {
                 ascending: false,
                 prove: true,
             })),
-        }
-        .encode_to_vec();
+        };
 
         let validation_result = outcome
             .abci_app
             .platform
-            .query("/epochInfos", &request, platform_version)
+            .query_epoch_infos(request, &platform_state, platform_version)
             .expect("expected query to succeed");
-        let response = GetEpochsInfoResponse::decode(
-            validation_result.data.expect("expected data").as_slice(),
-        )
-        .expect("expected to decode response");
+
+        let response = validation_result.data.expect("expected data");
 
         let get_epochs_info_response::Version::V0(response_v0) =
             response.version.expect("expected a versioned response");

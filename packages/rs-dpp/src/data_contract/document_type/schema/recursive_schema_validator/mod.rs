@@ -7,13 +7,13 @@ pub use traversal_validator::*;
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::errors::consensus::basic::BasicError;
     use crate::errors::consensus::codes::ErrorWithCode;
     use crate::errors::consensus::ConsensusError;
+    use assert_matches::assert_matches;
     use platform_value::{platform_value, Value};
     use platform_version::version::PlatformVersion;
-
-    use super::*;
 
     fn init() {
         let _ = env_logger::builder()
@@ -49,14 +49,14 @@ mod test {
         let first_error = get_basic_error(result.errors.pop().unwrap());
         let second_error = get_basic_error(result.errors.pop().unwrap());
 
-        assert!(matches!(
+        assert_matches!(
             first_error,
-            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties/bar': byteArray cannot"),
-        ));
-        assert!(matches!(
+            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties/bar': byteArray cannot")
+        );
+        assert_matches!(
             second_error,
-            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties': byteArray cannot"),
-        ));
+            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties': byteArray cannot")
+        );
     }
 
     #[test]
@@ -114,7 +114,7 @@ mod test {
                     err.pattern(),
                     "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
                 );
-                assert_eq!(consensus_error.code(), 1009);
+                assert_eq!(consensus_error.code(), 10202);
             }
             _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }
@@ -157,7 +157,7 @@ mod test {
                     err.pattern(),
                     "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
                 );
-                assert_eq!(consensus_error.code(), 1009);
+                assert_eq!(consensus_error.code(), 10202);
             }
             _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }
@@ -187,7 +187,7 @@ mod test {
                     err.pattern(),
                     "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
                 );
-                assert_eq!(consensus_error.code(), 1009);
+                assert_eq!(consensus_error.code(), 10202);
             }
             _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }

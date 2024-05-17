@@ -47,6 +47,7 @@ impl Drive {
     ///   to derive estimations for mutable documents. In the future, the contract might dictate how often
     ///   documents are expected to mutate.
     /// - The function assumes a default hash size (`DEFAULT_HASH_SIZE_U8`) and other default values for its estimations.
+    #[inline(always)]
     pub(super) fn add_estimation_costs_for_remove_document_to_primary_storage_v0(
         primary_key_path: [&[u8]; 5],
         document_type: DocumentTypeRef,

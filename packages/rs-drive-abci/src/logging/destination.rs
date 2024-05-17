@@ -258,7 +258,6 @@ impl TryFrom<&LogConfig> for Reopen<File> {
         let open_fn = move || {
             OpenOptions::new()
                 .create(true)
-                .write(true)
                 .append(true)
                 .mode(mode)
                 .open(&opened_path)

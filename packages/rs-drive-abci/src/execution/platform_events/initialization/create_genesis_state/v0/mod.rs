@@ -49,7 +49,9 @@ use drive::drive::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
 
-use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+use drive::drive::object_size_info::{
+    DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
+};
 use drive::query::TransactionArg;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -65,7 +67,8 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
-    pub fn create_genesis_state_v0(
+    #[inline(always)]
+    pub(super) fn create_genesis_state_v0(
         &self,
         genesis_time: TimestampMillis,
         system_identity_public_keys: SystemIdentityPublicKeys,
@@ -81,22 +84,22 @@ impl<C> Platform<C> {
 
         // Create system identities and contracts
 
-        let cache = self.drive.cache.read().unwrap();
+        let system_data_contracts = &self.drive.cache.system_data_contracts;
 
-        let dpns_data_contract = cache.system_data_contracts.dpns.clone();
+        let dpns_data_contract = system_data_contracts.load_dpns();
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
                 SystemDataContract::DPNS,
                 (
-                    cache.system_data_contracts.dpns.clone(),
+                    system_data_contracts.load_dpns(),
                     system_identity_public_keys.dpns_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Withdrawals,
                 (
-                    cache.system_data_contracts.withdrawals.clone(),
+                    system_data_contracts.load_withdrawals(),
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
@@ -114,22 +117,20 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::Dashpay,
                 (
-                    cache.system_data_contracts.dashpay.clone(),
+                    system_data_contracts.load_dashpay(),
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    cache.system_data_contracts.masternode_reward_shares.clone(),
+                    system_data_contracts.load_masternode_reward_shares(),
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),
         ]);
 
-        drop(cache);
-
-        for (_, (data_contract, identity_public_keys_set)) in system_data_contract_types {
+        for (data_contract, identity_public_keys_set) in system_data_contract_types.values() {
             let public_keys = [
                 (
                     0,
@@ -193,18 +194,17 @@ impl<C> Platform<C> {
         Ok(())
     }
 
-    fn register_system_data_contract_operations(
+    fn register_system_data_contract_operations<'a>(
         &self,
-        data_contract: DataContract,
-        operations: &mut Vec<DriveOperation>,
+        data_contract: &'a DataContract,
+        operations: &mut Vec<DriveOperation<'a>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let serialization =
             data_contract.serialize_to_bytes_with_platform_version(platform_version)?;
         operations.push(DriveOperation::DataContractOperation(
-            //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
-                contract: Cow::Owned(data_contract),
+                contract: Cow::Borrowed(data_contract),
                 serialized_contract: serialization,
                 storage_flags: None,
             },
@@ -257,23 +257,27 @@ impl<C> Platform<C> {
             revision: None,
             created_at: None,
             updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
         }
         .into();
 
         let document_type = contract.document_type_for_name("domain")?;
 
-        let operation =
-            DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {
-                document_and_contract_info: DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
-                        owner_id: None,
-                    },
-                    contract,
-                    document_type,
-                },
-                override_document: false,
-            });
+        let operation = DriveOperation::DocumentOperation(DocumentOperationType::AddDocument {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
+                owner_id: None,
+            },
+            contract_info: DataContractInfo::BorrowedDataContract(contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeRef(document_type),
+            override_document: false,
+        });
 
         operations.push(operation);
 
@@ -311,8 +315,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    27, 145, 206, 187, 152, 191, 68, 167, 189, 194, 115, 111, 104, 166, 61, 254,
-                    94, 149, 9, 131, 231, 106, 224, 64, 180, 247, 129, 223, 128, 12, 42, 39
+                    162, 81, 50, 217, 246, 11, 77, 233, 231, 192, 228, 176, 197, 102, 24, 18, 160,
+                    5, 182, 75, 119, 174, 75, 155, 86, 92, 88, 197, 201, 60, 60, 157
                 ]
             )
         }

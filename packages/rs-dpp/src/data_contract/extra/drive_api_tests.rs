@@ -11,6 +11,7 @@ mod test {
     use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::tests::json_document::json_document_to_contract;
+    use assert_matches::assert_matches;
     use platform_version::version::PlatformVersion;
 
     type IndexName = &'static str;
@@ -219,6 +220,9 @@ mod test {
             .set_documents_mutable_contract_default(false);
         contract
             .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract
+            .config
             .set_documents_keep_history_contract_default(true);
 
         let contract_cbor = contract
@@ -227,7 +231,7 @@ mod test {
         let deserialized_contract = DataContract::from_cbor(contract_cbor, true, platform_version)
             .expect("deserialization shouldn't fail");
 
-        assert!(matches!(
+        assert_matches!(
             deserialized_contract.config(),
             DataContractConfig::V0(DataContractConfigV0 {
                 can_be_deleted: false,
@@ -235,10 +239,11 @@ mod test {
                 keeps_history: true,
                 documents_mutable_contract_default: false,
                 documents_keep_history_contract_default: true,
+                documents_can_be_deleted_contract_default: false,
                 requires_identity_encryption_bounded_key: None,
                 requires_identity_decryption_bounded_key: None,
             })
-        ));
+        );
     }
 
     #[test]
@@ -266,6 +271,9 @@ mod test {
             .set_documents_mutable_contract_default(false);
         contract_v0
             .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract_v0
+            .config
             .set_documents_keep_history_contract_default(true);
 
         let contract = contract
@@ -285,6 +293,7 @@ mod test {
                 documents_keep_history_contract_default: true,
                 requires_identity_encryption_bounded_key: None,
                 requires_identity_decryption_bounded_key: None,
+                documents_can_be_deleted_contract_default: false,
             })
         );
     }

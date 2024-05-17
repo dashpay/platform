@@ -17,18 +17,22 @@ use crate::errors::consensus::state::document::duplicate_unique_index_error::Dup
 use crate::errors::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use crate::errors::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
 use crate::errors::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
-use crate::errors::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
 use crate::errors::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
 use crate::errors::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
 use crate::errors::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
 use crate::errors::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use crate::errors::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use crate::errors::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
-use crate::errors::consensus::state::identity::identity_already_exists_error::IdentityAlreadyExistsError;
-use crate::errors::consensus::state::identity::identity_insufficient_balance_error::IdentityInsufficientBalanceError;
+use crate::errors::consensus::state::identity::{
+    IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
+};
 use crate::errors::consensus::ConsensusError;
+use crate::errors::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
+use crate::errors::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::errors::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
+use crate::errors::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::errors::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
-use crate::errors::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
+use crate::errors::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 
 // use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 use crate::errors::consensus::state::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
@@ -57,6 +61,12 @@ pub enum StateError {
     DocumentNotFoundError(DocumentNotFoundError),
 
     #[error(transparent)]
+    DocumentNotForSaleError(DocumentNotForSaleError),
+
+    #[error(transparent)]
+    DocumentIncorrectPurchasePriceError(DocumentIncorrectPurchasePriceError),
+
+    #[error(transparent)]
     DocumentOwnerIdMismatchError(DocumentOwnerIdMismatchError),
 
     #[error(transparent)]
@@ -80,15 +90,7 @@ pub enum StateError {
     ),
 
     #[error(transparent)]
-    IdentityPublicKeyDisabledAtWindowViolationError(
-        IdentityPublicKeyDisabledAtWindowViolationError,
-    ),
-
-    #[error(transparent)]
     IdentityPublicKeyIsReadOnlyError(IdentityPublicKeyIsReadOnlyError),
-
-    #[error(transparent)]
-    InvalidAssetLockProofValueError(InvalidAssetLockProofValueError),
 
     #[error(transparent)]
     MissingIdentityPublicKeyIdsError(MissingIdentityPublicKeyIdsError),
@@ -98,6 +100,9 @@ pub enum StateError {
 
     #[error(transparent)]
     InvalidIdentityRevisionError(InvalidIdentityRevisionError),
+
+    #[error(transparent)]
+    InvalidIdentityNonceError(InvalidIdentityNonceError),
 
     #[error(transparent)]
     MaxIdentityPublicKeyLimitReachedError(MaxIdentityPublicKeyLimitReachedError),
@@ -122,6 +127,12 @@ pub enum StateError {
 
     #[error(transparent)]
     DataContractConfigUpdateError(DataContractConfigUpdateError),
+
+    #[error(transparent)]
+    DocumentTypeUpdateError(DocumentTypeUpdateError),
+
+    #[error(transparent)]
+    DataContractUpdatePermissionError(DataContractUpdatePermissionError),
 }
 
 impl From<StateError> for ConsensusError {

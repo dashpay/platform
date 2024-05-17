@@ -12,13 +12,14 @@ pub mod index_level;
 
 #[cfg(feature = "random-documents")]
 pub mod random_document;
+pub mod restricted_creation;
 pub mod schema;
 pub mod v0;
 
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
-use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use derive_more::From;
@@ -28,6 +29,12 @@ use std::collections::BTreeMap;
 mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
+
+    pub const CAN_BE_DELETED: &str = "canBeDeleted";
+    pub const TRANSFERABLE: &str = "transferable";
+    pub const TRADE_MODE: &str = "tradeMode";
+
+    pub const CREATION_RESTRICTION_MODE: &str = "creationRestrictionMode";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
     pub const REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityEncryptionBoundedKey";
@@ -41,6 +48,7 @@ mod property_names {
     pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
+    pub const TRANSFERRED_AT: &str = "$transferredAt";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
     pub const MIN_LENGTH: &str = "minLength";
@@ -165,13 +173,20 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         &self,
         data: Value,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.create_document_from_data(data, owner_id, document_entropy, platform_version)
-            }
+            DocumentTypeRef::V0(v0) => v0.create_document_from_data(
+                data,
+                owner_id,
+                block_height,
+                core_block_height,
+                document_entropy,
+                platform_version,
+            ),
         }
     }
 
@@ -179,6 +194,8 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         &self,
         id: Identifier,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
@@ -186,6 +203,8 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
             DocumentTypeRef::V0(v0) => v0.create_document_with_prevalidated_properties(
                 id,
                 owner_id,
+                block_height,
+                core_block_height,
                 properties,
                 platform_version,
             ),

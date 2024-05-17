@@ -31,6 +31,7 @@ where
     ///
     /// * Result<(), Error> - Returns Ok(()) if the update is successful. Returns an error if
     /// there is a problem updating the masternode list, quorum information, or the state.
+    #[inline(always)]
     pub(super) fn update_core_info_v0(
         &self,
         platform_state: Option<&PlatformState>,

@@ -1,4 +1,5 @@
 use crate::abci::AbciError;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::validation::SimpleValidationResult;
@@ -17,6 +18,8 @@ pub struct BlockExecutionOutcome {
     pub validator_set_update: Option<ValidatorSetUpdate>,
     /// Current block protocol version
     pub protocol_version: ProtocolVersion,
+    /// Block execution context
+    pub block_execution_context: BlockExecutionContext,
 }
 
 /// The outcome of the finalization of the block

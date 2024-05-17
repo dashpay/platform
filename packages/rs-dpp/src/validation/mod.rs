@@ -7,18 +7,17 @@ pub use validation_result::{
     ValidationResult,
 };
 
+#[cfg(feature = "validation")]
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "validation")]
 use crate::errors::ProtocolError;
-
-#[cfg(feature = "validation")]
-pub mod block_time_window;
 #[cfg(feature = "validation")]
 pub(crate) mod byte_array_meta;
 #[cfg(feature = "validation")]
 mod json_schema_validator;
 #[cfg(feature = "validation")]
 pub(crate) mod meta_validators;
+pub mod operations;
 mod validation_result;
 
 #[cfg(feature = "validation")]

@@ -177,6 +177,8 @@ describe('IdentityFacade', () => {
       const stateTransition = dpp.identity
         .createIdentityUpdateTransition(
           identity,
+          // eslint-disable-next-line
+          BigInt(1),
           publicKeys,
         );
 
@@ -190,7 +192,6 @@ describe('IdentityFacade', () => {
         stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),
       ).to.deep.equal(publicKeys.add.map((k) => k.toObject()));
       expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([]);
-      expect(stateTransition.getPublicKeysDisabledAt()).to.equal(undefined);
     });
   });
 
@@ -204,7 +205,7 @@ describe('IdentityFacade', () => {
           stateTransitionFixture.getCoreFeePerByte(),
           stateTransitionFixture.getPooling(),
           stateTransitionFixture.getOutputScript(),
-          stateTransitionFixture.getRevision(),
+          stateTransitionFixture.getNonce(),
         );
 
       expect(stateTransition.toObject())

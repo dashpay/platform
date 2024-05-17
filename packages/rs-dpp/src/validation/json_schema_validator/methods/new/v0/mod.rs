@@ -4,6 +4,7 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl JsonSchemaValidator {
+    #[inline(always)]
     pub(super) fn new_compiled_v0(
         json_schema: &serde_json::Value,
         platform_version: &PlatformVersion,

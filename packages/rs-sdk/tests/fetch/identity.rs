@@ -1,10 +1,10 @@
+use dash_sdk::platform::types::identity::PublicKeyHash;
+use dash_sdk::platform::{Fetch, FetchMany};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::prelude::IdentityPublicKey;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
 use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
-use rs_sdk::platform::types::identity::PublicKeyHash;
-use rs_sdk::platform::{Fetch, FetchMany};
 
 use super::{common::setup_logs, config::Config};
 
@@ -17,7 +17,7 @@ async fn test_identity_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_read").await;
 
     let identity = Identity::fetch(&sdk, id)
         .await
@@ -33,7 +33,7 @@ async fn test_identity_read_by_key() {
     let cfg = Config::new();
     let id = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_read_by_key").await;
 
     let identity = Identity::fetch(&sdk, id)
         .await
@@ -63,7 +63,7 @@ async fn test_identity_balance_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_balance_read").await;
 
     let balance = IdentityBalance::fetch(&sdk, id)
         .await
@@ -81,7 +81,7 @@ async fn test_identity_balance_revision_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_balance_revision_read").await;
 
     let (balance, revision) = IdentityBalanceAndRevision::fetch(&sdk, id)
         .await
@@ -99,7 +99,7 @@ async fn test_identity_public_keys_all_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_public_keys_all_read").await;
 
     let public_keys = IdentityPublicKey::fetch_many(&sdk, id)
         .await

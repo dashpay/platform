@@ -22,15 +22,6 @@ type PlatformgetIdentity = {
   readonly responseType: typeof platform_pb.GetIdentityResponse;
 };
 
-type PlatformgetIdentities = {
-  readonly methodName: string;
-  readonly service: typeof Platform;
-  readonly requestStream: false;
-  readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentitiesRequest;
-  readonly responseType: typeof platform_pb.GetIdentitiesResponse;
-};
-
 type PlatformgetIdentityKeys = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -38,6 +29,33 @@ type PlatformgetIdentityKeys = {
   readonly responseStream: false;
   readonly requestType: typeof platform_pb.GetIdentityKeysRequest;
   readonly responseType: typeof platform_pb.GetIdentityKeysResponse;
+};
+
+type PlatformgetIdentitiesContractKeys = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentitiesContractKeysRequest;
+  readonly responseType: typeof platform_pb.GetIdentitiesContractKeysResponse;
+};
+
+type PlatformgetIdentityNonce = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentityNonceRequest;
+  readonly responseType: typeof platform_pb.GetIdentityNonceResponse;
+};
+
+type PlatformgetIdentityContractNonce = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentityContractNonceRequest;
+  readonly responseType: typeof platform_pb.GetIdentityContractNonceResponse;
 };
 
 type PlatformgetIdentityBalance = {
@@ -103,15 +121,6 @@ type PlatformgetDocuments = {
   readonly responseType: typeof platform_pb.GetDocumentsResponse;
 };
 
-type PlatformgetIdentitiesByPublicKeyHashes = {
-  readonly methodName: string;
-  readonly service: typeof Platform;
-  readonly requestStream: false;
-  readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentitiesByPublicKeyHashesRequest;
-  readonly responseType: typeof platform_pb.GetIdentitiesByPublicKeyHashesResponse;
-};
-
 type PlatformgetIdentityByPublicKeyHash = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -166,12 +175,23 @@ type PlatformgetEpochsInfo = {
   readonly responseType: typeof platform_pb.GetEpochsInfoResponse;
 };
 
+type PlatformgetPathElements = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetPathElementsRequest;
+  readonly responseType: typeof platform_pb.GetPathElementsResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
   static readonly getIdentity: PlatformgetIdentity;
-  static readonly getIdentities: PlatformgetIdentities;
   static readonly getIdentityKeys: PlatformgetIdentityKeys;
+  static readonly getIdentitiesContractKeys: PlatformgetIdentitiesContractKeys;
+  static readonly getIdentityNonce: PlatformgetIdentityNonce;
+  static readonly getIdentityContractNonce: PlatformgetIdentityContractNonce;
   static readonly getIdentityBalance: PlatformgetIdentityBalance;
   static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
   static readonly getProofs: PlatformgetProofs;
@@ -179,13 +199,13 @@ export class Platform {
   static readonly getDataContractHistory: PlatformgetDataContractHistory;
   static readonly getDataContracts: PlatformgetDataContracts;
   static readonly getDocuments: PlatformgetDocuments;
-  static readonly getIdentitiesByPublicKeyHashes: PlatformgetIdentitiesByPublicKeyHashes;
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
   static readonly getConsensusParams: PlatformgetConsensusParams;
   static readonly getProtocolVersionUpgradeState: PlatformgetProtocolVersionUpgradeState;
   static readonly getProtocolVersionUpgradeVoteStatus: PlatformgetProtocolVersionUpgradeVoteStatus;
   static readonly getEpochsInfo: PlatformgetEpochsInfo;
+  static readonly getPathElements: PlatformgetPathElements;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -238,15 +258,6 @@ export class PlatformClient {
     requestMessage: platform_pb.GetIdentityRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityResponse|null) => void
   ): UnaryResponse;
-  getIdentities(
-    requestMessage: platform_pb.GetIdentitiesRequest,
-    metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesResponse|null) => void
-  ): UnaryResponse;
-  getIdentities(
-    requestMessage: platform_pb.GetIdentitiesRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesResponse|null) => void
-  ): UnaryResponse;
   getIdentityKeys(
     requestMessage: platform_pb.GetIdentityKeysRequest,
     metadata: grpc.Metadata,
@@ -255,6 +266,33 @@ export class PlatformClient {
   getIdentityKeys(
     requestMessage: platform_pb.GetIdentityKeysRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysResponse|null) => void
+  ): UnaryResponse;
+  getIdentitiesContractKeys(
+    requestMessage: platform_pb.GetIdentitiesContractKeysRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesContractKeysResponse|null) => void
+  ): UnaryResponse;
+  getIdentitiesContractKeys(
+    requestMessage: platform_pb.GetIdentitiesContractKeysRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesContractKeysResponse|null) => void
+  ): UnaryResponse;
+  getIdentityNonce(
+    requestMessage: platform_pb.GetIdentityNonceRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityNonceResponse|null) => void
+  ): UnaryResponse;
+  getIdentityNonce(
+    requestMessage: platform_pb.GetIdentityNonceRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityNonceResponse|null) => void
+  ): UnaryResponse;
+  getIdentityContractNonce(
+    requestMessage: platform_pb.GetIdentityContractNonceRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityContractNonceResponse|null) => void
+  ): UnaryResponse;
+  getIdentityContractNonce(
+    requestMessage: platform_pb.GetIdentityContractNonceRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityContractNonceResponse|null) => void
   ): UnaryResponse;
   getIdentityBalance(
     requestMessage: platform_pb.GetIdentityBalanceRequest,
@@ -319,15 +357,6 @@ export class PlatformClient {
     requestMessage: platform_pb.GetDocumentsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsResponse|null) => void
   ): UnaryResponse;
-  getIdentitiesByPublicKeyHashes(
-    requestMessage: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
-    metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesByPublicKeyHashesResponse|null) => void
-  ): UnaryResponse;
-  getIdentitiesByPublicKeyHashes(
-    requestMessage: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesByPublicKeyHashesResponse|null) => void
-  ): UnaryResponse;
   getIdentityByPublicKeyHash(
     requestMessage: platform_pb.GetIdentityByPublicKeyHashRequest,
     metadata: grpc.Metadata,
@@ -381,6 +410,15 @@ export class PlatformClient {
   getEpochsInfo(
     requestMessage: platform_pb.GetEpochsInfoRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetEpochsInfoResponse|null) => void
+  ): UnaryResponse;
+  getPathElements(
+    requestMessage: platform_pb.GetPathElementsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPathElementsResponse|null) => void
+  ): UnaryResponse;
+  getPathElements(
+    requestMessage: platform_pb.GetPathElementsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPathElementsResponse|null) => void
   ): UnaryResponse;
 }
 

@@ -24,7 +24,7 @@ use dpp::dashcore::{consensus, InstantLock, Transaction};
 
 use crate::identity::IdentityWasm;
 use dpp::identity::core_script::CoreScript;
-use dpp::prelude::Revision;
+use dpp::prelude::IdentityNonce;
 use dpp::withdrawal::Pooling;
 use dpp::errors::NonConsensusError;
 use serde::Deserialize;
@@ -207,7 +207,7 @@ impl IdentityFacadeWasm {
         core_fee_per_byte: u32,
         pooling: u8,
         output_script: Vec<u8>,
-        revision: u64,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
         let pooling = match pooling {
             0 => Pooling::Never,
@@ -223,7 +223,7 @@ impl IdentityFacadeWasm {
                 core_fee_per_byte,
                 pooling,
                 CoreScript::from_bytes(output_script),
-                revision as Revision,
+                identity_nonce as IdentityNonce,
             )
             .map(Into::into)
             .with_js_error()
@@ -235,12 +235,14 @@ impl IdentityFacadeWasm {
         identity: &IdentityWasm,
         recipient_id: &IdentifierWrapper,
         amount: u64,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
         self.0
             .create_identity_credit_transfer_transition(
                 identity.inner(),
                 recipient_id.to_owned().into(),
                 amount,
+                identity_nonce,
             )
             .map(Into::into)
             .with_js_error()
@@ -250,18 +252,18 @@ impl IdentityFacadeWasm {
     pub fn create_identity_update_transition(
         &self,
         identity: &IdentityWasm,
+        identity_nonce: u64,
         public_keys: &JsValue,
     ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let (add_public_keys, disable_public_keys) =
             super::factory_utils::parse_create_identity_update_transition_keys(public_keys)?;
-        let now = js_sys::Date::now() as u64;
 
         self.0
             .create_identity_update_transition(
                 identity.to_owned().into(),
+                identity_nonce,
                 add_public_keys,
                 disable_public_keys,
-                Some(now),
             )
             .map(Into::into)
             .with_js_error()

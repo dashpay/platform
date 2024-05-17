@@ -6,11 +6,11 @@ use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
+use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_not_in_state_v0;
 
 pub mod v0;
 
-pub(crate) fn validate_unique_identity_public_key_hashes_in_state(
+pub(crate) fn validate_unique_identity_public_key_hashes_not_in_state(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
     execution_context: &mut StateTransitionExecutionContext,
@@ -24,7 +24,7 @@ pub(crate) fn validate_unique_identity_public_key_hashes_in_state(
         .common_validation_methods
         .validate_unique_identity_public_key_hashes_in_state
     {
-        0 => validate_unique_identity_public_key_hashes_in_state_v0(
+        0 => validate_unique_identity_public_key_hashes_not_in_state_v0(
             identity_public_keys_with_witness,
             drive,
             execution_context,

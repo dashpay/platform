@@ -1,3 +1,4 @@
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::{
@@ -6,6 +7,8 @@ use crate::state_transition::state_transitions::document::documents_batch_transi
 use crate::state_transition::StateTransitionType::DocumentsBatch;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
 use platform_version::version::FeatureVersion;
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use platform_value::{BinaryData, Identifier};
 
 impl From<DocumentsBatchTransitionV0> for StateTransition {
@@ -44,5 +47,28 @@ impl StateTransitionLike for DocumentsBatchTransitionV0 {
     /// Get owner ID
     fn owner_id(&self) -> Identifier {
         self.owner_id
+    }
+
+    /// We create a list of unique identifiers for the batch
+    fn unique_identifiers(&self) -> Vec<String> {
+        self.transitions
+            .iter()
+            .map(|transition| {
+                format!(
+                    "{}-{}-{:x}",
+                    BASE64_STANDARD.encode(self.owner_id),
+                    BASE64_STANDARD.encode(transition.data_contract_id()),
+                    transition.identity_contract_nonce()
+                )
+            })
+            .collect()
+    }
+
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        self.user_fee_increase
+    }
+
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        self.user_fee_increase = fee_multiplier
     }
 }

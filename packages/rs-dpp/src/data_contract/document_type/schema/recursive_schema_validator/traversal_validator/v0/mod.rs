@@ -15,7 +15,8 @@ pub type SubValidator = fn(
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError>;
 
-pub fn traversal_validator_v0(
+#[inline(always)]
+pub(super) fn traversal_validator_v0(
     raw_data_contract: &Value,
     validators: &[SubValidator],
     platform_version: &PlatformVersion,

@@ -1,4 +1,5 @@
 use dpp::bls_signatures::BlsError;
+use dpp::consensus::ConsensusError;
 use tenderdash_abci::proto::abci::ExtendVoteExtension;
 use tenderdash_abci::proto::types::VoteExtension;
 
@@ -22,6 +23,9 @@ pub enum AbciError {
     /// Vote extensions signature is invalid
     #[error("one of vote extension signatures is invalid")]
     VoteExtensionsSignatureInvalid,
+    /// Invalid vote extensions verification
+    #[error("invalid vote extensions verification")]
+    InvalidVoteExtensionsVerification,
     /// Cannot load withdrawal transactions
     #[error("cannot load withdrawal transactions: {0}")]
     WithdrawalTransactionsDBLoadError(String),
@@ -74,14 +78,16 @@ pub enum AbciError {
     #[error("bls error from Tenderdash for threshold mechanisms: {1}: {0}")]
     BlsErrorOfTenderdashThresholdMechanism(BlsError, String),
 
-    /// Generic with code should only be used in tests
-    #[error("generic with code: {0}")]
-    GenericWithCode(u32),
-}
+    /// Incompatibility version Error on info handshake between Drive ABCI and Tenderdash
+    #[error("ABCI version mismatch. Tenderdash requires ABCI protobuf definitions version {tenderdash}, our version is {drive}")]
+    AbciVersionMismatch {
+        /// ABCI version in Tenderdash
+        tenderdash: String,
+        /// ABCI version in Drive ABCI
+        drive: String,
+    },
 
-// used by `?` operator
-impl From<AbciError> for String {
-    fn from(value: AbciError) -> Self {
-        value.to_string()
-    }
+    /// Generic with code should only be used in tests
+    #[error("invalid state transition error: {0}")]
+    InvalidStateTransition(#[from] ConsensusError),
 }

@@ -47,9 +47,10 @@ where
             .full_masternode_list()
             .get(pro_tx_hash)
             .ok_or_else(|| {
-                Error::Execution(ExecutionError::CorruptedCachedState(
-                    "expected masternode to be in state",
-                ))
+                Error::Execution(ExecutionError::CorruptedCachedState(format!(
+                    "expected masternode {} to be in state",
+                    pro_tx_hash
+                )))
             })?;
 
         let old_voter_identifier =
@@ -85,7 +86,6 @@ where
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
             identity_id: old_voter_identifier,
             keys_ids: old_voter_identity_key_ids,
-            disable_at: block_info.time_ms,
         }));
 
         // Part 2 : Create or Update Voting identity based on new key

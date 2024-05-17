@@ -1,7 +1,7 @@
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::dpns_contract::v1::document_types::domain::properties::PARENT_DOMAIN_NAME;
-///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
+/// The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -44,12 +44,18 @@ pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_domain_data_trigger_v0(
+#[inline(always)]
+pub(super) fn create_domain_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let is_dry_run = context.state_transition_execution_context.in_dry_run();
     let document_create_transition = match document_transition {
@@ -58,7 +64,12 @@ pub fn create_domain_data_trigger_v0(
             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
                 format!(
                     "the Document Transition {} isn't 'CREATE",
-                    document_transition.base().id()
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base"
+                        )))?
+                        .id()
                 ),
             )))
         }
@@ -107,7 +118,12 @@ pub fn create_domain_data_trigger_v0(
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
-                document_transition.base().id(),
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base",
+                    )))?
+                    .id(),
                 format!(
                     "Full domain name length can not be more than {} characters long but got {}",
                     MAX_PRINTABLE_DOMAIN_NAME_LENGTH,
@@ -121,7 +137,12 @@ pub fn create_domain_data_trigger_v0(
         if normalized_label != convert_to_homograph_safe_chars(label.as_str()) {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
-                document_transition.base().id(),
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base",
+                    )))?
+                    .id(),
                 format!(
                     "Normalized label doesn't match label: {} != {}",
                     normalized_label, label
@@ -136,7 +157,12 @@ pub fn create_domain_data_trigger_v0(
         {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
-                document_transition.base().id(),
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base",
+                    )))?
+                    .id(),
                 format!(
                     "Normalized parent domain name doesn't match parent domain name: {} != {}",
                     normalized_parent_domain_name, parent_domain_name
@@ -153,7 +179,12 @@ pub fn create_domain_data_trigger_v0(
             if id != owner_id {
                 let err = DataTriggerConditionError::new(
                     data_contract.id(),
-                    document_transition.base().id(),
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base",
+                        )))?
+                        .id(),
                     format!(
                         "ownerId {} doesn't match {} {}",
                         owner_id, DASH_UNIQUE_IDENTITY_ID, id
@@ -171,7 +202,12 @@ pub fn create_domain_data_trigger_v0(
             if id != owner_id {
                 let err = DataTriggerConditionError::new(
                     data_contract.id(),
-                    document_transition.base().id(),
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base",
+                        )))?
+                        .id(),
                     format!(
                         "ownerId {} doesn't match {} {}",
                         owner_id, DASH_ALIAS_IDENTITY_ID, id
@@ -186,7 +222,12 @@ pub fn create_domain_data_trigger_v0(
         {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
-                document_transition.base().id(),
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base",
+                    )))?
+                    .id(),
                 "Can't create top level domain for this identity".to_string(),
             );
 
@@ -258,7 +299,12 @@ pub fn create_domain_data_trigger_v0(
             if documents.is_empty() {
                 let err = DataTriggerConditionError::new(
                     data_contract.id(),
-                    document_transition.base().id(),
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base",
+                        )))?
+                        .id(),
                     "Parent domain is not present".to_string(),
                 );
 
@@ -271,7 +317,12 @@ pub fn create_domain_data_trigger_v0(
             if rule_allow_subdomains {
                 let err = DataTriggerConditionError::new(
                     data_contract.id(),
-                    document_transition.base().id(),
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base",
+                        )))?
+                        .id(),
                     "Allowing subdomains registration is forbidden for this domain".to_string(),
                 );
 
@@ -288,7 +339,12 @@ pub fn create_domain_data_trigger_v0(
             {
                 let err = DataTriggerConditionError::new(
                     data_contract.id(),
-                    document_transition.base().id(),
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base",
+                        )))?
+                        .id(),
                     "The subdomain can be created only by the parent domain owner".to_string(),
                 );
 
@@ -351,7 +407,12 @@ pub fn create_domain_data_trigger_v0(
     if preorder_documents.is_empty() {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
-            document_transition.base().id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
             "preorderDocument was not found".to_string(),
         );
         result.add_error(err)
@@ -363,6 +424,7 @@ pub fn create_domain_data_trigger_v0(
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::Bytes32;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
@@ -381,15 +443,18 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
-        let state_read_guard = platform.state.read().unwrap();
+
+        let mut nonce_counter = BTreeMap::new();
+
+        let state = platform.state.load();
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &state,
             config: &platform.config,
         };
 
-        let platform_version = state_read_guard
+        let platform_version = state
             .current_platform_version()
             .expect("should return a platform version");
 
@@ -402,20 +467,24 @@ mod test {
                 owner_id,
                 ..Default::default()
             },
-            state_read_guard.current_protocol_version_in_consensus(),
+            state.current_protocol_version_in_consensus(),
         );
         let data_contract = get_dpns_data_contract_fixture(
             Some(owner_id),
-            state_read_guard.current_protocol_version_in_consensus(),
+            0,
+            state.current_protocol_version_in_consensus(),
         )
         .data_contract_owned();
         let document_type = data_contract
             .document_type_for_name("domain")
             .expect("expected to get domain document type");
-        let transitions = get_document_transitions_fixture([(
-            DocumentTransitionActionType::Create,
-            vec![(document, document_type, Bytes32::default())],
-        )]);
+        let transitions = get_document_transitions_fixture(
+            [(
+                DocumentTransitionActionType::Create,
+                vec![(document, document_type, Bytes32::default())],
+            )],
+            &mut nonce_counter,
+        );
         let first_transition = transitions.first().expect("transition should be present");
 
         let document_create_transition = first_transition
@@ -433,7 +502,7 @@ mod test {
 
         let result = create_domain_data_trigger_v0(
             &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
-                document_create_transition,|_identifier| {
+                document_create_transition, &BlockInfo::default(), |_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
                 }).expect("expected to create action").into(),
             &data_trigger_context,

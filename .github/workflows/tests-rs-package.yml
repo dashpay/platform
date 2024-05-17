@@ -222,6 +222,7 @@ jobs:
           set -ex
           features="${{ steps.crate_info.outputs.features }}"
           fails=""
+          RUSTFLAGS="-D warnings"
           cargo check --no-default-features --package "${{ inputs.package }}" --locked
           for feature in $features ;  do
             echo " ============== Verify feature $feature =============="

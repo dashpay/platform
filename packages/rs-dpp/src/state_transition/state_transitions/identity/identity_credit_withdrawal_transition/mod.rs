@@ -18,12 +18,12 @@ use crate::state_transition::StateTransitionFieldTypes;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
-use data_contracts::withdrawals_contract::v1::document_types::withdrawal::properties::OUTPUT_SCRIPT;
 use derive_more::From;
 use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTransitionV0;

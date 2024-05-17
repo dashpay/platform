@@ -34,13 +34,13 @@ where
                     {
                         Ok(sync_status) => {
                             match sync_status {
-                                CoreSyncStatus::CoreIsSynced => Ok(VerifyChainLockResult {
+                                CoreSyncStatus::Done => Ok(VerifyChainLockResult {
                                     chain_lock_signature_is_deserializable: true,
                                     found_valid_locally: Some(true),
                                     found_valid_by_core: None,
                                     core_is_synced: Some(true),
                                 }),
-                                CoreSyncStatus::CoreAlmostSynced => {
+                                CoreSyncStatus::Almost => {
                                     for _i in 0..CORE_ALMOST_SYNCED_RETRIES {
                                         // The chain lock is valid we just need to sleep a bit and retry
                                         sleep(Duration::from_millis(CORE_ALMOST_SYNCED_SLEEP_TIME));
@@ -63,7 +63,7 @@ where
                                         core_is_synced: Some(false),
                                     })
                                 }
-                                CoreSyncStatus::CoreNotSynced => Ok(VerifyChainLockResult {
+                                CoreSyncStatus::Not => Ok(VerifyChainLockResult {
                                     chain_lock_signature_is_deserializable: true,
                                     found_valid_locally: Some(valid),
                                     found_valid_by_core: Some(true),
@@ -102,13 +102,13 @@ where
                 if let Some(sync_status) = status {
                     // if we had make_sure_core_is_synced set to true
                     match sync_status {
-                        CoreSyncStatus::CoreIsSynced => Ok(VerifyChainLockResult {
+                        CoreSyncStatus::Done => Ok(VerifyChainLockResult {
                             chain_lock_signature_is_deserializable: true,
                             found_valid_locally: None,
                             found_valid_by_core: None,
                             core_is_synced: Some(true),
                         }),
-                        CoreSyncStatus::CoreAlmostSynced => {
+                        CoreSyncStatus::Almost => {
                             for _i in 0..CORE_ALMOST_SYNCED_RETRIES {
                                 // The chain lock is valid we just need to sleep a bit and retry
                                 sleep(Duration::from_millis(CORE_ALMOST_SYNCED_SLEEP_TIME));
@@ -129,7 +129,7 @@ where
                                 core_is_synced: Some(false),
                             })
                         }
-                        CoreSyncStatus::CoreNotSynced => Ok(VerifyChainLockResult {
+                        CoreSyncStatus::Not => Ok(VerifyChainLockResult {
                             chain_lock_signature_is_deserializable: true,
                             found_valid_locally: None,
                             found_valid_by_core: Some(true),

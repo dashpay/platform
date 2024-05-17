@@ -23,7 +23,8 @@ where
 {
     /// Returning None here means we were unable to verify the chain lock because of an absence of
     /// the quorum
-    pub fn verify_chain_lock_locally_v0(
+    #[inline(always)]
+    pub(super) fn verify_chain_lock_locally_v0(
         &self,
         round: u32,
         platform_state: &PlatformState,

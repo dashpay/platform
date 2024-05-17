@@ -1,7 +1,6 @@
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::serialized_version::v0::property_names as contract_property_names;
-use crate::errors::ProtocolError;
 use platform_value::{Value, ValueMapHelper};
 
 pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
@@ -9,24 +8,33 @@ pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
 
 pub const PROPERTY_SCHEMA: &str = "$schema";
 
-const TIMESTAMPS: [&str; 2] = ["$createdAt", "$updatedAt"];
+const SYSTEM_GENERATED_FIELDS: [&str; 9] = [
+    "$createdAt",
+    "$updatedAt",
+    "$transferredAt",
+    "$createdAtBlockHeight",
+    "$updatedAtBlockHeight",
+    "$transferredAtBlockHeight",
+    "$createdAtCoreBlockHeight",
+    "$updatedAtCoreBlockHeight",
+    "$transferredAtCoreBlockHeight",
+];
 
-pub fn enrich_with_base_schema_v0(
+#[inline(always)]
+pub(super) fn enrich_with_base_schema_v0(
     mut schema: Value,
     schema_defs: Option<Value>,
-) -> Result<Value, ProtocolError> {
+) -> Result<Value, DataContractError> {
     let schema_map = schema.to_map_mut().map_err(|err| {
-        ProtocolError::DataContractError(DataContractError::InvalidContractStructure(format!(
+        DataContractError::InvalidContractStructure(format!(
             "document schema must be an object: {err}"
-        )))
+        ))
     })?;
 
     // Add $schema
     if schema_map.get_optional_key(PROPERTY_SCHEMA).is_some() {
-        return Err(ProtocolError::DataContractError(
-            DataContractError::InvalidContractStructure(
-                "document schema shouldn't contain '$schema' property".to_string(),
-            ),
+        return Err(DataContractError::InvalidContractStructure(
+            "document schema shouldn't contain '$schema' property".to_string(),
         ));
     }
 
@@ -40,20 +48,19 @@ pub fn enrich_with_base_schema_v0(
         .get_optional_key(contract_property_names::DEFINITIONS)
         .is_some()
     {
-        return Err(ProtocolError::DataContractError(
-            DataContractError::InvalidContractStructure(
-                "document schema shouldn't contain '$schema' property".to_string(),
-            ),
+        return Err(DataContractError::InvalidContractStructure(
+            "document schema shouldn't contain '$defs' property".to_string(),
         ));
     }
 
-    // Remove $createdAt and $updatedAt from JSON Schema since they aren't part of
+    // Remove $createdAt, $updatedAt and $transferredAt and their height and core height variants
+    // from JSON Schema since they aren't part of
     // dynamic (user defined) document data which is validating against the schema
     if let Some(required) = schema_map.get_optional_key_mut(property_names::REQUIRED) {
         if let Some(required_array) = required.as_array_mut() {
             required_array.retain(|field_value| {
                 if let Some(field) = field_value.as_text() {
-                    !TIMESTAMPS.contains(&field)
+                    !SYSTEM_GENERATED_FIELDS.contains(&field)
                 } else {
                     true
                 }

@@ -55,7 +55,14 @@ describe('ExtendedDocument', () => {
 
       expect(result).to.deep.equal({
         $createdAt: null, // TODO: it should be omitted
+        $createdAtBlockHeight: null,
+        $createdAtCoreBlockHeight: null,
         $updatedAt: null,
+        $updatedAtBlockHeight: null,
+        $updatedAtCoreBlockHeight: null,
+        $transferredAt: null,
+        $transferredAtBlockHeight: null,
+        $transferredAtCoreBlockHeight: null,
         $dataContractId: dataContract.getId().toBuffer(),
         $id: document.getId().toBuffer(),
         $ownerId: document.getOwnerId().toBuffer(),

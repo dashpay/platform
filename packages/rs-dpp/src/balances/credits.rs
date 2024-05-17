@@ -12,6 +12,9 @@ use crate::errors::ProtocolError;
 use integer_encoding::VarInt;
 use std::convert::TryFrom;
 
+/// Duffs type
+pub type Duffs = u64;
+
 /// Credits type
 
 #[ferment_macro::export]

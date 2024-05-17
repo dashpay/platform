@@ -4,14 +4,52 @@ use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTyp
 use crate::errors::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
-use crate::errors::consensus::consensus_error::ConsensusError;
+// use crate::errors::consensus::ConsensusError;
+// use crate::data_contract::errors::DataContractError;
+// use crate::data_contract::errors::DataContractNotPresentError;
+// use crate::data_contract::errors::IdentityNotPresentError;
+// use crate::data_contract::errors::InvalidDataContractError;
+// use crate::data_contract::errors::InvalidDocumentTypeError;
+// use crate::data_contract::errors::StructureError;
+// use crate::document::errors::DocumentError;
+
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
+use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+
+#[cfg(any(
+    all(feature = "state-transitions", feature = "validation"),
+    feature = "state-transition-validation"
+))]
+use crate::state_transition::errors::StateTransitionError;
+
+#[cfg(any(
+    all(feature = "state-transitions", feature = "validation"),
+    feature = "state-transition-validation",
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
+use crate::state_transition::errors::WrongPublicKeyPurposeError;
+
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::{
+    InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
+    StateTransitionIsNotSignedError,
+};
+use crate::errors::{
+    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
+    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
+};
+/*use crate::errors::consensus::consensus_error::ConsensusError;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::errors::IdentityNotPresentError;
 use crate::data_contract::errors::InvalidDataContractError;
 use crate::data_contract::errors::InvalidDocumentTypeError;
 use crate::data_contract::errors::StructureError;
-
+*/
 use crate::document::errors::DocumentError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::invalid_identity_public_key_type_error::InvalidIdentityPublicKeyTypeError;
@@ -27,12 +65,6 @@ use crate::state_transition::errors::state_transition_error::StateTransitionErro
 use crate::state_transition::errors::state_transition_is_not_signed_error::StateTransitionIsNotSignedError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::wrong_public_key_purpose_error::WrongPublicKeyPurposeError;
-
-use crate::errors::non_consensus_error::NonConsensusError;
-use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
-use crate::errors::dpp_init_error::DashPlatformProtocolInitError;
-use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
-use crate::errors::serde_parsing_error::SerdeParsingError;
 
 //use dashcore::consensus::encode::Error as DashCoreError;
 
@@ -106,9 +138,6 @@ pub enum ProtocolError {
     #[error("Invalid key contract bounds error {0}")]
     InvalidKeyContractBoundsError(String),
 
-    #[error("unknown storage key requirements {0}")]
-    UnknownStorageKeyRequirements(String),
-
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
 
@@ -116,8 +145,8 @@ pub enum ProtocolError {
     #[error(transparent)]
     StateTransitionError(#[from] StateTransitionError),
 
-    #[error(transparent)]
-    StructureError(#[from] StructureError),
+    #[error("Invalid State Transition Type: {0}")]
+    InvalidStateTransitionType(String),
 
     #[error(transparent)]
     PlatformVersionError(#[from] PlatformVersionError),
@@ -148,7 +177,12 @@ pub enum ProtocolError {
     #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
-    #[cfg(feature = "state-transition-validation")]
+    #[cfg(any(
+        all(feature = "state-transitions", feature = "validation"),
+        feature = "state-transition-validation",
+        feature = "state-transition-signing",
+        feature = "state-transition-validation"
+    ))]
     #[error(transparent)]
     WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
     #[cfg(feature = "state-transition-validation")]
@@ -163,13 +197,6 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(#[from] CompatibleProtocolVersionIsNotDefinedError),
-
-    // Data Contract
-    #[error("Data Contract already exists")]
-    DataContractAlreadyExistsError,
-
-    #[error(transparent)]
-    InvalidDataContractError(InvalidDataContractError),
 
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
@@ -233,6 +260,10 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     InvalidVectorSizeError(InvalidVectorSizeError),
+
+    /// Invalid CBOR error
+    #[error("invalid cbor error: {0}")]
+    InvalidCBOR(String),
 }
 
 impl From<&str> for ProtocolError {

@@ -37,7 +37,8 @@ pub enum DocumentAction {
         DocumentFieldFillSize,
     ),
     DocumentActionDelete,
-    DocumentActionReplace,
+    DocumentActionReplaceRandom,
+    DocumentActionTransferRandom,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -93,7 +94,7 @@ impl PlatformSerializableWithPlatformVersion for DocumentOp {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DocumentOp {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -113,8 +114,12 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Doc
             document_type_name,
             action,
         } = document_op_in_serialization_format;
-        let data_contract =
-            DataContract::try_from_platform_versioned(contract, validate, platform_version)?;
+        let data_contract = DataContract::try_from_platform_versioned(
+            contract,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )?;
         let document_type =
             data_contract.document_type_cloned_for_name(document_type_name.as_str())?;
         Ok(DocumentOp {
@@ -172,7 +177,7 @@ impl PlatformSerializableWithPlatformVersion for Operation {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Operation {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -189,8 +194,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 .0;
         let OperationInSerializationFormat { op_type, frequency } =
             operation_in_serialization_format;
-        let op_type =
-            OperationType::versioned_deserialize(op_type.as_slice(), validate, platform_version)?;
+        let op_type = OperationType::versioned_deserialize(
+            op_type.as_slice(),
+            full_validation,
+            platform_version,
+        )?;
         Ok(Operation { op_type, frequency })
     }
 }
@@ -204,10 +212,139 @@ pub enum IdentityUpdateOp {
 pub type DocumentTypeNewFieldsOptionalCountRange = Range<u16>;
 pub type DocumentTypeCount = Range<u16>;
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct DataContractUpdateOp {
+    pub action: DataContractUpdateAction,
+    pub contract: DataContract,
+    pub document_type: Option<DocumentType>,
+}
+
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
-pub enum DataContractUpdateOp {
+pub struct DataContractUpdateOpInSerializationFormat {
+    action: DataContractUpdateAction,
+    contract: DataContractInSerializationFormat,
+    document_type: Option<Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub enum DataContractUpdateAction {
     DataContractNewDocumentTypes(RandomDocumentTypeParameters), // How many fields should it have
     DataContractNewOptionalFields(DocumentTypeNewFieldsOptionalCountRange, DocumentTypeCount), // How many new fields on how many document types
+}
+
+impl PlatformSerializableWithPlatformVersion for DataContractUpdateOp {
+    type Error = ProtocolError;
+
+    fn serialize_to_bytes_with_platform_version(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        self.clone()
+            .serialize_consume_to_bytes_with_platform_version(platform_version)
+    }
+
+    fn serialize_consume_to_bytes_with_platform_version(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let DataContractUpdateOp {
+            action,
+            contract,
+            document_type,
+        } = self;
+
+        // Serialize contract and optionally document type
+        let contract_in_serialization_format: DataContractInSerializationFormat =
+            contract.try_into_platform_versioned(platform_version)?;
+
+        // Convert DocumentType to its serializable schema representation
+        let document_type_in_serialization_format = document_type.map(|dt| {
+            // Assuming `schema_owned` or a similar method returns a serializable representation
+            dt.schema_owned()
+        });
+
+        let update_op_in_serialization_format = DataContractUpdateOpInSerializationFormat {
+            action,
+            contract: contract_in_serialization_format,
+            document_type: document_type_in_serialization_format,
+        };
+
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        bincode::encode_to_vec(update_op_in_serialization_format, config).map_err(|e| {
+            PlatformSerializationError(format!("Unable to serialize DataContractUpdateOp: {}", e))
+        })
+    }
+}
+
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DataContractUpdateOp {
+    fn versioned_deserialize(
+        data: &[u8],
+        full_validation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let deserialized: DataContractUpdateOpInSerializationFormat =
+            bincode::borrow_decode_from_slice(data, config)
+                .map_err(|e| {
+                    PlatformDeserializationError(format!(
+                        "Unable to deserialize DataContractUpdateOp: {}",
+                        e
+                    ))
+                })?
+                .0;
+
+        let contract = DataContract::try_from_platform_versioned(
+            deserialized.contract,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )?;
+
+        let action = deserialized.action;
+
+        let document_type = deserialized.document_type.and_then(|value| {
+            match value {
+                Value::Map(map) => {
+                    map.into_iter()
+                        .map(|(name, schema_json)| {
+                            let name_str = name.to_str().expect(
+                                "Couldn't convert document type name to str in deserialization",
+                            );
+                            let schema = Value::try_from(schema_json).unwrap();
+                            let owner_id = contract.owner_id(); // Assuming you have a method to get the owner_id from the contract
+                            DocumentType::try_from_schema(
+                                owner_id,
+                                name_str,
+                                schema,
+                                None,
+                                true,
+                                true,
+                                true,
+                                full_validation,
+                                &mut vec![],
+                                platform_version,
+                            )
+                            .expect("Failed to reconstruct DocumentType from schema")
+                        })
+                        .next() // Assumes only one document type is being deserialized
+                }
+                _ => None,
+            }
+        });
+
+        Ok(DataContractUpdateOp {
+            action,
+            contract,
+            document_type,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -223,16 +360,13 @@ pub enum OperationType {
 
 #[derive(Clone, Debug, Encode, Decode)]
 enum OperationTypeInSerializationFormat {
-    OperationTypeInSerializationFormatDocument(Vec<u8>),
-    OperationTypeInSerializationFormatIdentityTopUp,
-    OperationTypeInSerializationFormatIdentityUpdate(IdentityUpdateOp),
-    OperationTypeInSerializationFormatIdentityWithdrawal,
-    OperationTypeInSerializationFormatContractCreate(
-        RandomDocumentTypeParameters,
-        DocumentTypeCount,
-    ),
-    OperationTypeInSerializationFormatContractUpdate(DataContractUpdateOp),
-    OperationTypeInSerializationFormatIdentityTransfer,
+    Document(Vec<u8>),
+    IdentityTopUp,
+    IdentityUpdate(IdentityUpdateOp),
+    IdentityWithdrawal,
+    ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
+    ContractUpdate(Vec<u8>),
+    IdentityTransfer,
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -253,27 +387,29 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
         let op = match self {
             OperationType::Document(document_op) => {
                 // let's just serialize it to make things easier
-                let document_op_in_serialization_format = document_op.serialize_consume_to_bytes_with_platform_version(platform_version)?;
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatDocument(document_op_in_serialization_format)
+                let document_op_in_serialization_format = document_op
+                    .serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                OperationTypeInSerializationFormat::Document(document_op_in_serialization_format)
             }
-            OperationType::IdentityTopUp => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTopUp
-            }
+            OperationType::IdentityTopUp => OperationTypeInSerializationFormat::IdentityTopUp,
             OperationType::IdentityUpdate(identity_update_op) => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityUpdate(identity_update_op)
+                OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op)
             }
             OperationType::IdentityWithdrawal => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityWithdrawal
+                OperationTypeInSerializationFormat::IdentityWithdrawal
             }
             OperationType::ContractCreate(p, c) => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractCreate(p,c)
+                OperationTypeInSerializationFormat::ContractCreate(p, c)
             }
             OperationType::ContractUpdate(update_op) => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractUpdate(update_op)
+                // let's just serialize it to make things easier
+                let contract_op_in_serialization_format =
+                    update_op.serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                OperationTypeInSerializationFormat::ContractUpdate(
+                    contract_op_in_serialization_format,
+                )
             }
-            OperationType::IdentityTransfer => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTransfer
-            }
+            OperationType::IdentityTransfer => OperationTypeInSerializationFormat::IdentityTransfer,
         };
         let config = bincode::config::standard()
             .with_big_endian()
@@ -287,7 +423,7 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for OperationType {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -303,28 +439,33 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 })?
                 .0;
         Ok(match operation_type {
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatDocument(serialized_op) => {
-                let document_op = DocumentOp::versioned_deserialize(serialized_op.as_slice(), validate, platform_version)?;
+            OperationTypeInSerializationFormat::Document(serialized_op) => {
+                let document_op = DocumentOp::versioned_deserialize(
+                    serialized_op.as_slice(),
+                    full_validation,
+                    platform_version,
+                )?;
                 OperationType::Document(document_op)
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTopUp => {
-                OperationType::IdentityTopUp
-            }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityUpdate(identity_update_op) => {
+            OperationTypeInSerializationFormat::IdentityTopUp => OperationType::IdentityTopUp,
+            OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op) => {
                 OperationType::IdentityUpdate(identity_update_op)
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityWithdrawal => {
+            OperationTypeInSerializationFormat::IdentityWithdrawal => {
                 OperationType::IdentityWithdrawal
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractCreate(p, c) => {
+            OperationTypeInSerializationFormat::ContractCreate(p, c) => {
                 OperationType::ContractCreate(p, c)
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractUpdate(update_op) => {
+            OperationTypeInSerializationFormat::ContractUpdate(serialized_op) => {
+                let update_op = DataContractUpdateOp::versioned_deserialize(
+                    serialized_op.as_slice(),
+                    full_validation,
+                    platform_version,
+                )?;
                 OperationType::ContractUpdate(update_op)
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTransfer => {
-                OperationType::IdentityTransfer
-            }
+            OperationTypeInSerializationFormat::IdentityTransfer => OperationType::IdentityTransfer,
         })
     }
 }

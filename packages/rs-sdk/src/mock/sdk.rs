@@ -1,12 +1,14 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::{
     mock::Mockable,
     platform::v0::{self as proto},
 };
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{error::ContextProviderError, FromProof, MockContextProvider};
+use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
@@ -32,13 +34,13 @@ use super::MockResponse;
 /// ## Panics
 ///
 /// Can panic on errors.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     prove: bool,
-    quorum_provider: Option<MockContextProvider>,
+    quorum_provider: Option<Arc<MockContextProvider>>,
 }
 
 impl MockDashPlatformSdk {
@@ -66,7 +68,7 @@ impl MockDashPlatformSdk {
     pub fn quorum_info_dir<P: AsRef<std::path::Path>>(&mut self, dir: P) -> &mut Self {
         let mut provider = MockContextProvider::new();
         provider.quorum_keys_dir(Some(dir.as_ref().to_path_buf()));
-        self.quorum_provider = Some(provider);
+        self.quorum_provider = Some(Arc::new(provider));
 
         self
     }
@@ -118,6 +120,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetDataContractsRequest>(filename)
                         .await?
                 }
+                "GetDataContractHistoryRequest" => {
+                    self.load_expectation::<proto::GetDataContractHistoryRequest>(filename)
+                        .await?
+                }
                 "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
                 "GetIdentityRequest" => {
                     self.load_expectation::<proto::GetIdentityRequest>(filename)
@@ -126,6 +132,10 @@ impl MockDashPlatformSdk {
 
                 "GetIdentityBalanceRequest" => {
                     self.load_expectation::<proto::GetIdentityBalanceRequest>(filename)
+                        .await?
+                }
+                "GetIdentityContractNonceRequest" => {
+                    self.load_expectation::<proto::GetIdentityContractNonceRequest>(filename)
                         .await?
                 }
                 "GetIdentityBalanceAndRevisionRequest" => {
@@ -170,7 +180,7 @@ impl MockDashPlatformSdk {
             })?
             .deserialize();
 
-        self.dapi.lock().await.expect(&data.0, &data.1);
+        self.dapi.lock().await.expect(&data.0, &data.1)?;
         Ok(())
     }
 
@@ -190,8 +200,8 @@ impl MockDashPlatformSdk {
     ///
     /// ## Returns
     ///
-    /// * Some(O): If the object is expected to exist.
-    /// * None: If the object is expected to not exist.
+    /// * Reference to self on success, to allow chaining
+    /// * Error when expectation cannot be set or is already defined for this request
     ///
     /// ## Panics
     ///
@@ -203,7 +213,7 @@ impl MockDashPlatformSdk {
     /// # let r = tokio::runtime::Runtime::new().unwrap();
     /// #
     /// # r.block_on(async {
-    ///     use rs_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
+    ///     use dash_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
     ///
     ///     let mut api = Sdk::new_mock();
     ///     // Define expected response
@@ -212,7 +222,7 @@ impl MockDashPlatformSdk {
     ///     // Define query that will be sent
     ///     let query = expected.id();
     ///     // Expect that in response to `query`, `expected` will be returned
-    ///     api.mock().expect_fetch(query, Some(expected.clone())).await;
+    ///     api.mock().expect_fetch(query, Some(expected.clone())).await.unwrap();
     ///
     ///     // Fetch the identity
     ///     let retrieved = dpp::prelude::Identity::fetch(&api, query)
@@ -228,14 +238,14 @@ impl MockDashPlatformSdk {
         &mut self,
         query: Q,
         object: Option<O>,
-    ) -> &mut Self
+    ) -> Result<&mut Self, Error>
     where
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove).expect("query must be correct");
-        self.expect(grpc_request, object).await;
+        self.expect(grpc_request, object).await?;
 
-        self
+        Ok(self)
     }
 
     /// Expect a [FetchMany] request and return provided object.
@@ -255,8 +265,8 @@ impl MockDashPlatformSdk {
     ///
     /// ## Returns
     ///
-    /// * `Some(Vec<O>)`: If the objects are expected to exist.
-    /// * `None`: If the objects are expected to not exist.
+    /// * Reference to self on success, to allow chaining
+    /// * Error when expectation cannot be set or is already defined for this request
     ///
     /// ## Panics
     ///
@@ -275,7 +285,7 @@ impl MockDashPlatformSdk {
         &mut self,
         query: Q,
         objects: Option<BTreeMap<K, Option<O>>>,
-    ) -> &mut Self
+    ) -> Result<&mut Self, Error>
     where
         BTreeMap<K, Option<O>>: MockResponse,
         <<O as FetchMany<K>>::Request as TransportRequest>::Response: Default,
@@ -286,9 +296,9 @@ impl MockDashPlatformSdk {
             > + Sync,
     {
         let grpc_request = query.query(self.prove).expect("query must be correct");
-        self.expect(grpc_request, objects).await;
+        self.expect(grpc_request, objects).await?;
 
-        self
+        Ok(self)
     }
 
     /// Save expectations for a request.
@@ -296,10 +306,22 @@ impl MockDashPlatformSdk {
         &mut self,
         grpc_request: I,
         returned_object: Option<O>,
-    ) where
+    ) -> Result<(), Error>
+    where
         I::Response: Default,
     {
         let key = Key::new(&grpc_request);
+
+        // detect duplicates
+        if self.from_proof_expectations.contains_key(&key) {
+            return Err(MockError::MockExpectationConflict(format!(
+                "proof expectation key {} already defined for {} request: {:?}",
+                key,
+                std::any::type_name::<I>(),
+                grpc_request
+            ))
+            .into());
+        }
 
         // This expectation will work for from_proof
         self.from_proof_expectations
@@ -307,16 +329,18 @@ impl MockDashPlatformSdk {
 
         // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;
-        // We don't really care about the response, as it will be mocked by from_proof
-        dapi_guard.expect(&grpc_request, &Default::default());
+        // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
+        dapi_guard.expect(&grpc_request, &Default::default())?;
+
+        Ok(())
     }
 
     /// Wrapper around [FromProof] that uses mock expectations instead of executing [FromProof] trait.
-    pub(crate) fn parse_proof<I, O: FromProof<I>>(
+    pub(crate) fn parse_proof_with_metadata<I, O: FromProof<I>>(
         &self,
         request: O::Request,
         response: O::Response,
-    ) -> Result<Option<O>, drive_proof_verifier::Error>
+    ) -> Result<(Option<O>, ResponseMetadata), drive_proof_verifier::Error>
     where
         O::Request: Mockable,
         Option<O>: MockResponse,
@@ -325,14 +349,17 @@ impl MockDashPlatformSdk {
         let key = Key::new(&request);
 
         let data = match self.from_proof_expectations.get(&key) {
-            Some(d) => Option::<O>::mock_deserialize(self, d),
+            Some(d) => (
+                Option::<O>::mock_deserialize(self, d),
+                ResponseMetadata::default(),
+            ),
             None => {
                 let version = self.version();
                 let provider = self.quorum_provider.as_ref()
                     .ok_or(ContextProviderError::InvalidQuorum(
-                     "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
+                        "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
                     ))?;
-                O::maybe_from_proof(request, response, version, provider)?
+                O::maybe_from_proof_with_metadata(request, response, version, provider)?
             }
         };
 

@@ -29,6 +29,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract fetching fails.
+    #[inline(always)]
     pub(super) fn get_contracts_with_fetch_info_v0(
         &self,
         contract_ids: &[[u8; 32]],

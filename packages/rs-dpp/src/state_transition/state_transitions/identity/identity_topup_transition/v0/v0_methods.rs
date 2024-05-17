@@ -1,19 +1,30 @@
-use crate::ProtocolError;
-use dashcore::signer;
-
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
+use crate::prelude::Identifier;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "state-transition-signing")]
+use crate::ProtocolError;
+#[cfg(feature = "state-transition-signing")]
+use dashcore::signer;
 
 use crate::state_transition::state_transitions::identity::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use crate::state_transition::state_transitions::identity::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 
+#[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
+#[cfg(feature = "state-transition-signing")]
+use platform_version::version::PlatformVersion;
 
 use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
-use platform_value::Identifier;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+#[cfg(feature = "state-transition-signing")]
+use platform_version::version::FeatureVersion;
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
@@ -21,12 +32,14 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
+        user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let identity_top_up_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof,
             identity_id: identity.id(),
+            user_fee_increase,
             signature: Default::default(),
         };
 

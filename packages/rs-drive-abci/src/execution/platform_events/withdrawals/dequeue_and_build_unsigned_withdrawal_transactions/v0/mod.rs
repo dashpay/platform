@@ -74,14 +74,12 @@ where
             transaction_indices.last().expect("must be present")
         );
 
-        let cache = self.drive.cache.read().unwrap();
+        let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
 
         self.drive.add_update_multiple_documents_operations(
             &documents,
-            &cache.system_data_contracts.withdrawals,
-            cache
-                .system_data_contracts
-                .withdrawals
+            &withdrawals_contract,
+            withdrawals_contract
                 .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -147,14 +145,7 @@ where
                     block_info.core_height as u64,
                 );
 
-                document.set_i64(
-                    withdrawal::properties::UPDATED_AT,
-                    block_info.time_ms.try_into().map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't convert u64 block time to i64 updated_at",
-                        ))
-                    })?,
-                );
+                document.set_updated_at(Some(block_info.time_ms));
 
                 document.increment_revision().map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(

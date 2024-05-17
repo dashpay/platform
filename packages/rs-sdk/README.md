@@ -68,7 +68,7 @@ Follow these steps to conduct network testing:
 
 ```bash
 cd packages/rs-sdk
-cargo test -p rs-sdk --no-default-features --features network-testing
+cargo test -p dash-sdk --no-default-features --features network-testing
 ```
 
 ## Offline Testing

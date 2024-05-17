@@ -5,27 +5,21 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::Version;
-use dapi_grpc::platform::v0::GetProtocolVersionUpgradeVoteStatusRequest;
-use dapi_grpc::Message;
-use dpp::check_validation_result_with_data;
-use dpp::validation::ValidationResult;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+};
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C> {
     /// Querying of version upgrade vote status
-    pub(in crate::query) fn query_version_upgrade_vote_status(
+    pub fn query_version_upgrade_vote_status(
         &self,
-        state: &PlatformState,
-        query_data: &[u8],
+        GetProtocolVersionUpgradeVoteStatusRequest { version } : GetProtocolVersionUpgradeVoteStatusRequest,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetProtocolVersionUpgradeVoteStatusRequest { version } = check_validation_result_with_data!(
-            GetProtocolVersionUpgradeVoteStatusRequest::decode(query_data).map_err(|e| {
-                QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-            })
-        );
-
+    ) -> Result<QueryValidationResult<GetProtocolVersionUpgradeVoteStatusResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError("could not decode identity keys query".to_string()),
@@ -39,7 +33,7 @@ impl<C> Platform<C> {
             .version_upgrade_vote_status;
 
         let feature_version = match &version {
-            Version::V0(_) => 0,
+            RequestVersion::V0(_) => 0,
         };
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
@@ -53,12 +47,19 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_protocol_version_upgrade_vote_status_request) => self
-                .query_version_upgrade_vote_status_v0(
-                    state,
-                    get_protocol_version_upgrade_vote_status_request,
+            RequestVersion::V0(request_v0) => {
+                let result = self.query_version_upgrade_vote_status_v0(
+                    request_v0,
+                    platform_state,
                     platform_version,
-                ),
+                )?;
+
+                Ok(
+                    result.map(|response_v0| GetProtocolVersionUpgradeVoteStatusResponse {
+                        version: Some(ResponseVersion::V0(response_v0)),
+                    }),
+                )
+            }
         }
     }
 }

@@ -114,7 +114,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     const tx = stateTransitionFixture.toBuffer().toString('base64');
 
     expect(result).to.be.an.instanceOf(BroadcastStateTransitionResponse);
-    expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_sync', { tx });
+    expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx', { tx });
   });
 
   it('should throw a UnavailableGrpcError if tenderdash hands up', async () => {

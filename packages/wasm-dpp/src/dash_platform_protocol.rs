@@ -43,10 +43,7 @@ impl DashPlatformProtocolWasm {
         let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
         let protocol = DashPlatformProtocol::new(protocol_version);
 
-        let data_contracts = Arc::new(
-            DataContractFacade::new(protocol_version, Some(Box::new(entropy_generator.clone())))
-                .with_js_error()?,
-        );
+        let data_contracts = Arc::new(DataContractFacade::new(protocol_version).with_js_error()?);
 
         let document_factory = DocumentFactoryWASM::new(protocol_version, Some(entropy_generator))?;
 

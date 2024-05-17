@@ -1,0 +1,114 @@
+{
+  "$format_version": "0",
+  "id": "86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e",
+  "ownerId": "2QjL594djCH2NyDsn45vd6yQjEDHupMKo7CEGVTHtQxU",
+  "version": 1,
+  "documentSchemas": {
+    "card": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "transferable": 1,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the card",
+          "maxLength": 63,
+          "position": 0
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the card",
+          "maxLength": 256,
+          "position": 1
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "URL of the image associated with the card",
+          "maxLength": 2048,
+          "format": "uri",
+          "position": 2
+        },
+        "imageHash": {
+          "type": "array",
+          "description": "SHA256 hash of the bytes of the image specified by imageUrl",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 3
+        },
+        "imageFingerprint": {
+          "type": "array",
+          "description": "dHash of the image specified by imageUrl",
+          "byteArray": true,
+          "minItems": 8,
+          "maxItems": 8,
+          "position": 4
+        },
+        "attack": {
+          "type": "integer",
+          "description": "Attack power of the card",
+          "minimum": 0,
+          "position": 5
+        },
+        "defense": {
+          "type": "integer",
+          "description": "Defense level of the card",
+          "minimum": 0,
+          "position": 6
+        }
+      },
+      "indices": [
+        {
+          "name": "attack",
+          "properties": [
+            {
+              "attack": "asc"
+            }
+          ]
+        },
+        {
+          "name": "defense",
+          "properties": [
+            {
+              "defense": "asc"
+            }
+          ]
+        },
+        {
+          "name": "transferredAt",
+          "properties": [
+            {
+              "$transferredAt": "asc"
+            }
+          ]
+        },
+        {
+          "name": "transferredAtBlockHeight",
+          "properties": [
+            {
+              "$transferredAtBlockHeight": "asc"
+            }
+          ]
+        },
+        {
+          "name": "transferredAtCoreBlockHeight",
+          "properties": [
+            {
+              "$transferredAtCoreBlockHeight": "asc"
+            }
+          ]
+        }
+      ],
+      "required": [
+        "name",
+        "$transferredAt",
+        "$transferredAtBlockHeight",
+        "$transferredAtCoreBlockHeight",
+        "attack",
+        "defense"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

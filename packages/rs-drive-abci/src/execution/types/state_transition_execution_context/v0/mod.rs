@@ -1,4 +1,4 @@
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 
 /// The V0 struct of the state transition execution context
 #[derive(Debug, Clone, Default)]
@@ -8,5 +8,5 @@ pub struct StateTransitionExecutionContextV0 {
     /// Are we in a dry run?
     pub dry_run: bool,
     /// The execution operations
-    pub operations: Vec<ExecutionOperation>,
+    pub operations: Vec<ValidationOperation>,
 }

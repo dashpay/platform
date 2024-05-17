@@ -117,7 +117,7 @@ pub trait CoreRPCLike {
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error>;
 
     /// Sends raw transaction to the network
-    fn send_raw_transaction(&self, transaction: &Vec<u8>) -> Result<Txid, Error>;
+    fn send_raw_transaction(&self, transaction: &[u8]) -> Result<Txid, Error>;
 }
 
 #[derive(Debug)]
@@ -312,8 +312,8 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.mnsync_status())
     }
 
-    fn send_raw_transaction(&self, transaction: &Vec<u8>) -> Result<Txid, Error> {
-        retry!(self.inner.send_raw_transaction(transaction.as_slice()))
+    fn send_raw_transaction(&self, transaction: &[u8]) -> Result<Txid, Error> {
+        retry!(self.inner.send_raw_transaction(transaction))
     }
 
     fn get_asset_unlock_statuses(

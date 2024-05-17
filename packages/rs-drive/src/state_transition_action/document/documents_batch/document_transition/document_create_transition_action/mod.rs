@@ -4,7 +4,7 @@ mod v0;
 
 use derive_more::From;
 
-use dpp::identity::TimestampMillis;
+use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
@@ -36,15 +36,9 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
-    fn created_at(&self) -> Option<TimestampMillis> {
+    fn block_info(&self) -> BlockInfo {
         match self {
-            DocumentCreateTransitionAction::V0(v0) => v0.created_at,
-        }
-    }
-
-    fn updated_at(&self) -> Option<TimestampMillis> {
-        match self {
-            DocumentCreateTransitionAction::V0(v0) => v0.updated_at,
+            DocumentCreateTransitionAction::V0(v0) => v0.block_info,
         }
     }
 

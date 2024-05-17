@@ -30,6 +30,9 @@ pub trait DocumentV0Getters {
     /// Returns the time in milliseconds that the document was last updated.
     fn updated_at(&self) -> Option<TimestampMillis>;
 
+    /// Returns the time in milliseconds that the document was last transferred.
+    fn transferred_at(&self) -> Option<TimestampMillis>;
+
     /// Retrieves the field specified by the path.
     /// Returns `None` if the path is empty or if the field is not present.
     fn get(&self, path: &str) -> Option<&Value> {
@@ -38,6 +41,12 @@ pub trait DocumentV0Getters {
     fn id_ref(&self) -> &Identifier;
     fn owner_id_ref(&self) -> &Identifier;
     fn properties_consumed(self) -> BTreeMap<String, Value>;
+    fn created_at_block_height(&self) -> Option<u64>;
+    fn updated_at_block_height(&self) -> Option<u64>;
+    fn transferred_at_block_height(&self) -> Option<u64>;
+    fn created_at_core_block_height(&self) -> Option<u32>;
+    fn updated_at_core_block_height(&self) -> Option<u32>;
+    fn transferred_at_core_block_height(&self) -> Option<u32>;
 }
 
 pub trait DocumentV0Setters: DocumentV0Getters {
@@ -123,4 +132,15 @@ pub trait DocumentV0Setters: DocumentV0Getters {
         self.properties_mut()
             .insert(property_name.to_string(), Value::Bytes(value));
     }
+    fn set_created_at_block_height(&mut self, created_at_block_height: Option<u64>);
+    fn set_updated_at_block_height(&mut self, updated_at_block_height: Option<u64>);
+    fn set_created_at_core_block_height(&mut self, created_at_core_block_height: Option<u32>);
+    fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>);
+    fn set_transferred_at_core_block_height(
+        &mut self,
+        transferred_at_core_block_height: Option<u32>,
+    );
+    fn set_transferred_at_block_height(&mut self, transferred_at_block_height: Option<u64>);
+    fn set_transferred_at(&mut self, transferred_at: Option<TimestampMillis>);
+    fn bump_revision(&mut self);
 }

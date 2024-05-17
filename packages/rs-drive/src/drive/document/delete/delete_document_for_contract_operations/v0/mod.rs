@@ -29,14 +29,16 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::identifier::Identifier;
 
 use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
+    #[inline(always)]
     pub(super) fn delete_document_for_contract_operations_v0(
         &self,
-        document_id: [u8; 32],
+        document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
@@ -48,7 +50,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        if !document_type.documents_mutable() {
+        if !document_type.documents_can_be_deleted() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "this document type is not mutable and can not be deleted",
             )));

@@ -28,7 +28,7 @@ use crate::bls_adapter::JsBlsAdapter;
 use crate::utils::{generic_of_js_val, WithJsError};
 use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::serialization::{PlatformSerializable, ValueConvertible};
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::{

@@ -1,7 +1,9 @@
 pub mod data_contract_not_present_error;
+pub mod document_creation_not_allowed_error;
 pub mod document_transitions_are_absent_error;
 pub mod duplicate_document_transitions_with_ids_error;
 pub mod duplicate_document_transitions_with_indices_error;
+pub mod identity_contract_nonce_out_of_bounds_error;
 pub mod inconsistent_compound_index_data_error;
 pub mod invalid_document_transition_action_error;
 pub mod invalid_document_transition_id_error;
@@ -14,9 +16,11 @@ pub mod missing_document_type_error;
 pub mod missing_positions_in_document_type_properties_error;
 
 pub use data_contract_not_present_error::DataContractNotPresentError;
+pub use document_creation_not_allowed_error::DocumentCreationNotAllowedError;
 pub use document_transitions_are_absent_error::DocumentTransitionsAreAbsentError;
 pub use duplicate_document_transitions_with_ids_error::DuplicateDocumentTransitionsWithIdsError;
 pub use duplicate_document_transitions_with_indices_error::DuplicateDocumentTransitionsWithIndicesError;
+pub use identity_contract_nonce_out_of_bounds_error::NonceOutOfBoundsError;
 pub use inconsistent_compound_index_data_error::InconsistentCompoundIndexDataError;
 pub use invalid_document_transition_action_error::InvalidDocumentTransitionActionError;
 pub use invalid_document_transition_id_error::InvalidDocumentTransitionIdError;

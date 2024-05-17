@@ -1,10 +1,17 @@
+#[cfg(any(
+    feature = "message-signature-verification",
+    feature = "message-signing"
+))]
 use crate::identity::identity_public_key::KeyType;
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
 use platform_version::version::PlatformVersion;
-use crate::{BlsModule, errors::ProtocolError};
+#[cfg(feature = "message-signing")]
+use crate::BlsModule;
+use crate::errors::ProtocolError;
 use platform_value::Value;
 
 pub trait Signable {
@@ -93,7 +100,7 @@ pub trait PlatformDeserializableWithPotentialValidationFromVersionedStructure {
     /// DataContractV1 (if system version is 1)
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -112,7 +119,7 @@ pub trait PlatformDeserializableWithBytesLenFromVersionedStructure {
     /// DataContractV1 (if system version is 1)
     fn versioned_deserialize_with_bytes_len(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, usize), ProtocolError>
     where
@@ -165,7 +172,7 @@ pub trait PlatformMessageSignable {
         public_key_type: KeyType,
         public_key_data: &[u8],
         signature: &[u8],
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
+    ) -> SimpleConsensusValidationResult;
 
     #[cfg(feature = "message-signing")]
     fn sign_by_private_key(

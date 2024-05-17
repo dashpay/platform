@@ -10,11 +10,12 @@ const {
 let randomOwnerId = null;
 
 /**
- *
+ * @param {number} identityNonce
  * @param {Identifier} [ownerId]
  * @return {Promise<DataContract>}
  */
 module.exports = async function getDataContractFixture(
+  identityNonce,
   ownerId = randomOwnerId,
 ) {
   const { DataContractFactory, Identifier, getLatestProtocolVersion } = await Platform
@@ -150,5 +151,5 @@ module.exports = async function getDataContractFixture(
     documentsMutableContractDefault: true,
   };
 
-  return factory.create(ownerId, documents, config);
+  return factory.create(ownerId, BigInt(identityNonce), documents, config);
 };

@@ -11,6 +11,7 @@ mod version;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, Identifier, Value};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use std::convert::{TryFrom, TryInto};
@@ -18,9 +19,10 @@ use std::convert::{TryFrom, TryInto};
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
-    identity::identity_public_key::KeyID,
-    prelude::{Revision, TimestampMillis},
+    identity::KeyID,
+    prelude::Revision,
     ProtocolError,
 };
 
@@ -40,8 +42,11 @@ pub struct IdentityUpdateTransitionV0 {
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,
 
-    /// Identity Update revision number
+    /// The revision of the identity after update
     pub revision: Revision,
+
+    /// Identity nonce for this transition to prevent replay attacks
+    pub nonce: IdentityNonce,
 
     /// Public Keys to add to the Identity
     /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
@@ -53,8 +58,8 @@ pub struct IdentityUpdateTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(default))]
     pub disable_public_keys: Vec<KeyID>,
 
-    /// Timestamp when keys were disabled
-    pub public_keys_disabled_at: Option<TimestampMillis>,
+    /// The fee multiplier
+    pub user_fee_increase: UserFeeIncrease,
 
     /// The ID of the public key used to sing the State Transition
     #[platform_signable(exclude_from_sig_hash)]

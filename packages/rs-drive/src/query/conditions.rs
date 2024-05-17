@@ -75,7 +75,8 @@ fn sql_value_to_platform_value(sql_value: ast::Value) -> Option<Value> {
 }
 
 /// Where operator arguments
-#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum WhereOperator {
     /// Equal
     Equal,
@@ -228,7 +229,8 @@ impl From<WhereOperator> for Value {
 }
 
 /// Where clause struct
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WhereClause {
     /// Field
     pub field: String,
@@ -1151,7 +1153,7 @@ impl<'a> WhereClause {
                 negated,
                 expr,
                 pattern,
-                escape_char,
+                escape_char: _,
             } => {
                 let where_operator = WhereOperator::StartsWith;
                 if *negated {
@@ -1283,13 +1285,13 @@ impl<'a> WhereClause {
     }
 }
 
-impl<'a> From<WhereClause> for Value {
+impl From<WhereClause> for Value {
     fn from(value: WhereClause) -> Self {
         Value::Array(vec![value.field.into(), value.operator.into(), value.value])
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::query::conditions::WhereClause;

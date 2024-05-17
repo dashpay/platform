@@ -14,6 +14,12 @@ impl<C> Platform<C> {
     ) -> Result<(), Error> {
         self.drive
             .store_platform_state_bytes(&state.serialize_to_bytes()?, transaction, platform_version)
-            .map_err(Error::Drive)
+            .map_err(Error::Drive)?;
+
+        // We need to persist new protocol version as well be able to read block state
+        self.drive
+            .store_current_protocol_version(platform_version.protocol_version, transaction)?;
+
+        Ok(())
     }
 }

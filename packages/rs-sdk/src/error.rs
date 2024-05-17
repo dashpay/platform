@@ -2,7 +2,6 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
-use dpp::bls_signatures::BlsError;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
@@ -30,6 +29,10 @@ pub enum Error {
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(String),
+    #[cfg(feature = "mocks")]
+    /// DAPI mocks error
+    #[error("Dapi mocks error: {0}")]
+    DapiMocksError(#[from] rs_dapi_client::mock::MockError),
     /// Dash core error
     #[error("Dash core error: {0}")]
     CoreError(#[from] dpp::dashcore::Error),
@@ -52,10 +55,6 @@ pub enum Error {
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
     Generic(String),
-
-    /// Cryptographic error
-    #[error("Cryptographic error: {0}")]
-    CryptoError(#[from] BlsError),
 
     /// Context provider error
     #[error("Context provider error: {0}")]

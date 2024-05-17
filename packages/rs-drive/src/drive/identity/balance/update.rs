@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
 
-    use crate::common::identities::create_test_identity;
+    use dpp::prelude::*;
+
+    use crate::common::test_utils::identities::create_test_identity;
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
@@ -155,7 +157,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 1176280,
+                    processing_fee: 1205880,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -237,7 +239,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 849550,
+                    processing_fee: 879150,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }

@@ -1,4 +1,4 @@
-use crate::drive::balances::{balance_path, balance_path_vec};
+use crate::drive::balances::balance_path;
 use crate::drive::identity::{identity_key_tree_path, identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 
@@ -40,6 +40,7 @@ impl Drive {
     /// - The identity ID does not correspond to a valid partial identity.
     /// - The keys information is missing or incorrect.
     ///
+    #[inline(always)]
     pub(super) fn verify_identity_keys_by_identity_id_v0(
         proof: &[u8],
         key_request: IdentityKeysRequest,
@@ -121,6 +122,7 @@ impl Drive {
                 )));
             }
         }
+
         let maybe_identity = Some(PartialIdentity {
             id: Identifier::from(identity_id),
             balance,

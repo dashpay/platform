@@ -6,16 +6,25 @@
 //! defined in this module.
 
 use std::collections::BTreeMap;
-
-pub use dpp::version::ProtocolVersionVoteCount;
-use dpp::{block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo}, dashcore::ProTxHash, document::Document, identity::identity_public_key::KeyID, platform_value, prelude::Revision, util::deserializer::ProtocolVersion};
 use dpp::data_contract::DataContract;
 use dpp::identity::identity_public_key::IdentityPublicKey;
+use dpp::prelude::IdentityNonce;
+pub use dpp::version::ProtocolVersionVoteCount;
+use dpp::{
+    block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
+    dashcore::ProTxHash,
+    document::Document,
+    identity::KeyID,
+    prelude::Revision,
+    util::deserializer::ProtocolVersion,
+};
+use drive::grovedb::Element;
 use platform_value::Identifier;
+
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
 /// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
-/// from a server using [`FetchMany`](rs_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
+/// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
 /// using [`FromProof`](crate::FromProof).
 ///
 /// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
@@ -38,10 +47,24 @@ pub type DataContractHistory = BTreeMap<u64, DataContract>;
 /// If data contract is not found, it is represented as `None`.
 pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 
+/// Multiple grovedb elements.
+///
+/// Mapping between the key id and associated elements.
+/// If element is not found, it is represented as `None`.
+pub type Elements = RetrievedObjects<Vec<u8>, Element>;
+
 /// Identity balance.
 pub type IdentityBalance = u64;
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
+
+/// An identity nonce
+#[derive(Debug)]
+pub struct IdentityNonceFetcher(pub IdentityNonce);
+
+/// An identity contract nonce
+#[derive(Debug)]
+pub struct IdentityContractNonceFetcher(pub IdentityNonce);
 
 /// Public keys belonging to some identity.
 ///

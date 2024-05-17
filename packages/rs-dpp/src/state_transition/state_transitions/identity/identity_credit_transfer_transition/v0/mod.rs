@@ -10,12 +10,13 @@ mod version;
 
 use crate::identity::identity_public_key::KeyID;
 
-use crate::prelude::Revision;
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Identifier};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -41,7 +42,8 @@ pub struct IdentityCreditTransferTransitionV0 {
     pub identity_id: Identifier,
     pub recipient_id: Identifier,
     pub amount: u64,
-    pub revision: Revision,
+    pub nonce: IdentityNonce,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
@@ -78,7 +80,8 @@ mod test {
             identity_id: Identifier::random(),
             recipient_id: Identifier::random(),
             amount: rng.gen(),
-            revision: 1,
+            nonce: 1,
+            user_fee_increase: 0,
             signature_public_key_id: rng.gen(),
             signature: [0; 65].to_vec().into(),
         };

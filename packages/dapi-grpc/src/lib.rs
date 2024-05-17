@@ -2,6 +2,7 @@ pub use prost::Message;
 
 #[cfg(feature = "core")]
 pub mod core {
+    #![allow(non_camel_case_types)]
     pub mod v0 {
         include!("core/proto/org.dash.platform.dapi.v0.rs");
     }

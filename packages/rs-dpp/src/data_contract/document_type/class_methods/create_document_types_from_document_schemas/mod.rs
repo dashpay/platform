@@ -3,6 +3,7 @@ mod v0;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
+use crate::validation::operations::ProtocolValidationOperation;
 use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -38,7 +39,9 @@ impl DocumentType {
         schema_defs: Option<&BTreeMap<String, Value>>,
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
-        validate: bool,
+        documents_can_be_deleted_contract_default: bool,
+        full_validation: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         match platform_version
@@ -54,7 +57,9 @@ impl DocumentType {
                 schema_defs,
                 documents_keep_history_contract_default,
                 documents_mutable_contract_default,
-                validate,
+                documents_can_be_deleted_contract_default,
+                full_validation,
+                validation_operations,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -63,5 +68,43 @@ impl DocumentType {
                 received: version,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use crate::data_contract::errors::DataContractError;
+    use assert_matches::assert_matches;
+    use platform_value::Identifier;
+    use std::ops::Deref;
+
+    #[test]
+    pub fn should_not_allow_creating_document_types_with_empty_schema() {
+        let id = Identifier::random();
+
+        let result = DocumentType::create_document_types_from_document_schemas(
+            id,
+            Default::default(),
+            None,
+            false,
+            false,
+            false,
+            false,
+            &mut vec![],
+            PlatformVersion::latest(),
+        );
+
+        assert_matches!(result, Err(ProtocolError::ConsensusError(e)) => {
+            assert_matches!(e.deref(), ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::DocumentTypesAreMissingError(
+                    DocumentTypesAreMissingError { .. }
+                )
+            )));
+        });
     }
 }

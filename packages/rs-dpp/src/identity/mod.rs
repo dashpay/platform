@@ -24,12 +24,14 @@ pub mod signer;
 
 pub mod accessors;
 pub(crate) mod conversion;
-mod fields;
+pub mod fields;
+pub mod identities_contract_keys;
 #[cfg(feature = "client")]
 mod identity_facade;
 #[cfg(feature = "factories")]
 pub mod identity_factory;
-mod methods;
+pub mod identity_nonce;
+pub mod methods;
 #[cfg(feature = "random-identities")]
 pub mod random;
 pub mod v0;

@@ -1,6 +1,7 @@
 mod v0;
 
 use crate::data_contract::DataContract;
+use std::collections::BTreeMap;
 
 use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
@@ -83,9 +84,12 @@ impl DocumentFactory {
         data: Value,
     ) -> Result<Document, ProtocolError> {
         match self {
-            DocumentFactory::V0(v0) => {
-                v0.create_document(data_contract, owner_id, document_type_name, data)
-            }
+            DocumentFactory::V0(v0) => v0.create_document_without_time_based_properties(
+                data_contract,
+                owner_id,
+                document_type_name,
+                data,
+            ),
         }
     }
 
@@ -113,9 +117,10 @@ impl DocumentFactory {
                 Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
             ),
         >,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         match self {
-            DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter),
+            DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter, nonce_counter),
         }
     }
 

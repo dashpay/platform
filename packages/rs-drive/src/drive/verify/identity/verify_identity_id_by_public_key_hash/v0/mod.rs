@@ -31,6 +31,7 @@ impl Drive {
     /// - The proved key value is not for the correct path or key in unique key hashes.
     /// - More than one identity ID is found.
     ///
+    #[inline(always)]
     pub(super) fn verify_identity_id_by_public_key_hash_v0(
         proof: &[u8],
         is_proof_subset: bool,

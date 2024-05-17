@@ -73,7 +73,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
     --profile minimal \
     -y \
     # Rust version the same as in /README.md
-    --default-toolchain stable \
+    --default-toolchain 1.76 \
     --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler
@@ -194,7 +194,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
-        --package drive-abci && \
+        --package drive-abci \
+        --locked && \
     cp /platform/target/*/drive-abci /artifacts/ && \
     if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
@@ -232,9 +233,11 @@ LABEL description="Drive ABCI Rust"
 RUN apk add --no-cache libgcc libstdc++
 
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
+ENV REJECTIONS_PATH=/var/log/dash/rejected
 
 RUN mkdir -p /var/log/dash \
-    /var/lib/dash/rs-drive-abci/db
+    /var/lib/dash/rs-drive-abci/db \
+    ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
 COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
@@ -265,6 +268,7 @@ CMD ["start"]
 
 # ABCI interface
 EXPOSE 26658
+EXPOSE 26659
 # Prometheus port
 EXPOSE 29090
 
@@ -296,7 +300,6 @@ COPY --from=build-dashmate-helper /platform/package.json /platform/yarn.lock /pl
 COPY --from=build-dashmate-helper /platform/packages/dashmate packages/dashmate
 COPY --from=build-dashmate-helper /platform/packages/dashpay-contract packages/dashpay-contract
 COPY --from=build-dashmate-helper /platform/packages/wallet-lib packages/wallet-lib
-COPY --from=build-dashmate-helper /platform/packages/js-dash-sdk packages/js-dash-sdk
 COPY --from=build-dashmate-helper /platform/packages/js-dapi-client packages/js-dapi-client
 COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-grpc-common
 COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc

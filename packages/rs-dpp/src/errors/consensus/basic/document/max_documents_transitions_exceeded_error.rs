@@ -18,15 +18,15 @@ pub struct MaxDocumentsTransitionsExceededError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    pub max_transitions: u32,
+    pub max_transitions: u16,
 }
 
 impl MaxDocumentsTransitionsExceededError {
-    pub fn new(max_transitions: u32) -> Self {
+    pub fn new(max_transitions: u16) -> Self {
         Self { max_transitions }
     }
 
-    pub fn max_transitions(&self) -> u32 {
+    pub fn max_transitions(&self) -> u16 {
         self.max_transitions
     }
 }
