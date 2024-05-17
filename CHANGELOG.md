@@ -1,3 +1,25 @@
+## [1.0.0-dev.14](https://github.com/dashpay/platform/compare/v1.0.0-dev.13...v1.0.0-dev.14) (2024-05-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* data contract transition validation issues (#1835)
+
+### Features
+
+* **dashmate:** check for DKG before stopping node ([#1683](https://github.com/dashpay/platform/issues/1683))
+
+
+### Bug Fixes
+
+* data contract transition validation issues ([#1835](https://github.com/dashpay/platform/issues/1835))
+
+
+### Code Refactoring
+
+* rename `DataContractConfig.validate_config_update` ([#1843](https://github.com/dashpay/platform/issues/1843))
+* rename `validate` to `full_validation` ([#1845](https://github.com/dashpay/platform/issues/1845))
+
 ## [1.0.0-dev.13](https://github.com/dashpay/platform/compare/v1.0.0-dev.12...v1.0.0-dev.13) (2024-05-09)
 
 
