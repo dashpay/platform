@@ -34,9 +34,16 @@ where
 
     validation_result
         .and_then(|validation_result| {
-            let first_consensus_error = validation_result.errors.first().cloned();
+            let (check_tx_result, errors) =
+                validation_result.into_data_and_errors().map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "validation result should contain check tx result",
+                    ))
+                })?;
 
-            let (code, info) = if let Some(consensus_error) = &first_consensus_error {
+            let first_consensus_error = errors.first();
+
+            let (code, info) = if let Some(consensus_error) = first_consensus_error {
                 (
                     consensus_error.code(),
                     consensus_error.response_info_for_version(platform_version)?,
@@ -45,12 +52,6 @@ where
                 // If there are no execution errors the code will be 0
                 (0, "".to_string())
             };
-
-            let check_tx_result = validation_result.into_data().map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "validation result should contain check tx result",
-                ))
-            })?;
 
             let gas_wanted = check_tx_result
                 .fee_result
