@@ -82,13 +82,11 @@ where
                     (0, _) => format!(
                         "rejected with code {code} due to error: {}",
                         first_consensus_error
-                            .as_ref()
                             .expect("consensus error must be present with non-zero error code")
                     ),
                     (1, _) => format!(
                         "removed from mempool with code {code} after re-check due to error: {}",
                         first_consensus_error
-                            .as_ref()
                             .expect("consensus error must be present with non-zero error code")
                     ),
                     _ => unreachable!("we have only 2 modes of check tx"),
