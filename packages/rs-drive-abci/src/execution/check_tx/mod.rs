@@ -16,8 +16,8 @@ mod v0;
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
 pub enum CheckTxLevel {
-    FirstTimeCheck,
-    Recheck,
+    FirstTimeCheck = 0,
+    Recheck = 1,
 }
 
 impl TryFrom<u8> for CheckTxLevel {

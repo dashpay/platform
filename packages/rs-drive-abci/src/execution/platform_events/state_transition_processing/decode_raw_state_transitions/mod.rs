@@ -2,6 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::state_transition_container::v0::DecodedStateTransition;
 use crate::execution::types::state_transition_container::StateTransitionContainer;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;

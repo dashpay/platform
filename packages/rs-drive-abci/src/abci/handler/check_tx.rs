@@ -2,11 +2,12 @@ use crate::abci::handler::error::consensus::AbciResponseInfoGetter;
 use crate::abci::handler::error::HandlerError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::metrics::{LABEL_CHECK_TX_MODE, LABEL_CHECK_TX_RESPONSE, LABEL_STATE_TRANSITION_NAME};
+use crate::metrics::{LABEL_ABCI_RESPONSE_CODE, LABEL_CHECK_TX_MODE, LABEL_STATE_TRANSITION_NAME};
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::SignedCredits;
+use dpp::util::hash::hash_single;
 use metrics::Label;
 use tenderdash_abci::proto::abci as proto;
 
@@ -33,9 +34,9 @@ where
 
     validation_result
         .and_then(|validation_result| {
-            let first_consensus_error = validation_result.errors.first();
+            let first_consensus_error = validation_result.errors.first().cloned();
 
-            let (code, info) = if let Some(consensus_error) = first_consensus_error {
+            let (code, info) = if let Some(consensus_error) = &first_consensus_error {
                 (
                     consensus_error.code(),
                     consensus_error.response_info_for_version(platform_version)?,
@@ -55,7 +56,7 @@ where
                 .fee_result
                 .as_ref()
                 .map(|fee_result| fee_result.total_base_fee())
-                .unwrap_or_default();
+                .unwrap_or(0);
 
             // Todo: IMPORTANT We need tenderdash to support multiple senders
             let first_unique_identifier = check_tx_result
@@ -73,31 +74,48 @@ where
 
             let priority = check_tx_result.priority as i64;
 
-            let message = match (r#type, code) {
-                (0, 0) => "added to mempool".to_string(),
-                (1, 0) => "kept in mempool after re-check".to_string(),
-                (0, _) => format!("rejected with code {code}"),
-                (1, _) => format!("removed from mempool with code {code} after re-check"),
-                _ => unreachable!("we have only 2 modes of check tx"),
-            };
+            if tracing::enabled!(tracing::Level::TRACE) {
+                let message = match (r#type, code) {
+                    (0, 0) => "added to mempool".to_string(),
+                    (1, 0) => "kept in mempool after re-check".to_string(),
+                    (0, _) => format!(
+                        "rejected with code {code} due to error: {}",
+                        first_consensus_error
+                            .as_ref()
+                            .expect("consensus error must be present with non-zero error code")
+                    ),
+                    (1, _) => format!(
+                        "removed from mempool with code {code} after re-check due to error: {}",
+                        first_consensus_error
+                            .as_ref()
+                            .expect("consensus error must be present with non-zero error code")
+                    ),
+                    _ => unreachable!("we have only 2 modes of check tx"),
+                };
 
-            let state_transition_hash = check_tx_result
-                .state_transition_hash
-                .expect("state transition hash must be present");
+                let state_transition_hash = check_tx_result
+                    .state_transition_hash
+                    .expect("state transition hash must be present if trace level is enabled");
 
-            tracing::trace!(
-                ?check_tx_result,
-                "{} state transition {} {message}",
-                state_transition_name,
-                hex::encode(state_transition_hash),
-            );
+                let st_hash = hex::encode(state_transition_hash);
+
+                tracing::trace!(
+                    ?check_tx_result,
+                    error = ?first_consensus_error,
+                    st_hash,
+                    "{} state transition ({}) {}",
+                    state_transition_name,
+                    st_hash,
+                    message
+                );
+            }
 
             timer.add_label(Label::new(
                 LABEL_STATE_TRANSITION_NAME,
                 state_transition_name,
             ));
             timer.add_label(Label::new(LABEL_CHECK_TX_MODE, r#type.to_string()));
-            timer.add_label(Label::new(LABEL_CHECK_TX_RESPONSE, code.to_string()));
+            timer.add_label(Label::new(LABEL_ABCI_RESPONSE_CODE, code.to_string()));
 
             Ok(proto::ResponseCheckTx {
                 code,
@@ -112,9 +130,18 @@ where
         .or_else(|error| {
             let handler_error = HandlerError::Internal(error.to_string());
 
-            tracing::error!(?error, check_tx_mode = r#type, "check_tx failed: {}", error);
+            if tracing::enabled!(tracing::Level::ERROR) {
+                let st_hash = hex::encode(hash_single(tx));
 
-            timer.cancel();
+                tracing::error!(
+                    ?error,
+                    st_hash,
+                    check_tx_mode = r#type,
+                    "Failed to check state transition ({}): {}",
+                    st_hash,
+                    error
+                );
+            }
 
             Ok(proto::ResponseCheckTx {
                 code: handler_error.code(),
