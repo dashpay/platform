@@ -57,7 +57,7 @@ where
                 .fee_result
                 .as_ref()
                 .map(|fee_result| fee_result.total_base_fee())
-                .unwrap_or(0);
+                .unwrap_or_default();
 
             // Todo: IMPORTANT We need tenderdash to support multiple senders
             let first_unique_identifier = check_tx_result
