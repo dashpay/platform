@@ -729,12 +729,19 @@ message GetContestedResourceVoteStateResponse {
 // Who voted for a contested resource to go to a specific identity?
 message GetContestedResourceVotersForIdentityRequest {
   message GetContestedResourceVotersForIdentityRequestV0 {
-    bool prove = 1;
-    repeated bytes resource_path = 2;
-    bytes resource_identifier = 3;
-    optional bytes voter_identifier = 4;
-    optional uint32 count = 5;
-    optional bool ascending = 6;
+    message StartAtIdentifierInfo {
+      bytes start_identifier = 1;
+      bool start_identifier_included = 2;
+    }
+    bytes contract_id = 1;
+    string document_type_name = 2;
+    string index_name = 3;
+    repeated bytes index_values = 4;
+    bytes contestant_id = 5;
+    optional StartAtIdentifierInfo start_at_identifier_info = 6;
+    optional uint32 count = 7;
+    bool order_ascending = 8;
+    bool prove = 9;
   }
 
   oneof version {
@@ -745,12 +752,8 @@ message GetContestedResourceVotersForIdentityRequest {
 message GetContestedResourceVotersForIdentityResponse {
   message GetContestedResourceVotersForIdentityResponseV0 {
     message ContestedResourceVoters {
-      repeated Voter voters = 1;
+      repeated bytes voters = 1;
       bool finished_results = 2;
-    }
-
-    message Voter {
-      bytes identifier = 1;
     }
 
     oneof result {

@@ -82,6 +82,10 @@ pub mod vote_poll_vote_state_query;
 pub mod vote_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
+/// Vote poll contestant votes query module
+pub mod vote_poll_contestant_votes_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {

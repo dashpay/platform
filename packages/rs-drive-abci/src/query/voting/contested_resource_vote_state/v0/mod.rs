@@ -16,11 +16,11 @@ use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDoc
 use dpp::{check_validation_result_with_data, platform_value};
 use drive::error::query::QuerySyntaxError;
 use drive::query::vote_poll_vote_state_query::{
-    Contender, ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
+    Contender, ContestedDocumentVotePollDriveQuery,
 };
 
 impl<C> Platform<C> {
-    pub(super) fn query_contested_resource_vote_status_v0(
+    pub(super) fn query_contested_resource_vote_state_v0(
         &self,
         GetContestedResourceVoteStateRequestV0 {
             contract_id,

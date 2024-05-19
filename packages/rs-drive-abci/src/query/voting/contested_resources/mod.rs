@@ -6,7 +6,6 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contested_resources_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_contested_resources_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
     GetContestedResourcesRequest, GetContestedResourcesResponse,
 };
 use dpp::version::PlatformVersion;

@@ -2429,18 +2429,40 @@ pub mod get_contested_resource_voters_for_identity_request {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetContestedResourceVotersForIdentityRequestV0 {
-        #[prost(bool, tag = "1")]
-        pub prove: bool,
-        #[prost(bytes = "vec", repeated, tag = "2")]
-        pub resource_path: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-        #[prost(bytes = "vec", tag = "3")]
-        pub resource_identifier: ::prost::alloc::vec::Vec<u8>,
-        #[prost(bytes = "vec", optional, tag = "4")]
-        pub voter_identifier: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-        #[prost(uint32, optional, tag = "5")]
+        #[prost(bytes = "vec", tag = "1")]
+        pub contract_id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(string, tag = "2")]
+        pub document_type_name: ::prost::alloc::string::String,
+        #[prost(string, tag = "3")]
+        pub index_name: ::prost::alloc::string::String,
+        #[prost(bytes = "vec", repeated, tag = "4")]
+        pub index_values: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        #[prost(bytes = "vec", tag = "5")]
+        pub contestant_id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(message, optional, tag = "6")]
+        pub start_at_identifier_info: ::core::option::Option<
+            get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo,
+        >,
+        #[prost(uint32, optional, tag = "7")]
         pub count: ::core::option::Option<u32>,
-        #[prost(bool, optional, tag = "6")]
-        pub ascending: ::core::option::Option<bool>,
+        #[prost(bool, tag = "8")]
+        pub order_ascending: bool,
+        #[prost(bool, tag = "9")]
+        pub prove: bool,
+    }
+    /// Nested message and enum types in `GetContestedResourceVotersForIdentityRequestV0`.
+    pub mod get_contested_resource_voters_for_identity_request_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct StartAtIdentifierInfo {
+            #[prost(bytes = "vec", tag = "1")]
+            pub start_identifier: ::prost::alloc::vec::Vec<u8>,
+            #[prost(bool, tag = "2")]
+            pub start_identifier_included: bool,
+        }
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
@@ -2491,19 +2513,10 @@ pub mod get_contested_resource_voters_for_identity_response {
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct ContestedResourceVoters {
-            #[prost(message, repeated, tag = "1")]
-            pub voters: ::prost::alloc::vec::Vec<Voter>,
+            #[prost(bytes = "vec", repeated, tag = "1")]
+            pub voters: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
             #[prost(bool, tag = "2")]
             pub finished_results: bool,
-        }
-        #[derive(::serde::Serialize, ::serde::Deserialize)]
-        #[serde(rename_all = "snake_case")]
-        #[derive(::dapi_grpc_macros::Mockable)]
-        #[allow(clippy::derive_partial_eq_without_eq)]
-        #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct Voter {
-            #[prost(bytes = "vec", tag = "1")]
-            pub identifier: ::prost::alloc::vec::Vec<u8>,
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]

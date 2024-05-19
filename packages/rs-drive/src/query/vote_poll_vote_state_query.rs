@@ -1,4 +1,3 @@
-use crate::drive::verify::RootHash;
 use crate::drive::votes::paths::VotePollPaths;
 use crate::drive::votes::resolve_contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollResolver, ContestedDocumentResourceVotePollWithContractInfo,
@@ -8,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::{GroveError, Query, SingleDocumentDriveQueryContestedStatus};
+use crate::query::{GroveError, Query};
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -40,7 +39,7 @@ impl TryFrom<i32> for ContestedDocumentVotePollDriveQueryResultType {
             0 => Ok(ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly),
             1 => Ok(ContestedDocumentVotePollDriveQueryResultType::Documents),
             2 => Ok(ContestedDocumentVotePollDriveQueryResultType::VoteTally),
-            3 => Ok(ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally),
+            4 => Err(Error::Drive(DriveError::CorruptedCodeExecution("voters for identity must be set manually"))),
             n => Err(Error::Query(QuerySyntaxError::Unsupported(format!(
                 "unsupported contested document vote poll drive query result type {}, only 0, 1 and 2 are supported",
                 n
@@ -242,7 +241,7 @@ impl ContestedDocumentVotePollDriveQuery {
 
     #[cfg(feature = "server")]
     /// Executes a query with no proof and returns the items, skipped items, and fee.
-    pub fn execute_no_proof_with_cost<T>(
+    pub fn execute_no_proof_with_cost(
         &self,
         drive: &Drive,
         block_info: Option<BlockInfo>,
@@ -420,7 +419,7 @@ impl ResolvedContestedDocumentVotePollDriveQuery {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let path = self.vote_poll.contenders_path(platform_version)?;
+        let mut path = self.vote_poll.contenders_path(platform_version)?;
 
         let mut query = Query::new_with_direction(self.order_ascending);
 
