@@ -81,7 +81,8 @@ where
     /// Checks a state transition to determine if it should be added to the mempool.
     ///
     /// This function performs a few checks, including validating the state transition and ensuring that the
-    /// user can pay for it. It may be inaccurate in rare cases, so the proposer needs to re-check transactions
+    /// user can pay for it. From the time a state transition is added to the mempool to the time it is included in a proposed block,
+    /// a previously valid state transition may have become invalid, so the proposer needs to re-check transactions
     /// before proposing a block.
     ///
     /// # Arguments
