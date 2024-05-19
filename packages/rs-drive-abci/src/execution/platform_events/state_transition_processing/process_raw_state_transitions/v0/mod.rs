@@ -201,7 +201,7 @@ where
         // State Transition is invalid
         if !validation_result.is_valid() {
             // To prevent spam we should deduct fees for invalid state transitions as well.
-            // There are two cases when the user can't pay fees:
+            // There are three cases when the user can't pay fees:
             // 1. The state transition is funded by an asset lock transactions. This transactions are
             //    placed on the payment blockchain and they can't be partially spent.
             // 2. We can't prove that the state transition is associated with the identity
