@@ -2,7 +2,6 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::state_transition_container::v0::DecodedStateTransition;
 use crate::execution::types::state_transition_container::StateTransitionContainer;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -32,7 +31,7 @@ where
     /// state transitions, processing state transitions, or executing events.
     pub(in crate::execution) fn decode_raw_state_transitions<'a>(
         &self,
-        raw_state_transitions: &'a Vec<impl AsRef<[u8]>>,
+        raw_state_transitions: &'a [impl AsRef<[u8]>],
         platform_version: &PlatformVersion,
     ) -> Result<StateTransitionContainer<'a>, Error> {
         match platform_version

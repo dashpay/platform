@@ -8,12 +8,10 @@ use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
-use dpp::util::hash::hash_single;
 use dpp::version::PlatformVersion;
-use dpp::{dashcore, ProtocolError};
+use dpp::ProtocolError;
 use std::time::{Duration, Instant};
 
 impl<C> Platform<C>
@@ -46,7 +44,7 @@ where
     ///
     pub(super) fn decode_raw_state_transitions_v0<'a>(
         &self,
-        raw_state_transitions: &'a Vec<impl AsRef<[u8]>>,
+        raw_state_transitions: &'a [impl AsRef<[u8]>],
         platform_version: &PlatformVersion,
     ) -> StateTransitionContainerV0<'a> {
         // Todo: might be better to have StateTransitionContainerV0 be a decoder instead and have
