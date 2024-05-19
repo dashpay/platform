@@ -2297,9 +2297,10 @@ pub mod get_contested_resource_vote_state_request {
         )]
         #[repr(i32)]
         pub enum ResultType {
-            Documents = 0,
-            VoteTally = 1,
-            DocumentsAndVoteTally = 2,
+            IdentityIdsOnly = 0,
+            Documents = 1,
+            VoteTally = 2,
+            DocumentsAndVoteTally = 3,
         }
         impl ResultType {
             /// String value of the enum field names used in the ProtoBuf definition.
@@ -2308,6 +2309,7 @@ pub mod get_contested_resource_vote_state_request {
             /// (if the ProtoBuf definition does not change) and safe for programmatic use.
             pub fn as_str_name(&self) -> &'static str {
                 match self {
+                    ResultType::IdentityIdsOnly => "IDENTITY_IDS_ONLY",
                     ResultType::Documents => "DOCUMENTS",
                     ResultType::VoteTally => "VOTE_TALLY",
                     ResultType::DocumentsAndVoteTally => "DOCUMENTS_AND_VOTE_TALLY",
@@ -2316,6 +2318,7 @@ pub mod get_contested_resource_vote_state_request {
             /// Creates an enum from field names used in the ProtoBuf definition.
             pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
                 match value {
+                    "IDENTITY_IDS_ONLY" => Some(Self::IdentityIdsOnly),
                     "DOCUMENTS" => Some(Self::Documents),
                     "VOTE_TALLY" => Some(Self::VoteTally),
                     "DOCUMENTS_AND_VOTE_TALLY" => Some(Self::DocumentsAndVoteTally),

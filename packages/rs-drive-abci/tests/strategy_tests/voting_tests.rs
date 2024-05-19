@@ -23,6 +23,8 @@ mod tests {
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::document::{Document, DocumentV0Getters};
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
@@ -95,6 +97,9 @@ mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type")
             .to_owned_document_type();
+
+        let identity1_id = start_identities.first().unwrap().0.id();
+        let identity2_id = start_identities.last().unwrap().0.id();
         let document_op_1 = DocumentOp {
             contract: dpns_contract.clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
@@ -104,11 +109,8 @@ mod tests {
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
-                        BTreeMap::from([(
-                            "dashUniqueIdentityId",
-                            Value::from(start_identities.first().unwrap().0.id()),
-                        )])
-                        .into(),
+                        BTreeMap::from([("dashUniqueIdentityId", Value::from(identity1_id))])
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),
@@ -248,7 +250,10 @@ mod tests {
             .expect("expected query to be valid");
 
         let get_contested_resource_vote_state_response::Version::V0(
-            GetContestedResourceVoteStateResponseV0 { metadata, result },
+            GetContestedResourceVoteStateResponseV0 {
+                metadata: _,
+                result,
+            },
         ) = query_validation_result.version.expect("expected a version");
 
         let Some(
@@ -263,5 +268,41 @@ mod tests {
         };
 
         assert_eq!(contenders.len(), 2);
+
+        let first_contender = contenders.first().unwrap();
+
+        let second_contender = contenders.last().unwrap();
+
+        let first_contender_document = Document::from_bytes(
+            first_contender
+                .document
+                .as_ref()
+                .expect("expected a document")
+                .as_slice(),
+            document_type.as_ref(),
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let second_contender_document = Document::from_bytes(
+            second_contender
+                .document
+                .as_ref()
+                .expect("expected a document")
+                .as_slice(),
+            document_type.as_ref(),
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        assert_ne!(first_contender_document, second_contender_document);
+
+        assert_eq!(first_contender.identifier, identity2_id.to_vec());
+
+        assert_eq!(second_contender.identifier, identity1_id.to_vec());
+
+        assert_eq!(first_contender.vote_count, Some(0));
+
+        assert_eq!(second_contender.vote_count, Some(0));
     }
 }

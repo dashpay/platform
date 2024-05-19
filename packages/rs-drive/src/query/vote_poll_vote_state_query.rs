@@ -39,9 +39,9 @@ impl TryFrom<i32> for ContestedDocumentVotePollDriveQueryResultType {
             0 => Ok(ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly),
             1 => Ok(ContestedDocumentVotePollDriveQueryResultType::Documents),
             2 => Ok(ContestedDocumentVotePollDriveQueryResultType::VoteTally),
-            4 => Err(Error::Drive(DriveError::CorruptedCodeExecution("voters for identity must be set manually"))),
+            3 => Ok(ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally),
             n => Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "unsupported contested document vote poll drive query result type {}, only 0, 1 and 2 are supported",
+                "unsupported contested document vote poll drive query result type {}, only 0, 1, 2 and 3 are supported",
                 n
             )))),
         }
@@ -419,7 +419,7 @@ impl ResolvedContestedDocumentVotePollDriveQuery {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let mut path = self.vote_poll.contenders_path(platform_version)?;
+        let path = self.vote_poll.contenders_path(platform_version)?;
 
         let mut query = Query::new_with_direction(self.order_ascending);
 

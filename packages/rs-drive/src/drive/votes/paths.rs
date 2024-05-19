@@ -115,17 +115,25 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
     }
 
     fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
+        let mut root = vote_contested_resource_active_polls_contract_document_tree_path_vec(
+            self.contract.contract.id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        );
         let document_type = self.document_type()?;
-        self.index()?
-            .properties
-            .iter()
-            .zip(self.index_values.iter())
-            .map(|(IndexProperty { name, .. }, value)| {
-                document_type
-                    .serialize_value_for_key(name, value, platform_version)
-                    .map_err(Error::Protocol)
-            })
-            .collect::<Result<Vec<Vec<u8>>, Error>>()
+        root.append(
+            &mut self
+                .index()?
+                .properties
+                .iter()
+                .zip(self.index_values.iter())
+                .map(|(IndexProperty { name, .. }, value)| {
+                    document_type
+                        .serialize_value_for_key(name, value, platform_version)
+                        .map_err(Error::Protocol)
+                })
+                .collect::<Result<Vec<Vec<u8>>, Error>>()?,
+        );
+        Ok(root)
     }
 
     fn contender_path(
