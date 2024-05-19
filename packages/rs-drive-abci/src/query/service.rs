@@ -10,11 +10,9 @@ use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
-    GetConsensusParamsResponse, GetContestedResourceIdentityVoteStateRequest,
-    GetContestedResourceIdentityVoteStateResponse, GetContestedResourceIdentityVoteStatusRequest,
+    GetConsensusParamsResponse, GetContestedResourceIdentityVoteStatusRequest,
     GetContestedResourceIdentityVoteStatusResponse, GetContestedResourceVoteStateRequest,
-    GetContestedResourceVoteStateResponse, GetContestedResourceVoteStatusRequest,
-    GetContestedResourceVoteStatusResponse, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
     GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
     GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
@@ -399,24 +397,10 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetContestedResourcesRequest>,
     ) -> Result<Response<GetContestedResourcesResponse>, Status> {
-        todo!()
-    }
-
-    async fn get_contested_resource_identity_vote_state(
-        &self,
-        request: Request<GetContestedResourceIdentityVoteStateRequest>,
-    ) -> Result<Response<GetContestedResourceIdentityVoteStateResponse>, Status> {
-        todo!()
-    }
-
-    async fn get_contested_resource_vote_status(
-        &self,
-        request: Request<GetContestedResourceVoteStatusRequest>,
-    ) -> Result<Response<GetContestedResourceVoteStatusResponse>, Status> {
         self.handle_blocking_query(
             request,
-            Platform::<DefaultCoreRPC>::query_prefunded_specialized_balance,
-            "get_contested_resource_vote_status",
+            Platform::<DefaultCoreRPC>::query_contested_resources,
+            "get_contested_resources",
         )
         .await
     }
@@ -425,21 +409,36 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetContestedResourceVoteStateRequest>,
     ) -> Result<Response<GetContestedResourceVoteStateResponse>, Status> {
-        todo!()
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contested_resource_vote_state,
+            "get_contested_resource_vote_state",
+        )
+        .await
     }
 
     async fn get_contested_resource_voters_for_identity(
         &self,
         request: Request<GetContestedResourceVotersForIdentityRequest>,
     ) -> Result<Response<GetContestedResourceVotersForIdentityResponse>, Status> {
-        todo!()
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contested_resource_voters_for_identity,
+            "get_contested_resource_voters_for_identity",
+        )
+        .await
     }
 
     async fn get_contested_resource_identity_vote_status(
         &self,
         request: Request<GetContestedResourceIdentityVoteStatusRequest>,
     ) -> Result<Response<GetContestedResourceIdentityVoteStatusResponse>, Status> {
-        todo!()
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contested_resource_identity_vote_status,
+            "get_contested_resource_identity_vote_status",
+        )
+        .await
     }
 
     async fn get_prefunded_specialized_balance(

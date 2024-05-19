@@ -22,6 +22,7 @@ pub mod paths;
 mod setup;
 
 #[cfg(any(feature = "server", feature = "verify"))]
+/// Resolve contested document resource vote poll module
 pub mod resolve_contested_document_resource_vote_poll;
 
 /// A trait to convert the vote to a tree path usable in grovedb

@@ -2139,18 +2139,18 @@ pub mod get_contested_resources_request {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetContestedResourcesRequestV0 {
-        #[prost(bool, tag = "1")]
-        pub prove: bool,
-        #[prost(bytes = "vec", repeated, tag = "2")]
-        pub resource_path: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-        #[prost(bytes = "vec", optional, tag = "3")]
-        pub start_contested_resource_identifier: ::core::option::Option<
-            ::prost::alloc::vec::Vec<u8>,
-        >,
+        #[prost(bytes = "vec", tag = "1")]
+        pub contract_id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(string, tag = "2")]
+        pub document_type_name: ::prost::alloc::string::String,
+        #[prost(string, tag = "3")]
+        pub index_name: ::prost::alloc::string::String,
         #[prost(uint32, optional, tag = "4")]
         pub count: ::core::option::Option<u32>,
-        #[prost(bool, optional, tag = "5")]
-        pub ascending: ::core::option::Option<bool>,
+        #[prost(bool, tag = "5")]
+        pub ascending: bool,
+        #[prost(bool, tag = "6")]
+        pub prove: bool,
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
@@ -2202,8 +2202,8 @@ pub mod get_contested_resources_response {
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct ContestedResource {
-            #[prost(bytes = "vec", tag = "1")]
-            pub identifier: ::prost::alloc::vec::Vec<u8>,
+            #[prost(bytes = "vec", repeated, tag = "1")]
+            pub index_values: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
@@ -2253,13 +2253,20 @@ pub mod get_contested_resource_vote_state_request {
         pub index_name: ::prost::alloc::string::String,
         #[prost(bytes = "vec", repeated, tag = "4")]
         pub index_values: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-        #[prost(bool, tag = "5")]
-        pub include_documents: bool,
+        #[prost(
+            enumeration = "get_contested_resource_vote_state_request_v0::ResultType",
+            tag = "5"
+        )]
+        pub result_type: i32,
         #[prost(message, optional, tag = "6")]
         pub start_at_identifier_info: ::core::option::Option<
             get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo,
         >,
-        #[prost(bool, tag = "7")]
+        #[prost(uint32, optional, tag = "7")]
+        pub count: ::core::option::Option<u32>,
+        #[prost(bool, tag = "8")]
+        pub order_ascending: bool,
+        #[prost(bool, tag = "9")]
         pub prove: bool,
     }
     /// Nested message and enum types in `GetContestedResourceVoteStateRequestV0`.
@@ -2272,10 +2279,49 @@ pub mod get_contested_resource_vote_state_request {
         pub struct StartAtIdentifierInfo {
             #[prost(bytes = "vec", tag = "1")]
             pub start_identifier: ::prost::alloc::vec::Vec<u8>,
-            #[prost(uint32, tag = "2")]
-            pub count: u32,
-            #[prost(bool, tag = "3")]
-            pub ascending: bool,
+            #[prost(bool, tag = "2")]
+            pub start_identifier_included: bool,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(
+            Clone,
+            Copy,
+            Debug,
+            PartialEq,
+            Eq,
+            Hash,
+            PartialOrd,
+            Ord,
+            ::prost::Enumeration
+        )]
+        #[repr(i32)]
+        pub enum ResultType {
+            Documents = 0,
+            VoteTally = 1,
+            DocumentsAndVoteTally = 2,
+        }
+        impl ResultType {
+            /// String value of the enum field names used in the ProtoBuf definition.
+            ///
+            /// The values are not transformed in any way and thus are considered stable
+            /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+            pub fn as_str_name(&self) -> &'static str {
+                match self {
+                    ResultType::Documents => "DOCUMENTS",
+                    ResultType::VoteTally => "VOTE_TALLY",
+                    ResultType::DocumentsAndVoteTally => "DOCUMENTS_AND_VOTE_TALLY",
+                }
+            }
+            /// Creates an enum from field names used in the ProtoBuf definition.
+            pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+                match value {
+                    "DOCUMENTS" => Some(Self::Documents),
+                    "VOTE_TALLY" => Some(Self::VoteTally),
+                    "DOCUMENTS_AND_VOTE_TALLY" => Some(Self::DocumentsAndVoteTally),
+                    _ => None,
+                }
+            }
         }
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -2335,8 +2381,8 @@ pub mod get_contested_resource_vote_state_response {
         pub struct Contender {
             #[prost(bytes = "vec", tag = "1")]
             pub identifier: ::prost::alloc::vec::Vec<u8>,
-            #[prost(uint32, tag = "2")]
-            pub vote_count: u32,
+            #[prost(uint32, optional, tag = "2")]
+            pub vote_count: ::core::option::Option<u32>,
             #[prost(bytes = "vec", optional, tag = "3")]
             pub document: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
         }
@@ -3463,6 +3509,7 @@ pub mod platform_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// What votes are currently happening for a specific contested index
         pub async fn get_contested_resources(
             &mut self,
             request: impl tonic::IntoRequest<super::GetContestedResourcesRequest>,
@@ -3794,6 +3841,7 @@ pub mod platform_server {
             tonic::Response<super::GetEpochsInfoResponse>,
             tonic::Status,
         >;
+        /// What votes are currently happening for a specific contested index
         async fn get_contested_resources(
             &self,
             request: tonic::Request<super::GetContestedResourcesRequest>,

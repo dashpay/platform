@@ -2,12 +2,7 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use dpp::consensus::signature::IdentityNotFoundError;
-
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use drive::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 

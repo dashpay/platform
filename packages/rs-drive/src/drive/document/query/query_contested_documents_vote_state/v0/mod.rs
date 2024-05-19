@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
+use crate::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQuery};
 use dpp::block::epoch::Epoch;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
@@ -12,7 +12,7 @@ use grovedb::TransactionArg;
 /// The outcome of a query
 #[derive(Debug, Default)]
 pub struct QueryContestedDocumentsVoteStateOutcomeV0 {
-    documents: Vec<Document>,
+    contenders: Vec<Contender>,
     cost: u64,
 }
 
@@ -23,10 +23,10 @@ pub struct QueryContestedDocumentsVoteStateOutcomeV0 {
 /// include retrieving the documents, skipped count, and the associated cost
 /// of the query.
 pub trait QueryContestedDocumentsVoteStateOutcomeV0Methods {
-    /// Returns a reference to the documents found from the query.
-    fn documents(&self) -> &Vec<Document>;
-    /// Consumes the instance to return the owned documents.
-    fn documents_owned(self) -> Vec<Document>;
+    /// Returns a reference to the contenders found from the query.
+    fn contenders(&self) -> &Vec<Contender>;
+    /// Consumes the instance to return the owned contenders.
+    fn contenders_owned(self) -> Vec<Contender>;
     /// Returns the processing cost associated with the query.
     fn cost(&self) -> u64;
 }
@@ -34,12 +34,12 @@ pub trait QueryContestedDocumentsVoteStateOutcomeV0Methods {
 impl QueryContestedDocumentsVoteStateOutcomeV0Methods
     for QueryContestedDocumentsVoteStateOutcomeV0
 {
-    fn documents(&self) -> &Vec<Document> {
-        &self.documents
+    fn contenders(&self) -> &Vec<Contender> {
+        &self.contenders
     }
 
-    fn documents_owned(self) -> Vec<Document> {
-        self.documents
+    fn contenders_owned(self) -> Vec<Contender> {
+        self.contenders
     }
 
     fn cost(&self) -> u64 {
@@ -74,18 +74,8 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<QueryContestedDocumentsVoteStateOutcomeV0, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let (items, skipped) = query.execute_raw_results_no_proof_internal(
-            self,
-            transaction,
-            &mut drive_operations,
-            platform_version,
-        )?;
-        let documents = items
-            .into_iter()
-            .map(|serialized| {
-                Document::from_bytes(serialized.as_slice(), query.document_type, platform_version)
-            })
-            .collect::<Result<Vec<Document>, ProtocolError>>()?;
+        let contested_document_vote_poll_drive_query_execution_result =
+            query.execute_no_proof(self, transaction, &mut drive_operations, platform_version)?;
         let cost = if let Some(epoch) = epoch {
             let fee_result = Drive::calculate_fee(
                 None,
@@ -99,6 +89,9 @@ impl Drive {
             0
         };
 
-        Ok(QueryContestedDocumentsVoteStateOutcomeV0 { documents, cost })
+        Ok(QueryContestedDocumentsVoteStateOutcomeV0 {
+            contenders: contested_document_vote_poll_drive_query_execution_result.contenders,
+            cost,
+        })
     }
 }

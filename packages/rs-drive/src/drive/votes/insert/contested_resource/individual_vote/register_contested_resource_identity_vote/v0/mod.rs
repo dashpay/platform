@@ -5,7 +5,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;

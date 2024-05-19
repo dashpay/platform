@@ -500,6 +500,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 grove_get_raw_value_u64_from_encoded_var_vec: 0,
                 grove_get: 0,
                 grove_get_path_query_serialized_results: 0,
+                grove_get_path_query_serialized_or_sum_results: 0,
                 grove_get_path_query: 0,
                 grove_get_path_query_with_optional: 0,
                 grove_get_raw_path_query_with_optional: 0,

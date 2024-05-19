@@ -34,6 +34,7 @@ service Platform {
   rpc getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse);
   rpc getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse);
   rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
+  // What votes are currently happening for a specific contested index
   rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
   // What's the state of a contested resource vote? (ie who is winning?)
   rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
@@ -636,11 +637,12 @@ message GetEpochsInfoResponse {
 
 message GetContestedResourcesRequest {
   message GetContestedResourcesRequestV0 {
-    bool prove = 1;
-    repeated bytes resource_path = 2;
-    optional bytes start_contested_resource_identifier = 3;
+    bytes contract_id = 1;
+    string document_type_name = 2;
+    string index_name = 3;
     optional uint32 count = 4;
-    optional bool ascending = 5;
+    bool ascending = 5;
+    bool prove = 6;
   }
 
   oneof version {
@@ -656,7 +658,7 @@ message GetContestedResourcesResponse {
     }
 
     message ContestedResource {
-      bytes identifier = 1;
+      repeated bytes index_values = 1;
     }
 
     oneof result {
@@ -676,16 +678,23 @@ message GetContestedResourceVoteStateRequest {
   message GetContestedResourceVoteStateRequestV0 {
     message StartAtIdentifierInfo {
       bytes start_identifier = 1;
-      uint32 count = 2;
-      bool ascending = 3;
+      bool start_identifier_included = 2;
     }
+    enum ResultType {
+      DOCUMENTS = 0;
+      VOTE_TALLY = 1;
+      DOCUMENTS_AND_VOTE_TALLY = 2;
+    }
+
     bytes contract_id = 1;
     string document_type_name = 2;
     string index_name = 3;
     repeated bytes index_values = 4;
-    bool include_documents = 5;
+    ResultType result_type = 5;
     optional StartAtIdentifierInfo start_at_identifier_info = 6;
-    bool prove = 7;
+    optional uint32 count = 7;
+    bool order_ascending = 8;
+    bool prove = 9;
   }
 
   oneof version {
@@ -701,7 +710,7 @@ message GetContestedResourceVoteStateResponse {
 
     message Contender {
       bytes identifier = 1;
-      uint32 vote_count = 2;
+      optional uint32 vote_count = 2;
       optional bytes document = 3;
     }
 

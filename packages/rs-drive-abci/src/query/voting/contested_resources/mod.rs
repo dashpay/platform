@@ -7,6 +7,7 @@ use dapi_grpc::platform::v0::get_contested_resources_request::Version as Request
 use dapi_grpc::platform::v0::get_contested_resources_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
+    GetContestedResourcesRequest, GetContestedResourcesResponse,
 };
 use dpp::version::PlatformVersion;
 
@@ -16,10 +17,10 @@ impl<C> Platform<C> {
     /// Querying of the contested resources
     pub fn query_contested_resources(
         &self,
-        GetContestedResourceVotersForIdentityRequest { version }: GetContestedResourceVotersForIdentityRequest,
+        GetContestedResourcesRequest { version }: GetContestedResourcesRequest,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetContestedResourceVotersForIdentityResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetContestedResourcesResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError(
@@ -56,11 +57,9 @@ impl<C> Platform<C> {
                     platform_version,
                 )?;
 
-                Ok(result.map(
-                    |response_v0| GetContestedResourceVotersForIdentityResponse {
-                        version: Some(ResponseVersion::V0(response_v0)),
-                    },
-                ))
+                Ok(result.map(|response_v0| GetContestedResourcesResponse {
+                    version: Some(ResponseVersion::V0(response_v0)),
+                }))
             }
         }
     }

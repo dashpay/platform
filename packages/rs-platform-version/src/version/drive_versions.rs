@@ -382,6 +382,7 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_get_raw_value_u64_from_encoded_var_vec: FeatureVersion,
     pub grove_get: FeatureVersion,
     pub grove_get_path_query_serialized_results: FeatureVersion,
+    pub grove_get_path_query_serialized_or_sum_results: FeatureVersion,
     pub grove_get_path_query: FeatureVersion,
     pub grove_get_path_query_with_optional: FeatureVersion,
     pub grove_get_raw_path_query_with_optional: FeatureVersion,

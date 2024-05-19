@@ -9,7 +9,7 @@ use grovedb::TransactionArg;
 
 mod v0;
 
-use crate::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
+use crate::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQuery};
 pub use v0::*;
 
 /// Represents the outcome of a query to retrieve documents.
@@ -27,15 +27,15 @@ pub enum QueryContestedDocumentsVoteStateOutcome {
 }
 
 impl QueryContestedDocumentsVoteStateOutcomeV0Methods for QueryContestedDocumentsVoteStateOutcome {
-    fn documents(&self) -> &Vec<Document> {
+    fn contenders(&self) -> &Vec<Contender> {
         match self {
-            QueryContestedDocumentsVoteStateOutcome::V0(outcome) => outcome.documents(),
+            QueryContestedDocumentsVoteStateOutcome::V0(outcome) => outcome.contenders(),
         }
     }
 
-    fn documents_owned(self) -> Vec<Document> {
+    fn contenders_owned(self) -> Vec<Contender> {
         match self {
-            QueryContestedDocumentsVoteStateOutcome::V0(outcome) => outcome.documents_owned(),
+            QueryContestedDocumentsVoteStateOutcome::V0(outcome) => outcome.contenders_owned(),
         }
     }
 

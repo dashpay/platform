@@ -75,8 +75,10 @@ mod single_document_drive_query;
 mod test_index;
 
 #[cfg(any(feature = "server", feature = "verify"))]
+/// Vote poll vote state query module
 pub mod vote_poll_vote_state_query;
 #[cfg(any(feature = "server", feature = "verify"))]
+/// Vote Query module
 pub mod vote_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
