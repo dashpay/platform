@@ -38,6 +38,6 @@ pub mod v0;
 pub mod versions;
 
 pub use fields::*;
-
+pub use identity_public_key::{IdentityPublicKey, KeyCount, KeyID, KeyType};
 // pub use v0::*;
 // pub use v0::IdentityV0;

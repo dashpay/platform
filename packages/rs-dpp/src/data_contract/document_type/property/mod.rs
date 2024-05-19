@@ -2,7 +2,7 @@ use std::convert::TryInto;
 
 use std::io::{BufReader, Read};
 
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 
 use crate::errors::consensus::basic::decode::DecodingError;
 use crate::prelude::TimestampMillis;

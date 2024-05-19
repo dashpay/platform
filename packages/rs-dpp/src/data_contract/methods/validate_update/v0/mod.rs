@@ -1,10 +1,10 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 
-use crate::consensus::basic::data_contract::{
+use crate::errors::consensus::basic::data_contract::{
     IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
 };
-use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
-use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::errors::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
+use crate::errors::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;

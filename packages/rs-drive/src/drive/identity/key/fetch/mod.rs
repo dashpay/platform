@@ -1,8 +1,10 @@
 // Grouping std imports
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::BTreeMap,
     ops::RangeFull,
 };
+#[cfg(feature = "server")]
+use std::collections::HashSet;
 
 // Conditional imports for the features "server" or "verify"
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -18,10 +20,7 @@ use {
         },
         query::{Query, QueryItem},
     },
-    dpp::{
-        identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
-        identity::{KeyID, Purpose},
-    },
+    dpp::identity::identity_public_key::{KeyID, Purpose},
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
 };

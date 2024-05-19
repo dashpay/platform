@@ -2,7 +2,7 @@ use crate::errors::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
 use crate::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};

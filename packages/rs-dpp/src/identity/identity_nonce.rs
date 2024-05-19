@@ -20,6 +20,7 @@ pub const IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES: u64 = 40;
     Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 /// The result of the merge of the identity contract nonce
+#[ferment_macro::export]
 pub enum MergeIdentityNonceResult {
     /// The nonce is an invalid value
     /// This could be 0

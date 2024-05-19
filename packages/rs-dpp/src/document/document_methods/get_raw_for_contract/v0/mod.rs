@@ -1,5 +1,5 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::document_methods::DocumentGetRawForDocumentTypeV0;
 use crate::document::DocumentV0Getters;

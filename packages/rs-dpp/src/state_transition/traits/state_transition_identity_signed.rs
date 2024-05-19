@@ -2,7 +2,7 @@
     feature = "state-transition-signing",
     feature = "state-transition-validation"
 ))]
-use crate::consensus::signature::{
+use crate::errors::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
 use anyhow::anyhow;

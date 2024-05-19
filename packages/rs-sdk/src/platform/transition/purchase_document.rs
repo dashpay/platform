@@ -13,12 +13,13 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::balances::credits::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::prelude::Identifier;
-use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::platform_value;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
+use platform_value::Identifier;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]

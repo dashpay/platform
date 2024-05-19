@@ -10,7 +10,7 @@ use crate::errors::consensus::ConsensusError;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{Identity, IdentityPublicKey};
+use crate::identity::{Identity, identity_public_key::IdentityPublicKey};
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
@@ -35,7 +35,7 @@ use crate::{
     prelude::Revision,
 };
 #[cfg(feature = "state-transition-signing")]
-use crate::{identity::SecurityLevel, ProtocolError};
+use crate::{identity::identity_public_key::SecurityLevel, ProtocolError};
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<'a, S: Signer>(

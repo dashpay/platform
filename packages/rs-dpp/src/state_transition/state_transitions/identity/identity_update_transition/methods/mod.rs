@@ -4,7 +4,7 @@ pub use v0::*;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{Identity, IdentityPublicKey, KeyID};
+use crate::identity::{Identity, identity_public_key::{IdentityPublicKey, KeyID}};
 
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;

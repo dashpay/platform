@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::drive::verify::RootHash;
 
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dpp::identity::Purpose;
+use dpp::identity::identity_public_key::Purpose;
 
 use dpp::version::PlatformVersion;
 

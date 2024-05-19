@@ -22,7 +22,7 @@ use platform_version::version::PlatformVersion;
 use integer_encoding::{VarInt, VarIntReader};
 
 use crate::consensus::basic::decode::DecodingError;
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use platform_version::version::FeatureVersion;
 
 impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {

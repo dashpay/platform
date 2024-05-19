@@ -1,5 +1,6 @@
 pub mod v1;
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct StateTransitionMinFees {
     pub credit_transfer: u64,
     pub credit_withdrawal: u64,

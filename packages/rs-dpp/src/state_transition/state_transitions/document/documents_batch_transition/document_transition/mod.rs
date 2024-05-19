@@ -6,7 +6,7 @@ use derive_more::From;
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
 use crate::prelude::IdentityNonce;
-use document_base_transition::DocumentBaseTransition;
+// use document_base_transition::DocumentBaseTransition;
 
 pub mod action_type;
 pub mod document_base_transition;
@@ -26,6 +26,7 @@ pub use document_transfer_transition::DocumentTransferTransition;
 pub use document_purchase_transition::DocumentPurchaseTransition;
 pub use document_update_price_transition::DocumentUpdatePriceTransition;
 use platform_value::Value;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 

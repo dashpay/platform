@@ -11,7 +11,7 @@ use crate::drive::identity::{
     identity_contract_info_group_path_vec, identity_path_vec, IdentityRootStructure,
 };
 use crate::error::query::QuerySyntaxError;
-use dpp::identity::Purpose;
+use dpp::identity::identity_public_key::Purpose;
 use grovedb::query_result_type::Key;
 use grovedb::{PathQuery, Query, SizedQuery};
 

@@ -1,7 +1,7 @@
 use crate::data_contract::{DataContract, DataContractFactory};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
-use crate::prelude::{Identifier, IdentityNonce};
+use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]

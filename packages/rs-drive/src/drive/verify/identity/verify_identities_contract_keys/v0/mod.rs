@@ -4,7 +4,7 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
-use dpp::identity::{IdentityPublicKey, Purpose};
+use dpp::identity::identity_public_key::{IdentityPublicKey, Purpose};
 
 use crate::error::drive::DriveError;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;

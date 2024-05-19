@@ -19,6 +19,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
 dpp = { path = "../rs-dpp", features = ["bls-signatures"], default-features = false }
+platform-value = { path = "../rs-platform-value" }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.12", features = [
   "crypto"
 ], default-features = false }

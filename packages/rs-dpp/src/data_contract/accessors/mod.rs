@@ -7,7 +7,7 @@ use crate::data_contract::DataContract;
 
 use platform_value::Identifier;
 
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use std::collections::BTreeMap;
 
 pub mod v0;

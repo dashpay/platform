@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
-use crate::identity::{Identity, IdentityPublicKey, KeyID};
+use crate::identity::{Identity, identity_public_key::{IdentityPublicKey, KeyID}};
 use crate::prelude::IdentityNonce;
 use platform_value::Identifier;
 

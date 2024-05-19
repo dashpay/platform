@@ -1,6 +1,7 @@
 pub mod v1;
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct FeeDataContractValidationVersion {
     pub document_type_base_fee: u64,
     pub document_type_size_fee: u64,

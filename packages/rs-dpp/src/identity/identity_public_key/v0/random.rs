@@ -1,4 +1,4 @@
-use crate::identity::contract_bounds::ContractBounds;
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::identity_public_key::KeyType::ECDSA_SECP256K1;
 use crate::identity::identity_public_key::Purpose::AUTHENTICATION;

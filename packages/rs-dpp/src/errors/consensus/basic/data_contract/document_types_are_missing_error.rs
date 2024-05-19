@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::errors::consensus::ConsensusError;
 use platform_value::Identifier;
 
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use bincode::{Decode, Encode};
 
 #[derive(
@@ -14,8 +14,9 @@ use bincode::{Decode, Encode};
 )]
 #[error("Data Contract {data_contract_id} must have at least one document type defined.")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentTypesAreMissingError {
-    data_contract_id: Identifier,
+    pub data_contract_id: Identifier,
 }
 
 impl DocumentTypesAreMissingError {

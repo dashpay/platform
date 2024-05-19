@@ -14,15 +14,16 @@ use platform_value::Identifier;
 )]
 #[error("Invalid document type security level error security level: got {security_level:?} for {contract_id}::{document_type_name}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct InvalidDocumentTypeRequiredSecurityLevelError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    security_level: SecurityLevel,
-    contract_id: Identifier,
-    document_type_name: String,
+    pub security_level: SecurityLevel,
+    pub contract_id: Identifier,
+    pub document_type_name: String,
 }
 
 impl InvalidDocumentTypeRequiredSecurityLevelError {

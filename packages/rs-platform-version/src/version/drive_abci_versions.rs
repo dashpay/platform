@@ -92,6 +92,7 @@ pub struct DriveAbciValidationVersions {
 
 /// All of these penalty amounts are in credits
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct PenaltyAmounts {
     pub identity_id_not_correct: u64,
     pub unique_key_already_present: u64,

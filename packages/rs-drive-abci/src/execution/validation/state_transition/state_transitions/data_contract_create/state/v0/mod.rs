@@ -148,7 +148,7 @@ mod tests {
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::errors::DataContractError;
+    use dpp::data_contract::errors::contract::DataContractError;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
     use dpp::platform_value::Value;
     use dpp::prelude::IdentityNonce;

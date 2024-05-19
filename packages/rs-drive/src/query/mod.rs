@@ -20,8 +20,7 @@ use {
             DataContract,
         },
         document::{
-            document_methods::DocumentMethodsV0,
-            serialization_traits::DocumentPlatformConversionMethodsV0, Document, DocumentV0Getters,
+            document_methods::DocumentMethodsV0, Document, DocumentV0Getters,
         },
         platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper,
         ProtocolError,
@@ -37,7 +36,7 @@ use {
     std::{collections::BTreeMap, ops::BitXor},
 };
 
-#[cfg(feature = "verify")]
+#[cfg(all(feature = "server", feature = "verify"))]
 use crate::drive::verify::RootHash;
 
 #[cfg(feature = "server")]
@@ -235,15 +234,22 @@ pub enum QueryResultEncoding {
 #[cfg(any(feature = "server", feature = "verify"))]
 impl QueryResultEncoding {
     /// Encode the value based on the encoding desired
+    #[cfg(feature = "ciborium")]
     pub fn encode_value(&self, value: &Value) -> Result<Vec<u8>, Error> {
         match self {
-            #[cfg(feature = "ciborium")]
             QueryResultEncoding::CborEncodedQueryResult => {
                 let mut buffer = vec![];
                 ciborium::ser::into_writer(value, &mut buffer)
                     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
                 Ok(buffer)
             }
+            QueryResultEncoding::PlatformEncodedQueryResult => Ok(vec![]),
+        }
+    }
+    /// Encode the value based on the encoding desired
+    #[cfg(not(feature = "ciborium"))]
+    pub fn encode_value(&self, _value: &Value) -> Result<Vec<u8>, Error> {
+        match self {
             QueryResultEncoding::PlatformEncodedQueryResult => Ok(vec![]),
         }
     }

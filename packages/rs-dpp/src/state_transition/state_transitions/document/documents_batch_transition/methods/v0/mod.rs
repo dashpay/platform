@@ -6,7 +6,7 @@ use crate::balances::credits::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::IdentityPublicKey;
+use crate::identity::identity_public_key::IdentityPublicKey;
 use crate::identity::identity_public_key::SecurityLevel;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]

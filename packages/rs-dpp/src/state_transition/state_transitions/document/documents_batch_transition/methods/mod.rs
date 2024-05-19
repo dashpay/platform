@@ -6,7 +6,7 @@ use crate::balances::credits::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::IdentityPublicKey;
+use crate::identity::identity_public_key::IdentityPublicKey;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
@@ -14,7 +14,7 @@ use crate::state_transition::state_transitions::document::documents_batch_transi
 use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]

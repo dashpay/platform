@@ -5,7 +5,7 @@ use crate::identity::core_script::CoreScript;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use crate::identity::{Identity, identity_public_key::{KeyType, Purpose, SecurityLevel}};
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]

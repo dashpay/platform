@@ -12,6 +12,7 @@ use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 
 // @append_only
 #[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
+#[ferment_macro::export]
 pub enum DataContractError {
     #[error(transparent)]
     DecodingContractError(DecodingError),

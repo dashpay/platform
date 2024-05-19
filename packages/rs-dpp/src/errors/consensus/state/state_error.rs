@@ -23,10 +23,9 @@ use crate::errors::consensus::state::identity::invalid_identity_public_key_id_er
 use crate::errors::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use crate::errors::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use crate::errors::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
-use crate::errors::consensus::state::identity::{
-    IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
-};
-use crate::errors::consensus::ConsensusError;
+use crate::errors::consensus::state::identity::identity_already_exists_error::IdentityAlreadyExistsError;
+use crate::errors::consensus::state::identity::identity_insufficient_balance_error::IdentityInsufficientBalanceError;
+use crate::errors::consensus::consensus_error::ConsensusError;
 use crate::errors::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::errors::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::errors::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
@@ -138,5 +137,55 @@ pub enum StateError {
 impl From<StateError> for ConsensusError {
     fn from(error: StateError) -> Self {
         Self::StateError(error)
+    }
+}
+
+pub enum TestStateError {
+    Empty,
+    #[cfg(feature = "state-transition-validation")]
+    Conditional,
+}
+pub mod fermented {
+    use ferment_interfaces::{boxed, FFIConversion};
+
+    #[repr(C)]
+    #[derive(Clone)]
+    pub enum TestStateError {
+        Empty,
+        #[cfg(feature = "state-transition-validation")]
+        Conditional,
+    }
+
+    impl FFIConversion<super::TestStateError> for TestStateError {
+        unsafe fn ffi_from_const(ffi: *const Self) -> super::TestStateError {
+            let ffi_ref = &*ffi;
+            match ffi_ref {
+                TestStateError::Empty => super::TestStateError::Empty,
+                #[cfg(feature = "state-transition-validation")]
+                TestStateError::Conditional => super::TestStateError::Conditional
+            }
+        }
+
+        unsafe fn ffi_to_const(obj: super::TestStateError) -> *const Self {
+            boxed (match obj {
+                super::TestStateError::Empty => TestStateError::Empty,
+                #[cfg(feature = "state-transition-validation")]
+                super::TestStateError::Conditional => TestStateError::Conditional
+            })
+        }
+    }
+
+    impl Drop for TestStateError {
+        fn drop(&mut self) {
+        }
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn dpp_errors_consensus_state_state_error_TestStateError_Empty_ctor() -> *mut TestStateError {
+        boxed(TestStateError::Empty)
+    }
+    #[cfg(feature = "state-transition-validation")]
+    #[no_mangle]
+    pub unsafe extern "C" fn dpp_errors_consensus_state_state_error_TestStateError_Conditional_ctor() -> *mut TestStateError {
+        boxed(TestStateError::Conditional)
     }
 }

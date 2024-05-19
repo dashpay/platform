@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("Disabling a key with id {key_id:?} that is being added in same state transition")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DisablingKeyIdAlsoBeingAddedInSameTransitionError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    key_id: KeyID,
+    pub key_id: KeyID,
 }
 
 impl DisablingKeyIdAlsoBeingAddedInSameTransitionError {

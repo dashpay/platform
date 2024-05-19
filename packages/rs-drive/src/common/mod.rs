@@ -43,7 +43,6 @@ use platform_version::version::PlatformVersion;
 
 #[cfg(test)]
 use ciborium::value::Value;
-use dpp::platform_value;
 
 #[cfg(feature = "fixtures-and-mocks")]
 /// Serializes to CBOR and applies to Drive a JSON contract from the file system.

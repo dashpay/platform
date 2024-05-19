@@ -108,7 +108,7 @@ impl Query<GetIdentityNonceRequest> for platform_value::Identifier {
 }
 
 impl Query<GetIdentityContractNonceRequest>
-    for (dpp::prelude::Identifier, dpp::prelude::Identifier)
+    for (platform_value::Identifier, platform_value::Identifier)
 {
     fn query(self, prove: bool) -> Result<GetIdentityContractNonceRequest, Error> {
         if !prove {

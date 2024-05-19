@@ -9,7 +9,7 @@ use dapi_grpc::platform::v0::{
     get_identity_balance_and_revision_request, get_identity_balance_request,
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
     get_identity_keys_request, get_identity_nonce_request, get_identity_request,
-    get_path_elements_request, GetIdentitiesContractKeysRequest, GetPathElementsRequest,
+    get_path_elements_request, GetPathElementsRequest,
     GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, ResponseMetadata,
@@ -37,8 +37,7 @@ use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentities
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dpp::identity::{IdentityPublicKey, Purpose};
-use dpp::platform_value;
+use dpp::identity::identity_public_key::Purpose;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::DriveQuery;
@@ -1219,7 +1218,7 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
                         contract_id,
                         document_type_name,
                         purposes,
-                        prove,
+                        prove: _,
                     } = v0;
                     let identifiers = identities_ids
                         .into_iter()

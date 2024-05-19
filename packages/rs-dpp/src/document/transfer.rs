@@ -9,6 +9,7 @@ use derive_more::Display;
 
 #[derive(Clone, Copy, Debug, PartialEq, Default, Display)]
 #[repr(u8)]
+#[ferment_macro::export]
 pub enum Transferable {
     #[default]
     Never = 0,

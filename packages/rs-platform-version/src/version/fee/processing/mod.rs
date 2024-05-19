@@ -1,6 +1,7 @@
 pub mod v1;
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct FeeProcessingVersion {
     pub fetch_identity_balance_processing_cost: u64,
     pub fetch_identity_revision_processing_cost: u64,

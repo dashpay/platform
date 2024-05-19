@@ -5,7 +5,7 @@ use crate::document::{Document, DocumentV0Getters};
 use crate::document::errors::DocumentError;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use crate::state_transition::state_transitions::document::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
 
 impl DocumentTransferTransitionV0 {

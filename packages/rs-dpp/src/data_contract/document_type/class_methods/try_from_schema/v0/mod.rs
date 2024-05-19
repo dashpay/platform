@@ -40,7 +40,7 @@ use crate::data_contract::document_type::property_names::{
     TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::{property_names, DocumentType};
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::identity_public_key::SecurityLevel;
 use crate::util::json_schema::resolve_uri;

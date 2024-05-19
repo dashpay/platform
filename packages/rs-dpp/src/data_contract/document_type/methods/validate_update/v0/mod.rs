@@ -1,9 +1,9 @@
-use crate::consensus::basic::data_contract::IncompatibleDocumentTypeSchemaError;
-use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::errors::consensus::basic::data_contract::IncompatibleDocumentTypeSchemaError;
+use crate::errors::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;

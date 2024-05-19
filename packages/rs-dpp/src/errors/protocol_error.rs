@@ -1,10 +1,10 @@
 use thiserror::Error as ThisError;
-use crate::data_contract::errors::{DataContractError, DataContractNotPresentError, IdentityNotPresentError, InvalidDocumentTypeError};
+use crate::data_contract::errors::{contract::DataContractError, DataContractNotPresentError, IdentityNotPresentError, InvalidDocumentTypeError};
 use crate::document::errors::DocumentError;
 use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
 use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::errors::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError};
-use crate::errors::consensus::ConsensusError;
+use crate::errors::consensus::consensus_error::ConsensusError;
 use crate::errors::dpp_init_error::DashPlatformProtocolInitError;
 use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
 use crate::errors::non_consensus_error::NonConsensusError;

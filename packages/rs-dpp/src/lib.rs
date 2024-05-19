@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Coding conventions
-#![forbid(unsafe_code)]
+// #![forbid(unsafe_code)]
 //#![deny(missing_docs)]
 #![allow(dead_code)]
 
@@ -66,17 +66,21 @@ pub mod prelude {
     #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
 
+    #[ferment_macro::export]
     pub type BlockHeight = u64;
 
+    #[ferment_macro::export]
     pub type CoreBlockHeight = u32;
     #[ferment_macro::export]
     pub type TimestampMillis = u64;
     #[ferment_macro::export]
     pub type Revision = u64;
+    #[ferment_macro::export]
     pub type IdentityNonce = u64;
 
     /// UserFeeIncrease is the additional percentage of the processing fee.
     /// A 1 here means we pay 1% more in processing fees. A 100 means we pay 100% more.
+    #[ferment_macro::export]
     pub type UserFeeIncrease = u16;
 }
 

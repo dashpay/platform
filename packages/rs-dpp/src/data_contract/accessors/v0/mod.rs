@@ -1,6 +1,6 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
 

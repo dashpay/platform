@@ -49,6 +49,7 @@ use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
 #[cfg(feature = "server")]
 use dpp::balances::credits::Credits;
+#[cfg(feature = "server")]
 use dpp::util::deserializer::ProtocolVersion;
 #[cfg(feature = "server")]
 use grovedb::batch::GroveDbOp;

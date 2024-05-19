@@ -48,8 +48,8 @@ impl JsonSchemaValidator {
     #[inline(always)]
     pub(super) fn compile_and_validate_v0(
         &self,
-        json_schema: &JsonValue,
-        json_value: &JsonValue,
+        json_schema: &serde_json::Value,
+        json_value: &serde_json::Value,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let mut validator_guard = self.validator.write().unwrap();
 

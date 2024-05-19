@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::identifier::Identifier;
+use platform_value::Identifier;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::property_names;

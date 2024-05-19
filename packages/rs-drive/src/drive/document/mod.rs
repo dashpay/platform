@@ -39,13 +39,11 @@ use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::{defaults, RootTree};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "server")]
 use dpp::document::Document;
-use dpp::document::DocumentV0Getters;
+// use dpp::document::DocumentV0Getters;
 #[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
 #[cfg(feature = "server")]

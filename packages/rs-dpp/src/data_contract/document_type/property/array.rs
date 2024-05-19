@@ -1,4 +1,4 @@
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use crate::errors::ProtocolError;
 use integer_encoding::VarInt;
 use platform_value::Value;

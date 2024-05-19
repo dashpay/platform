@@ -78,7 +78,7 @@ mod tests {
     use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
-    use crate::data_contract::errors::DataContractError;
+    use crate::data_contract::errors::contract::DataContractError;
     use assert_matches::assert_matches;
     use platform_value::Identifier;
     use std::ops::Deref;

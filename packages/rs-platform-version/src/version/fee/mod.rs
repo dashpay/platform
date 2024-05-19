@@ -5,15 +5,16 @@ use crate::version::fee::signature::FeeSignatureVersion;
 use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
 use crate::version::fee::storage::FeeStorageVersion;
 
-mod data_contract;
-mod hashing;
-mod processing;
+pub mod data_contract;
+pub mod hashing;
+pub mod processing;
 pub mod signature;
 pub mod state_transition_min_fees;
 pub mod storage;
 pub mod v1;
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct FeeVersion {
     pub storage: FeeStorageVersion,
     pub signature: FeeSignatureVersion,

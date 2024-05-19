@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("{document_id} document not for sale")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentNotForSaleError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_id: Identifier,
+    pub document_id: Identifier,
 }
 
 impl DocumentNotForSaleError {

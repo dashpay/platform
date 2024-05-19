@@ -12,6 +12,7 @@ use thiserror::Error;
 )]
 #[error("Asset lock transaction {transaction_id} output {output_index} only has {credits_left} credits left out of {initial_asset_lock_credits} initial credits on the asset lock but needs {credits_required} credits to start processing")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct IdentityAssetLockTransactionOutPointNotEnoughBalanceError {
     /*
 
@@ -20,11 +21,11 @@ pub struct IdentityAssetLockTransactionOutPointNotEnoughBalanceError {
     */
     #[platform_serialize(with_serde)]
     #[bincode(with_serde)]
-    transaction_id: Txid,
-    output_index: usize,
-    initial_asset_lock_credits: Credits,
-    credits_left: Credits,
-    credits_required: Credits,
+    pub transaction_id: Txid,
+    pub output_index: usize,
+    pub initial_asset_lock_credits: Credits,
+    pub credits_left: Credits,
+    pub credits_required: Credits,
 }
 
 impl IdentityAssetLockTransactionOutPointNotEnoughBalanceError {

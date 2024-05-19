@@ -9,7 +9,7 @@ pub enum OrderBy {
     Desc,
 }
 
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 
 use crate::errors::ProtocolError;
 use anyhow::anyhow;

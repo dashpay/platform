@@ -28,8 +28,8 @@ impl JsonSchemaValidator {
 
     pub fn compile_and_validate(
         &self,
-        json_schema: &JsonValue,
-        json_value: &JsonValue,
+        json_schema: &serde_json::Value,
+        json_value: &serde_json::Value,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version

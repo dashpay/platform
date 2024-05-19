@@ -1,7 +1,7 @@
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::Version::V0;
 use dapi_grpc::platform::v0::GetIdentitiesContractKeysRequest;
-use dpp::identity::Purpose;
+use dpp::identity::identity_public_key::Purpose;
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
 };
