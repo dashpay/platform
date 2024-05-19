@@ -1,4 +1,3 @@
-use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
 use crate::error::drive::DriveError;
@@ -11,7 +10,7 @@ use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDoc
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::sync::Arc;
+use crate::drive::object_size_info::DataContractResolvedInfo;
 
 /// Represents information related to a contested document resource vote poll, along with
 /// associated contract details.
@@ -19,9 +18,9 @@ use std::sync::Arc;
 /// This structure holds a reference to the contract, the document type name,
 /// the index name, and the index values used for the poll.
 #[derive(Debug, PartialEq, Clone)]
-pub struct ContestedDocumentResourceVotePollWithContractInfo {
+pub struct ContestedDocumentResourceVotePollWithContractInfo<'a> {
     /// The contract information associated with the document.
-    pub contract: Arc<DataContractFetchInfo>,
+    pub contract: DataContractResolvedInfo<'a>,
     /// The name of the document type.
     pub document_type_name: String,
     /// The name of the index.
@@ -30,7 +29,7 @@ pub struct ContestedDocumentResourceVotePollWithContractInfo {
     pub index_values: Vec<Value>,
 }
 
-impl ContestedDocumentResourceVotePollWithContractInfo {
+impl<'a> ContestedDocumentResourceVotePollWithContractInfo<'a> {
     /// Retrieves the index associated with the document type and index name.
     ///
     /// # Returns
@@ -44,7 +43,7 @@ impl ContestedDocumentResourceVotePollWithContractInfo {
     /// if the index cannot be found within the document type.
     pub fn index(&self) -> Result<&Index, Error> {
         self.contract
-            .contract
+            .as_ref()
             .document_type_borrowed_for_name(self.document_type_name.as_str())?
             .indexes()
             .get(&self.index_name)
@@ -66,7 +65,7 @@ impl ContestedDocumentResourceVotePollWithContractInfo {
     /// if there is an issue retrieving the document type.
     pub fn document_type(&self) -> Result<DocumentTypeRef, Error> {
         self.contract
-            .contract
+            .as_ref()
             .document_type_for_name(self.document_type_name.as_str())
             .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))
     }
@@ -84,7 +83,7 @@ impl ContestedDocumentResourceVotePollWithContractInfo {
     /// if there is an issue retrieving the document type.
     pub fn document_type_borrowed(&self) -> Result<&DocumentType, Error> {
         self.contract
-            .contract
+            .as_ref()
             .document_type_borrowed_for_name(self.document_type_name.as_str())
             .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))
     }
@@ -139,7 +138,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
 
         let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
         Ok(ContestedDocumentResourceVotePollWithContractInfo {
-            contract,
+            contract: DataContractResolvedInfo::DataContractFetchInfo(contract),
             document_type_name: document_type_name.clone(),
             index_name: index_name.clone(),
             index_values: index_values.clone(),

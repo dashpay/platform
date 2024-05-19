@@ -79,8 +79,8 @@ impl<'a> DataContractInfo<'a> {
 /// Contains resolved data contract information, typically used after initial
 /// fetching or retrieval steps have been completed. This enum simplifies handling
 /// of data contract states post-retrieval.
-#[derive(Clone, Debug)]
-pub(crate) enum DataContractResolvedInfo<'a> {
+#[derive(Clone, Debug, PartialEq)]
+pub enum DataContractResolvedInfo<'a> {
     /// Information necessary for fetched data contracts, encapsulated in an
     /// `Arc` to ensure thread-safe shared ownership and access.
     DataContractFetchInfo(Arc<DataContractFetchInfo>),

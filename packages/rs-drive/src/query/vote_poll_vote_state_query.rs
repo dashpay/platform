@@ -398,9 +398,9 @@ impl ContestedDocumentVotePollDriveQuery {
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
-pub struct ResolvedContestedDocumentVotePollDriveQuery {
+pub struct ResolvedContestedDocumentVotePollDriveQuery<'a> {
     /// What vote poll are we asking for?
-    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
+    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfo<'a>,
     /// What result type are we interested in
     pub result_type: ContestedDocumentVotePollDriveQueryResultType,
     /// Offset
@@ -413,7 +413,7 @@ pub struct ResolvedContestedDocumentVotePollDriveQuery {
     pub order_ascending: bool,
 }
 
-impl ResolvedContestedDocumentVotePollDriveQuery {
+impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
     /// Operations to construct a path query.
     pub fn construct_path_query(
         &self,

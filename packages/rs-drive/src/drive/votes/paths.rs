@@ -73,50 +73,50 @@ pub trait VotePollPaths {
     ) -> Result<Vec<Vec<u8>>, Error>;
 }
 
-impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
+impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo<'a> {
     fn contract_path(&self) -> [&[u8]; 4] {
         vote_contested_resource_active_polls_contract_tree_path(
-            self.contract.contract.id_ref().as_slice(),
+            self.contract.as_ref().id_ref().as_slice(),
         )
     }
 
     fn contract_path_vec(&self) -> Vec<Vec<u8>> {
         vote_contested_resource_active_polls_contract_tree_path_vec(
-            self.contract.contract.id_ref().as_slice(),
+            self.contract.as_ref().id_ref().as_slice(),
         )
     }
 
     fn document_type_path(&self) -> [&[u8]; 5] {
         vote_contested_resource_active_polls_contract_document_tree_path(
-            self.contract.contract.id_ref().as_slice(),
+            self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
         )
     }
 
     fn document_type_path_vec(&self) -> Vec<Vec<u8>> {
         vote_contested_resource_active_polls_contract_document_tree_path_vec(
-            self.contract.contract.id_ref().as_slice(),
+            self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
         )
     }
 
     fn documents_storage_path(&self) -> [&[u8]; 6] {
         vote_contested_resource_contract_documents_storage_path(
-            self.contract.contract.id_ref().as_slice(),
+            self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
         )
     }
 
     fn documents_storage_path_vec(&self) -> Vec<Vec<u8>> {
         vote_contested_resource_contract_documents_storage_path_vec(
-            self.contract.contract.id_ref().as_slice(),
+            self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
         )
     }
 
     fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
         let mut root = vote_contested_resource_active_polls_contract_document_tree_path_vec(
-            self.contract.contract.id_ref().as_slice(),
+            self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
         );
         let document_type = self.document_type()?;

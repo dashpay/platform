@@ -228,9 +228,9 @@ impl ContestedDocumentVotePollVotesDriveQuery {
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
-pub struct ResolvedContestedDocumentVotePollVotesDriveQuery {
+pub struct ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
     /// What vote poll are we asking for?
-    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
+    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfo<'a>,
     /// Who's votes are we looking for
     pub contestant_id: Identifier,
     /// Offset
@@ -243,7 +243,7 @@ pub struct ResolvedContestedDocumentVotePollVotesDriveQuery {
     pub order_ascending: bool,
 }
 
-impl ResolvedContestedDocumentVotePollVotesDriveQuery {
+impl<'a> ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
     /// Operations to construct a path query.
     pub fn construct_path_query(
         &self,

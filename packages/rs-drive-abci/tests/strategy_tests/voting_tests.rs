@@ -17,7 +17,7 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
-    use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest};
+    use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
     use dapi_grpc::platform::v0::get_consensus_params_response::Version;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
@@ -25,6 +25,11 @@ mod tests {
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::document::{Document, DocumentV0Getters};
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use drive::drive::object_size_info::DataContractResolvedInfo;
+    use drive::drive::votes::resolve_contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+    use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
+    use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
+    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
@@ -224,6 +229,8 @@ mod tests {
 
         let quantum_encoded = bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
             .expect("expected to encode the word quantum");
+        
+        let index_name = "parentNameAndLabel".to_string();
 
         let query_validation_result = platform
             .query_contested_resource_vote_state(
@@ -232,8 +239,8 @@ mod tests {
                         GetContestedResourceVoteStateRequestV0 {
                             contract_id: dpns_contract.id().to_vec(),
                             document_type_name: document_type.name().clone(),
-                            index_name: "parentNameAndLabel".to_string(),
-                            index_values: vec![dash_encoded, quantum_encoded],
+                            index_name: index_name.clone(),
+                            index_values: vec![dash_encoded.clone(), quantum_encoded.clone()],
                             result_type: ResultType::DocumentsAndVoteTally as i32,
                             start_at_identifier_info: None,
                             count: None,
@@ -304,5 +311,102 @@ mod tests {
         assert_eq!(first_contender.vote_count, Some(0));
 
         assert_eq!(second_contender.vote_count, Some(0));
+
+        let GetContestedResourceVoteStateResponse { version } = platform
+            .query_contested_resource_vote_state(
+                GetContestedResourceVoteStateRequest {
+                    version: Some(get_contested_resource_vote_state_request::Version::V0(
+                        GetContestedResourceVoteStateRequestV0 {
+                            contract_id: dpns_contract.id().to_vec(),
+                            document_type_name: document_type.name().clone(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![dash_encoded, quantum_encoded],
+                            result_type: ResultType::DocumentsAndVoteTally as i32,
+                            start_at_identifier_info: None,
+                            count: None,
+                            order_ascending: true,
+                            prove: true,
+                        },
+                    )),
+                },
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to execute query")
+            .into_data()
+            .expect("expected query to be valid");
+
+        let get_contested_resource_vote_state_response::Version::V0(
+            GetContestedResourceVoteStateResponseV0 {
+                metadata: _,
+                result,
+            },
+        ) = version.expect("expected a version");
+
+        let Some(
+            get_contested_resource_vote_state_response_v0::Result::Proof(
+                proof,
+            ),
+        ) = result
+            else {
+                panic!("expected contenders")
+            };
+        
+        
+        let resolved_contested_document_vote_poll_drive_query = ResolvedContestedDocumentVotePollDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePollWithContractInfo {
+                contract: DataContractResolvedInfo::BorrowedDataContract(&dpns_contract),
+                document_type_name: document_type.name().clone(),
+                index_name: index_name.clone(),
+                index_values: vec![Value::Text("dash".to_string()), Value::Text("quantum".to_string())],
+            },
+            result_type: DocumentsAndVoteTally,
+            offset: None,
+            limit: None,
+            start_at: None,
+            order_ascending: true,
+        };
+
+        let (root_hash, contenders) = resolved_contested_document_vote_poll_drive_query.verify_vote_poll_vote_state_proof(proof.grovedb_proof.as_ref(), platform_version).expect("expected to verify proof");
+        
+        assert_eq!(root_hash, platform_state.last_committed_block_app_hash().expect("expected an app hash"));
+
+        assert_eq!(contenders.len(), 2);
+
+        let first_contender = contenders.first().unwrap();
+
+        let second_contender = contenders.last().unwrap();
+
+        let first_contender_document = Document::from_bytes(
+            first_contender
+                .serialized_document
+                .as_ref()
+                .expect("expected a document")
+                .as_slice(),
+            document_type.as_ref(),
+            platform_version,
+        )
+            .expect("expected to get document");
+
+        let second_contender_document = Document::from_bytes(
+            second_contender
+                .serialized_document
+                .as_ref()
+                .expect("expected a document")
+                .as_slice(),
+            document_type.as_ref(),
+            platform_version,
+        )
+            .expect("expected to get document");
+
+        assert_ne!(first_contender_document, second_contender_document);
+
+        assert_eq!(first_contender.identity_id, identity2_id);
+
+        assert_eq!(second_contender.identity_id, identity1_id);
+
+        assert_eq!(first_contender.vote_tally, Some(0));
+
+        assert_eq!(second_contender.vote_tally, Some(0));
     }
 }
