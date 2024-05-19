@@ -17,6 +17,12 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
+    use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest};
+    use dapi_grpc::platform::v0::get_consensus_params_response::Version;
+    use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
+    use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
+    use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
@@ -25,7 +31,7 @@ mod tests {
     #[test]
     fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block() {
         // In this test we try to insert two state transitions with the same unique index
-        // We use the dpns contract and we insert two documents both with the same "name"
+        // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
             validator_set_quorum_size: 100,
@@ -113,7 +119,7 @@ mod tests {
         };
 
         let document_op_2 = DocumentOp {
-            contract: dpns_contract,
+            contract: dpns_contract.clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "quantum".into()),
@@ -181,6 +187,10 @@ mod tests {
         let outcome =
             run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 15);
 
+        let platform = outcome.abci_app.platform;
+
+        let platform_state = platform.state.load();
+
         let state_transitions_block_2 = outcome
             .state_transition_results_per_block
             .get(&2)
@@ -200,5 +210,58 @@ mod tests {
             .1;
 
         assert_eq!(second_document_insert_result.code, 0); // we expect the second to also be insertable as they are both contested
+
+        // Now let's run a query for the vote totals
+
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+
+        let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+            .expect("expected to encode the word dash");
+
+        let quantum_encoded = bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+            .expect("expected to encode the word quantum");
+
+        let query_validation_result = platform
+            .query_contested_resource_vote_state(
+                GetContestedResourceVoteStateRequest {
+                    version: Some(get_contested_resource_vote_state_request::Version::V0(
+                        GetContestedResourceVoteStateRequestV0 {
+                            contract_id: dpns_contract.id().to_vec(),
+                            document_type_name: document_type.name().clone(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![dash_encoded, quantum_encoded],
+                            result_type: ResultType::DocumentsAndVoteTally as i32,
+                            start_at_identifier_info: None,
+                            count: None,
+                            order_ascending: true,
+                            prove: false,
+                        },
+                    )),
+                },
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to execute query")
+            .into_data()
+            .expect("expected query to be valid");
+
+        let get_contested_resource_vote_state_response::Version::V0(
+            GetContestedResourceVoteStateResponseV0 { metadata, result },
+        ) = query_validation_result.version.expect("expected a version");
+
+        let Some(
+            get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
+                get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
+                    contenders,
+                },
+            ),
+        ) = result
+        else {
+            panic!("expected contenders")
+        };
+
+        assert_eq!(contenders.len(), 2);
     }
 }

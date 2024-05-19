@@ -72,11 +72,11 @@ pub struct ContestedDocumentVotePollDriveQuery {
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct Contender {
     /// The identity ID of the contender.
-    identity_id: Identifier,
+    pub identity_id: Identifier,
     /// The serialized document associated with the contender.
-    serialized_document: Option<Vec<u8>>,
+    pub serialized_document: Option<Vec<u8>>,
     /// The vote tally for the contender.
-    vote_tally: Option<u32>,
+    pub vote_tally: Option<u32>,
 }
 
 /// Represents the result of executing a contested document vote poll drive query.

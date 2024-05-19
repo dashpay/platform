@@ -9,10 +9,10 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::query::{GroveError, Query};
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
+use dpp::platform_value;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
-use dpp::platform_value;
 use platform_version::version::PlatformVersion;
 
 /// Vote Poll Drive Query struct
@@ -61,7 +61,8 @@ impl ContestedDocumentVotePollVotesDriveQuery {
     ) -> Result<ResolvedContestedDocumentVotePollVotesDriveQuery, Error> {
         let ContestedDocumentVotePollVotesDriveQuery {
             vote_poll,
-            contestant_id, offset,
+            contestant_id,
+            offset,
             limit,
             start_at,
             order_ascending,
@@ -175,12 +176,14 @@ impl ContestedDocumentVotePollVotesDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
-                Ok(vec![])
-            }
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(vec![]),
             Err(e) => Err(e),
             Ok((query_result_elements, skipped)) => {
-                let voters = query_result_elements.to_keys().into_iter().map(|voter_id| Identifier::try_from(voter_id)).collect::<Result<Vec<Identifier>, platform_value::Error>>()?;
+                let voters = query_result_elements
+                    .to_keys()
+                    .into_iter()
+                    .map(|voter_id| Identifier::try_from(voter_id))
+                    .collect::<Result<Vec<Identifier>, platform_value::Error>>()?;
 
                 Ok(voters)
             }
@@ -246,7 +249,9 @@ impl ResolvedContestedDocumentVotePollVotesDriveQuery {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let mut path = self.vote_poll.contender_voting_path(self.contestant_id, platform_version)?;
+        let mut path = self
+            .vote_poll
+            .contender_voting_path(self.contestant_id, platform_version)?;
 
         let mut query = Query::new_with_direction(self.order_ascending);
 

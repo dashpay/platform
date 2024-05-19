@@ -5,7 +5,8 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
 use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_response::{
-    get_contested_resource_voters_for_identity_response_v0, GetContestedResourceVotersForIdentityResponseV0,
+    get_contested_resource_voters_for_identity_response_v0,
+    GetContestedResourceVotersForIdentityResponseV0,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -21,7 +22,15 @@ impl<C> Platform<C> {
     pub(super) fn query_contested_resource_voters_for_identity_v0(
         &self,
         GetContestedResourceVotersForIdentityRequestV0 {
-            contract_id, document_type_name, index_name, index_values, contestant_id, start_at_identifier_info, count, order_ascending, prove
+            contract_id,
+            document_type_name,
+            index_name,
+            index_values,
+            contestant_id,
+            start_at_identifier_info,
+            count,
+            order_ascending,
+            prove,
         }: GetContestedResourceVotersForIdentityRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
@@ -88,13 +97,13 @@ impl<C> Platform<C> {
                         .with_big_endian()
                         .with_no_limit(),
                 )
-                    .map_err(|_| {
-                        QueryError::InvalidArgument(format!(
-                            "could not convert {:?} to a value in the index values at position {}",
-                            serialized_value, pos
-                        ))
-                    })?
-                    .0)
+                .map_err(|_| {
+                    QueryError::InvalidArgument(format!(
+                        "could not convert {:?} to a value in the index values at position {}",
+                        serialized_value, pos
+                    ))
+                })?
+                .0)
             })
             .collect::<Result<Vec<_>, QueryError>>()
         {
@@ -108,7 +117,7 @@ impl<C> Platform<C> {
             index_name,
             index_values,
         }
-            .into();
+        .into();
 
         let limit = count
             .map_or(Some(config.default_query_limit), |limit_value| {
@@ -142,7 +151,7 @@ impl<C> Platform<C> {
                     .transpose()?,
                 order_ascending,
             };
-            
+
             let proof = match query.execute_with_proof(&self.drive, None, None, platform_version) {
                 Ok(result) => result.0,
                 Err(drive::error::Error::Query(query_error)) => {
@@ -167,7 +176,8 @@ impl<C> Platform<C> {
                 contestant_id,
                 offset: None,
                 limit: Some(limit),
-                start_at: start_at_identifier_info.clone()
+                start_at: start_at_identifier_info
+                    .clone()
                     .map(|start_at_identifier_info| {
                         Ok::<([u8; 32], bool), platform_value::Error>((
                             Identifier::from_vec(start_at_identifier_info.start_identifier)?
@@ -178,7 +188,7 @@ impl<C> Platform<C> {
                     .transpose()?,
                 order_ascending,
             };
-            
+
             let voters =
                 match query.execute_no_proof(&self.drive, None, &mut vec![], platform_version) {
                     Ok(result) => result,
@@ -189,7 +199,7 @@ impl<C> Platform<C> {
                     }
                     Err(e) => return Err(e.into()),
                 };
-            
+
             let finished_results = if voters.len() == limit as usize && limit > 0 {
                 let extra_query = ContestedDocumentVotePollVotesDriveQuery {
                     vote_poll,
@@ -199,7 +209,12 @@ impl<C> Platform<C> {
                     start_at: Some((voters.last().unwrap().to_buffer(), false)),
                     order_ascending,
                 };
-                let another_result = match extra_query.execute_no_proof(&self.drive, None, &mut vec![], platform_version) {
+                let another_result = match extra_query.execute_no_proof(
+                    &self.drive,
+                    None,
+                    &mut vec![],
+                    platform_version,
+                ) {
                     Ok(result) => result,
                     Err(drive::error::Error::Query(query_error)) => {
                         return Ok(QueryValidationResult::new_with_error(QueryError::Query(
@@ -212,8 +227,8 @@ impl<C> Platform<C> {
             } else {
                 true
             };
-            
-            let voters= voters.into_iter().map(|voter| voter.to_vec()).collect();
+
+            let voters = voters.into_iter().map(|voter| voter.to_vec()).collect();
 
             GetContestedResourceVotersForIdentityResponseV0 {
                 result: Some(
@@ -231,4 +246,3 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
-

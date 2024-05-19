@@ -5,9 +5,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contested_resources_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_contested_resources_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{
-    GetContestedResourcesRequest, GetContestedResourcesResponse,
-};
+use dapi_grpc::platform::v0::{GetContestedResourcesRequest, GetContestedResourcesResponse};
 use dpp::version::PlatformVersion;
 
 mod v0;
