@@ -15,7 +15,7 @@ use dpp::consensus::ConsensusError;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, FaultyStateTransition, InvalidEncodedStateTransition,
-    StateTransitionContainerGettersV0, SuccessfullyDecodedStateTransition,
+    SuccessfullyDecodedStateTransition,
 };
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
@@ -114,9 +114,9 @@ where
         };
 
         let raw_state_transitions = vec![raw_tx];
-        let mut decoded_state_transitions = self
+        let mut decoded_state_transitions: Vec<DecodedStateTransition> = self
             .decode_raw_state_transitions(&raw_state_transitions, platform_version)?
-            .into_vec();
+            .into();
 
         if decoded_state_transitions.len() != 1 {
             return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

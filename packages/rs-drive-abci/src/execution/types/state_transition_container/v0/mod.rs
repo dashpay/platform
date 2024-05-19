@@ -38,10 +38,6 @@ pub struct StateTransitionContainerV0<'a> {
     state_transitions: Vec<DecodedStateTransition<'a>>,
 }
 
-pub trait StateTransitionContainerGettersV0<'a> {
-    fn into_vec(self) -> Vec<DecodedStateTransition<'a>>;
-}
-
 impl<'a> StateTransitionContainerV0<'a> {
     pub fn new(state_transitions: Vec<DecodedStateTransition<'a>>) -> Self {
         Self { state_transitions }
@@ -66,8 +62,9 @@ impl<'a> IntoIterator for StateTransitionContainerV0<'a> {
     }
 }
 
-impl<'a> StateTransitionContainerGettersV0<'a> for StateTransitionContainerV0<'a> {
-    fn into_vec(self) -> Vec<DecodedStateTransition<'a>> {
+#[allow(clippy::from_over_into)]
+impl<'a> Into<Vec<DecodedStateTransition<'a>>> for StateTransitionContainerV0<'a> {
+    fn into(self) -> Vec<DecodedStateTransition<'a>> {
         self.state_transitions
     }
 }
