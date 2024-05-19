@@ -58,7 +58,7 @@ where
     ///
     pub(super) fn process_raw_state_transitions_v0(
         &self,
-        raw_state_transitions: &Vec<Vec<u8>>,
+        raw_state_transitions: &[Vec<u8>],
         block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
