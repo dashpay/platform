@@ -1,6 +1,8 @@
 {
   "domain": {
     "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
     "indices": [
       {
         "name": "parentNameAndLabel",

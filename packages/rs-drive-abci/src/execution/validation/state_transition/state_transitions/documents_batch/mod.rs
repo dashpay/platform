@@ -419,6 +419,129 @@ mod tests {
         }
 
         #[test]
+        fn test_document_creation_on_contested_unique_index() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            let platform_state = platform.state.load();
+
+            let (identity_1, signer_1, key_1) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+            let (identity_2, signer_2, key_2) = setup_identity(&mut platform, 93, dash_to_credits!(0.5));
+            
+            let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+            let dpns_contract = dpns.clone();
+
+            let domain = dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type");
+
+            assert!(!domain.documents_mutable());
+            assert!(!domain.documents_can_be_deleted());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document_1 = domain
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_1.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            let mut document_2 = domain
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_2.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document_1.set("parentDomainName", "dash".into());
+            document_1.set("normalizedParentDomainName", "dash".into());
+            document_1.set("label", "quantum".into());
+            document_1.set("normalizedLabel", "quantum".into());
+            document_1.set("records.dashUniqueIdentityId", document_1.owner_id().into());
+
+            document_2.set("parentDomainName", "dash".into());
+            document_2.set("normalizedParentDomainName", "dash".into());
+            document_2.set("label", "quantum".into());
+            document_2.set("normalizedLabel", "quantum".into());
+
+            let documents_batch_create_transition_1 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document_1,
+                    domain,
+                    entropy.0,
+                    &key_1,
+                    2,
+                    0,
+                    &signer_1,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                    .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition_1 = documents_batch_create_transition_1
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let documents_batch_create_transition_2 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document_2,
+                    domain,
+                    entropy.0,
+                    &key_2,
+                    2,
+                    0,
+                    &signer_2,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                    .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition_2 = documents_batch_create_transition_2
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition_1.clone(), documents_batch_create_serialized_transition_2.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+
+            assert_eq!(processing_result.valid_count(), 2);
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
         fn test_document_creation_on_restricted_document_type_that_only_allows_contract_owner_to_create(
         ) {
             let mut platform = TestPlatformBuilder::new()
