@@ -1,4 +1,4 @@
-use crate::identity::{KeyID, SecurityLevel};
+use crate::identity::{KeyID, Purpose, SecurityLevel};
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 
@@ -20,6 +20,12 @@ impl StateTransitionIdentitySigned for MasternodeVoteTransition {
     fn security_level_requirement(&self) -> Vec<SecurityLevel> {
         match self {
             MasternodeVoteTransition::V0(transition) => transition.security_level_requirement(),
+        }
+    }
+
+    fn purpose_requirement(&self) -> Purpose {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.purpose_requirement(),
         }
     }
 }

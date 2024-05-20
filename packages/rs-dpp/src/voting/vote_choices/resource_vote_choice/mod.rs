@@ -21,5 +21,6 @@ pub enum ResourceVoteChoice {
     TowardsIdentity(Identifier),
     #[default]
     Abstain,
+    Defer,
     Lock,
 }

@@ -174,6 +174,11 @@ impl<'a> ExecutionEvent<'a> {
                     )))
                 }
             }
+            StateTransitionAction::MasternodeVoteAction(_) => {
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::Free { operations })
+            }
             _ => {
                 let user_fee_increase = action.user_fee_increase();
                 let operations =

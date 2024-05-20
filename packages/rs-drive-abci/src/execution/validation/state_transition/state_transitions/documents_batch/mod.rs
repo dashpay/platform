@@ -235,9 +235,9 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-    use crate::rpc::core::MockCoreRPCLike;
-    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -251,11 +251,9 @@ mod tests {
     use dpp::fee::fee_result::BalanceChange;
     use dpp::fee::Credits;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::nft::TradeMode;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::{Bytes32, Value};
-    use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -266,66 +264,6 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
-    use simple_signer::signer::SimpleSigner;
-    use std::collections::BTreeMap;
-
-    fn setup_identity(
-        platform: &mut TempPlatform<MockCoreRPCLike>,
-        seed: u64,
-        credits: Credits,
-    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
-        let platform_version = PlatformVersion::latest();
-        let mut signer = SimpleSigner::default();
-
-        let mut rng = StdRng::seed_from_u64(seed);
-
-        let (master_key, master_private_key) =
-            IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
-                0,
-                &mut rng,
-                platform_version,
-            )
-            .expect("expected to get key pair");
-
-        signer.add_key(master_key.clone(), master_private_key.clone());
-
-        let (critical_public_key, private_key) =
-            IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
-                1,
-                &mut rng,
-                platform_version,
-            )
-            .expect("expected to get key pair");
-
-        signer.add_key(critical_public_key.clone(), private_key.clone());
-
-        let identity: Identity = IdentityV0 {
-            id: Identifier::random_with_rng(&mut rng),
-            public_keys: BTreeMap::from([
-                (0, master_key.clone()),
-                (1, critical_public_key.clone()),
-            ]),
-            balance: credits,
-            revision: 0,
-        }
-        .into();
-
-        // We just add this identity to the system first
-
-        platform
-            .drive
-            .add_new_identity(
-                identity.clone(),
-                false,
-                &BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to add a new identity");
-
-        (identity, signer, critical_public_key)
-    }
 
     mod creation_tests {
         use rand::Rng;
@@ -343,7 +281,6 @@ mod tests {
         use drive::drive::votes::resolve_contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
-        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
         #[test]
         fn test_document_creation() {

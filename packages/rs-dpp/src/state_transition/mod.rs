@@ -13,6 +13,7 @@ use bincode::{Decode, Encode};
     feature = "state-transition-validation"
 ))]
 use dashcore::signer;
+use dashcore::signer::double_sha;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 
@@ -665,15 +666,15 @@ impl StateTransition {
             ));
         }
         let data = self.signable_bytes()?;
-        signer::verify_data_signature(&data, self.signature().as_slice(), public_key_hash).map_err(
-            |_| {
+        let data_hash = double_sha(data);
+        signer::verify_hash_signature(&data_hash, self.signature().as_slice(), public_key_hash)
+            .map_err(|e| {
                 ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError(
-                        InvalidStateTransitionSignatureError::new(),
+                        InvalidStateTransitionSignatureError::new(e.to_string()),
                     ),
                 ))
-            },
-        )
+            })
     }
 
     #[cfg(feature = "state-transition-validation")]
@@ -685,17 +686,15 @@ impl StateTransition {
             ));
         }
         let data = self.signable_bytes()?;
-        signer::verify_data_signature(&data, self.signature().as_slice(), public_key).map_err(
-            |_| {
-                // TODO: it shouldn't respond with consensus error
+        signer::verify_data_signature(&data, self.signature().as_slice(), public_key).map_err(|e| {
+            // TODO: it shouldn't respond with consensus error
 
-                ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(
-                        InvalidStateTransitionSignatureError::new(),
-                    ),
-                ))
-            },
-        )
+            ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError(
+                    InvalidStateTransitionSignatureError::new(e.to_string()),
+                ),
+            ))
+        })
     }
 
     #[cfg(feature = "state-transition-validation")]
@@ -714,12 +713,12 @@ impl StateTransition {
         let data = self.signable_bytes()?;
 
         bls.verify_signature(self.signature().as_slice(), &data, public_key)
-            .map(|_| ())
-            .map_err(|_| {
+            .map(|e| ())
+            .map_err(|e| {
                 // TODO: it shouldn't respond with consensus error
                 ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError(
-                        InvalidStateTransitionSignatureError::new(),
+                        InvalidStateTransitionSignatureError::new(e.to_string()),
                     ),
                 ))
             })

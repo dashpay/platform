@@ -241,9 +241,9 @@ pub fn convert_to_consensus_signature_error(
         ),
         ProtocolError::WrongPublicKeyPurposeError(err) => Ok(err.into()),
         ProtocolError::Error(_) => Err(error),
-        _ => Ok(ConsensusError::SignatureError(
+        e => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidStateTransitionSignatureError(
-                InvalidStateTransitionSignatureError::new(),
+                InvalidStateTransitionSignatureError::new(e.to_string()),
             ),
         )),
     }

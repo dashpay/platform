@@ -713,7 +713,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: None,
-                    advanced_minimum_balance_pre_check: None,
+                    advanced_minimum_balance_pre_check: Some(0),
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
