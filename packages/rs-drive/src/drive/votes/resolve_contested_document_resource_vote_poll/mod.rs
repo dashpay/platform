@@ -1,3 +1,4 @@
+use crate::drive::object_size_info::DataContractResolvedInfo;
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
 use crate::error::drive::DriveError;
@@ -10,7 +11,6 @@ use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDoc
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use crate::drive::object_size_info::DataContractResolvedInfo;
 
 /// Represents information related to a contested document resource vote poll, along with
 /// associated contract details.

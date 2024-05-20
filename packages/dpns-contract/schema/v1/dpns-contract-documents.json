@@ -146,6 +146,8 @@
   },
   "preorder": {
     "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
     "indices": [
       {
         "name": "saltedHash",

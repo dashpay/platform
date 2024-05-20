@@ -229,7 +229,7 @@ mod tests {
 
         let quantum_encoded = bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
             .expect("expected to encode the word quantum");
-        
+
         let index_name = "parentNameAndLabel".to_string();
 
         let query_validation_result = platform
@@ -343,33 +343,39 @@ mod tests {
             },
         ) = version.expect("expected a version");
 
-        let Some(
-            get_contested_resource_vote_state_response_v0::Result::Proof(
-                proof,
-            ),
-        ) = result
-            else {
-                panic!("expected contenders")
-            };
-        
-        
-        let resolved_contested_document_vote_poll_drive_query = ResolvedContestedDocumentVotePollDriveQuery {
-            vote_poll: ContestedDocumentResourceVotePollWithContractInfo {
-                contract: DataContractResolvedInfo::BorrowedDataContract(&dpns_contract),
-                document_type_name: document_type.name().clone(),
-                index_name: index_name.clone(),
-                index_values: vec![Value::Text("dash".to_string()), Value::Text("quantum".to_string())],
-            },
-            result_type: DocumentsAndVoteTally,
-            offset: None,
-            limit: None,
-            start_at: None,
-            order_ascending: true,
+        let Some(get_contested_resource_vote_state_response_v0::Result::Proof(proof)) = result
+        else {
+            panic!("expected contenders")
         };
 
-        let (root_hash, contenders) = resolved_contested_document_vote_poll_drive_query.verify_vote_poll_vote_state_proof(proof.grovedb_proof.as_ref(), platform_version).expect("expected to verify proof");
-        
-        assert_eq!(root_hash, platform_state.last_committed_block_app_hash().expect("expected an app hash"));
+        let resolved_contested_document_vote_poll_drive_query =
+            ResolvedContestedDocumentVotePollDriveQuery {
+                vote_poll: ContestedDocumentResourceVotePollWithContractInfo {
+                    contract: DataContractResolvedInfo::BorrowedDataContract(&dpns_contract),
+                    document_type_name: document_type.name().clone(),
+                    index_name: index_name.clone(),
+                    index_values: vec![
+                        Value::Text("dash".to_string()),
+                        Value::Text("quantum".to_string()),
+                    ],
+                },
+                result_type: DocumentsAndVoteTally,
+                offset: None,
+                limit: None,
+                start_at: None,
+                order_ascending: true,
+            };
+
+        let (root_hash, contenders) = resolved_contested_document_vote_poll_drive_query
+            .verify_vote_poll_vote_state_proof(proof.grovedb_proof.as_ref(), platform_version)
+            .expect("expected to verify proof");
+
+        assert_eq!(
+            root_hash,
+            platform_state
+                .last_committed_block_app_hash()
+                .expect("expected an app hash")
+        );
 
         assert_eq!(contenders.len(), 2);
 
@@ -386,7 +392,7 @@ mod tests {
             document_type.as_ref(),
             platform_version,
         )
-            .expect("expected to get document");
+        .expect("expected to get document");
 
         let second_contender_document = Document::from_bytes(
             second_contender
@@ -397,7 +403,7 @@ mod tests {
             document_type.as_ref(),
             platform_version,
         )
-            .expect("expected to get document");
+        .expect("expected to get document");
 
         assert_ne!(first_contender_document, second_contender_document);
 

@@ -1,12 +1,15 @@
-use grovedb::{Element, GroveDb};
-use dpp::identifier::Identifier;
 use crate::drive::verify::RootHash;
+use dpp::identifier::Identifier;
+use grovedb::{Element, GroveDb};
 
 use crate::error::Error;
 
-use dpp::version::PlatformVersion;
 use crate::error::drive::DriveError;
-use crate::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery};
+use crate::query::vote_poll_vote_state_query::{
+    Contender, ContestedDocumentVotePollDriveQueryResultType,
+    ResolvedContestedDocumentVotePollDriveQuery,
+};
+use dpp::version::PlatformVersion;
 
 impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
     /// Verifies a proof for a collection of documents.
@@ -98,7 +101,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                 Ok(contenders)
             }
         }?;
-        
+
         Ok((root_hash, contenders))
     }
 }
