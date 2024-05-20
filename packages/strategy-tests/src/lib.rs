@@ -569,8 +569,8 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        // Get the first 3 identities who are eligible to submit documents for this contract
-                        let first_3_eligible_identities: Vec<Identity> = current_identities
+                        // Get the first 10 identities who are eligible to submit documents for this contract
+                        let first_10_eligible_identities: Vec<Identity> = current_identities
                             .iter()
                             .filter(|identity| {
                                 mempool_document_counter
@@ -578,15 +578,22 @@ impl Strategy {
                                     .unwrap_or(&0)
                                     < &24u64
                             })
-                            .take(3)
+                            .take(10)
                             .cloned()
                             .collect();
+
+                        if first_10_eligible_identities.len() == 0 {
+                            tracing::warn!(
+                                "No eligible identities to submit a document to contract {}",
+                                contract.id().to_string(Encoding::Base64)
+                            );
+                        }
 
                         // TO-DO: these documents should be created according to the data contract's validation rules
                         let documents = document_type
                             .random_documents_with_params(
                                 count as u32,
-                                &first_3_eligible_identities,
+                                &first_10_eligible_identities,
                                 Some(block_info.time_ms),
                                 Some(block_info.height),
                                 Some(block_info.core_height),
