@@ -1565,7 +1565,11 @@ impl Strategy {
                     DataContract::generate_data_contract_id_v0(partial_identity.id, *identity_nonce);
                 contract.set_id(new_id);
 
-                id_mapping.insert(old_id, new_id); // Store the mapping
+                // Set version to 1
+                contract.set_version(1);
+
+                // Store the mapping
+                id_mapping.insert(old_id, new_id);
 
                 // If there are contract updates, use the mapping to update their ID and owner ID too
                 if let Some(contract_updates) = contract_updates {
