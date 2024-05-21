@@ -11,10 +11,7 @@ use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::schema::{
-    byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
-    traversal_validator, validate_max_depth,
-};
+use crate::data_contract::document_type::schema::validate_max_depth;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
@@ -149,34 +146,12 @@ impl DocumentTypeV0 {
                 )
             })?;
 
-            json_schema_validator.compile(&root_json_schema, platform_version)?;
-
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0
-                .validate(&root_schema.try_to_validating_json().map_err(|e| {
-                    ProtocolError::ConsensusError(
-                        ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
-                    )
-                })?)
+                .validate(&root_json_schema)
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
-            // TODO: Are we still aiming to use RE2 with linear time complexity to protect from ReDoS attacks?
-            //  If not we can remove this validation
-            // Validate reg exp compatibility with RE2 and byteArray usage
-            let mut traversal_validator_result = traversal_validator(
-                &root_schema,
-                &[
-                    pattern_is_valid_regex_validator,
-                    byte_array_has_no_items_as_parent_validator,
-                ],
-                platform_version,
-            )?;
-
-            if !traversal_validator_result.is_valid() {
-                let error = traversal_validator_result.errors.remove(0);
-
-                return Err(ProtocolError::ConsensusError(Box::new(error)));
-            }
+            json_schema_validator.compile(&root_json_schema, platform_version)?;
         }
 
         // This has already been validated, but we leave the map_err here for consistency
@@ -580,11 +555,12 @@ fn insert_values(
                             ));
                         }
                     }
-                    // TODO: Contract indices and new encoding format don't support arrays
-                    //   but we still can use them as document fields with current cbor encoding
-                    //   This is a temporary workaround to bring back v0.22 behavior and should be
-                    //   replaced with a proper array support in future versions
-                    None => DocumentPropertyType::Array(ArrayItemType::Boolean),
+                    // TODO: Update when arrays are implemented
+                    None => {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "only byte arrays are supported now".to_string(),
+                        ));
+                    }
                 };
 
                 document_properties.insert(

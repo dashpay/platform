@@ -1,6 +1,7 @@
-use jsonschema::{Draft, JSONSchema, KeywordDefinition};
+use super::byte_array_keyword::ByteArrayKeyword;
+use jsonschema::{Draft, JSONSchema, RegexEngine};
 use lazy_static::lazy_static;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 lazy_static! {
     static ref DRAFT202012: serde_json::Value = serde_json::from_str(include_str!(
@@ -42,7 +43,9 @@ lazy_static! {
 
     pub static ref DRAFT_202012_META_SCHEMA: JSONSchema = JSONSchema::options()
         .with_draft(Draft::Draft202012)
+        .should_ignore_unknown_formats(false)
         .should_validate_formats(true)
+        .with_patterns_regex_engine(RegexEngine::Regex(Default::default()))
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
             DRAFT202012_APPLICATOR.clone(),
@@ -82,17 +85,14 @@ lazy_static! {
 
     // Compiled version of data contract meta schema
     pub static ref DOCUMENT_META_SCHEMA_V0: JSONSchema = JSONSchema::options()
-        .add_keyword(
+        .with_keyword(
                 "byteArray",
-                KeywordDefinition::Schema(json!({
-                    "items": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 255,
-                    },
-                })),
+                |_, _, _| Ok(Box::new(ByteArrayKeyword)),
             )
+        .with_patterns_regex_engine(RegexEngine::Regex(Default::default()))
+        .should_ignore_unknown_formats(false)
         .should_validate_formats(true)
+        .with_patterns_regex_engine(RegexEngine::Regex(Default::default()))
         .with_draft(Draft::Draft202012)
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
