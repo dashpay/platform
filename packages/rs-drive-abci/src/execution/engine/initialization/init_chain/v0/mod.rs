@@ -71,7 +71,7 @@ where
         // On block 1 the proposer will most likely propose a new core chain locked height.
         // That will cause the core info to update again, so very often block 2 will be signed by
         //  a different quorum.
-        
+
         self.update_core_info(
             None,
             &mut initial_platform_state,
