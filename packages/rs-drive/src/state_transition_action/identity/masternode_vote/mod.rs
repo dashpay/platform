@@ -7,7 +7,7 @@ use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVot
 use derive_more::From;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
-use dpp::voting::votes::Vote;
+use crate::drive::votes::resolved::votes::ResolvedVote;
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -25,14 +25,14 @@ impl MasternodeVoteTransitionAction {
     }
 
     /// Resource votes
-    pub fn vote_ref(&self) -> &Vote {
+    pub fn vote_ref(&self) -> &ResolvedVote {
         match self {
             MasternodeVoteTransitionAction::V0(transition) => &transition.vote,
         }
     }
 
     /// Resource votes as owned
-    pub fn vote_owned(self) -> Vote {
+    pub fn vote_owned(self) -> ResolvedVote {
         match self {
             MasternodeVoteTransitionAction::V0(transition) => transition.vote,
         }

@@ -12,33 +12,39 @@ use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::masternode_vote) trait MasternodeVoteStateTransitionStateValidationV0
 {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0<C>(
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
-    fn transform_into_action_v0(
+    fn transform_into_action_v0<C>(
         &self,
+        platform: &PlatformRef<C>,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0<C>(
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        self.transform_into_action_v0()
+        self.transform_into_action_v0(platform, tx, platform_version)
     }
 
-    fn transform_into_action_v0(
+    fn transform_into_action_v0<C>(
         &self,
+        platform: &PlatformRef<C>,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         Ok(ConsensusValidationResult::new_with_data(
-            MasternodeVoteTransitionAction::from(self).into(),
+            MasternodeVoteTransitionAction::transform_from_transition(self, platform.drive, tx, platform_version)?.into(),
         ))
     }
 }

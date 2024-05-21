@@ -1,7 +1,4 @@
 use crate::drive::votes::paths::VotePollPaths;
-use crate::drive::votes::resolve_contested_document_resource_vote_poll::{
-    ContestedDocumentResourceVotePollResolver, ContestedDocumentResourceVotePollWithContractInfo,
-};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
@@ -14,6 +11,8 @@ use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDoc
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
@@ -127,7 +126,7 @@ impl ContestedDocumentVotePollDriveQuery {
             order_ascending,
         } = self;
         Ok(ResolvedContestedDocumentVotePollDriveQuery {
-            vote_poll: vote_poll.resolve(drive, transaction, platform_version)?,
+            vote_poll: vote_poll.resolve_allow_borrowed(drive, transaction, platform_version)?,
             result_type: *result_type,
             offset: *offset,
             limit: *limit,
@@ -400,7 +399,7 @@ impl ContestedDocumentVotePollDriveQuery {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ResolvedContestedDocumentVotePollDriveQuery<'a> {
     /// What vote poll are we asking for?
-    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfo<'a>,
+    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>,
     /// What result type are we interested in
     pub result_type: ContestedDocumentVotePollDriveQueryResultType,
     /// Offset

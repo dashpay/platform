@@ -1,4 +1,3 @@
-use crate::drive::votes::resolve_contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::RootTree;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -6,7 +5,9 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::IndexProperty;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use platform_version::version::PlatformVersion;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{ContestedDocumentResourceVotePollWithContractInfo, ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed};
 
 /// The votes tree structure looks like this
 ///
@@ -68,12 +69,12 @@ pub trait VotePollPaths {
     /// The path that would store the votes for a single contender
     fn contender_voting_path(
         &self,
-        identity_id: Identifier,
+        vote_choice: ResourceVoteChoice,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error>;
 }
 
-impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo<'a> {
+impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
     fn contract_path(&self) -> [&[u8]; 4] {
         vote_contested_resource_active_polls_contract_tree_path(
             self.contract.as_ref().id_ref().as_slice(),
@@ -148,12 +149,101 @@ impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo<'a>
 
     fn contender_voting_path(
         &self,
+        vote_choice: ResourceVoteChoice,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let key = vote_choice.to_key();
+        let mut contender_voting_path = self.contenders_path(platform_version)?;
+        contender_voting_path.push(key);
+        contender_voting_path.push(vec![1]);
+        Ok(contender_voting_path)
+    }
+}
+
+
+impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
+    fn contract_path(&self) -> [&[u8]; 4] {
+        vote_contested_resource_active_polls_contract_tree_path(
+            self.contract.as_ref().id_ref().as_slice(),
+        )
+    }
+
+    fn contract_path_vec(&self) -> Vec<Vec<u8>> {
+        vote_contested_resource_active_polls_contract_tree_path_vec(
+            self.contract.as_ref().id_ref().as_slice(),
+        )
+    }
+
+    fn document_type_path(&self) -> [&[u8]; 5] {
+        vote_contested_resource_active_polls_contract_document_tree_path(
+            self.contract.as_ref().id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        )
+    }
+
+    fn document_type_path_vec(&self) -> Vec<Vec<u8>> {
+        vote_contested_resource_active_polls_contract_document_tree_path_vec(
+            self.contract.as_ref().id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        )
+    }
+
+    fn documents_storage_path(&self) -> [&[u8]; 6] {
+        vote_contested_resource_contract_documents_storage_path(
+            self.contract.as_ref().id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        )
+    }
+
+    fn documents_storage_path_vec(&self) -> Vec<Vec<u8>> {
+        vote_contested_resource_contract_documents_storage_path_vec(
+            self.contract.as_ref().id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        )
+    }
+
+    fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
+        let mut root = vote_contested_resource_active_polls_contract_document_tree_path_vec(
+            self.contract.as_ref().id_ref().as_slice(),
+            self.document_type_name.as_str(),
+        );
+        let document_type = self.document_type()?;
+        root.append(
+            &mut self
+                .index()?
+                .properties
+                .iter()
+                .zip(self.index_values.iter())
+                .map(|(IndexProperty { name, .. }, value)| {
+                    document_type
+                        .serialize_value_for_key(name, value, platform_version)
+                        .map_err(Error::Protocol)
+                })
+                .collect::<Result<Vec<Vec<u8>>, Error>>()?,
+        );
+        Ok(root)
+    }
+
+    fn contender_path(
+        &self,
         identity_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error> {
-        let mut contender_path = self.contender_path(identity_id, platform_version)?;
-        contender_path.push(vec![1]);
-        Ok(contender_path)
+        let mut contenders_path = self.contenders_path(platform_version)?;
+        contenders_path.push(identity_id.to_vec());
+        Ok(contenders_path)
+    }
+
+    fn contender_voting_path(
+        &self,
+        vote_choice: ResourceVoteChoice,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let key = vote_choice.to_key();
+        let mut contender_voting_path = self.contenders_path(platform_version)?;
+        contender_voting_path.push(key);
+        contender_voting_path.push(vec![1]);
+        Ok(contender_voting_path)
     }
 }
 

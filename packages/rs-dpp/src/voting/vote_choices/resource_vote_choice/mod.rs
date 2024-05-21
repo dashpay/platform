@@ -24,3 +24,14 @@ pub enum ResourceVoteChoice {
     Defer,
     Lock,
 }
+
+impl ResourceVoteChoice {
+    pub fn to_key(&self) -> Vec<u8> {
+        match self {
+            ResourceVoteChoice::TowardsIdentity(identity_id) => identity_id.to_vec(),
+            ResourceVoteChoice::Abstain => vec![128],
+            ResourceVoteChoice::Defer => vec![129],
+            ResourceVoteChoice::Lock => vec![130],
+        }
+    }
+}

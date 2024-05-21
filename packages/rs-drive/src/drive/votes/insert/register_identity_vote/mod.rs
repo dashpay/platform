@@ -12,8 +12,8 @@ use dpp::fee::fee_result::FeeResult;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use dpp::voting::votes::Vote;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+use crate::drive::votes::resolved::votes::ResolvedVote;
 
 impl Drive {
     /// Registers a vote associated with a specific identity using the given voter's ProRegTx hash.
@@ -42,7 +42,7 @@ impl Drive {
     pub fn register_identity_vote(
         &self,
         voter_pro_tx_hash: [u8; 32],
-        vote: Vote,
+        vote: ResolvedVote,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -99,7 +99,7 @@ impl Drive {
     pub fn register_identity_vote_operations(
         &self,
         voter_pro_tx_hash: [u8; 32],
-        vote: Vote,
+        vote: ResolvedVote,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

@@ -80,6 +80,41 @@ impl<'a> DataContractInfo<'a> {
 /// fetching or retrieval steps have been completed. This enum simplifies handling
 /// of data contract states post-retrieval.
 #[derive(Clone, Debug, PartialEq)]
+pub enum DataContractOwnedResolvedInfo {
+    /// Information necessary for fetched data contracts, encapsulated in an
+    /// `Arc` to ensure thread-safe shared ownership and access.
+    DataContractFetchInfo(Arc<DataContractFetchInfo>),
+
+    /// An owned instance of a data contract. This variant provides full control
+    /// and mutability over the data contract, suitable for scenarios requiring
+    /// modifications or extended operations on the data contract.
+    OwnedDataContract(DataContract),
+}
+
+
+impl DataContractOwnedResolvedInfo {
+    /// The id of the contract
+    pub fn id(&self) -> Identifier {
+        match self {
+            DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => { fetch_info.contract.id() }
+            DataContractOwnedResolvedInfo::OwnedDataContract(data_contract) => { data_contract.id() }
+        }
+    }
+}
+impl AsRef<DataContract> for DataContractOwnedResolvedInfo {
+    /// The ref of the contract
+    fn as_ref(&self) -> &DataContract {
+        match self {
+            DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => &fetch_info.contract,
+            DataContractOwnedResolvedInfo::OwnedDataContract(owned) => owned,
+        }
+    }
+}
+
+/// Contains resolved data contract information, typically used after initial
+/// fetching or retrieval steps have been completed. This enum simplifies handling
+/// of data contract states post-retrieval.
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataContractResolvedInfo<'a> {
     /// Information necessary for fetched data contracts, encapsulated in an
     /// `Arc` to ensure thread-safe shared ownership and access.
@@ -94,7 +129,19 @@ pub enum DataContractResolvedInfo<'a> {
     /// modifications or extended operations on the data contract.
     OwnedDataContract(DataContract),
 }
+
+impl<'a> DataContractResolvedInfo<'a> {
+    /// The id of the contract
+    pub fn id(&self) -> Identifier {
+        match self {
+            DataContractResolvedInfo::DataContractFetchInfo(fetch_info) => { fetch_info.contract.id() }
+            DataContractResolvedInfo::BorrowedDataContract(data_contract) => { data_contract.id() }
+            DataContractResolvedInfo::OwnedDataContract(data_contract) => { data_contract.id() }
+        }
+    }
+}
 impl<'a> AsRef<DataContract> for DataContractResolvedInfo<'a> {
+    /// The ref of the contract
     fn as_ref(&self) -> &DataContract {
         match self {
             DataContractResolvedInfo::DataContractFetchInfo(fetch_info) => &fetch_info.contract,

@@ -1,9 +1,5 @@
 use crate::drive::votes::paths::VotePollPaths;
-use crate::drive::votes::resolve_contested_document_resource_vote_poll::{
-    ContestedDocumentResourceVotePollResolver, ContestedDocumentResourceVotePollWithContractInfo,
-};
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::{GroveError, Query};
@@ -12,8 +8,11 @@ use dpp::identifier::Identifier;
 use dpp::platform_value;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
-use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
+use grovedb::{PathQuery, SizedQuery, TransactionArg};
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use platform_version::version::PlatformVersion;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
@@ -68,7 +67,7 @@ impl ContestedDocumentVotePollVotesDriveQuery {
             order_ascending,
         } = self;
         Ok(ResolvedContestedDocumentVotePollVotesDriveQuery {
-            vote_poll: vote_poll.resolve(drive, transaction, platform_version)?,
+            vote_poll: vote_poll.resolve_allow_borrowed(drive, transaction, platform_version)?,
             contestant_id: *contestant_id,
             offset: *offset,
             limit: *limit,
@@ -230,7 +229,7 @@ impl ContestedDocumentVotePollVotesDriveQuery {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
     /// What vote poll are we asking for?
-    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfo<'a>,
+    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>,
     /// Who's votes are we looking for
     pub contestant_id: Identifier,
     /// Offset
@@ -251,7 +250,7 @@ impl<'a> ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
     ) -> Result<PathQuery, Error> {
         let mut path = self
             .vote_poll
-            .contender_voting_path(self.contestant_id, platform_version)?;
+            .contender_voting_path(TowardsIdentity(self.contestant_id), platform_version)?;
 
         let mut query = Query::new_with_direction(self.order_ascending);
 

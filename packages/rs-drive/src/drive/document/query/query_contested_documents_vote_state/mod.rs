@@ -3,7 +3,6 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use derive_more::From;
 use dpp::block::epoch::Epoch;
-use dpp::document::Document;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use grovedb::TransactionArg;
 

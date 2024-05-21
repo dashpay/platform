@@ -8,10 +8,10 @@ use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
 use dpp::version::PlatformVersion;
-use dpp::voting::votes::Vote;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use crate::drive::votes::resolved::votes::ResolvedVote;
 
 /// Operations on Identities
 #[derive(Clone, Debug)]
@@ -80,7 +80,7 @@ pub enum IdentityOperationType {
         /// The pro tx hash of the masternode doing the voting
         voter_pro_tx_hash: [u8; 32],
         /// Contested Vote type
-        vote: Vote,
+        vote: ResolvedVote,
     },
     /// Updates an identities nonce for a specific contract.
     UpdateIdentityNonce {

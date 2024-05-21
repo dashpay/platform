@@ -13,8 +13,8 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 
 impl Drive {
     /// Registers a vote for a contested resource based on the voter's identifier,
@@ -46,7 +46,7 @@ impl Drive {
     pub fn register_contested_resource_identity_vote(
         &self,
         voter_pro_tx_hash: [u8; 32],
-        vote_poll: ContestedDocumentResourceVotePoll,
+        vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
         block_info: &BlockInfo,
         apply: bool,
@@ -70,7 +70,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "register_identity_vote".to_string(),
+                method: "register_contested_resource_identity_vote".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -106,7 +106,7 @@ impl Drive {
     pub fn register_contested_resource_identity_vote_operations(
         &self,
         voter_pro_tx_hash: [u8; 32],
-        vote_poll: ContestedDocumentResourceVotePoll,
+        vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -132,7 +132,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "register_identity_vote".to_string(),
+                method: "register_contested_resource_identity_vote_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

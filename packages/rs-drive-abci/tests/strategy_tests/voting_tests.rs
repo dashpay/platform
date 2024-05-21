@@ -27,6 +27,7 @@ mod tests {
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use drive::drive::object_size_info::DataContractResolvedInfo;
     use drive::drive::votes::resolve_contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+    use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
     use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;

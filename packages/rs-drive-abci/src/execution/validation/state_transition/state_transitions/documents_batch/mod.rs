@@ -278,7 +278,7 @@ mod tests {
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
         use dpp::util::hash::hash_double;
         use drive::drive::object_size_info::DataContractResolvedInfo;
-        use drive::drive::votes::resolve_contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+        use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{ContestedDocumentResourceVotePollWithContractInfo, ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed};
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
 
@@ -752,7 +752,7 @@ mod tests {
 
             let resolved_contested_document_vote_poll_drive_query =
                 ResolvedContestedDocumentVotePollDriveQuery {
-                    vote_poll: ContestedDocumentResourceVotePollWithContractInfo {
+                    vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
                         contract: DataContractResolvedInfo::BorrowedDataContract(&dpns_contract),
                         document_type_name: domain.name().clone(),
                         index_name: index_name.clone(),

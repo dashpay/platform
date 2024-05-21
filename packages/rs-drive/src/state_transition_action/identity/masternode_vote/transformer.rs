@@ -1,19 +1,45 @@
+use grovedb::TransactionArg;
 use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVoteTransitionActionV0;
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use platform_version::version::PlatformVersion;
+use crate::drive::Drive;
+use crate::error::Error;
 
-impl From<MasternodeVoteTransition> for MasternodeVoteTransitionAction {
-    fn from(value: MasternodeVoteTransition) -> Self {
+impl MasternodeVoteTransitionAction  {
+    /// Transforms an owned `MasternodeVoteTransition` into a `MasternodeVoteTransitionAction`.
+    ///
+    /// # Parameters
+    ///
+    /// - `value`: The owned `MasternodeVoteTransition` to transform.
+    /// - `drive`: A reference to the `Drive` instance.
+    /// - `transaction`: The transaction argument.
+    /// - `platform_version`: A reference to the platform version.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the transformed `MasternodeVoteTransitionAction`, or an `Error` if the transformation fails.
+    pub fn transform_from_owned_transition(value: MasternodeVoteTransition, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<Self, Error> {
         match value {
-            MasternodeVoteTransition::V0(v0) => MasternodeVoteTransitionActionV0::from(v0).into(),
+            MasternodeVoteTransition::V0(v0) => Ok(MasternodeVoteTransitionActionV0::transform_from_owned_transition(v0, drive, transaction, platform_version)?.into()),
         }
     }
-}
 
-impl From<&MasternodeVoteTransition> for MasternodeVoteTransitionAction {
-    fn from(value: &MasternodeVoteTransition) -> Self {
+    /// Transforms a borrowed `MasternodeVoteTransition` into a `MasternodeVoteTransitionAction`.
+    ///
+    /// # Parameters
+    ///
+    /// - `value`: A reference to the `MasternodeVoteTransition` to transform.
+    /// - `drive`: A reference to the `Drive` instance.
+    /// - `transaction`: The transaction argument.
+    /// - `platform_version`: A reference to the platform version.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the transformed `MasternodeVoteTransitionAction`, or an `Error` if the transformation fails.
+    pub fn transform_from_transition(value: &MasternodeVoteTransition, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<Self, Error> {
         match value {
-            MasternodeVoteTransition::V0(v0) => MasternodeVoteTransitionActionV0::from(v0).into(),
+            MasternodeVoteTransition::V0(v0) => Ok(MasternodeVoteTransitionActionV0::transform_from_transition(v0, drive, transaction, platform_version)?.into()),
         }
     }
 }
