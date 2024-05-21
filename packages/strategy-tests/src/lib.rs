@@ -569,8 +569,9 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        // Get the first 10 identities who are eligible to submit documents for this contract
-                        let first_10_eligible_identities: Vec<Identity> = current_identities
+                        // Filter and collect eligible identities
+                        // Eligible identities have less than 24 documents in the mempool for this contract
+                        let eligible_identities: Vec<Identity> = current_identities
                             .iter()
                             .filter(|identity| {
                                 mempool_document_counter
@@ -578,9 +579,25 @@ impl Strategy {
                                     .unwrap_or(&0)
                                     < &24u64
                             })
-                            .take(10)
                             .cloned()
                             .collect();
+
+                        let k = 10; // Number of random elements to select
+                        let mut reservoir = Vec::new();
+
+                        // Reservoir sampling algorithm
+                        for (i, identity) in eligible_identities.into_iter().enumerate() {
+                            if i < k {
+                                reservoir.push(identity);
+                            } else {
+                                let j = rng.gen_range(0..=i);
+                                if j < k {
+                                    reservoir[j] = identity;
+                                }
+                            }
+                        }
+
+                        let first_10_eligible_identities: Vec<Identity> = reservoir;
 
                         if first_10_eligible_identities.len() == 0 {
                             tracing::warn!(
