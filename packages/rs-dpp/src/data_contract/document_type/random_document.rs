@@ -307,7 +307,7 @@ impl CreateRandomDocument for DocumentType {
                 document_field_fill_size,
                 rng,
                 platform_version,
-            ), // Add more cases as necessary for other variants
+            ),
         }
     }
 }
