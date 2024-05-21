@@ -114,7 +114,6 @@ mod tests {
         use super::*;
         use dpp::document::Document;
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-        use dpp::fee::Credits;
         use dpp::identifier::Identifier;
         use dpp::identity::{IdentityPublicKey, IdentityV0};
         use dpp::prelude::{DataContract, Identity};
