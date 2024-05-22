@@ -31,7 +31,9 @@ pub mod platform {
     #[cfg(feature = "tenderdash-proto")]
     pub use tenderdash_proto as proto;
 
+    #[cfg(any(feature = "server", feature = "client"))]
     mod versioning;
+    #[cfg(any(feature = "server", feature = "client"))]
     pub use versioning::{VersionedGrpcMessage, VersionedGrpcResponse};
 }
 
