@@ -5,6 +5,12 @@ use std::{
 
 use tonic_build::Builder;
 
+const SERDE_WITH_BYTES: &str = r#"#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]"#;
+const SERDE_WITH_BASE64: &str =
+    r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::vec_base64string"))]"#;
+const SERDE_WITH_STRING: &str =
+    r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::from_to_string"))]"#;
+
 fn main() {
     let core = MappingConfig::new(
         PathBuf::from("protos/core/v0/core.proto"),
@@ -108,58 +114,45 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // All messages can be mocked.
     let platform = platform.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
 
-    #[cfg(feature = "serde")]
     let platform = platform
         .type_attribute(
             ".",
-            r#"#[derive(::serde::Serialize, ::serde::Deserialize)]"#,
+            r#"#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]"#,
         )
-        .type_attribute(".", r#"#[serde(rename_all = "snake_case")]"#)
-        .field_attribute("id", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("identity_id", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute(
-            "ids",
-            r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
+        .type_attribute(
+            ".",
+            r#"#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]"#,
         )
-        .field_attribute(
-            "ResponseMetadata.height",
-            r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
-        )
-        .field_attribute(
-            "ResponseMetadata.time_ms",
-            r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
-        )
-        .field_attribute(
-            "start_at_ms",
-            r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
-        )
-        .field_attribute("public_key_hash", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute(
-            "public_key_hashes",
-            r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
-        )
+        .field_attribute("id", SERDE_WITH_BYTES)
+        .field_attribute("identity_id", SERDE_WITH_BYTES)
+        .field_attribute("ids", SERDE_WITH_BASE64)
+        .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
+        .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
+        .field_attribute("start_at_ms", SERDE_WITH_STRING)
+        .field_attribute("public_key_hash", SERDE_WITH_BYTES)
+        .field_attribute("public_key_hashes", SERDE_WITH_BASE64)
         // Get documents fields
-        .field_attribute("data_contract_id", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("where", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("order_by", r#"#[serde(with = "serde_bytes")]"#)
+        .field_attribute("data_contract_id", SERDE_WITH_BYTES)
+        .field_attribute("where", SERDE_WITH_BYTES)
+        .field_attribute("order_by", SERDE_WITH_BYTES)
         // Proof fields
-        .field_attribute("Proof.grovedb_proof", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("Proof.quorum_hash", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("Proof.signature", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("Proof.block_id_hash", r#"#[serde(with = "serde_bytes")]"#);
+        .field_attribute("Proof.grovedb_proof", SERDE_WITH_BYTES)
+        .field_attribute("Proof.quorum_hash", SERDE_WITH_BYTES)
+        .field_attribute("Proof.signature", SERDE_WITH_BYTES)
+        .field_attribute("Proof.block_id_hash", SERDE_WITH_BYTES);
 
+    #[allow(clippy::let_and_return)]
     platform
 }
 
 fn configure_core(core: MappingConfig) -> MappingConfig {
     // All messages can be mocked.
-    let core = core.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
+    let core = core.message_attribute(".", r#"#[derive(::dapi_grpc_macros::Mockable)]"#);
 
     // Serde support
-    #[cfg(feature = "serde")]
     let core = core.type_attribute(
         ".",
-        r#"#[derive(::serde::Serialize, ::serde::Deserialize)]"#,
+        r#"#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]"#,
     );
 
     #[allow(clippy::let_and_return)]
@@ -172,7 +165,6 @@ impl MappingConfig {
 
         let build_server = cfg!(feature = "server");
         let build_client = cfg!(feature = "client");
-        let enable_serde = cfg!(feature = "serde");
 
         // Depending on the features, we need to build the server, client or both.
         // We save these artifacts in separate directories to avoid overwriting the generated files
@@ -184,11 +176,6 @@ impl MappingConfig {
             (false, false) => {
                 panic!("At least one of the features 'server' or 'client' must be enabled")
             }
-        };
-        let out_dir_suffix = if enable_serde {
-            format!("{}_serde", out_dir_suffix)
-        } else {
-            out_dir_suffix.to_string()
         };
 
         let out_dir = abs_path(&out_dir.join(out_dir_suffix));

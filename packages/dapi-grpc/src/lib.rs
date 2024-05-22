@@ -4,54 +4,28 @@ pub use prost::Message;
 pub mod core {
     #![allow(non_camel_case_types)]
     pub mod v0 {
-        // non-serde
-
-        #[cfg(all(feature = "server", not(feature = "client"), not(feature = "serde")))]
+        #[cfg(all(feature = "server", not(feature = "client")))]
         include!("core/server/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(feature = "client", not(feature = "server"), not(feature = "serde")))]
+        #[cfg(all(feature = "client", not(feature = "server")))]
         include!("core/client/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(feature = "server", feature = "client", not(feature = "serde")))]
+        #[cfg(all(feature = "server", feature = "client"))]
         include!("core/client_server/org.dash.platform.dapi.v0.rs");
-
-        // serde
-
-        #[cfg(all(feature = "server", not(feature = "client"), feature = "serde"))]
-        include!("core/server_serde/org.dash.platform.dapi.v0.rs");
-
-        #[cfg(all(feature = "client", not(feature = "server"), feature = "serde"))]
-        include!("core/client_serde/org.dash.platform.dapi.v0.rs");
-
-        #[cfg(all(feature = "server", feature = "client", feature = "serde"))]
-        include!("core/client_server_serde/org.dash.platform.dapi.v0.rs");
     }
 }
 
 #[cfg(feature = "platform")]
 pub mod platform {
     pub mod v0 {
-        // non-serde
-
-        #[cfg(all(feature = "server", not(feature = "client"), not(feature = "serde")))]
+        #[cfg(all(feature = "server", not(feature = "client")))]
         include!("platform/server/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(feature = "client", not(feature = "server"), not(feature = "serde")))]
+        #[cfg(all(feature = "client", not(feature = "server")))]
         include!("platform/client/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(feature = "server", feature = "client", not(feature = "serde")))]
+        #[cfg(all(feature = "server", feature = "client"))]
         include!("platform/client_server/org.dash.platform.dapi.v0.rs");
-
-        // serde
-
-        #[cfg(all(feature = "server", not(feature = "client"), feature = "serde"))]
-        include!("platform/server_serde/org.dash.platform.dapi.v0.rs");
-
-        #[cfg(all(feature = "client", not(feature = "server"), feature = "serde"))]
-        include!("platform/client_serde/org.dash.platform.dapi.v0.rs");
-
-        #[cfg(all(feature = "server", feature = "client", feature = "serde"))]
-        include!("platform/client_server_serde/org.dash.platform.dapi.v0.rs");
     }
 
     #[cfg(feature = "tenderdash-proto")]
