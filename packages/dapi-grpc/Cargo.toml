@@ -14,10 +14,7 @@ rust-version = "1.76"
 license = "MIT"
 
 [features]
-# Enable all features by default, otherwise different crates
-# triggier bulding proto with different feature set that overwrites
-# previous results and causes build errors
-default = ["core", "platform", "client", "serde", "server"]
+default = ["core", "platform", "client"]
 core = []
 platform = []
 # Re-export Dash Platform protobuf types as `dapi_grpc::platform::proto`
@@ -33,7 +30,7 @@ client = [
 ]
 server = ["tonic/channel", "tonic/transport", "platform"]
 serde = ["dep:serde", "dep:serde_bytes"]
-mocks = ["dep:serde_json"]
+mocks = ["serde", "dep:serde_json"]
 
 [dependencies]
 prost = { version = "0.12.3" }

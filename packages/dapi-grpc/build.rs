@@ -8,7 +8,7 @@ use tonic_build::Builder;
 fn main() {
     let core = MappingConfig::new(
         PathBuf::from("protos/core/v0/core.proto"),
-        PathBuf::from("src/core/proto"),
+        PathBuf::from("src/core"),
     );
 
     configure_core(core)
@@ -17,7 +17,7 @@ fn main() {
 
     let platform = MappingConfig::new(
         PathBuf::from("protos/platform/v0/platform.proto"),
-        PathBuf::from("src/platform/proto"),
+        PathBuf::from("src/platform"),
     );
 
     configure_platform(platform)
@@ -106,7 +106,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     }
 
     // All messages can be mocked.
-    platform = platform.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
+    let platform = platform.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
 
     #[cfg(feature = "serde")]
     let platform = platform
@@ -151,9 +151,9 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     platform
 }
 
-fn configure_core(mut core: MappingConfig) -> MappingConfig {
+fn configure_core(core: MappingConfig) -> MappingConfig {
     // All messages can be mocked.
-    core = core.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
+    let core = core.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
 
     // Serde support
     #[cfg(feature = "serde")]
@@ -162,16 +162,36 @@ fn configure_core(mut core: MappingConfig) -> MappingConfig {
         r#"#[derive(::serde::Serialize, ::serde::Deserialize)]"#,
     );
 
+    #[allow(clippy::let_and_return)]
     core
 }
 
 impl MappingConfig {
     fn new(protobuf_file: PathBuf, out_dir: PathBuf) -> Self {
         let protobuf_file = abs_path(&protobuf_file);
-        let out_dir = abs_path(&out_dir);
 
         let build_server = cfg!(feature = "server");
         let build_client = cfg!(feature = "client");
+        let enable_serde = cfg!(feature = "serde");
+
+        // Depending on the features, we need to build the server, client or both.
+        // We save these artifacts in separate directories to avoid overwriting the generated files
+        // when another crate requires different features.
+        let out_dir_suffix = match (build_server, build_client) {
+            (true, true) => "client_server",
+            (true, false) => "server",
+            (false, true) => "client",
+            (false, false) => {
+                panic!("At least one of the features 'server' or 'client' must be enabled")
+            }
+        };
+        let out_dir_suffix = if enable_serde {
+            format!("{}_serde", out_dir_suffix)
+        } else {
+            out_dir_suffix.to_string()
+        };
+
+        let out_dir = abs_path(&out_dir.join(out_dir_suffix));
 
         let builder = tonic_build::configure()
             .build_server(build_server)
