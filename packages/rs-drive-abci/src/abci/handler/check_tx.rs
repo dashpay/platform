@@ -79,20 +79,33 @@ where
                     (1, 0) => "kept in mempool after re-check".to_string(),
                     (0, _) => format!(
                         "rejected with code {code} due to error: {}",
-                        first_consensus_error
-                            .expect("consensus error must be present with non-zero error code")
+                        first_consensus_error.ok_or_else(|| Error::Execution(
+                            ExecutionError::CorruptedCodeExecution(
+                                "consensus error must be present with non-zero error code"
+                            )
+                        ))?
                     ),
                     (1, _) => format!(
                         "removed from mempool with code {code} after re-check due to error: {}",
-                        first_consensus_error
-                            .expect("consensus error must be present with non-zero error code")
+                        first_consensus_error.ok_or_else(|| Error::Execution(
+                            ExecutionError::CorruptedCodeExecution(
+                                "consensus error must be present with non-zero error code"
+                            )
+                        ))?
                     ),
-                    _ => unreachable!("we have only 2 modes of check tx"),
+                    _ => {
+                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "we have only 2 modes of check tx",
+                        )))
+                    }
                 };
 
-                let state_transition_hash = check_tx_result
-                    .state_transition_hash
-                    .expect("state transition hash must be present if trace level is enabled");
+                let state_transition_hash =
+                    check_tx_result.state_transition_hash.ok_or_else(|| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "state transition hash must be present if trace level is enabled",
+                        ))
+                    })?;
 
                 let st_hash = hex::encode(state_transition_hash);
 
