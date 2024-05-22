@@ -14,7 +14,7 @@ use dpp::consensus::ConsensusError;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_container::v0::{
-    DecodedStateTransition, FaultyStateTransition, InvalidEncodedStateTransition,
+    DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
     SuccessfullyDecodedStateTransition,
 };
 #[cfg(test)]
@@ -130,16 +130,16 @@ where
                 decoded,
                 ..
             }) => decoded,
-            DecodedStateTransition::InvalidEncoding(InvalidEncodedStateTransition {
-                error,
-                ..
-            }) => {
+            DecodedStateTransition::InvalidEncoding(InvalidStateTransition { error, .. }) => {
                 return Ok(ValidationResult::new_with_data_and_errors(
                     check_tx_result,
                     vec![error],
                 ));
             }
-            DecodedStateTransition::FailedToDecode(FaultyStateTransition { error, .. }) => {
+            DecodedStateTransition::FailedToDecode(InvalidWithProtocolErrorStateTransition {
+                error,
+                ..
+            }) => {
                 return Err(error.into());
             }
         };

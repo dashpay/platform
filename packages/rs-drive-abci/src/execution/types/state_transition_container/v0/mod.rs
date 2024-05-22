@@ -7,13 +7,13 @@ use std::time::Duration;
 #[derive(Debug)]
 pub enum DecodedStateTransition<'a> {
     SuccessfullyDecoded(SuccessfullyDecodedStateTransition<'a>),
-    InvalidEncoding(InvalidEncodedStateTransition<'a>),
-    FailedToDecode(FaultyStateTransition<'a>),
+    InvalidEncoding(InvalidStateTransition<'a>),
+    FailedToDecode(InvalidWithProtocolErrorStateTransition<'a>),
 }
 
 /// Invalid encoded state transition
 #[derive(Debug)]
-pub struct InvalidEncodedStateTransition<'a> {
+pub struct InvalidStateTransition<'a> {
     pub raw: &'a [u8],
     pub error: ConsensusError,
     pub elapsed_time: Duration,
@@ -21,7 +21,7 @@ pub struct InvalidEncodedStateTransition<'a> {
 
 /// State transition that failed to decode
 #[derive(Debug)]
-pub struct FaultyStateTransition<'a> {
+pub struct InvalidWithProtocolErrorStateTransition<'a> {
     pub raw: &'a [u8],
     pub error: ProtocolError,
     pub elapsed_time: Duration,

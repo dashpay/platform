@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::state_transition_container::v0::{
-    DecodedStateTransition, FaultyStateTransition, InvalidEncodedStateTransition,
+    DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
     SuccessfullyDecodedStateTransition,
 };
 use crate::execution::validation::state_transition::processor::process_state_transition;
@@ -141,7 +141,7 @@ where
 
                     execution_result
                 }
-                DecodedStateTransition::InvalidEncoding(InvalidEncodedStateTransition {
+                DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
                     raw,
                     error,
                     elapsed_time: decoding_elapsed_time,
@@ -167,11 +167,13 @@ where
 
                     StateTransitionExecutionResult::UnpaidConsensusError(error)
                 }
-                DecodedStateTransition::FailedToDecode(FaultyStateTransition {
-                    raw,
-                    error: protocol_error,
-                    elapsed_time: decoding_elapsed_time,
-                }) => {
+                DecodedStateTransition::FailedToDecode(
+                    InvalidWithProtocolErrorStateTransition {
+                        raw,
+                        error: protocol_error,
+                        elapsed_time: decoding_elapsed_time,
+                    },
+                ) => {
                     // Store metrics
                     state_transition_execution_histogram(decoding_elapsed_time, "Unknown", 1);
 

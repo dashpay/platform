@@ -1,5 +1,5 @@
 use crate::execution::types::state_transition_container::v0::{
-    DecodedStateTransition, FaultyStateTransition, InvalidEncodedStateTransition,
+    DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
     StateTransitionContainerV0, SuccessfullyDecodedStateTransition,
 };
 use crate::platform_types::platform::Platform;
@@ -71,7 +71,7 @@ where
                         ),
                     );
 
-                    DecodedStateTransition::InvalidEncoding(InvalidEncodedStateTransition {
+                    DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
                         raw: raw_state_transition.as_ref(),
                         error: consensus_error,
                         elapsed_time: Duration::default(),
@@ -92,34 +92,30 @@ where
                                 let consensus_error =
                                     SerializedObjectParsingError::new(message.clone()).into();
 
-                                DecodedStateTransition::InvalidEncoding(
-                                    InvalidEncodedStateTransition {
-                                        raw: raw_state_transition.as_ref(),
-                                        error: consensus_error,
-                                        elapsed_time: start_time.elapsed(),
-                                    },
-                                )
+                                DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
+                                    raw: raw_state_transition.as_ref(),
+                                    error: consensus_error,
+                                    elapsed_time: start_time.elapsed(),
+                                })
                             }
                             ProtocolError::MaxEncodedBytesReachedError { .. } => {
                                 let message = error.to_string();
                                 let consensus_error =
                                     SerializedObjectParsingError::new(message.clone()).into();
 
-                                DecodedStateTransition::InvalidEncoding(
-                                    InvalidEncodedStateTransition {
-                                        raw: raw_state_transition.as_ref(),
-                                        error: consensus_error,
-                                        elapsed_time: start_time.elapsed(),
-                                    },
-                                )
-                            }
-                            protocol_error => {
-                                DecodedStateTransition::FailedToDecode(FaultyStateTransition {
+                                DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
                                     raw: raw_state_transition.as_ref(),
-                                    error: protocol_error,
+                                    error: consensus_error,
                                     elapsed_time: start_time.elapsed(),
                                 })
                             }
+                            protocol_error => DecodedStateTransition::FailedToDecode(
+                                InvalidWithProtocolErrorStateTransition {
+                                    raw: raw_state_transition.as_ref(),
+                                    error: protocol_error,
+                                    elapsed_time: start_time.elapsed(),
+                                },
+                            ),
                         },
                     }
                 }
