@@ -11,6 +11,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use platform_version::version::PlatformVersion;
+use crate::common::encode::encode_u64;
 
 /// The votes tree structure looks like this
 ///
@@ -416,7 +417,7 @@ pub fn vote_contested_resource_end_date_queries_at_time_tree_path_vec(
         vec![RootTree::Votes as u8],
         vec![CONTESTED_RESOURCE_TREE_KEY as u8],
         vec![END_DATE_QUERIES_TREE_KEY as u8],
-        time.to_be_bytes().to_vec(),
+        encode_u64(time),
     ]
 }
 

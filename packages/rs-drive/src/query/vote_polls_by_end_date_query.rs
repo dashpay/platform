@@ -14,6 +14,7 @@ use grovedb::query_result_type::{Key, QueryResultElements, QueryResultType};
 use grovedb::{PathQuery, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
+use crate::error::drive::DriveError;
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
@@ -194,10 +195,13 @@ impl VotePollsByEndDateDriveQuery {
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
                 let vote_polls_by_end_date = query_result_elements
-                    .to_key_elements()
+                    .to_path_key_elements()
                     .into_iter()
-                    .map(|(key, element)| {
-                        let timestamp = decode_u64(key).map_err(Error::from)?;
+                    .map(|(path, _, element)| {
+                        let Some(last_path_component) = path.last() else {
+                            return Err(Error::Drive(DriveError::CorruptedDriveState("we should always have a path not be null".to_string())))
+                        };
+                        let timestamp = decode_u64(last_path_component).map_err(Error::from)?;
                         let contested_document_resource_vote_poll_bytes =
                             element.into_item_bytes().map_err(Error::from)?;
                         let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes(
@@ -244,10 +248,13 @@ impl VotePollsByEndDateDriveQuery {
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
                 let vote_polls_by_end_date = query_result_elements
-                    .to_key_elements()
+                    .to_path_key_elements()
                     .into_iter()
-                    .map(|(key, element)| {
-                        let timestamp = decode_u64(key).map_err(Error::from)?;
+                    .map(|(path, _, element)| {
+                        let Some(last_path_component) = path.last() else {
+                            return Err(Error::Drive(DriveError::CorruptedDriveState("we should always have a path not be null".to_string())))
+                        };
+                        let timestamp = decode_u64(last_path_component).map_err(Error::from)?;
                         let contested_document_resource_vote_poll_bytes =
                             element.into_item_bytes().map_err(Error::from)?;
                         Ok((timestamp, contested_document_resource_vote_poll_bytes))

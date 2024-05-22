@@ -26,6 +26,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
+use crate::common::encode::encode_u64;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
@@ -91,7 +92,7 @@ impl Drive {
 
         let end_date_query_path = vote_contested_resource_end_date_queries_tree_path_vec();
 
-        let drive_key = DriveKeyInfo::Key(end_date.to_be_bytes().to_vec());
+        let drive_key = DriveKeyInfo::Key(encode_u64(end_date));
 
         let path_key_info = drive_key.add_path_info::<0>(PathInfo::PathAsVec(end_date_query_path));
 
@@ -137,14 +138,16 @@ impl Drive {
                 target: QueryTargetValue(item.serialized_size()? as u32),
             }
         };
+        
+        let unique_id = vote_poll.unique_id()?;
 
         let path_key_element_info: PathKeyElementInfo<'_, 0> =
             if estimated_costs_only_with_layer_info.is_none() {
-                PathKeyRefElement((time_path, &[0], item))
+                PathKeyRefElement((time_path, unique_id.as_bytes(), item))
             } else {
                 PathKeyElementSize((
                     KeyInfoPath::from_known_owned_path(time_path),
-                    KeyInfo::KnownKey(vec![0u8]),
+                    KeyInfo::KnownKey(unique_id.to_vec()),
                     item,
                 ))
             };
