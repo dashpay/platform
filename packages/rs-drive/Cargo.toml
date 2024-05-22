@@ -45,10 +45,10 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "2.0.0", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.11.0", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "016795ea3d958dafa8f5fe9c89fdd9f7fc5402ca", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "016795ea3d958dafa8f5fe9c89fdd9f7fc5402ca", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "016795ea3d958dafa8f5fe9c89fdd9f7fc5402ca" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "016795ea3d958dafa8f5fe9c89fdd9f7fc5402ca", optional = true }
+grovedb = { git = "https://github.com/dashpay/grovedb", branch = "fix/ChunkLifetimes", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", branch = "fix/ChunkLifetimes", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", branch = "fix/ChunkLifetimes" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb",  branch = "fix/ChunkLifetimes", optional = true }
 
 [dev-dependencies]
 criterion = "0.3.5"

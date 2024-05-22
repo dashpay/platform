@@ -4,13 +4,9 @@ use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::GroveDb;
 use prost::Message;
-use std::collections::HashMap;
-use std::marker::PhantomData;
-use std::mem::take;
 use std::path::{Path, PathBuf};
 use tenderdash_abci::proto::{abci as proto, abci};
-//use dapi_grpc::platform::proto::abci::RequestOfferSnapshot;
-use drive::grovedb::replication::MultiStateSyncInfo;
+use drive::grovedb::replication::MultiStateSyncSession;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 
@@ -76,17 +72,7 @@ pub struct SnapshotFetchingSession<'db> {
     pub app_hash: Vec<u8>,
     // sender_metrics: Option<HashMap<String, Metrics>>,
     /// Snapshot accepted
-    pub state_sync_info: MultiStateSyncInfo<'db>,
-}
-
-impl From<proto::RequestOfferSnapshot> for SnapshotFetchingSession<'_> {
-    fn from(value: proto::RequestOfferSnapshot) -> Self {
-        Self {
-            snapshot: value.snapshot,
-            app_hash: value.app_hash,
-            state_sync_info: MultiStateSyncInfo::default()
-        }
-    }
+    pub state_sync_info: MultiStateSyncSession<'db>,
 }
 
 impl SnapshotFetchingSession<'_> {
@@ -98,7 +84,7 @@ impl SnapshotFetchingSession<'_> {
         chunk_id: Vec<u8>,
         chunk: Vec<u8>,
         sender: String,
-        mut state_sync_info: MultiStateSyncInfo,
+        mut state_sync_info: MultiStateSyncSession,
     ) -> Result<Vec<Vec<u8>>, Error> {
         /*
         let (next_chunk_ids, state_sync_info) = grove

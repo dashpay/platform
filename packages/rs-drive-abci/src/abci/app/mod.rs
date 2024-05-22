@@ -17,6 +17,7 @@ pub use state_sync::StateSyncAbciApplication;
 pub use consensus::ConsensusAbciApplication;
 use dpp::version::PlatformVersion;
 pub use full::FullAbciApplication;
+use crate::platform_types::snapshot::SnapshotFetchingSession;
 
 /// Platform-based ABCI application
 pub trait PlatformApplication<C = DefaultCoreRPC> {
@@ -40,4 +41,10 @@ pub trait TransactionalApplication<'a> {
 pub trait BlockExecutionApplication {
     /// Returns the current block execution context
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>>;
+}
+
+/// Application that can maintain state sync
+pub trait StateSyncApplication<'a> {
+    /// Returns the current snapshot fetching session
+    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'a>>>;
 }

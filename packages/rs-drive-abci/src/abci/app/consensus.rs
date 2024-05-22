@@ -1,4 +1,4 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{BlockExecutionApplication, PlatformApplication, StateSyncApplication, TransactionalApplication};
 use crate::abci::{AbciError, handler};
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
@@ -11,30 +11,28 @@ use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
-//use dapi_grpc::platform::proto::abci::Snapshot;
-//use dapi_grpc::tonic;
-use drive::error::Error::GroveDB;
-use drive::grovedb::replication::MultiStateSyncInfo;
+use drive::grovedb::replication::MultiStateSyncSession;
 use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
-pub struct ConsensusAbciApplication<'a, C> {
+/// 'p: 'tx, means that Platform must outlive the transaction
+pub struct ConsensusAbciApplication<'p: 'tx, 'tx, C> {
     /// Platform
-    platform: &'a Platform<C>,
+    platform: &'p Platform<C>,
     /// The current GroveDb transaction
-    transaction: RwLock<Option<Transaction<'a>>>,
+    transaction: RwLock<Option<Transaction<'tx>>>,
     /// The current block execution context
     block_execution_context: RwLock<Option<BlockExecutionContext>>,
-    snapshot_fetching_session: RwLock<Option<SnapshotFetchingSession<'a>>>,
+    snapshot_fetching_session: RwLock<Option<SnapshotFetchingSession<'tx>>>,
     snapshot_manager: SnapshotManager,
 }
 
-impl<'a, C> ConsensusAbciApplication<'a, C> {
+impl<'p, 'tx, C> ConsensusAbciApplication<'p, 'tx, C> {
     /// Create new ABCI app
-    pub fn new(platform: &'a Platform<C>) -> Self {
+    pub fn new(platform: &'p Platform<C>) -> Self {
         Self {
             platform,
             transaction: Default::default(),
@@ -45,26 +43,32 @@ impl<'a, C> ConsensusAbciApplication<'a, C> {
     }
 }
 
-impl<'a, C> PlatformApplication<C> for ConsensusAbciApplication<'a, C> {
+impl<'p, 'tx, C> PlatformApplication<C> for ConsensusAbciApplication<'p, 'tx, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
     }
 }
 
-impl<'a, C> BlockExecutionApplication for ConsensusAbciApplication<'a, C> {
+impl<'p, 'tx, C> StateSyncApplication<'tx> for ConsensusAbciApplication<'p, 'tx, C> {
+    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'tx>>> {
+        &self.snapshot_fetching_session
+    }
+}
+
+impl<'p, 'tx, C> BlockExecutionApplication for ConsensusAbciApplication<'p, 'tx, C> {
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
     }
 }
 
-impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
+impl<'p, 'tx, C> TransactionalApplication<'tx> for ConsensusAbciApplication<'p, 'tx, C> {
     /// create and store a new transaction
     fn start_transaction(&self) {
         let transaction = self.platform.drive.grove.start_transaction();
         self.transaction.write().unwrap().replace(transaction);
     }
 
-    fn transaction(&self) -> &RwLock<Option<Transaction<'a>>> {
+    fn transaction(&self) -> &RwLock<Option<Transaction<'tx>>> {
         &self.transaction
     }
 
@@ -86,13 +90,13 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
     }
 }
 
-impl<'a, C> Debug for ConsensusAbciApplication<'a, C> {
+impl<'p, 'tx, C> Debug for ConsensusAbciApplication<'p, 'tx, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<ConsensusAbciApplication>")
     }
 }
 
-impl<'a, C> tenderdash_abci::Application for ConsensusAbciApplication<'a, C>
+impl<'p, 'tx, C> tenderdash_abci::Application for ConsensusAbciApplication<'p, 'tx, C>
 where
     C: CoreRPCLike,
 {
@@ -194,12 +198,11 @@ where
                                     Ok(_) => {
                                         let mut response = proto::ResponseOfferSnapshot::default();
 
+                                        let state_sync_info = self.platform.drive.grove.start_new_session();
+
                                         session.snapshot = Option::from(offered_snapshot);
                                         session.app_hash = request.app_hash;
-                                        session.state_sync_info = MultiStateSyncInfo::default();
-
-                                        let transaction = self.platform.drive.grove.start_transaction();
-                                        self.transaction.write().unwrap().replace(transaction);
+                                        session.state_sync_info = state_sync_info;
 
                                         Ok(response)
                                     }
@@ -227,55 +230,11 @@ where
         &self,
         request: proto::RequestApplySnapshotChunk,
     ) -> Result<proto::ResponseApplySnapshotChunk, proto::ResponseException> {
-        let mut session_write_guard = self.snapshot_fetching_session.write().unwrap();
-        let a = self.transaction.read();
-        let transaction_guard = a.unwrap();
-        let transaction =
-            transaction_guard
-                .as_ref()
-                .ok_or(Error::Execution(ExecutionError::NotInTransaction(
-                    "trying to finalize block without a current transaction",
-                )))?;
-
-        //let transaction_read_guard = self.transaction.read().unwrap();
-        match session_write_guard.take() {
-            Some(session) => {
-                // Now you have a reference to transaction and ownership of session
-                // You can use transaction as a reference and consume session
-                let state_sync_info = session.state_sync_info;
-                match self.platform.drive.grove.apply_chunk(state_sync_info, (&request.chunk_id, request.chunk), transaction, 1u16) {
-                    Ok((next_chunk_ids, state_sync_info)) => {
-                        let new_session = SnapshotFetchingSession {
-                            snapshot: session.snapshot,
-                            app_hash: session.app_hash,
-                            state_sync_info,
-                        };
-                        *session_write_guard = Some(new_session);
-                        return Ok(proto::ResponseApplySnapshotChunk {
-                            result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
-                            refetch_chunks: vec![],
-                            reject_senders: vec![],
-                            next_chunks: next_chunk_ids,
-                        });
-                    }
-                    Err(e) => {
-                        return Err(error_into_exception(Error::Abci(AbciError::BadRequest(format!("offer_snapshot unable to wipe grovedb:{}", e)))))
-                    }
-                }
-            }
-            None => {
-                // Handle the case where there is no transaction
-                return Err(error_into_exception(Error::Abci(AbciError::BadRequest("offer_snapshot unable to lock session".to_string()))))
-            }
-        }
-        let mut response = proto::ResponseApplySnapshotChunk::default();
-        //response.next_chunks = next_chunk_ids;
-        //response.result = Result::Accept);
-        Ok(response)
+        handler::apply_snapshot_chunk(self, request).map_err(error_into_exception)
     }
 }
 
-fn with_transaction_ref<'a, C, F, R>(app: &'a ConsensusAbciApplication<'a, C>, f: F) -> Result<R, Error>
+fn with_transaction_ref<'a,'b, C, F, R>(app: &'a ConsensusAbciApplication<'a,'b, C>, f: F) -> Result<R, Error>
     where
         F: FnOnce(&Transaction<'a>) -> R,
 {
