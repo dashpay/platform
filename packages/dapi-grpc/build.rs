@@ -160,6 +160,14 @@ fn configure_core(core: MappingConfig) -> MappingConfig {
 }
 
 impl MappingConfig {
+    /// Create a new MappingConfig instance.
+    ///
+    /// ## Arguments
+    ///
+    /// * `protobuf_file` - Path to the protobuf file to use as input.
+    /// * `out_dir` - Output directory where subdirectories for generated files will be created.
+    /// Depending on the features, either `client`, `server` or `client_server` subdirectory
+    /// will be created inside `out_dir`.
     fn new(protobuf_file: PathBuf, out_dir: PathBuf) -> Self {
         let protobuf_file = abs_path(&protobuf_file);
 
