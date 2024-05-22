@@ -1,6 +1,7 @@
 use std::{
     fs::{create_dir_all, remove_dir_all},
     path::PathBuf,
+    process::exit,
 };
 
 use tonic_build::Builder;
@@ -182,7 +183,8 @@ impl MappingConfig {
             (true, false) => "server",
             (false, true) => "client",
             (false, false) => {
-                panic!("At least one of the features 'server' or 'client' must be enabled")
+                println!("WARNING: At least one of the features 'server' or 'client' must be enabled; dapi-grpc will not generate any files.");
+                exit(0)
             }
         };
 
