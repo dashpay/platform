@@ -3,6 +3,7 @@ use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
 use std::time::Duration;
 
+/// Decoded state transition result
 #[derive(Debug)]
 pub enum DecodedStateTransition<'a> {
     SuccessfullyDecoded(SuccessfullyDecodedStateTransition<'a>),
@@ -10,6 +11,7 @@ pub enum DecodedStateTransition<'a> {
     FailedToDecode(FaultyStateTransition<'a>),
 }
 
+/// Invalid encoded state transition
 #[derive(Debug)]
 pub struct InvalidEncodedStateTransition<'a> {
     pub raw: &'a [u8],
@@ -17,6 +19,7 @@ pub struct InvalidEncodedStateTransition<'a> {
     pub elapsed_time: Duration,
 }
 
+/// State transition that failed to decode
 #[derive(Debug)]
 pub struct FaultyStateTransition<'a> {
     pub raw: &'a [u8],
@@ -24,6 +27,7 @@ pub struct FaultyStateTransition<'a> {
     pub elapsed_time: Duration,
 }
 
+/// Successfully decoded state transition
 #[derive(Debug)]
 pub struct SuccessfullyDecodedStateTransition<'a> {
     pub decoded: StateTransition,
@@ -32,9 +36,11 @@ pub struct SuccessfullyDecodedStateTransition<'a> {
 }
 
 /// This is a container that holds state transitions
-
 #[derive(Debug)]
 pub struct StateTransitionContainerV0<'a> {
+    // We collect all decoding results in the same vector because we want to
+    // keep the original input order when we process them and log results we can
+    // easily match with txs in block
     state_transitions: Vec<DecodedStateTransition<'a>>,
 }
 
