@@ -1,3 +1,10 @@
+## [1.0.0-dev.15](https://github.com/dashpay/platform/compare/v1.0.0-dev.14...v1.0.0-dev.15) (2024-05-22)
+
+
+### Miscellaneous Chores
+
+* **drive:** state transition observability ([#1846](https://github.com/dashpay/platform/issues/1846))
+
 ## [1.0.0-dev.14](https://github.com/dashpay/platform/compare/v1.0.0-dev.13...v1.0.0-dev.14) (2024-05-17)
 
 
