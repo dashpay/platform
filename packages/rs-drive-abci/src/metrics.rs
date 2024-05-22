@@ -2,6 +2,7 @@
 //!
 //! This module provides a singleton implementation for managing metrics.
 
+use std::time::Duration;
 use std::{sync::Once, time::Instant};
 
 use dapi_grpc::tonic::Code;
@@ -15,9 +16,19 @@ const COUNTER_LAST_BLOCK_TIME: &str = "abci_last_block_time_seconds";
 const COUNTER_LAST_HEIGHT: &str = "abci_last_finalized_height";
 const HISTOGRAM_FINALIZED_ROUND: &str = "abci_finalized_round";
 const HISTOGRAM_ABCI_REQUEST_DURATION: &str = "abci_request_duration_seconds";
+/// State transition processing duration metric
+const HISTOGRAM_STATE_TRANSITION_PROCESSING_DURATION: &str =
+    "state_transition_processing_duration_seconds";
 const LABEL_ENDPOINT: &str = "endpoint";
-const LABEL_RESPONSE_CODE: &str = "response_code";
+/// Metrics label to specify ABCI response code
+pub const LABEL_ABCI_RESPONSE_CODE: &str = "response_code";
 const HISTOGRAM_QUERY_DURATION: &str = "abci_query_duration";
+/// Metrics label to specify state transition name
+pub const LABEL_STATE_TRANSITION_NAME: &str = "st_name";
+/// State transition execution code
+const LABEL_STATE_TRANSITION_EXECUTION_CODE: &str = "st_exec_code";
+/// Metrics label to specify check tx mode: 0 - first time check, 1 - recheck
+pub const LABEL_CHECK_TX_MODE: &str = "check_tx_mode";
 
 /// Error returned by metrics subsystem
 #[derive(thiserror::Error, Debug)]
@@ -279,11 +290,33 @@ pub fn query_duration_metric(endpoint: &str) -> HistogramTiming {
 }
 
 /// Create a label for the response code.
-pub fn response_code_metric_label(code: Code) -> Label {
-    Label::new(LABEL_RESPONSE_CODE, format!("{:?}", code).to_lowercase())
+pub fn abci_response_code_metric_label(code: Code) -> Label {
+    Label::new(
+        LABEL_ABCI_RESPONSE_CODE,
+        format!("{:?}", code).to_lowercase(),
+    )
 }
 
 /// Create a label for the endpoint.
 pub fn endpoint_metric_label(name: &str) -> Label {
     Label::new(LABEL_ENDPOINT, name.to_string())
+}
+
+/// Store a histogram metric for state transition processing duration
+pub fn state_transition_execution_histogram(
+    elapsed_time: Duration,
+    state_transition_name: &str,
+    code: u32,
+) {
+    histogram!(
+        HISTOGRAM_STATE_TRANSITION_PROCESSING_DURATION,
+        vec![
+            Label::new(
+                LABEL_STATE_TRANSITION_NAME,
+                state_transition_name.to_string()
+            ),
+            Label::new(LABEL_STATE_TRANSITION_EXECUTION_CODE, code.to_string())
+        ],
+    )
+    .record(elapsed_time.as_secs_f64());
 }
