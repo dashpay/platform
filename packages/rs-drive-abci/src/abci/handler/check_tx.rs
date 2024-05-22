@@ -66,12 +66,10 @@ where
                 .cloned()
                 .unwrap_or_default();
 
-            let state_transition_name =
-                if let Some(ref name) = check_tx_result.state_transition_name {
-                    name.to_owned()
-                } else {
-                    "Unknown".to_string()
-                };
+            let state_transition_name = check_tx_result
+                .state_transition_name
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string());
 
             let priority = check_tx_result.priority as i64;
 
