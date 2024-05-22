@@ -50,11 +50,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
             serialization_traits::DocumentPlatformValueMethodsV0,
         };
 
-        let json_schema = &self
-            .schema
-            .clone()
-            .try_into()
-            .expect("jsonschema must be a valid JSON");
+        let json_schema = &self.schema.clone().try_into()?;
         let json_documents = json_schema_faker::generate(&json_schema, count as u16)
             .context("cannot generate a random document with json-schema-faker-rs")?;
 
