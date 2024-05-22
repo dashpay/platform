@@ -81,7 +81,7 @@ filter-peers = false
 # Example for routed multi-app setup:
 #   abci = "routed"
 #   address = "Info:socket:unix:///tmp/socket.1,Info:socket:unix:///tmp/socket.2,CheckTx:socket:unix:///tmp/socket.1,*:socket:unix:///tmp/socket.3"
-address = "CheckTx:grpc:drive_abci:26670,*:socket:tcp://drive_abci:26658"
+address = "CheckTx:grpc:drive_abci:26670,RequestListSnapshots:grpc:drive_abci:26670,RequestOfferSnapshot:grpc:drive_abci:26670,RequestLoadSnapshotChunk:grpc:drive_abci:26670,RequestApplySnapshotChunk:grpc:drive_abci:26670,*:socket:tcp://drive_abci:26658"
 # Transport mechanism to connect to the ABCI application: socket | grpc | routed
 transport = "routed"
 # Maximum number of simultaneous connections to the ABCI application
@@ -95,6 +95,7 @@ transport = "routed"
 #	{ "echo" = 2 },
 #	{ "info" = 2 },
 #]
+# TODO: We might want to limit concurrency for some of StateSync calls
 grpc-concurrency = [
   { "check_tx" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
 ]
@@ -409,6 +410,7 @@ ttl-num-blocks = 0
 ###         State Sync Configuration Options        ###
 #######################################################
 [statesync]
+# TODO: Enable and configure state sync
 # State sync rapidly bootstraps a new node by discovering, fetching, and restoring a state machine
 # snapshot from peers instead of fetching and replaying historical blocks. Requires some peers in
 # the network to take and serve state machine snapshots. State sync is not attempted if the node

@@ -2,6 +2,7 @@
 //!
 
 use crate::abci::app::CheckTxAbciApplication;
+use crate::abci::app::StateSyncAbciApplication;
 use crate::abci::app::ConsensusAbciApplication;
 use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
@@ -22,12 +23,17 @@ pub fn start(
 ) {
     let query_service = QueryService::new(Arc::clone(&platform));
     let check_tx_service = CheckTxAbciApplication::new(Arc::clone(&platform));
+    let state_sync_service = StateSyncAbciApplication::new(Arc::clone(&platform));
 
     let grpc_server = dapi_grpc::tonic::transport::Server::builder()
         .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_service))
         .add_service(
             tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
                 check_tx_service,
+            ),
+        ).add_service(
+            tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
+                state_sync_service,
             ),
         );
 

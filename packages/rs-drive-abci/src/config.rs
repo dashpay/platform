@@ -201,9 +201,12 @@ pub struct PlatformConfig {
 
     /// Path to data storage
     pub db_path: PathBuf,
+    
+    /// Path to checkpoints
+    pub checkpoints_path: PathBuf,
 
     /// Path to store rejected / invalid items (like transactions).
-    /// Used mainly for debuggig.
+    /// Used mainly for debugging.
     ///
     /// If not set, rejected and invalid items will not be stored.
     #[serde(default)]
@@ -349,6 +352,7 @@ impl PlatformConfig {
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/checkpoints"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             tokio_console_enabled: false,
@@ -373,6 +377,7 @@ impl PlatformConfig {
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
@@ -397,6 +402,7 @@ impl PlatformConfig {
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),

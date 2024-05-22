@@ -677,7 +677,7 @@ pub(crate) fn create_chain_for_strategy(
     rng: StdRng,
 ) -> ChainExecutionOutcome {
     let abci_application = FullAbciApplication::new(platform);
-
+    
     let seed = strategy
         .failure_testing
         .as_ref()

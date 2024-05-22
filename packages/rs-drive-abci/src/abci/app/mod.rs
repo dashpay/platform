@@ -8,10 +8,12 @@ mod consensus;
 /// Convert state transition execution result into ABCI response
 pub mod execution_result;
 mod full;
+mod state_sync;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::rpc::core::DefaultCoreRPC;
 pub use check_tx::CheckTxAbciApplication;
+pub use state_sync::StateSyncAbciApplication;
 pub use consensus::ConsensusAbciApplication;
 use dpp::version::PlatformVersion;
 pub use full::FullAbciApplication;
