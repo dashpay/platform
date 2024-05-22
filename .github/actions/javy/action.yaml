@@ -1,0 +1,21 @@
+---
+name: "Setup Javy"
+description: "Setup Javy binaries"
+runs:
+  using: composite
+  steps:
+    - name: Install Javy
+      shell: bash
+      run: |
+        set -e
+        if [ "${{ runner.arch }}" == "ARM64" ]; then
+          curl -Ls https://github.com/bytecodealliance/javy/releases/download/v1.4.0/javy-arm-linux-v1.4.0.gz | gunzip > javy
+        else
+          curl -Ls https://github.com/bytecodealliance/javy/releases/download/v1.4.0/javy-x86_64-linux-v1.4.0.gz | gunzip > javy
+        fi
+        chmod +x javy
+        sudo mv javy /usr/local/bin/javy
+
+    - name: Verify Javy installation
+      shell: bash
+      run: javy --version
