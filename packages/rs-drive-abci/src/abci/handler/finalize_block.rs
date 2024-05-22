@@ -72,6 +72,7 @@ where
         .store(block_height, Ordering::Relaxed);
 
     // TODO: Here you need to create a snapshot
+    //app.sn
 
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }

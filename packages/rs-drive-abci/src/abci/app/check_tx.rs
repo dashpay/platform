@@ -90,34 +90,6 @@ where
         .await
         .map_err(|error| tonic::Status::internal(format!("check tx panics: {}", error)))?
     }
-
-    // TODO: Decide either to implement StateSync in CheckTx app (with different name)
-    //  or introduce a new once specificly for StateSync
-
-    async fn list_snapshots(
-        &self,
-        request: tonic::Request<proto::RequestListSnapshots>,
-    ) -> Result<tonic::Response<proto::ResponseListSnapshots>, tonic::Status> {
-        todo!("implement")
-    }
-    async fn offer_snapshot(
-        &self,
-        request: tonic::Request<proto::RequestOfferSnapshot>,
-    ) -> Result<tonic::Response<proto::ResponseOfferSnapshot>, tonic::Status> {
-        todo!("implement")
-    }
-    async fn load_snapshot_chunk(
-        &self,
-        request: tonic::Request<proto::RequestLoadSnapshotChunk>,
-    ) -> Result<tonic::Response<proto::ResponseLoadSnapshotChunk>, tonic::Status> {
-        todo!("implement")
-    }
-    async fn apply_snapshot_chunk(
-        &self,
-        request: tonic::Request<proto::RequestApplySnapshotChunk>,
-    ) -> Result<tonic::Response<proto::ResponseApplySnapshotChunk>, tonic::Status> {
-        todo!("implement")
-    }
 }
 
 pub fn error_into_status(error: Error) -> tonic::Status {

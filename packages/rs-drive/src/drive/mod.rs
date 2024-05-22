@@ -108,6 +108,7 @@ pub struct Drive {
     /// Drive Cache
     #[cfg(feature = "server")]
     pub cache: DriveCache,
+    //pub snapshots: SnapshotManager,
 }
 
 // The root tree structure is very important!

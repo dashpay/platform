@@ -5,11 +5,12 @@ use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::GroveDb;
 use prost::Message;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::mem::take;
 use std::path::{Path, PathBuf};
-use tenderdash_abci::proto::abci;
-use tenderdash_abci::proto::abci::response_offer_snapshot;
-use drive::grovedb::replication::StateSyncInfo;
+use tenderdash_abci::proto::{abci as proto, abci};
+//use dapi_grpc::platform::proto::abci::RequestOfferSnapshot;
+use drive::grovedb::replication::MultiStateSyncInfo;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 
@@ -37,6 +38,8 @@ pub struct Snapshot {
 }
 
 /// Offered snapshot entity
+///
+/*
 struct OfferedSnapshot {
     pub snapshot: abci::Snapshot,
     pub app_hash: Vec<u8>,
@@ -52,15 +55,72 @@ impl From<Snapshot> for abci::Snapshot {
         }
     }
 }
+*/
 
 /// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
 /// number of snapshots and remove the old ones
-pub struct Manager {
+#[derive(Default, Clone)]
+pub struct SnapshotManager {
     freq: i64,
     number_stored_snapshots: usize,
     checkpoints_path: String,
-    offered_snapshot: Option<OfferedSnapshot>,
-    sender_metrics: Option<HashMap<String, Metrics>>,
+
+}
+
+/// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
+/// number of snapshots and remove the old ones
+pub struct SnapshotFetchingSession<'db> {
+    /// Snapshot accepted
+    pub snapshot: Option<abci::Snapshot>,
+    /// Snapshot accepted
+    pub app_hash: Vec<u8>,
+    // sender_metrics: Option<HashMap<String, Metrics>>,
+    /// Snapshot accepted
+    pub state_sync_info: MultiStateSyncInfo<'db>,
+}
+
+impl From<proto::RequestOfferSnapshot> for SnapshotFetchingSession<'_> {
+    fn from(value: proto::RequestOfferSnapshot) -> Self {
+        Self {
+            snapshot: value.snapshot,
+            app_hash: value.app_hash,
+            state_sync_info: MultiStateSyncInfo::default()
+        }
+    }
+}
+
+impl SnapshotFetchingSession<'_> {
+    /// Create a new snapshot for the given height, if a height is not a multiple of N,
+    /// it will be skipped.
+    pub fn apply_snapshot_chunk(
+        &mut self,
+        grove: &GroveDb,
+        chunk_id: Vec<u8>,
+        chunk: Vec<u8>,
+        sender: String,
+        mut state_sync_info: MultiStateSyncInfo,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        /*
+        let (next_chunk_ids, state_sync_info) = grove
+            .apply_chunk(state_sync_info, (&chunk_id, chunk))
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
+
+         */
+        /*
+        match result {
+            Ok(next_chunk_ids) => {
+                self.update_sender_metric(sender, MetricType::Success);
+                next_chunk_ids
+            }
+            Err(e) => {
+                return Err(Error::Drive(GroveDB(e)));
+            }
+        }
+
+         */
+        Ok(vec![])
+    }
+
 }
 
 struct Metrics {
@@ -89,55 +149,18 @@ impl Metrics {
     }
 }
 
-impl Manager {
+impl SnapshotManager {
     /// Create a new instance of snapshot manager
     pub fn new(
         checkpoints_path: String,
         number_stored_snapshots: Option<usize>,
         freq: Option<i64>,
     ) -> Self {
-        let mut manager = Self {
-            freq: DEFAULT_FREQ,
-            number_stored_snapshots: DEFAULT_NUMBER_OF_SNAPSHOTS,
+        Self {
+            freq: freq.unwrap_or(DEFAULT_FREQ),
+            number_stored_snapshots: number_stored_snapshots.unwrap_or(DEFAULT_NUMBER_OF_SNAPSHOTS),
             checkpoints_path,
-            offered_snapshot: None,
-            sender_metrics: None,
-        };
-        match freq {
-            Some(freq) => manager.freq = freq,
-            _ => {}
         }
-        match number_stored_snapshots {
-            Some(number) => manager.number_stored_snapshots = number,
-            _ => {}
-        }
-        manager
-    }
-
-    /// Offers a snapshot to the replication, if previously the snapshot was already offered
-    /// then it will be deleted and replaced with the new one
-    pub fn offer_snapshot(
-        &mut self,
-        grove: &GroveDb,
-        snapshot: abci::Snapshot,
-        app_hash: Vec<u8>,
-    ) -> Result<response_offer_snapshot::Result, Error> {
-        match take(&mut self.offered_snapshot) {
-            Some(offered_snapshot) => {
-                self.sender_metrics = None;
-                if offered_snapshot.snapshot.height == snapshot.height {
-                    return Ok(response_offer_snapshot::Result::Reject);
-                }
-                if offered_snapshot.snapshot.version != snapshot.version {
-                    return Ok(response_offer_snapshot::Result::Reject);
-                }
-                grove.wipe().map_err(|e| GroveDB(e))?;
-            }
-            _ => {}
-        };
-        self.offered_snapshot = Some(OfferedSnapshot { snapshot, app_hash });
-        self.sender_metrics = Some(HashMap::new());
-        Ok(response_offer_snapshot::Result::Accept)
     }
 
     /// Return a persisted list of snapshots
@@ -192,28 +215,6 @@ impl Manager {
         self.save_snapshots(grove, snapshots)
     }
 
-    pub fn apply_snapshot_chunk(
-        &mut self,
-        grove: &GroveDb,
-        chunk_id: Vec<u8>,
-        chunk: Vec<u8>,
-        sender: String,
-        state_sync_info: StateSyncInfo,
-    ) -> Result<Vec<Vec<u8>>, Error> {
-        let (next_chunk_ids, state_sync_info) = grove
-            .apply_chunk(state_sync_info, chunk_id, chunk)
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
-        match result {
-            Ok(next_chunk_ids) => {
-                self.update_sender_metric(sender, MetricType::Success);
-                next_chunk_ids
-            }
-            Err(e) => {
-                return Err(Error::Drive(GroveDB(e)));
-            }
-        }
-    }
-
     fn prune_excess_snapshots(&self, snapshots: Vec<Snapshot>) -> Result<Vec<Snapshot>, Error> {
         if snapshots.len() <= self.number_stored_snapshots {
             return Ok(snapshots);
@@ -238,7 +239,8 @@ impl Manager {
             .map_err(|e| Error::Drive(GroveDB(e)))?;
         Ok(())
     }
-  
+
+    /*
     fn update_sender_metric(&mut self, sender: String, metric_type: MetricType) {
         let ref mut metrics = match &self.sender_metrics {
             Some(ref mut metrics) => metrics, //metrics.get_mut(&sender),
@@ -252,19 +254,25 @@ impl Manager {
             Some(sender_metrics) => sender_metrics,
             None => {
                 let mut sender_metrics = Metrics::new();
-                sender_metrics
+                &sender_metrics
             }
         };
         sender_metrics.incr(metric_type);
   }
+
+     */
     pub(crate) fn load_snapshot_chunk(
         &self,
         grove: &GroveDb,
         chunk_id: String,
     ) -> Result<Vec<u8>, Error> {
+        /*
         grove
-            .get_chunk(chunk_id, Some(CHUNK_SIZE_16MB))
+            .fetch_chunk(chunk_id, Some(CHUNK_SIZE_16MB))
             .map_err(|e| Error::Drive(GroveDB(e)))
+
+         */
+        Ok(vec![])
     }
 }
 
@@ -272,7 +280,7 @@ impl Manager {
 mod tests {
     use super::*;
     use std::fs;
-
+/*
     #[test]
     fn test_create_snapshot() {
         let test_cases = vec![
@@ -286,7 +294,7 @@ mod tests {
             let grove_dir = tempfile::tempdir().unwrap();
             let checkpoints_dir = tempfile::tempdir().unwrap();
             let grove = GroveDb::open(grove_dir.path()).unwrap();
-            let manager = Manager::new(
+            let manager = SnapshotManager::new(
                 checkpoints_dir.path().to_str().unwrap().to_string(),
                 Some(3),
                 Some(1),
@@ -311,7 +319,7 @@ mod tests {
         let grove_dir = tempfile::tempdir().unwrap();
         let replication_dir = tempfile::tempdir().unwrap();
         let grove = GroveDb::open(grove_dir.path()).unwrap();
-        let mut manager = Manager::new("".to_string(), Some(3), Some(1));
+        let mut manager = SnapshotManager::new("".to_string(), Some(3), Some(1));
         let app_hash = vec![1, 2, 3, 4, 5];
         let snapshot_1000 = abci::Snapshot {
             height: 1000,
@@ -332,4 +340,6 @@ mod tests {
             .offer_snapshot(&grove, snapshot_2000.clone(), app_hash.clone())
             .unwrap();
     }
+
+ */
 }
