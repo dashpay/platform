@@ -3,7 +3,7 @@ use crate::data_contract::JsonValue;
 use crate::validation::byte_array_keyword::ByteArrayKeyword;
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::ProtocolError;
-use jsonschema::{JSONSchema, RegexEngine};
+use jsonschema::{JSONSchema, RegexEngine, RegexOptions};
 
 impl JsonSchemaValidator {
     #[inline(always)]
@@ -21,7 +21,10 @@ impl JsonSchemaValidator {
 
         let validator = JSONSchema::options()
             .with_meta_schemas()
-            .with_patterns_regex_engine(RegexEngine::Regex(Default::default()))
+            .with_patterns_regex_engine(RegexEngine::Regex(RegexOptions {
+                size_limit: Some(5 * (1 << 20)),
+                ..Default::default()
+            }))
             .should_ignore_unknown_formats(false)
             .should_validate_formats(true)
             .with_draft(jsonschema::Draft::Draft202012)
