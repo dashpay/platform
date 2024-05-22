@@ -42,7 +42,7 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
-use rand::seq::SliceRandom;
+use rand::seq::{IteratorRandom, SliceRandom};
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
@@ -571,7 +571,7 @@ impl Strategy {
                     }) => {
                         // Filter and collect eligible identities
                         // Eligible identities have less than 24 documents in the mempool for this contract
-                        let eligible_identities: Vec<Identity> = current_identities
+                        let first_10_eligible_identities: Vec<Identity> = current_identities
                             .iter()
                             .filter(|identity| {
                                 mempool_document_counter
@@ -580,24 +580,7 @@ impl Strategy {
                                     < &24u64
                             })
                             .cloned()
-                            .collect();
-
-                        let k = 10; // Number of random elements to select
-                        let mut reservoir = Vec::new();
-
-                        // Reservoir sampling algorithm
-                        for (i, identity) in eligible_identities.into_iter().enumerate() {
-                            if i < k {
-                                reservoir.push(identity);
-                            } else {
-                                let j = rng.gen_range(0..=i);
-                                if j < k {
-                                    reservoir[j] = identity;
-                                }
-                            }
-                        }
-
-                        let first_10_eligible_identities: Vec<Identity> = reservoir;
+                            .choose_multiple(rng, 10);
 
                         if first_10_eligible_identities.len() == 0 {
                             tracing::warn!(
