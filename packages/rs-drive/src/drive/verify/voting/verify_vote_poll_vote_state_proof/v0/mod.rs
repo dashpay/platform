@@ -6,7 +6,7 @@ use crate::error::Error;
 
 use crate::error::drive::DriveError;
 use crate::query::vote_poll_vote_state_query::{
-    Contender, ContestedDocumentVotePollDriveQueryResultType,
+    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQueryResultType,
     ResolvedContestedDocumentVotePollDriveQuery,
 };
 use dpp::version::PlatformVersion;
@@ -38,26 +38,26 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<Contender>), Error> {
+    ) -> Result<(RootHash, Vec<ContenderWithSerializedDocument>), Error> {
         let path_query = self.construct_path_query(platform_version)?;
         let (root_hash, proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
 
         let contenders = match self.result_type {
             ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly => {
-                proved_key_values.into_iter().map(|(_,identity_id, _)| Ok(Contender {
+                proved_key_values.into_iter().map(|(_,identity_id, _)| Ok(ContenderWithSerializedDocument {
                     identity_id: Identifier::try_from(identity_id)?,
                     serialized_document: None,
                     vote_tally: None,
-                })).collect::<Result<Vec<Contender>, Error>>()
+                })).collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()
             }
             ContestedDocumentVotePollDriveQueryResultType::Documents => {
                 proved_key_values.into_iter().map(|(_, identity_id, document)| {
-                    Ok(Contender {
+                    Ok(ContenderWithSerializedDocument {
                         identity_id: Identifier::try_from(identity_id)?,
                         serialized_document: document.map(|document| document.into_item_bytes()).transpose()?,
                         vote_tally: None,
                     })
-                }).collect::<Result<Vec<Contender>, Error>>()
+                }).collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()
             }
             ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
                 proved_key_values.into_iter().map(|(_, identity_id, vote_tally)| {
@@ -65,12 +65,12 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                     if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!("sum tree value for vote tally must be between 0 and u32::Max, received {} from state", sum_tree_value))));
                     }
-                    Ok(Contender {
+                    Ok(ContenderWithSerializedDocument {
                         identity_id: Identifier::try_from(identity_id)?,
                         serialized_document: None,
                         vote_tally: Some(sum_tree_value as u32),
                     })
-                }).collect::<Result<Vec<Contender>, Error>>()
+                }).collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()
             }
             ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
                 let mut elements_iter = proved_key_values.into_iter();
@@ -90,7 +90,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!("sum tree value for vote tally must be between 0 and u32::Max, received {} from state", sum_tree_value))));
                     }
 
-                    let contender = Contender {
+                    let contender = ContenderWithSerializedDocument {
                         identity_id,
                         serialized_document: Some(serialized_document),
                         vote_tally: Some(sum_tree_value as u32),

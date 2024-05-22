@@ -10,6 +10,7 @@ use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
+use dpp::document::Document;
 use platform_version::version::PlatformVersion;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
@@ -65,15 +66,30 @@ pub struct ContestedDocumentVotePollDriveQuery {
 }
 
 /// Represents a contender in the contested document vote poll.
+/// This is for internal use where the document is in serialized form
 ///
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub struct Contender {
+pub struct ContenderWithSerializedDocument {
     /// The identity ID of the contender.
     pub identity_id: Identifier,
     /// The serialized document associated with the contender.
     pub serialized_document: Option<Vec<u8>>,
+    /// The vote tally for the contender.
+    pub vote_tally: Option<u32>,
+}
+
+/// Represents a contender in the contested document vote poll.
+///
+/// This struct holds the identity ID of the contender, the serialized document,
+/// and the vote tally.
+#[derive(Debug, PartialEq, Clone, Default)]
+pub struct Contender {
+    /// The identity ID of the contender.
+    pub identity_id: Identifier,
+    /// The serialized document associated with the contender.
+    pub serialized_document: Option<Document>,
     /// The vote tally for the contender.
     pub vote_tally: Option<u32>,
 }
@@ -85,7 +101,7 @@ pub struct Contender {
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct ContestedDocumentVotePollDriveQueryExecutionResult {
     /// The list of contenders returned by the query.
-    pub contenders: Vec<Contender>,
+    pub contenders: Vec<ContenderWithSerializedDocument>,
     /// The number of skipped items when an offset is given.
     pub skipped: u16,
 }
@@ -293,20 +309,20 @@ impl ContestedDocumentVotePollDriveQuery {
             Ok((query_result_elements, skipped)) => {
                 let contenders = match self.result_type {
                     ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly => {
-                        query_result_elements.to_keys().into_iter().map(|identity_id| Ok(Contender {
+                        query_result_elements.to_keys().into_iter().map(|identity_id| Ok(ContenderWithSerializedDocument {
                             identity_id: Identifier::try_from(identity_id)?,
                             serialized_document: None,
                             vote_tally: None,
-                        })).collect::<Result<Vec<Contender>, Error>>()
+                        })).collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()
                     }
                     ContestedDocumentVotePollDriveQueryResultType::Documents => {
                         query_result_elements.to_key_elements().into_iter().map(|(identity_id, document)| {
-                            Ok(Contender {
+                            Ok(ContenderWithSerializedDocument {
                                 identity_id: Identifier::try_from(identity_id)?,
                                 serialized_document: Some(document.into_item_bytes()?),
                                 vote_tally: None,
                             })
-                        }).collect::<Result<Vec<Contender>, Error>>()
+                        }).collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()
                     }
                     ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
                         query_result_elements.to_key_elements().into_iter().map(|(identity_id, vote_tally)| {
@@ -314,12 +330,12 @@ impl ContestedDocumentVotePollDriveQuery {
                             if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
                                 return Err(Error::Drive(DriveError::CorruptedDriveState(format!("sum tree value for vote tally must be between 0 and u32::Max, received {} from state", sum_tree_value))));
                             }
-                            Ok(Contender {
+                            Ok(ContenderWithSerializedDocument {
                                 identity_id: Identifier::try_from(identity_id)?,
                                 serialized_document: None,
                                 vote_tally: Some(sum_tree_value as u32),
                             })
-                        }).collect::<Result<Vec<Contender>, Error>>()
+                        }).collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()
                     }
                     ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
                         let mut elements_iter = query_result_elements.to_path_key_elements().into_iter();
@@ -339,7 +355,7 @@ impl ContestedDocumentVotePollDriveQuery {
                                 return Err(Error::Drive(DriveError::CorruptedDriveState(format!("sum tree value for vote tally must be between 0 and u32::Max, received {} from state", sum_tree_value))));
                             }
 
-                            let contender = Contender {
+                            let contender = ContenderWithSerializedDocument {
                                 identity_id,
                                 serialized_document: Some(serialized_document),
                                 vote_tally: Some(sum_tree_value as u32),

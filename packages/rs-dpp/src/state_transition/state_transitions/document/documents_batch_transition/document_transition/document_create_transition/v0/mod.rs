@@ -31,6 +31,7 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
+use platform_value::btreemap_extensions::BTreeValueRemoveTupleFromMapHelper;
 use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "state-transition-value-conversion")]
@@ -38,7 +39,7 @@ use crate::state_transition::documents_batch_transition;
 
 mod property_names {
     pub const ENTROPY: &str = "$entropy";
-    pub const PREFUNDED_VOTING_BALANCES: &str = "$prefundedVotingBalances";
+    pub const PREFUNDED_VOTING_BALANCE: &str = "$prefundedVotingBalance";
 }
 
 /// The Binary fields in [`DocumentCreateTransition`]
@@ -70,7 +71,7 @@ pub struct DocumentCreateTransitionV0 {
 
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(rename = "$prefundedVotingBalances")
+        serde(rename = "$prefundedVotingBalance")
     )]
     /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)
@@ -98,8 +99,7 @@ impl DocumentCreateTransitionV0 {
                 .remove_hash256_bytes(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?,
             prefunded_voting_balance: map
-                .remove_optional_map_as_btree_map(property_names::PREFUNDED_VOTING_BALANCES)?
-                .unwrap_or_default(),
+                .remove_optional_tuple(property_names::PREFUNDED_VOTING_BALANCE)?,
             data: map,
         })
     }
@@ -112,12 +112,15 @@ impl DocumentCreateTransitionV0 {
             Value::Bytes(self.entropy.to_vec()),
         );
 
-        transition_base_map.insert(
-            property_names::PREFUNDED_VOTING_BALANCES.to_string(),
-            Value::Map(ValueMap::from_btree_map(
-                self.prefunded_voting_balance.clone(),
-            )),
-        );
+        if let Some((index_name, prefunded_voting_balance)) = &self.prefunded_voting_balance {
+            let index_name_value = Value::Text(index_name.clone());
+            let prefunded_voting_balance_value = Value::U64(*prefunded_voting_balance);
+            transition_base_map.insert(
+                property_names::PREFUNDED_VOTING_BALANCE.to_string(),
+                Value::Array(vec![index_name_value, prefunded_voting_balance_value]),
+            );
+        }
+
 
         transition_base_map.extend(self.data.clone());
 

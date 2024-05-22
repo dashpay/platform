@@ -17,7 +17,11 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::voting::votes::resource_vote::ResourceVote;
 use drive::grovedb::Element;
+use drive::query::vote_poll_vote_state_query::Contender;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -45,6 +49,12 @@ pub type DataContractHistory = BTreeMap<u64, DataContract>;
 /// If data contract is not found, it is represented as `None`.
 pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 
+/// Multiple contenders for a vote resolution.
+///
+/// Mapping between the contenders identity IDs and their info.
+/// If a contender is not found, it is represented as `None`.
+pub type Contenders = RetrievedObjects<Identifier, Contender>;
+
 /// Multiple grovedb elements.
 ///
 /// Mapping between the key id and associated elements.
@@ -55,6 +65,9 @@ pub type Elements = RetrievedObjects<Vec<u8>, Element>;
 pub type IdentityBalance = u64;
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
+
+/// A contested vote for querying
+pub type ContestedVote = (ContestedDocumentResourceVotePoll, ResourceVoteChoice);
 
 /// An identity nonce
 #[derive(Debug)]

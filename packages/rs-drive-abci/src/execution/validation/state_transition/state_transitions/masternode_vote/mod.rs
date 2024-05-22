@@ -130,6 +130,7 @@ mod tests {
         use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{ContestedDocumentResourceVotePollWithContractInfo, ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed};
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
+        use drive::query::VotePollsByEndDateDriveQuery;
         use simple_signer::signer::SimpleSigner;
         use crate::platform_types::platform_state::PlatformState;
         use crate::rpc::core::MockCoreRPCLike;
@@ -888,6 +889,15 @@ mod tests {
             assert_eq!(first_contender.vote_tally, Some(1));
 
             assert_eq!(second_contender.vote_tally, Some(0));
+
+            let vote_polls_by_end_date_query = VotePollsByEndDateDriveQuery {
+                start_time: None,
+                end_time: None,
+                limit: None,
+                order_ascending: true,
+            };
+            
+            vote_polls_by_end_date_query.execute_no_proof()
         }
     }
 }

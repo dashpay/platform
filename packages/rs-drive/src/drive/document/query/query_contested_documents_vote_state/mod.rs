@@ -8,7 +8,7 @@ use grovedb::TransactionArg;
 
 mod v0;
 
-use crate::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQuery};
+use crate::query::vote_poll_vote_state_query::{ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery};
 pub use v0::*;
 
 /// Represents the outcome of a query to retrieve documents.
@@ -26,13 +26,13 @@ pub enum QueryContestedDocumentsVoteStateOutcome {
 }
 
 impl QueryContestedDocumentsVoteStateOutcomeV0Methods for QueryContestedDocumentsVoteStateOutcome {
-    fn contenders(&self) -> &Vec<Contender> {
+    fn contenders(&self) -> &Vec<ContenderWithSerializedDocument> {
         match self {
             QueryContestedDocumentsVoteStateOutcome::V0(outcome) => outcome.contenders(),
         }
     }
 
-    fn contenders_owned(self) -> Vec<Contender> {
+    fn contenders_owned(self) -> Vec<ContenderWithSerializedDocument> {
         match self {
             QueryContestedDocumentsVoteStateOutcome::V0(outcome) => outcome.contenders_owned(),
         }

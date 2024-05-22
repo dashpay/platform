@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQuery};
+use crate::query::vote_poll_vote_state_query::{ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery};
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -9,7 +9,7 @@ use grovedb::TransactionArg;
 /// The outcome of a query
 #[derive(Debug, Default)]
 pub struct QueryContestedDocumentsVoteStateOutcomeV0 {
-    contenders: Vec<Contender>,
+    contenders: Vec<ContenderWithSerializedDocument>,
     cost: u64,
 }
 
@@ -21,9 +21,9 @@ pub struct QueryContestedDocumentsVoteStateOutcomeV0 {
 /// of the query.
 pub trait QueryContestedDocumentsVoteStateOutcomeV0Methods {
     /// Returns a reference to the contenders found from the query.
-    fn contenders(&self) -> &Vec<Contender>;
+    fn contenders(&self) -> &Vec<ContenderWithSerializedDocument>;
     /// Consumes the instance to return the owned contenders.
-    fn contenders_owned(self) -> Vec<Contender>;
+    fn contenders_owned(self) -> Vec<ContenderWithSerializedDocument>;
     /// Returns the processing cost associated with the query.
     fn cost(&self) -> u64;
 }
@@ -31,11 +31,11 @@ pub trait QueryContestedDocumentsVoteStateOutcomeV0Methods {
 impl QueryContestedDocumentsVoteStateOutcomeV0Methods
     for QueryContestedDocumentsVoteStateOutcomeV0
 {
-    fn contenders(&self) -> &Vec<Contender> {
+    fn contenders(&self) -> &Vec<ContenderWithSerializedDocument> {
         &self.contenders
     }
 
-    fn contenders_owned(self) -> Vec<Contender> {
+    fn contenders_owned(self) -> Vec<ContenderWithSerializedDocument> {
         self.contenders
     }
 

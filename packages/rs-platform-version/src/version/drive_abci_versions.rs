@@ -40,6 +40,7 @@ pub struct DriveAbciQueryIdentityVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryVotingVersions {
+    pub contested_vote_polls_by_end_date_query: FeatureVersionBounds,
     pub contested_resource_vote_state: FeatureVersionBounds,
     pub contested_resource_voters_for_identity: FeatureVersionBounds,
     pub contested_resource_identity_vote_status: FeatureVersionBounds,

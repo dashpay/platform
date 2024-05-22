@@ -17,6 +17,8 @@ use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
+use dpp::voting::votes::Vote;
+use drive_proof_verifier::types::ContestedVote;
 
 use super::types::identity::IdentityRequest;
 use super::DocumentQuery;
@@ -225,4 +227,8 @@ impl Fetch for drive_proof_verifier::types::DataContractHistory {
 
 impl Fetch for ExtendedEpochInfo {
     type Request = platform_proto::GetEpochsInfoRequest;
+}
+
+impl Fetch for ContestedVote {
+    type Request = platform_proto::GetContestedResourceIdentityVoteStatusRequest;
 }
