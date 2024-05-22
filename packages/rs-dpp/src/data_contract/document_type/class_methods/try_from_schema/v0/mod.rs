@@ -447,20 +447,6 @@ impl DocumentTypeV0 {
             .transpose()?
             .unwrap_or(SecurityLevel::HIGH);
 
-        #[cfg(feature = "validation")]
-        if full_validation && security_level_requirement == SecurityLevel::MASTER {
-            return Err(ConsensusError::BasicError(
-                BasicError::InvalidDocumentTypeRequiredSecurityLevelError(
-                    InvalidDocumentTypeRequiredSecurityLevelError::new(
-                        security_level_requirement,
-                        data_contract_id,
-                        name.to_string(),
-                    ),
-                ),
-            )
-            .into());
-        }
-
         let requires_identity_encryption_bounded_key = schema
             .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)
             .map_err(consensus_or_protocol_value_error)?
