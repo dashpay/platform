@@ -115,6 +115,7 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
         quote! {
             #mod_ident::Version::#version_ident(inner) => match &inner.result {
                 Some(#mod_ident::#version_mod_ident::Result::Proof(proof)) => Ok(proof),
+                // TODO: this substitutes any error that could be received instead of a proof, not just version-related
                 _ => return Err(::platform_version::error::PlatformVersionError::UnknownVersionError("unknown proof version not known".to_string())),
             },
         }
@@ -130,6 +131,7 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
         quote! {
             #mod_ident::Version::#version_ident(inner) => match inner.result {
                 Some(#mod_ident::#version_mod_ident::Result::Proof(proof)) => Ok(proof),
+                // TODO: this substitutes any error that could be received instead of a proof, not just version-related
                 _ => return Err(::platform_version::error::PlatformVersionError::UnknownVersionError("unknown proof version not known".to_string())),
             },
         }
@@ -138,8 +140,7 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
     let metadata_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         quote! {
-            #mod_ident::Version::#version_ident(inner) => inner.metadata.as_ref().ok_or(platform_version::error::PlatformVersionError::
-                UnknownVersionError("result did not have metadata".to_string())),
+            #mod_ident::Version::#version_ident(inner) => inner.metadata.as_ref().ok_or(platform_version::error::PlatformVersionError:: UnknownVersionError("result did not have metadata".to_string())),
         }
     });
 
