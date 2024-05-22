@@ -6,7 +6,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
-#[error("State transition decoding failed: {parsing_error}")]
+#[error("Parsing of serialized object failed due to: {parsing_error}")]
 #[platform_serialize(unversioned)]
 pub struct SerializedObjectParsingError {
     /*
