@@ -3,6 +3,7 @@
 //! This module defines the CreateRandomDocument trait and its functions, which
 //! create various types of random documents.
 //!
+//!
 
 #[cfg(feature = "documents-faker")]
 use std::collections::BTreeMap;
