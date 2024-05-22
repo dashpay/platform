@@ -571,7 +571,7 @@ impl Strategy {
                     }) => {
                         // Filter and collect eligible identities
                         // Eligible identities have less than 24 documents in the mempool for this contract
-                        let first_10_eligible_identities: Vec<Identity> = current_identities
+                        let eligible_identities: Vec<Identity> = current_identities
                             .iter()
                             .filter(|identity| {
                                 mempool_document_counter
@@ -579,23 +579,35 @@ impl Strategy {
                                     .unwrap_or(&0)
                                     < &24u64
                             })
-                            .choose_multiple(rng, 10)
                             .into_iter()
                             .cloned()
                             .collect();
 
-                        if first_10_eligible_identities.len() == 0 {
+                        // Check we are able to submit `count` docs
+                        // This also prevents the case where there are no eligible identities
+                        let mut num_docs_possible: i32 = 0;
+                        for identity in &eligible_identities {
+                            let num_docs_possible_identity: i32 = (24
+                                - mempool_document_counter
+                                    .get(&(identity.id(), contract.id()))
+                                    .unwrap_or(&0))
+                            .try_into()
+                            .unwrap();
+                            num_docs_possible += num_docs_possible_identity;
+                        }
+                        if !(num_docs_possible >= count as i32) {
                             tracing::warn!(
-                                "No eligible identities to submit a document to contract {}",
-                                contract.id().to_string(Encoding::Base64)
+                                "No eligible identities to submit documents to contract {}",
+                                contract.id().to_string(Encoding::Base58)
                             );
+                            continue;
                         }
 
                         // TO-DO: these documents should be created according to the data contract's validation rules
                         let documents = document_type
                             .random_documents_with_params(
                                 count as u32,
-                                &first_10_eligible_identities,
+                                &eligible_identities,
                                 Some(block_info.time_ms),
                                 Some(block_info.height),
                                 Some(block_info.core_height),
