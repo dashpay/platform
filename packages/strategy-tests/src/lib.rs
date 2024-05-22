@@ -579,8 +579,10 @@ impl Strategy {
                                     .unwrap_or(&0)
                                     < &24u64
                             })
+                            .choose_multiple(rng, 10)
+                            .into_iter()
                             .cloned()
-                            .choose_multiple(rng, 10);
+                            .collect();
 
                         if first_10_eligible_identities.len() == 0 {
                             tracing::warn!(
