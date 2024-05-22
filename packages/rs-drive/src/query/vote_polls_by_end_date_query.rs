@@ -1,19 +1,19 @@
-use std::collections::BTreeMap;
-use grovedb::query_result_type::{QueryResultElements, QueryResultType};
-use grovedb::{PathQuery, SizedQuery, TransactionArg};
+use crate::common::encode::{decode_u64, encode_u64};
+use crate::drive::votes::paths::vote_contested_resource_end_date_queries_tree_path_vec;
+use crate::drive::Drive;
+use crate::error::Error;
+use crate::fee::op::LowLevelDriveOperation;
+use crate::query::{GroveError, Query};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentPropertyType;
 use dpp::fee::Credits;
 use dpp::prelude::{TimestampIncluded, TimestampMillis};
 use dpp::serialization::PlatformDeserializable;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use grovedb::query_result_type::{Key, QueryResultElements, QueryResultType};
+use grovedb::{PathQuery, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
-use crate::common::encode::{decode_u64, encode_u64};
-use crate::drive::Drive;
-use crate::drive::votes::paths::{vote_contested_resource_end_date_queries_tree_path_vec};
-use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::query::{GroveError, Query};
+use std::collections::BTreeMap;
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
@@ -24,20 +24,19 @@ pub struct VotePollsByEndDateDriveQuery {
     pub end_time: Option<(TimestampMillis, TimestampIncluded)>,
     /// Limit
     pub limit: Option<u16>,
+    /// Offset
+    pub offset: Option<u16>,
     /// Ascending
     pub order_ascending: bool,
 }
 
-
 impl VotePollsByEndDateDriveQuery {
     /// Operations to construct a path query.
-    pub fn construct_path_query(
-        &self,
-    ) -> PathQuery{
+    pub fn construct_path_query(&self) -> PathQuery {
         let path = vote_contested_resource_end_date_queries_tree_path_vec();
 
         let mut query = Query::new_with_direction(self.order_ascending);
-        
+
         // this is a range on all elements
         match &(self.start_time, self.end_time) {
             (None, None) => {
@@ -57,18 +56,29 @@ impl VotePollsByEndDateDriveQuery {
                     false => query.insert_range_to(..ends_at_key),
                 }
             }
-            (Some((starts_at_key_bytes, start_at_included)), Some((ends_at_key_bytes, ends_at_included))) => {
+            (
+                Some((starts_at_key_bytes, start_at_included)),
+                Some((ends_at_key_bytes, ends_at_included)),
+            ) => {
                 let starts_at_key = encode_u64(*starts_at_key_bytes);
                 let ends_at_key = encode_u64(*ends_at_key_bytes);
                 match (start_at_included, ends_at_included) {
                     (true, true) => query.insert_range_inclusive(starts_at_key..=ends_at_key),
                     (true, false) => query.insert_range(starts_at_key..ends_at_key),
-                    (false, true) => query.insert_range_after_to_inclusive(starts_at_key..=ends_at_key),
+                    (false, true) => {
+                        query.insert_range_after_to_inclusive(starts_at_key..=ends_at_key)
+                    }
                     (false, false) => query.insert_range_after_to(starts_at_key..ends_at_key),
                 }
             }
         }
-        
+
+        let mut sub_query = Query::new();
+
+        sub_query.insert_all();
+
+        query.default_subquery_branch.subquery = Some(sub_query.into());
+
         PathQuery {
             path,
             query: SizedQuery {
@@ -135,7 +145,13 @@ impl VotePollsByEndDateDriveQuery {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(BTreeMap<TimestampMillis, Vec<ContestedDocumentResourceVotePoll>>, Credits), Error> {
+    ) -> Result<
+        (
+            BTreeMap<TimestampMillis, Vec<ContestedDocumentResourceVotePoll>>,
+            Credits,
+        ),
+        Error,
+    > {
         let mut drive_operations = vec![];
         let result =
             self.execute_no_proof(drive, transaction, &mut drive_operations, platform_version)?;
@@ -174,24 +190,78 @@ impl VotePollsByEndDateDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
-                Ok(BTreeMap::new())
-            }
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(BTreeMap::new()),
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
-                let vote_polls_by_end_date = query_result_elements.to_key_elements().into_iter()
+                let vote_polls_by_end_date = query_result_elements
+                    .to_key_elements()
+                    .into_iter()
                     .map(|(key, element)| {
                         let timestamp = decode_u64(key).map_err(Error::from)?;
-                        let contested_document_resource_vote_poll_bytes = element.into_item_bytes().map_err(Error::from)?;
-                        let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes(&contested_document_resource_vote_poll_bytes)?;
+                        let contested_document_resource_vote_poll_bytes =
+                            element.into_item_bytes().map_err(Error::from)?;
+                        let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes(
+                            &contested_document_resource_vote_poll_bytes,
+                        )?;
                         Ok((timestamp, vote_poll))
                     })
                     .collect::<Result<Vec<_>, Error>>()?
                     .into_iter()
-                    .fold(BTreeMap::new(), |mut acc: BTreeMap<u64, Vec<ContestedDocumentResourceVotePoll>>, (timestamp, vote_poll)| {
-                        acc.entry(timestamp).or_default().push(vote_poll);
-                        acc
-                    });
+                    .fold(
+                        BTreeMap::new(),
+                        |mut acc: BTreeMap<u64, Vec<ContestedDocumentResourceVotePoll>>,
+                         (timestamp, vote_poll)| {
+                            acc.entry(timestamp).or_default().push(vote_poll);
+                            acc
+                        },
+                    );
+                Ok(vote_polls_by_end_date)
+            }
+        }
+    }
+
+    #[cfg(feature = "server")]
+    /// Executes an internal query with no proof and returns the values and skipped items.
+    pub fn execute_no_proof_keep_serialized(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<TimestampMillis, Vec<Vec<u8>>>, Error> {
+        let path_query = self.construct_path_query();
+        let query_result = drive.grove_get_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryPathKeyElementTrioResultType,
+            drive_operations,
+            &platform_version.drive,
+        );
+        match query_result {
+            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(BTreeMap::new()),
+            Err(e) => Err(e),
+            Ok((query_result_elements, _)) => {
+                let vote_polls_by_end_date = query_result_elements
+                    .to_key_elements()
+                    .into_iter()
+                    .map(|(key, element)| {
+                        let timestamp = decode_u64(key).map_err(Error::from)?;
+                        let contested_document_resource_vote_poll_bytes =
+                            element.into_item_bytes().map_err(Error::from)?;
+                        Ok((timestamp, contested_document_resource_vote_poll_bytes))
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?
+                    .into_iter()
+                    .fold(
+                        BTreeMap::new(),
+                        |mut acc: BTreeMap<u64, Vec<Vec<u8>>>,
+                         (timestamp, vote_poll_serialized)| {
+                            acc.entry(timestamp).or_default().push(vote_poll_serialized);
+                            acc
+                        },
+                    );
                 Ok(vote_polls_by_end_date)
             }
         }

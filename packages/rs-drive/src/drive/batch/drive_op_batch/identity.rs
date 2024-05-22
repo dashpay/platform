@@ -7,11 +7,11 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
+use crate::drive::votes::resolved::votes::ResolvedVote;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use crate::drive::votes::resolved::votes::ResolvedVote;
 
 /// Operations on Identities
 #[derive(Clone, Debug)]

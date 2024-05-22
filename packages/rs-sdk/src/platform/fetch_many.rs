@@ -11,7 +11,11 @@ use crate::{
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
-use dapi_grpc::platform::v0::{GetContestedResourceVoteStateRequest, GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentitiesContractKeysRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest};
+use dapi_grpc::platform::v0::{
+    GetContestedResourceVoteStateRequest, GetDataContractsRequest, GetDocumentsResponse,
+    GetEpochsInfoRequest, GetIdentitiesContractKeysRequest, GetIdentityKeysRequest,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
+};
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
@@ -21,12 +25,12 @@ use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use drive::query::vote_poll_vote_state_query::Contender;
 use drive_proof_verifier::types::{MasternodeProtocolVote, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use drive::query::vote_poll_vote_state_query::Contender;
 
 use super::LimitQuery;
 

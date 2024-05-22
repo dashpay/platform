@@ -39,7 +39,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 19] = [
+    const VERSIONED_REQUESTS: [&str; 25] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -59,10 +59,16 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetProtocolVersionUpgradeVoteStatusRequest",
         "GetPathElementsRequest",
         "GetIdentitiesContractKeysRequest",
+        "GetPrefundedSpecializedBalanceRequest",
+        "GetContestedResourcesRequest",
+        "GetContestedResourceVoteStateRequest",
+        "GetContestedResourceVotersForIdentityRequest",
+        "GetContestedResourceIdentityVoteStatusRequest",
+        "GetContestedVotePollsByEndDateRequest",
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 20] = [
+    const VERSIONED_RESPONSES: [&str; 26] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -83,6 +89,12 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetProtocolVersionUpgradeVoteStatusResponse",
         "GetPathElementsResponse",
         "GetIdentitiesContractKeysResponse",
+        "GetPrefundedSpecializedBalanceResponse",
+        "GetContestedResourcesResponse",
+        "GetContestedResourceVoteStateResponse",
+        "GetContestedResourceVotersForIdentityResponse",
+        "GetContestedResourceIdentityVoteStatusResponse",
+        "GetContestedVotePollsByEndDateResponse",
     ];
 
     // Derive VersionedGrpcMessage on requests

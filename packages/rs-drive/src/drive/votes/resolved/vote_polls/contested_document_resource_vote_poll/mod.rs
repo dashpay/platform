@@ -8,10 +8,10 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef, Index};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
-use dpp::ProtocolError;
 use dpp::serialization::PlatformSerializable;
 use dpp::util::hash::hash_double;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::ProtocolError;
 
 /// Represents information related to a contested document resource vote poll, along with
 /// associated contract details.
@@ -49,7 +49,12 @@ pub struct ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
 
 impl From<ContestedDocumentResourceVotePollWithContractInfo> for ContestedDocumentResourceVotePoll {
     fn from(value: ContestedDocumentResourceVotePollWithContractInfo) -> Self {
-        let ContestedDocumentResourceVotePollWithContractInfo { contract, document_type_name, index_name, index_values } = value;
+        let ContestedDocumentResourceVotePollWithContractInfo {
+            contract,
+            document_type_name,
+            index_name,
+            index_values,
+        } = value;
 
         ContestedDocumentResourceVotePoll {
             contract_id: contract.id(),
@@ -60,9 +65,16 @@ impl From<ContestedDocumentResourceVotePollWithContractInfo> for ContestedDocume
     }
 }
 
-impl<'a> From<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>> for ContestedDocumentResourceVotePoll {
+impl<'a> From<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>>
+    for ContestedDocumentResourceVotePoll
+{
     fn from(value: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed) -> Self {
-        let ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed { contract, document_type_name, index_name, index_values } = value;
+        let ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+            contract,
+            document_type_name,
+            index_name,
+            index_values,
+        } = value;
 
         ContestedDocumentResourceVotePoll {
             contract_id: contract.id(),
@@ -73,27 +85,41 @@ impl<'a> From<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>
     }
 }
 
-impl From<&ContestedDocumentResourceVotePollWithContractInfo> for ContestedDocumentResourceVotePoll {
+impl From<&ContestedDocumentResourceVotePollWithContractInfo>
+    for ContestedDocumentResourceVotePoll
+{
     fn from(value: &ContestedDocumentResourceVotePollWithContractInfo) -> Self {
-        let ContestedDocumentResourceVotePollWithContractInfo { contract, document_type_name, index_name, index_values } = value;
+        let ContestedDocumentResourceVotePollWithContractInfo {
+            contract,
+            document_type_name,
+            index_name,
+            index_values,
+        } = value;
 
         ContestedDocumentResourceVotePoll {
             contract_id: contract.id(),
             document_type_name: document_type_name.clone(),
-            index_name : index_name.clone(),
+            index_name: index_name.clone(),
             index_values: index_values.clone(),
         }
     }
 }
 
-impl<'a> From<&ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>> for ContestedDocumentResourceVotePoll {
+impl<'a> From<&ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>>
+    for ContestedDocumentResourceVotePoll
+{
     fn from(value: &ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed) -> Self {
-        let ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed { contract, document_type_name, index_name, index_values } = value;
+        let ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+            contract,
+            document_type_name,
+            index_name,
+            index_values,
+        } = value;
 
         ContestedDocumentResourceVotePoll {
             contract_id: contract.id(),
             document_type_name: document_type_name.clone(),
-            index_name : index_name.clone(),
+            index_name: index_name.clone(),
             index_values: index_values.clone(),
         }
     }

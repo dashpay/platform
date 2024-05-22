@@ -121,7 +121,6 @@ impl DocumentCreateTransitionV0 {
             );
         }
 
-
         transition_base_map.extend(self.data.clone());
 
         Ok(transition_base_map)

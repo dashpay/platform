@@ -1,8 +1,8 @@
 mod transformer;
 
+use crate::drive::votes::resolved::votes::ResolvedVote;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
-use crate::drive::votes::resolved::votes::ResolvedVote;
 
 /// action v0
 #[derive(Debug, Clone)]

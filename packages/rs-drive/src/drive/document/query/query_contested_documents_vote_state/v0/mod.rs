@@ -1,7 +1,9 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::vote_poll_vote_state_query::{ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery};
+use crate::query::vote_poll_vote_state_query::{
+    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery,
+};
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;

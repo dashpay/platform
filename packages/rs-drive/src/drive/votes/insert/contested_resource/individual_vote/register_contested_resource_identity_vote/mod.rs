@@ -9,12 +9,12 @@ use crate::error::Error;
 
 use dpp::fee::fee_result::FeeResult;
 
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 
 impl Drive {
     /// Registers a vote for a contested resource based on the voter's identifier,

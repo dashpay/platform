@@ -2124,6 +2124,8 @@ pub mod get_epochs_info_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2163,6 +2165,11 @@ pub mod get_contested_resources_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2227,6 +2234,8 @@ pub mod get_contested_resources_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2254,9 +2263,11 @@ pub mod get_contested_vote_polls_by_end_date_request {
         >,
         #[prost(uint32, optional, tag = "3")]
         pub limit: ::core::option::Option<u32>,
-        #[prost(bool, tag = "4")]
-        pub ascending: bool,
+        #[prost(uint32, optional, tag = "4")]
+        pub offset: ::core::option::Option<u32>,
         #[prost(bool, tag = "5")]
+        pub ascending: bool,
+        #[prost(bool, tag = "6")]
         pub prove: bool,
     }
     /// Nested message and enum types in `GetContestedVotePollsByEndDateRequestV0`.
@@ -2295,6 +2306,11 @@ pub mod get_contested_vote_polls_by_end_date_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2332,9 +2348,11 @@ pub mod get_contested_vote_polls_by_end_date_response {
         #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct ContestedVotePoll {
-            #[prost(bytes = "vec", repeated, tag = "1")]
-            pub serialized_vote_polls: ::prost::alloc::vec::Vec<
+        pub struct SerializedContestedVotePollsByTimestamp {
+            #[prost(uint64, tag = "1")]
+            pub timestamp: u64,
+            #[prost(bytes = "vec", repeated, tag = "2")]
+            pub serialized_contested_vote_polls: ::prost::alloc::vec::Vec<
                 ::prost::alloc::vec::Vec<u8>,
             >,
         }
@@ -2343,21 +2361,10 @@ pub mod get_contested_vote_polls_by_end_date_response {
         #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct ContestedVotePollsByTimestamp {
-            #[prost(uint64, tag = "1")]
-            pub timestamp: u64,
-            #[prost(message, repeated, tag = "2")]
-            pub vote_polls: ::prost::alloc::vec::Vec<ContestedVotePoll>,
-        }
-        #[derive(::serde::Serialize, ::serde::Deserialize)]
-        #[serde(rename_all = "snake_case")]
-        #[derive(::dapi_grpc_macros::Mockable)]
-        #[allow(clippy::derive_partial_eq_without_eq)]
-        #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct ContestedVotePollsByTimestamps {
+        pub struct SerializedContestedVotePollsByTimestamps {
             #[prost(message, repeated, tag = "1")]
             pub contested_vote_polls_by_timestamps: ::prost::alloc::vec::Vec<
-                ContestedVotePollsByTimestamp,
+                SerializedContestedVotePollsByTimestamp,
             >,
             #[prost(bool, tag = "2")]
             pub finished_results: bool,
@@ -2368,7 +2375,7 @@ pub mod get_contested_vote_polls_by_end_date_response {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Result {
             #[prost(message, tag = "1")]
-            ContestedVotePollsByTimestamps(ContestedVotePollsByTimestamps),
+            ContestedVotePollsByTimestamps(SerializedContestedVotePollsByTimestamps),
             #[prost(message, tag = "2")]
             Proof(super::super::Proof),
         }
@@ -2385,6 +2392,8 @@ pub mod get_contested_vote_polls_by_end_date_response {
 /// What's the state of a contested resource vote? (ie who is winning?)
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2495,6 +2504,11 @@ pub mod get_contested_resource_vote_state_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2569,6 +2583,8 @@ pub mod get_contested_resource_vote_state_response {
 /// Who voted for a contested resource to go to a specific identity?
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2635,6 +2651,11 @@ pub mod get_contested_resource_voters_for_identity_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2701,6 +2722,8 @@ pub mod get_contested_resource_voters_for_identity_response {
 /// How did an identity vote?
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2745,6 +2768,11 @@ pub mod get_contested_resource_identity_vote_status_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2819,6 +2847,8 @@ pub mod get_contested_resource_identity_vote_status_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2853,6 +2883,11 @@ pub mod get_prefunded_specialized_balance_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3811,7 +3846,7 @@ pub mod platform_client {
             self.inner.unary(req, path, codec).await
         }
         /// What vote polls will end soon?
-        pub async fn get_contested_resources_by_end_date(
+        pub async fn get_contested_vote_polls_by_end_date(
             &mut self,
             request: impl tonic::IntoRequest<
                 super::GetContestedVotePollsByEndDateRequest,
@@ -3831,14 +3866,14 @@ pub mod platform_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/org.dash.platform.dapi.v0.Platform/getContestedResourcesByEndDate",
+                "/org.dash.platform.dapi.v0.Platform/getContestedVotePollsByEndDate",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
-                        "getContestedResourcesByEndDate",
+                        "getContestedVotePollsByEndDate",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4080,7 +4115,7 @@ pub mod platform_server {
             tonic::Status,
         >;
         /// What vote polls will end soon?
-        async fn get_contested_resources_by_end_date(
+        async fn get_contested_vote_polls_by_end_date(
             &self,
             request: tonic::Request<super::GetContestedVotePollsByEndDateRequest>,
         ) -> std::result::Result<
@@ -5280,14 +5315,14 @@ pub mod platform_server {
                     };
                     Box::pin(fut)
                 }
-                "/org.dash.platform.dapi.v0.Platform/getContestedResourcesByEndDate" => {
+                "/org.dash.platform.dapi.v0.Platform/getContestedVotePollsByEndDate" => {
                     #[allow(non_camel_case_types)]
-                    struct getContestedResourcesByEndDateSvc<T: Platform>(pub Arc<T>);
+                    struct getContestedVotePollsByEndDateSvc<T: Platform>(pub Arc<T>);
                     impl<
                         T: Platform,
                     > tonic::server::UnaryService<
                         super::GetContestedVotePollsByEndDateRequest,
-                    > for getContestedResourcesByEndDateSvc<T> {
+                    > for getContestedVotePollsByEndDateSvc<T> {
                         type Response = super::GetContestedVotePollsByEndDateResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5301,7 +5336,7 @@ pub mod platform_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_contested_resources_by_end_date(request).await
+                                (*inner).get_contested_vote_polls_by_end_date(request).await
                             };
                             Box::pin(fut)
                         }
@@ -5313,7 +5348,7 @@ pub mod platform_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = getContestedResourcesByEndDateSvc(inner);
+                        let method = getContestedVotePollsByEndDateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

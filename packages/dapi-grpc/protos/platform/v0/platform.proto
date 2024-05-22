@@ -43,7 +43,7 @@ service Platform {
   // How did an identity vote?
   rpc getContestedResourceIdentityVoteStatus(GetContestedResourceIdentityVoteStatusRequest) returns (GetContestedResourceIdentityVoteStatusResponse);
   // What vote polls will end soon?
-  rpc getContestedResourcesByEndDate(GetContestedVotePollsByEndDateRequest) returns (GetContestedVotePollsByEndDateResponse);
+  rpc getContestedVotePollsByEndDate(GetContestedVotePollsByEndDateRequest) returns (GetContestedVotePollsByEndDateResponse);
   rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
 }
@@ -688,8 +688,9 @@ message GetContestedVotePollsByEndDateRequest {
     optional StartAtTimeInfo start_time_info = 1;
     optional EndAtTimeInfo end_time_info = 2;
     optional uint32 limit = 3;
-    bool ascending = 4;
-    bool prove = 5;
+    optional uint32 offset = 4;
+    bool ascending = 5;
+    bool prove = 6;
   }
 
   oneof version {
@@ -699,22 +700,18 @@ message GetContestedVotePollsByEndDateRequest {
 
 message GetContestedVotePollsByEndDateResponse {
   message GetContestedVotePollsByEndDateResponseV0 {
-    message ContestedVotePoll {
-      repeated bytes serialized_vote_polls = 1;
-    }
-
-    message ContestedVotePollsByTimestamp {
+    message SerializedContestedVotePollsByTimestamp {
       uint64 timestamp = 1;
-      repeated ContestedVotePoll vote_polls = 2;
+      repeated bytes serialized_contested_vote_polls = 2;
     }
 
-    message ContestedVotePollsByTimestamps {
-      repeated ContestedVotePollsByTimestamp contested_vote_polls_by_timestamps = 1;
+    message SerializedContestedVotePollsByTimestamps {
+      repeated SerializedContestedVotePollsByTimestamp contested_vote_polls_by_timestamps = 1;
       bool finished_results = 2;
     }
 
     oneof result {
-      ContestedVotePollsByTimestamps contested_vote_polls_by_timestamps = 1;
+      SerializedContestedVotePollsByTimestamps contested_vote_polls_by_timestamps = 1;
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;

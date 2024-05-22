@@ -9,11 +9,11 @@ use crate::error::Error;
 
 use dpp::fee::fee_result::FeeResult;
 
+use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use crate::drive::votes::resolved::votes::ResolvedVote;
 
 impl Drive {
     /// Registers a vote associated with a specific identity using the given voter's ProRegTx hash.

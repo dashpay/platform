@@ -1,10 +1,10 @@
-use grovedb::TransactionArg;
-use dpp::voting::vote_polls::VotePoll;
-use platform_version::version::PlatformVersion;
-use crate::drive::Drive;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::ResolvedVotePoll;
+use crate::drive::Drive;
 use crate::error::Error;
+use dpp::voting::vote_polls::VotePoll;
+use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 pub trait VotePollResolver {
     /// Resolves the contested document resource vote poll information.
@@ -43,17 +43,45 @@ pub trait VotePollResolver {
 }
 
 impl VotePollResolver for VotePoll {
-    fn resolve(&self, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<ResolvedVotePoll, Error> {
-        match self { VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
-            Ok(ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(contested_document_resource_vote_poll.resolve(drive, transaction, platform_version)?))
-        }
+    fn resolve(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ResolvedVotePoll, Error> {
+        match self {
+            VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
+                Ok(
+                    ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
+                        contested_document_resource_vote_poll.resolve(
+                            drive,
+                            transaction,
+                            platform_version,
+                        )?,
+                    ),
+                )
+            }
         }
     }
 
-    fn resolve_owned(self, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<ResolvedVotePoll, Error> {
-        match self { VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
-            Ok(ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(contested_document_resource_vote_poll.resolve(drive, transaction, platform_version)?))
-        }
+    fn resolve_owned(
+        self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ResolvedVotePoll, Error> {
+        match self {
+            VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
+                Ok(
+                    ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
+                        contested_document_resource_vote_poll.resolve(
+                            drive,
+                            transaction,
+                            platform_version,
+                        )?,
+                    ),
+                )
+            }
         }
     }
 }

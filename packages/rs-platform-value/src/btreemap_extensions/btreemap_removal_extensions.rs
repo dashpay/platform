@@ -63,16 +63,13 @@ pub trait BTreeValueRemoveFromMapHelper {
 
 pub trait BTreeValueRemoveTupleFromMapHelper {
     fn remove_tuple<K, V>(&mut self, key: &str) -> Result<(K, V), Error>
-        where
-            K: TryFrom<Value, Error=Error> + Ord,
-            V: TryFrom<Value, Error=Error>;
-    fn remove_optional_tuple<K, V>(
-        &mut self,
-        key: &str,
-    ) -> Result<Option<(K, V)>, Error>
-        where
-            K: TryFrom<Value, Error=Error> + Ord,
-            V: TryFrom<Value, Error=Error>;
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+        V: TryFrom<Value, Error = Error>;
+    fn remove_optional_tuple<K, V>(&mut self, key: &str) -> Result<Option<(K, V)>, Error>
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+        V: TryFrom<Value, Error = Error>;
 }
 
 impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
@@ -382,8 +379,8 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
     }
 
     fn remove_optional_integer<T>(&mut self, key: &str) -> Result<Option<T>, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -406,8 +403,8 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
     }
 
     fn remove_integer<T>(&mut self, key: &str) -> Result<T, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -592,9 +589,9 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
     }
 
     fn remove_map_as_btree_map<K, V>(&mut self, key: &str) -> Result<BTreeMap<K, V>, Error>
-        where
-            K: TryFrom<Value, Error=Error> + Ord,
-            V: TryFrom<Value, Error=Error>,
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+        V: TryFrom<Value, Error = Error>,
     {
         self.remove_optional_map_as_btree_map(key)?
             .ok_or_else(|| Error::StructureError(format!("unable to remove map property {key}")))
@@ -604,9 +601,9 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
         &mut self,
         key: &str,
     ) -> Result<Option<BTreeMap<K, V>>, Error>
-        where
-            K: TryFrom<Value, Error=Error> + Ord,
-            V: TryFrom<Value, Error=Error>,
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+        V: TryFrom<Value, Error = Error>,
     {
         self.remove(key)
             .and_then(|v| {
@@ -628,21 +625,18 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
 
 impl BTreeValueRemoveTupleFromMapHelper for BTreeMap<String, Value> {
     fn remove_tuple<K, V>(&mut self, key: &str) -> Result<(K, V), Error>
-        where
-            K: TryFrom<Value, Error = Error> + Ord,
-            V: TryFrom<Value, Error = Error>,
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+        V: TryFrom<Value, Error = Error>,
     {
         self.remove_optional_tuple(key)?
             .ok_or_else(|| Error::StructureError(format!("unable to remove tuple property {key}")))
     }
 
-    fn remove_optional_tuple<K, V>(
-        &mut self,
-        key: &str,
-    ) -> Result<Option<(K, V)>, Error>
-        where
-            K: TryFrom<Value, Error = Error> + Ord,
-            V: TryFrom<Value, Error = Error>,
+    fn remove_optional_tuple<K, V>(&mut self, key: &str) -> Result<Option<(K, V)>, Error>
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+        V: TryFrom<Value, Error = Error>,
     {
         self.remove(key)
             .and_then(|v| {
@@ -660,11 +654,16 @@ impl BTreeValueRemoveTupleFromMapHelper for BTreeMap<String, Value> {
                         };
                         Some(Ok((key_value, value_value)))
                     } else {
-                        Some(Err(Error::StructureError(format!("Value for key {key} is not a tuple of length 2"))))
+                        Some(Err(Error::StructureError(format!(
+                            "Value for key {key} is not a tuple of length 2"
+                        ))))
                     }
                 } else {
-                    Some(Err(Error::StructureError(format!("Value for key {key} is not an array"))))
+                    Some(Err(Error::StructureError(format!(
+                        "Value for key {key} is not an array"
+                    ))))
                 }
-            }).transpose()
+            })
+            .transpose()
     }
 }

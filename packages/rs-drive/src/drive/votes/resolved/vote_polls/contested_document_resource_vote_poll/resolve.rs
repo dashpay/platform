@@ -1,11 +1,14 @@
-use grovedb::TransactionArg;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use platform_version::version::PlatformVersion;
-use crate::drive::Drive;
 use crate::drive::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{ContestedDocumentResourceVotePollWithContractInfo, ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed};
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
+    ContestedDocumentResourceVotePollWithContractInfo,
+    ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,
+};
+use crate::drive::Drive;
 use crate::error::contract::DataContractError;
 use crate::error::Error;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 /// A trait for resolving information related to a contested document resource vote poll.
 ///
@@ -120,12 +123,14 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         } = self;
 
         let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
-        Ok(ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
-            contract: DataContractResolvedInfo::DataContractFetchInfo(contract),
-            document_type_name: document_type_name.clone(),
-            index_name: index_name.clone(),
-            index_values: index_values.clone(),
-        })
+        Ok(
+            ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                contract: DataContractResolvedInfo::DataContractFetchInfo(contract),
+                document_type_name: document_type_name.clone(),
+                index_name: index_name.clone(),
+                index_values: index_values.clone(),
+            },
+        )
     }
 
     fn resolve_owned_allow_borrowed<'a>(
@@ -142,11 +147,13 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         } = self;
 
         let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
-        Ok(ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
-            contract: DataContractResolvedInfo::DataContractFetchInfo(contract),
-            document_type_name,
-            index_name,
-            index_values,
-        })
+        Ok(
+            ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                contract: DataContractResolvedInfo::DataContractFetchInfo(contract),
+                document_type_name,
+                index_name,
+                index_values,
+            },
+        )
     }
 }

@@ -1,7 +1,7 @@
-use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::ResolvedResourceVote;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 
 /// Module containing version 0 of the implementation.
 pub mod v0;

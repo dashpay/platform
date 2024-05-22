@@ -1,12 +1,12 @@
-use grovedb::TransactionArg;
+use crate::drive::Drive;
+use crate::error::Error;
 use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVoteTransitionActionV0;
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use crate::drive::Drive;
-use crate::error::Error;
 
-impl MasternodeVoteTransitionAction  {
+impl MasternodeVoteTransitionAction {
     /// Transforms an owned `MasternodeVoteTransition` into a `MasternodeVoteTransitionAction`.
     ///
     /// # Parameters
@@ -19,9 +19,22 @@ impl MasternodeVoteTransitionAction  {
     /// # Returns
     ///
     /// A `Result` containing the transformed `MasternodeVoteTransitionAction`, or an `Error` if the transformation fails.
-    pub fn transform_from_owned_transition(value: MasternodeVoteTransition, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<Self, Error> {
+    pub fn transform_from_owned_transition(
+        value: MasternodeVoteTransition,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
         match value {
-            MasternodeVoteTransition::V0(v0) => Ok(MasternodeVoteTransitionActionV0::transform_from_owned_transition(v0, drive, transaction, platform_version)?.into()),
+            MasternodeVoteTransition::V0(v0) => Ok(
+                MasternodeVoteTransitionActionV0::transform_from_owned_transition(
+                    v0,
+                    drive,
+                    transaction,
+                    platform_version,
+                )?
+                .into(),
+            ),
         }
     }
 
@@ -37,9 +50,22 @@ impl MasternodeVoteTransitionAction  {
     /// # Returns
     ///
     /// A `Result` containing the transformed `MasternodeVoteTransitionAction`, or an `Error` if the transformation fails.
-    pub fn transform_from_transition(value: &MasternodeVoteTransition, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<Self, Error> {
+    pub fn transform_from_transition(
+        value: &MasternodeVoteTransition,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
         match value {
-            MasternodeVoteTransition::V0(v0) => Ok(MasternodeVoteTransitionActionV0::transform_from_transition(v0, drive, transaction, platform_version)?.into()),
+            MasternodeVoteTransition::V0(v0) => {
+                Ok(MasternodeVoteTransitionActionV0::transform_from_transition(
+                    v0,
+                    drive,
+                    transaction,
+                    platform_version,
+                )?
+                .into())
+            }
         }
     }
 }

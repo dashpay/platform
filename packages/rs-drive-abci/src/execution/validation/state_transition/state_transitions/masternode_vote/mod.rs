@@ -107,10 +107,12 @@ mod tests {
         use std::sync::Arc;
         use arc_swap::Guard;
         use rand::Rng;
-        use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
+        use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_contested_vote_polls_by_end_date_request, get_contested_vote_polls_by_end_date_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedVotePollsByEndDateRequest, GetContestedVotePollsByEndDateResponse};
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
+        use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_request::GetContestedVotePollsByEndDateRequestV0;
+        use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::{get_contested_vote_polls_by_end_date_response_v0, GetContestedVotePollsByEndDateResponseV0};
         use super::*;
         use dpp::document::Document;
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -752,9 +754,9 @@ mod tests {
                     },
                 ),
             ) = result
-                else {
-                    panic!("expected contenders")
-                };
+            else {
+                panic!("expected contenders")
+            };
 
             assert_eq!(contenders.len(), 2);
 
@@ -771,7 +773,7 @@ mod tests {
                 domain,
                 platform_version,
             )
-                .expect("expected to get document");
+            .expect("expected to get document");
 
             let second_contender_document = Document::from_bytes(
                 second_contender
@@ -782,7 +784,7 @@ mod tests {
                 domain,
                 platform_version,
             )
-                .expect("expected to get document");
+            .expect("expected to get document");
 
             assert_ne!(first_contender_document, second_contender_document);
 
@@ -826,9 +828,9 @@ mod tests {
             ) = version.expect("expected a version");
 
             let Some(get_contested_resource_vote_state_response_v0::Result::Proof(proof)) = result
-                else {
-                    panic!("expected contenders")
-                };
+            else {
+                panic!("expected contenders")
+            };
 
             let resolved_contested_document_vote_poll_drive_query =
                 ResolvedContestedDocumentVotePollDriveQuery {
@@ -867,7 +869,7 @@ mod tests {
                 domain,
                 platform_version,
             )
-                .expect("expected to get document");
+            .expect("expected to get document");
 
             let second_contender_document = Document::from_bytes(
                 second_contender
@@ -878,7 +880,7 @@ mod tests {
                 domain,
                 platform_version,
             )
-                .expect("expected to get document");
+            .expect("expected to get document");
 
             assert_ne!(first_contender_document, second_contender_document);
 
@@ -894,10 +896,50 @@ mod tests {
                 start_time: None,
                 end_time: None,
                 limit: None,
+                offset: None,
                 order_ascending: true,
             };
-            
-            vote_polls_by_end_date_query.execute_no_proof()
+
+            let GetContestedVotePollsByEndDateResponse { version } = platform
+                .query_contested_vote_polls_by_end_date_query(
+                    GetContestedVotePollsByEndDateRequest {
+                        version: Some(get_contested_vote_polls_by_end_date_request::Version::V0(
+                            GetContestedVotePollsByEndDateRequestV0 {
+                                start_time_info: None,
+                                end_time_info: None,
+                                limit: None,
+                                offset: None,
+                                ascending: false,
+                                prove: false,
+                            },
+                        )),
+                    },
+                    &platform_state,
+                    platform_version,
+                )
+                .expect("expected to execute query")
+                .into_data()
+                .expect("expected query to be valid");
+
+            let get_contested_vote_polls_by_end_date_response::Version::V0(
+                GetContestedVotePollsByEndDateResponseV0 {
+                    metadata: _,
+                    result,
+                },
+            ) = version.expect("expected a version");
+
+            let Some(
+                get_contested_vote_polls_by_end_date_response_v0::Result::ContestedVotePollsByTimestamps(
+                    get_contested_vote_polls_by_end_date_response_v0::SerializedContestedVotePollsByTimestamps {
+                        contested_vote_polls_by_timestamps, finished_results
+                    },
+                ),
+            ) = result
+                else {
+                    panic!("expected contenders")
+                };
+
+            assert_eq!(finished_results, true);
         }
     }
 }

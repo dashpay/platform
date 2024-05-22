@@ -3,18 +3,18 @@ use crate::platform::Fetch;
 use crate::{Error, Sdk};
 
 use dapi_grpc::platform::VersionedGrpcResponse;
-use dpp::identity::IdentityPublicKey;
 use dpp::identity::signer::Signer;
+use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
+use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
+use crate::platform::transition::put_settings::PutSettings;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::voting::votes::Vote;
 use drive::drive::Drive;
 use rs_dapi_client::DapiRequest;
-use crate::platform::transition::put_settings::PutSettings;
 
 #[async_trait::async_trait]
 /// A trait for putting a vote on platform
@@ -50,15 +50,11 @@ impl<S: Signer> PutVote<S> for Vote {
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
         let new_masternode_voting_nonce = sdk
-            .get_identity_nonce(
-                voter_pro_tx_hash,
-                true,
-                settings,
-            )
+            .get_identity_nonce(voter_pro_tx_hash, true, settings)
             .await?;
 
         let settings = settings.unwrap_or_default();
-        
+
         let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
             self.clone(),
             signer,
@@ -69,10 +65,9 @@ impl<S: Signer> PutVote<S> for Vote {
             None,
         )?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
-        
-        request.execute(sdk, settings.request_settings)
-            .await?;
-        
+
+        request.execute(sdk, settings.request_settings).await?;
+
         Ok(())
     }
 
@@ -85,11 +80,7 @@ impl<S: Signer> PutVote<S> for Vote {
         settings: Option<PutSettings>,
     ) -> Result<Vote, Error> {
         let new_masternode_voting_nonce = sdk
-            .get_identity_nonce(
-                voter_pro_tx_hash,
-                true,
-                settings,
-            )
+            .get_identity_nonce(voter_pro_tx_hash, true, settings)
             .await?;
 
         let settings = settings.unwrap_or_default();
@@ -105,10 +96,7 @@ impl<S: Signer> PutVote<S> for Vote {
         )?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
 
-
-        let response_result = request
-            .execute(sdk, settings.request_settings)
-            .await;
+        let response_result = request.execute(sdk, settings.request_settings).await;
 
         match response_result {
             Ok(_) => {}
@@ -142,7 +130,9 @@ impl<S: Signer> PutVote<S> for Vote {
 
         match result {
             StateTransitionProofResult::VerifiedMasternodeVote(vote) => Ok(vote),
-            _ => Err(Error::DapiClientError("proved something that was not a vote".to_string())),
+            _ => Err(Error::DapiClientError(
+                "proved something that was not a vote".to_string(),
+            )),
         }
     }
 }

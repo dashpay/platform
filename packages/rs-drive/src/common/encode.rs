@@ -32,9 +32,9 @@
 //! This module defines encoding functions.
 //!
 
-use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 
 /// Encodes an unsigned integer on 64 bits.
 pub fn encode_u64(val: u64) -> Vec<u8> {
@@ -78,7 +78,11 @@ pub fn encode_u64(val: u64) -> Vec<u8> {
 pub fn decode_u64(bytes: Vec<u8>) -> Result<u64, Error> {
     // Ensure the input vector has exactly 8 bytes
     if bytes.len() != 8 {
-        return Err(Error::Drive(DriveError::CorruptedDriveState(format!("Trying to decode a u64 from {} bytes {}", bytes.len(), hex::encode(bytes)))));
+        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+            "Trying to decode a u64 from {} bytes {}",
+            bytes.len(),
+            hex::encode(bytes)
+        ))));
     }
 
     // Clone the input vector to modify it
@@ -93,7 +97,6 @@ pub fn decode_u64(bytes: Vec<u8>) -> Result<u64, Error> {
     // when they were written in the encode function
     Ok(BigEndian::read_u64(&wtr))
 }
-
 
 /// Encodes a signed integer on 64 bits.
 pub fn encode_i64(val: i64) -> Vec<u8> {

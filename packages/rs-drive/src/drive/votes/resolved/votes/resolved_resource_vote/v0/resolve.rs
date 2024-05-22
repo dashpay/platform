@@ -1,11 +1,11 @@
-use grovedb::TransactionArg;
-use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
-use platform_version::version::PlatformVersion;
-use crate::drive::Drive;
+use crate::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use crate::drive::votes::resolved::votes::resolve::VoteResolver;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::v0::ResolvedResourceVoteV0;
+use crate::drive::Drive;
 use crate::error::Error;
-use crate::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
+use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
+use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 pub(in crate::drive::votes::resolved::votes::resolved_resource_vote) trait ResourceVoteResolverV0 {
     /// Resolves the contested document resource vote poll information.
@@ -44,22 +44,34 @@ pub(in crate::drive::votes::resolved::votes::resolved_resource_vote) trait Resou
 }
 
 impl ResourceVoteResolverV0 for ResourceVoteV0 {
-    fn resolve(&self, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<ResolvedResourceVoteV0, Error> {
+    fn resolve(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ResolvedResourceVoteV0, Error> {
         let ResourceVoteV0 {
-            vote_poll, resource_vote_choice
+            vote_poll,
+            resource_vote_choice,
         } = self;
-        
+
         let resolved_vote_poll = vote_poll.resolve(drive, transaction, platform_version)?;
-        
+
         Ok(ResolvedResourceVoteV0 {
             resolved_vote_poll,
             resource_vote_choice: *resource_vote_choice,
         })
     }
 
-    fn resolve_owned(self, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<ResolvedResourceVoteV0, Error> {
+    fn resolve_owned(
+        self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ResolvedResourceVoteV0, Error> {
         let ResourceVoteV0 {
-            vote_poll, resource_vote_choice
+            vote_poll,
+            resource_vote_choice,
         } = self;
 
         let resolved_vote_poll = vote_poll.resolve_owned(drive, transaction, platform_version)?;

@@ -14,20 +14,22 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVoteStatusResponse, GetContestedResourceVoteStateRequest,
     GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
     GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
-    GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
-    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
-    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
-    GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
-    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
-    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
-    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+    GetContestedResourcesResponse, GetContestedVotePollsByEndDateRequest,
+    GetContestedVotePollsByEndDateResponse, GetDataContractHistoryRequest,
+    GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse,
+    GetDataContractsRequest, GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse,
+    GetEpochsInfoRequest, GetEpochsInfoResponse, GetIdentitiesContractKeysRequest,
+    GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest,
+    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
+    GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
+    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
+    GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
+    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
+    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, WaitForStateTransitionResultRequest,
+    WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
@@ -437,6 +439,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contested_resource_identity_vote_status,
             "get_contested_resource_identity_vote_status",
+        )
+        .await
+    }
+
+    async fn get_contested_vote_polls_by_end_date(
+        &self,
+        request: Request<GetContestedVotePollsByEndDateRequest>,
+    ) -> Result<Response<GetContestedVotePollsByEndDateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contested_vote_polls_by_end_date_query,
+            "get_contested_vote_polls_by_end_date",
         )
         .await
     }

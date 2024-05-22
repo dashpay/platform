@@ -3,51 +3,78 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{
-    get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0,
-};
 use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_request::GetContestedVotePollsByEndDateRequestV0;
 use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::{get_contested_vote_polls_by_end_date_response_v0, GetContestedVotePollsByEndDateResponseV0};
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::get_contested_vote_polls_by_end_date_response_v0::SerializedContestedVotePollsByTimestamp;
+use dpp::check_validation_result_with_data;
 use dpp::version::PlatformVersion;
+use dpp::validation::ValidationResult;
 
 use drive::error::query::QuerySyntaxError;
-use drive::query::vote_poll_vote_state_query::{ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery};
 use drive::query::VotePollsByEndDateDriveQuery;
 
 impl<C> Platform<C> {
     pub(super) fn query_contested_vote_polls_by_end_date_query_v0(
         &self,
         GetContestedVotePollsByEndDateRequestV0 {
-            start_time_info, end_time_info, limit, ascending, prove
+            start_time_info,
+            end_time_info,
+            limit,
+            offset,
+            ascending,
+            prove,
         }: GetContestedVotePollsByEndDateRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetContestedVotePollsByEndDateResponseV0>, Error> {
         let config = &self.config.drive;
-        
-        let start_time = start_time_info.map(|start_time_info| (start_time_info.start_time_ms, start_time_info.start_time_included));
 
-        let end_time = end_time_info.map(|end_time_info| (end_time_info.end_time_ms, end_time_info.end_time_included));
-        
-        let limit = limit
-            .map_or(Some(config.default_query_limit), |limit_value| {
-                if limit_value == 0
-                    || limit_value > u16::MAX as u32
-                    || limit_value as u16 > config.default_query_limit
-                {
-                    None
+        let start_time = start_time_info.map(|start_time_info| {
+            (
+                start_time_info.start_time_ms,
+                start_time_info.start_time_included,
+            )
+        });
+
+        let end_time = end_time_info
+            .map(|end_time_info| (end_time_info.end_time_ms, end_time_info.end_time_included));
+
+        let limit = check_validation_result_with_data!(limit.map_or(
+            Ok(config.default_query_limit),
+            |limit| {
+                let limit = u16::try_from(limit)
+                    .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))?;
+                if limit == 0 || limit > config.default_query_limit {
+                    Err(QueryError::InvalidArgument(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit, config.default_query_limit
+                    )))
                 } else {
-                    Some(limit_value as u16)
+                    Ok(limit)
                 }
+            }
+        ));
+
+        let offset = check_validation_result_with_data!(offset
+            .map(|offset| {
+                u16::try_from(offset)
+                    .map_err(|_| QueryError::InvalidArgument("offset out of bounds".to_string()))
             })
-            .ok_or(drive::error::Error::Query(QuerySyntaxError::InvalidLimit(
-                format!("limit greater than max limit {}", config.max_query_limit),
-            )))?;
+            .transpose());
+
+        if prove && offset.is_some() && offset != Some(0) {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::RequestingProofWithOffset(format!(
+                    "requesting proved contested vote polls by end date with an offset {}",
+                    offset.unwrap()
+                )),
+            )));
+        }
 
         let query = VotePollsByEndDateDriveQuery {
             start_time,
             limit: Some(limit),
+            offset,
             order_ascending: ascending,
             end_time,
         };
@@ -72,8 +99,58 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
-            let results =
-                match query.execute_no_proof(&self.drive, None, &mut vec![], platform_version) {
+            let results = match query.execute_no_proof_keep_serialized(
+                &self.drive,
+                None,
+                &mut vec![],
+                platform_version,
+            ) {
+                Ok(result) => result,
+                Err(drive::error::Error::Query(query_error)) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                        query_error,
+                    )));
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+            let (contested_vote_polls_by_timestamps, counts): (
+                Vec<SerializedContestedVotePollsByTimestamp>,
+                Vec<usize>,
+            ) = results
+                .into_iter()
+                .map(|(timestamp, contested_document_resource_vote_polls)| {
+                    let len = contested_document_resource_vote_polls.len();
+                    (
+                        SerializedContestedVotePollsByTimestamp {
+                            timestamp,
+                            serialized_contested_vote_polls: contested_document_resource_vote_polls,
+                        },
+                        len,
+                    )
+                })
+                .unzip();
+
+            let count: usize = counts.into_iter().sum();
+
+            let finished_results = if count as u16 == limit {
+                let last = contested_vote_polls_by_timestamps
+                    .last()
+                    .expect("there should be a last one if count exists");
+                let next_query = VotePollsByEndDateDriveQuery {
+                    start_time: Some((last.timestamp, false)),
+                    limit: Some(1),
+                    offset: None,
+                    order_ascending: ascending,
+                    end_time,
+                };
+
+                let next_query_results = match next_query.execute_no_proof_keep_serialized(
+                    &self.drive,
+                    None,
+                    &mut vec![],
+                    platform_version,
+                ) {
                     Ok(result) => result,
                     Err(drive::error::Error::Query(query_error)) => {
                         return Ok(QueryValidationResult::new_with_error(QueryError::Query(
@@ -82,31 +159,17 @@ impl<C> Platform<C> {
                     }
                     Err(e) => return Err(e.into()),
                 };
-
-            let contenders = results
-                .contenders
-                .into_iter()
-                .map(
-                    |ContenderWithSerializedDocument {
-                         identity_id,
-                         serialized_document,
-                         vote_tally,
-                     }| {
-                        get_contested_resource_vote_state_response_v0::Contender {
-                            identifier: identity_id.to_vec(),
-                            vote_count: vote_tally,
-                            document: serialized_document,
-                        }
-                    },
-                )
-                .collect();
+                next_query_results.len() == 0
+            } else {
+                true
+            };
 
             GetContestedVotePollsByEndDateResponseV0 {
                 result: Some(
                     get_contested_vote_polls_by_end_date_response_v0::Result::ContestedVotePollsByTimestamps(
-                        get_contested_vote_polls_by_end_date_response_v0::ContestedVotePollsByTimestamps {
-                            contested_vote_polls_by_timestamps: vec![],
-                            finished_results: false,
+                        get_contested_vote_polls_by_end_date_response_v0::SerializedContestedVotePollsByTimestamps {
+                            contested_vote_polls_by_timestamps,
+                            finished_results,
                         },
                     ),
                 ),

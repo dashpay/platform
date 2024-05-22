@@ -1,4 +1,6 @@
 use crate::drive::votes::paths::VotePollPaths;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -6,13 +8,11 @@ use crate::query::{GroveError, Query};
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::platform_value;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{PathQuery, SizedQuery, TransactionArg};
-use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use platform_version::version::PlatformVersion;
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]

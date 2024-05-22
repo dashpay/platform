@@ -3,9 +3,11 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::Version as RequestVersion;
-use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{GetContestedVotePollsByEndDateRequest, GetContestedVotePollsByEndDateResponse};
+use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{
+    GetContestedVotePollsByEndDateRequest, GetContestedVotePollsByEndDateResponse,
+};
 use dpp::version::PlatformVersion;
 
 mod v0;

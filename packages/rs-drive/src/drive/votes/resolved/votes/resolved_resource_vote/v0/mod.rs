@@ -1,7 +1,7 @@
 pub(crate) mod resolve;
 
-use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::drive::votes::resolved::vote_polls::ResolvedVotePoll;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 
 /// Represents the version 0 of a resolved resource vote.
 #[derive(Debug, Clone, PartialEq)]

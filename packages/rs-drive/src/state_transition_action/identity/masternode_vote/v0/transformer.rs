@@ -1,13 +1,18 @@
-use grovedb::TransactionArg;
+use crate::drive::votes::resolved::votes::resolve::VoteResolver;
+use crate::drive::Drive;
+use crate::error::Error;
 use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVoteTransitionActionV0;
 use dpp::state_transition::state_transitions::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use crate::drive::Drive;
-use crate::drive::votes::resolved::votes::resolve::VoteResolver;
-use crate::error::Error;
 
 impl MasternodeVoteTransitionActionV0 {
-    pub(crate) fn transform_from_owned_transition(value: MasternodeVoteTransitionV0, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<Self, Error> {
+    pub(crate) fn transform_from_owned_transition(
+        value: MasternodeVoteTransitionV0,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
         let MasternodeVoteTransitionV0 {
             pro_tx_hash,
             vote,
@@ -22,7 +27,12 @@ impl MasternodeVoteTransitionActionV0 {
         })
     }
 
-    pub(crate) fn transform_from_transition(value: &MasternodeVoteTransitionV0, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<Self, Error> {
+    pub(crate) fn transform_from_transition(
+        value: &MasternodeVoteTransitionV0,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
         let MasternodeVoteTransitionV0 {
             pro_tx_hash,
             vote,

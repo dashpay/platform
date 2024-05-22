@@ -15,7 +15,9 @@ use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::{check_validation_result_with_data, platform_value};
 use drive::error::query::QuerySyntaxError;
-use drive::query::vote_poll_vote_state_query::{ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery};
+use drive::query::vote_poll_vote_state_query::{
+    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery,
+};
 
 impl<C> Platform<C> {
     pub(super) fn query_contested_resource_vote_state_v0(

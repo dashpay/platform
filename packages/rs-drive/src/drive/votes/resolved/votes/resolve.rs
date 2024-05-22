@@ -1,10 +1,10 @@
-use grovedb::TransactionArg;
-use dpp::voting::votes::Vote;
-use platform_version::version::PlatformVersion;
-use crate::drive::Drive;
-use crate::drive::votes::resolved::votes::ResolvedVote;
-use crate::error::Error;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::resolve::ResourceVoteResolver;
+use crate::drive::votes::resolved::votes::ResolvedVote;
+use crate::drive::Drive;
+use crate::error::Error;
+use dpp::voting::votes::Vote;
+use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 pub trait VoteResolver {
     /// Resolves the contested document resource vote poll information.
@@ -43,17 +43,29 @@ pub trait VoteResolver {
 }
 
 impl VoteResolver for Vote {
-    fn resolve(&self, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<ResolvedVote, Error> {
-        match self { Vote::ResourceVote(resource_vote) => {
-            Ok(ResolvedVote::ResolvedResourceVote(resource_vote.resolve(drive, transaction, platform_version)?))
-        }
+    fn resolve(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ResolvedVote, Error> {
+        match self {
+            Vote::ResourceVote(resource_vote) => Ok(ResolvedVote::ResolvedResourceVote(
+                resource_vote.resolve(drive, transaction, platform_version)?,
+            )),
         }
     }
 
-    fn resolve_owned(self, drive: &Drive, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<ResolvedVote, Error> {
-        match self { Vote::ResourceVote(resource_vote) => {
-            Ok(ResolvedVote::ResolvedResourceVote(resource_vote.resolve_owned(drive, transaction, platform_version)?))
-        }
+    fn resolve_owned(
+        self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ResolvedVote, Error> {
+        match self {
+            Vote::ResourceVote(resource_vote) => Ok(ResolvedVote::ResolvedResourceVote(
+                resource_vote.resolve_owned(drive, transaction, platform_version)?,
+            )),
         }
     }
 }

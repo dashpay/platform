@@ -1,3 +1,7 @@
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
+    ContestedDocumentResourceVotePollWithContractInfo,
+    ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,
+};
 use crate::drive::RootTree;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -7,7 +11,6 @@ use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use platform_version::version::PlatformVersion;
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{ContestedDocumentResourceVotePollWithContractInfo, ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed};
 
 /// The votes tree structure looks like this
 ///
@@ -159,7 +162,6 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
         Ok(contender_voting_path)
     }
 }
-
 
 impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
     fn contract_path(&self) -> [&[u8]; 4] {

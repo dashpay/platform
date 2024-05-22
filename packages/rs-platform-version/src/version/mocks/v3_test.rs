@@ -859,6 +859,11 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 },
             },
             voting_based_queries: DriveAbciQueryVotingVersions {
+                contested_vote_polls_by_end_date_query: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
                 contested_resource_vote_state: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,

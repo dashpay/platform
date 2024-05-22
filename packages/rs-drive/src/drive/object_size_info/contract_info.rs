@@ -91,13 +91,14 @@ pub enum DataContractOwnedResolvedInfo {
     OwnedDataContract(DataContract),
 }
 
-
 impl DataContractOwnedResolvedInfo {
     /// The id of the contract
     pub fn id(&self) -> Identifier {
         match self {
-            DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => { fetch_info.contract.id() }
-            DataContractOwnedResolvedInfo::OwnedDataContract(data_contract) => { data_contract.id() }
+            DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => {
+                fetch_info.contract.id()
+            }
+            DataContractOwnedResolvedInfo::OwnedDataContract(data_contract) => data_contract.id(),
         }
     }
 }
@@ -105,7 +106,9 @@ impl AsRef<DataContract> for DataContractOwnedResolvedInfo {
     /// The ref of the contract
     fn as_ref(&self) -> &DataContract {
         match self {
-            DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => &fetch_info.contract,
+            DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => {
+                &fetch_info.contract
+            }
             DataContractOwnedResolvedInfo::OwnedDataContract(owned) => owned,
         }
     }
@@ -134,9 +137,9 @@ impl<'a> DataContractResolvedInfo<'a> {
     /// The id of the contract
     pub fn id(&self) -> Identifier {
         match self {
-            DataContractResolvedInfo::DataContractFetchInfo(fetch_info) => { fetch_info.contract.id() }
-            DataContractResolvedInfo::BorrowedDataContract(data_contract) => { data_contract.id() }
-            DataContractResolvedInfo::OwnedDataContract(data_contract) => { data_contract.id() }
+            DataContractResolvedInfo::DataContractFetchInfo(fetch_info) => fetch_info.contract.id(),
+            DataContractResolvedInfo::BorrowedDataContract(data_contract) => data_contract.id(),
+            DataContractResolvedInfo::OwnedDataContract(data_contract) => data_contract.id(),
         }
     }
 }

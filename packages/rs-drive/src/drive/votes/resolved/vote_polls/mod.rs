@@ -1,7 +1,7 @@
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use derive_more::From;
 use dpp::identifier::Identifier;
 use dpp::ProtocolError;
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 
 /// Module containing logic for contested document resource vote polls.
 pub mod contested_document_resource_vote_poll;
@@ -13,7 +13,9 @@ pub(crate) mod resolve;
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum ResolvedVotePoll {
     /// A resolved vote poll with contract information for a contested document resource.
-    ContestedDocumentResourceVotePollWithContractInfo(ContestedDocumentResourceVotePollWithContractInfo),
+    ContestedDocumentResourceVotePollWithContractInfo(
+        ContestedDocumentResourceVotePollWithContractInfo,
+    ),
 }
 
 impl ResolvedVotePoll {
@@ -30,11 +32,11 @@ impl ResolvedVotePoll {
     /// Returns a `ProtocolError` if there is an issue retrieving the specialized balance ID.
     pub fn specialized_balance_id(&self) -> Result<Option<Identifier>, ProtocolError> {
         match self {
-            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(contested_document_resource_vote_poll) => {
-                Ok(Some(
-                    contested_document_resource_vote_poll.specialized_balance_id()?,
-                ))
-            }
+            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
+                contested_document_resource_vote_poll,
+            ) => Ok(Some(
+                contested_document_resource_vote_poll.specialized_balance_id()?,
+            )),
         }
     }
 
@@ -50,9 +52,9 @@ impl ResolvedVotePoll {
     /// Returns a `ProtocolError` if there is an issue retrieving the unique ID.
     pub fn unique_id(&self) -> Result<Identifier, ProtocolError> {
         match self {
-            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(contested_document_resource_vote_poll) => {
-                contested_document_resource_vote_poll.unique_id()
-            }
+            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
+                contested_document_resource_vote_poll,
+            ) => contested_document_resource_vote_poll.unique_id(),
         }
     }
 }

@@ -44,7 +44,13 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         Ok(ConsensusValidationResult::new_with_data(
-            MasternodeVoteTransitionAction::transform_from_transition(self, platform.drive, tx, platform_version)?.into(),
+            MasternodeVoteTransitionAction::transform_from_transition(
+                self,
+                platform.drive,
+                tx,
+                platform_version,
+            )?
+            .into(),
         ))
     }
 }

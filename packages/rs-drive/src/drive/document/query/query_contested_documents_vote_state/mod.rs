@@ -8,7 +8,9 @@ use grovedb::TransactionArg;
 
 mod v0;
 
-use crate::query::vote_poll_vote_state_query::{ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery};
+use crate::query::vote_poll_vote_state_query::{
+    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery,
+};
 pub use v0::*;
 
 /// Represents the outcome of a query to retrieve documents.

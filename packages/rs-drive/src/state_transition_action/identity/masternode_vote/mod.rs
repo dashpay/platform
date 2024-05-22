@@ -3,11 +3,11 @@ pub mod transformer;
 /// v0
 pub mod v0;
 
+use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVoteTransitionActionV0;
 use derive_more::From;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
-use crate::drive::votes::resolved::votes::ResolvedVote;
 
 /// action
 #[derive(Debug, Clone, From)]
