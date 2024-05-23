@@ -386,7 +386,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
     fn random_documents_with_params(
         &self,
         count: u32,
-        identities: &[Identity],
+        identities: &[&Identity],
         time_ms: Option<TimestampMillis>,
         block_height: Option<BlockHeight>,
         core_block_height: Option<CoreBlockHeight>,
@@ -394,11 +394,17 @@ impl CreateRandomDocument for DocumentTypeV0 {
         document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError> {
+    ) -> Result<Vec<(Document, &Identity, Bytes32)>, ProtocolError> {
         let mut vec = vec![];
-        for _i in 0..count {
-            let identity_num = rng.gen_range(0..identities.len());
-            let identity = identities.get(identity_num).unwrap().clone();
+
+        if identities.len() < count as usize {
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
+                "expected {count} identities"
+            )));
+        }
+
+        for i in 0..count {
+            let identity = identities.get(i).expect("identity with index must exist");
             let entropy = Bytes32::random_with_rng(rng);
             vec.push((
                 self.random_document_with_params(
