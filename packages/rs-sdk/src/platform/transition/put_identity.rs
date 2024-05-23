@@ -90,6 +90,8 @@ impl<S: Signer> PutIdentity<S> for Identity {
                         "identity was proved to not exist but was said to exist".to_string(),
                     ));
                 }
+
+                return Err(e.into());
             }
         }
 
