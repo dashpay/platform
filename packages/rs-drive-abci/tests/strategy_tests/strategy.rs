@@ -548,10 +548,13 @@ impl NetworkStrategy {
                             );
                         }
 
+                        let current_identities_as_refs: Vec<&dpp::identity::Identity> =
+                            current_identities.iter().collect();
+
                         let documents = document_type
                             .random_documents_with_params(
                                 count as u32,
-                                current_identities.as_ref(),
+                                current_identities_as_refs.as_ref(),
                                 Some(block_info.time_ms),
                                 Some(block_info.height),
                                 Some(block_info.core_height),
@@ -664,10 +667,13 @@ impl NetworkStrategy {
                                 )
                                 .expect("expected random_documents_with_params")
                         } else {
+                            let current_identities_as_refs: Vec<&dpp::identity::Identity> =
+                                current_identities.iter().collect();
+
                             document_type
                                 .random_documents_with_params(
                                     count as u32,
-                                    current_identities.as_ref(),
+                                    current_identities_as_refs.as_ref(),
                                     Some(block_info.time_ms),
                                     Some(block_info.height),
                                     Some(block_info.core_height),

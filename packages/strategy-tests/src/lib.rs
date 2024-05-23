@@ -323,10 +323,17 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
     }
 }
 
-type MempoolDocumentCounter = &BTreeMap<(Identifier, Identifier), u64>;
+type MempoolDocumentCounter<'c> = &'c BTreeMap<(Identifier, Identifier), u64>;
 
-fn choose_capable_identities<'i>(identities: &'i [Identity], contract: &DataContract, mempool_document_counter: MempoolDocumentCounter, count: usize, rng: &mut StdRng) -> Vec<&'i Identity> {
-    let mut all_capable_identities = identities
+fn choose_capable_identities<'i>(
+    identities: &'i [Identity],
+    contract: &DataContract,
+    mempool_document_counter: MempoolDocumentCounter,
+    count: usize,
+    rng: &mut StdRng,
+) -> Vec<&'i Identity> {
+    // Filter out those that already have 24 documents in the mempool for this contract
+    let mut all_capable_identities: Vec<&'i Identity> = identities
         .iter()
         .filter(|identity| {
             mempool_document_counter
@@ -336,21 +343,25 @@ fn choose_capable_identities<'i>(identities: &'i [Identity], contract: &DataCont
         })
         .collect();
 
+    // If we need more documents than we have eligible identities, we will need to use some identities more than once
     if all_capable_identities.len() < count {
-        let additional_identities_count = count - all_capable_identities.len();
+        let mut additional_identities_count = count - all_capable_identities.len();
 
         let mut additional_identities = Vec::with_capacity(additional_identities_count);
         let mut index = 0;
         while additional_identities_count > 0 && index < all_capable_identities.len() {
+            // Iterate through the identities only one time, using as many documents as each identity can submit
+            // We should see if this often causes identities to max out their mempool count, which could potentially
+            // lead to issues, even though this function should really only be covering an edge case
             let identity = all_capable_identities[index];
 
-            // How many documents are in the mempool for this contract including
-            // one what we are already planning to use
+            // How many documents are in the mempool for this (identity, contract) plus the one that we are already planning to use
             let mempool_documents_count = mempool_document_counter
                 .get(&(identity.id(), contract.id()))
-                .unwrap_or(&0) + 1;
+                .unwrap_or(&0)
+                + 1;
 
-            let identity_capacity = mempool_documents_count - 24;
+            let identity_capacity = 24 - mempool_documents_count;
 
             if identity_capacity > 0 {
                 for _ in 0..identity_capacity {
@@ -365,9 +376,15 @@ fn choose_capable_identities<'i>(identities: &'i [Identity], contract: &DataCont
             index += 1;
         }
 
-        all_capable_identities.extend(additional_identities)
+        all_capable_identities.extend(additional_identities);
+        all_capable_identities
     } else {
-        all_capable_identities.iter().choose_multiple(rng, count)
+        all_capable_identities
+            .iter()
+            .choose_multiple(rng, count)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 }
 
@@ -442,7 +459,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        mempool_document_counter: BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: &BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
@@ -749,24 +766,18 @@ impl Strategy {
                                 )
                                 .expect("expected random_documents_with_params")
                         } else {
-                            let eligible_identities = if current_identities.len() < count as usize {
-                                let identities = Vec::with_capacity(count as usize);
-                                for _ in 0..(count as usize - current_identities.len()) {
-                                    let identity = Identity::new(
-                                current_identities.extend(
-
-                                );
+                            let eligible_identities = choose_capable_identities(
+                                current_identities,
+                                contract,
+                                mempool_document_counter,
+                                count as usize,
+                                rng,
                             );
-
-                            let mut eligible_identities = Vec::with_capacity(count as usize);
-                            for _ in 0..count {
-                                eligible_identities.push(held_identity);
-                            }
 
                             document_type
                                 .random_documents_with_params(
                                     count as u32,
-                                    current_identities.as_ref(),
+                                    &eligible_identities,
                                     Some(block_info.time_ms),
                                     Some(block_info.height),
                                     Some(block_info.core_height),
