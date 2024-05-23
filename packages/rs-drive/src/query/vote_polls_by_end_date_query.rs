@@ -1,6 +1,7 @@
 use crate::common::encode::{decode_u64, encode_u64};
 use crate::drive::votes::paths::vote_contested_resource_end_date_queries_tree_path_vec;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::{GroveError, Query};
@@ -14,7 +15,6 @@ use grovedb::query_result_type::{Key, QueryResultElements, QueryResultType};
 use grovedb::{PathQuery, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-use crate::error::drive::DriveError;
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
@@ -32,6 +32,70 @@ pub struct VotePollsByEndDateDriveQuery {
 }
 
 impl VotePollsByEndDateDriveQuery {
+    pub fn path_query_for_end_time_included(end_time: TimestampMillis, limit: u16) -> PathQuery {
+        let path = vote_contested_resource_end_date_queries_tree_path_vec();
+
+        let mut query = Query::new_with_direction(true);
+
+        let encoded_time = encode_u64(end_time);
+
+        query.insert_range_to_inclusive(..=encoded_time);
+
+        let mut sub_query = Query::new();
+
+        sub_query.insert_all();
+
+        query.default_subquery_branch.subquery = Some(sub_query.into());
+
+        PathQuery {
+            path,
+            query: SizedQuery {
+                query,
+                limit: Some(limit),
+                offset: None,
+            },
+        }
+    }
+
+    #[cfg(feature = "server")]
+    /// Executes a special query with no proof to get contested document resource vote polls.
+    /// This is meant for platform abci to get votes that have finished
+    pub fn execute_no_proof_for_specialized_end_time_query(
+        end_time: TimestampMillis,
+        limit: u16,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<ContestedDocumentResourceVotePoll>, Error> {
+        let path_query = Self::path_query_for_end_time_included(end_time, limit);
+        let query_result = drive.grove_get_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryPathKeyElementTrioResultType,
+            drive_operations,
+            &platform_version.drive,
+        );
+        match query_result {
+            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(Vec::new()),
+            Err(e) => Err(e),
+            Ok((query_result_elements, _)) => query_result_elements
+                .to_elements()
+                .into_iter()
+                .map(|element| {
+                    let contested_document_resource_vote_poll_bytes =
+                        element.into_item_bytes().map_err(Error::from)?;
+                    let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes(
+                        &contested_document_resource_vote_poll_bytes,
+                    )?;
+                    Ok(vote_poll)
+                })
+                .collect::<Result<Vec<_>, Error>>(),
+        }
+    }
+
     /// Operations to construct a path query.
     pub fn construct_path_query(&self) -> PathQuery {
         let path = vote_contested_resource_end_date_queries_tree_path_vec();
@@ -44,14 +108,14 @@ impl VotePollsByEndDateDriveQuery {
                 query.insert_all();
             }
             (Some((starts_at_key_bytes, start_at_included)), None) => {
-                let starts_at_key = DocumentPropertyType::encode_u64(*starts_at_key_bytes);
+                let starts_at_key = encode_u64(*starts_at_key_bytes);
                 match start_at_included {
                     true => query.insert_range_from(starts_at_key..),
                     false => query.insert_range_after(starts_at_key..),
                 }
             }
             (None, Some((ends_at_key_bytes, ends_at_included))) => {
-                let ends_at_key = DocumentPropertyType::encode_u64(*ends_at_key_bytes);
+                let ends_at_key = encode_u64(*ends_at_key_bytes);
                 match ends_at_included {
                     true => query.insert_range_to_inclusive(..=ends_at_key),
                     false => query.insert_range_to(..ends_at_key),
@@ -199,7 +263,9 @@ impl VotePollsByEndDateDriveQuery {
                     .into_iter()
                     .map(|(path, _, element)| {
                         let Some(last_path_component) = path.last() else {
-                            return Err(Error::Drive(DriveError::CorruptedDriveState("we should always have a path not be null".to_string())))
+                            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                                "we should always have a path not be null".to_string(),
+                            )));
                         };
                         let timestamp = decode_u64(last_path_component).map_err(Error::from)?;
                         let contested_document_resource_vote_poll_bytes =
@@ -252,7 +318,9 @@ impl VotePollsByEndDateDriveQuery {
                     .into_iter()
                     .map(|(path, _, element)| {
                         let Some(last_path_component) = path.last() else {
-                            return Err(Error::Drive(DriveError::CorruptedDriveState("we should always have a path not be null".to_string())))
+                            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                                "we should always have a path not be null".to_string(),
+                            )));
                         };
                         let timestamp = decode_u64(last_path_component).map_err(Error::from)?;
                         let contested_document_resource_vote_poll_bytes =

@@ -117,7 +117,7 @@ pub fn decode_u64(bytes: &[u8]) -> Result<u64, Error> {
             hex::encode(bytes)
         ))));
     }
-    
+
     let mut wtr = bytes.to_vec();
 
     // Flip the sign bit back to its original state

@@ -1,3 +1,4 @@
+use crate::common::encode::encode_u64;
 use crate::drive::defaults::{
     AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8,
 };
@@ -26,7 +27,6 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
-use crate::common::encode::encode_u64;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
@@ -138,7 +138,7 @@ impl Drive {
                 target: QueryTargetValue(item.serialized_size()? as u32),
             }
         };
-        
+
         let unique_id = vote_poll.unique_id()?;
 
         let path_key_element_info: PathKeyElementInfo<'_, 0> =

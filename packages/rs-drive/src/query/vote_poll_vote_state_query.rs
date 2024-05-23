@@ -8,6 +8,8 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::{GroveError, Query};
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -78,6 +80,78 @@ pub struct ContenderWithSerializedDocument {
     pub serialized_document: Option<Vec<u8>>,
     /// The vote tally for the contender.
     pub vote_tally: Option<u32>,
+}
+
+/// Represents a finalized contender in the contested document vote poll.
+/// This is for internal use where the document is in serialized form
+///
+/// This struct holds the identity ID of the contender, the serialized document,
+/// and the vote tally.
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+pub struct FinalizedContenderWithSerializedDocument {
+    /// The identity ID of the contender.
+    pub identity_id: Identifier,
+    /// The serialized document associated with the contender.
+    pub serialized_document: Vec<u8>,
+    /// The vote tally for the contender.
+    pub final_vote_tally: u32,
+}
+
+/// Represents a finalized contender in the contested document vote poll.
+/// This is for internal use where the document is in serialized form
+///
+/// This struct holds the identity ID of the contender, the document,
+/// and the vote tally.
+#[derive(Debug, PartialEq, Clone)]
+pub struct FinalizedContender {
+    /// The identity ID of the contender.
+    pub identity_id: Identifier,
+    /// The document associated with the contender.
+    pub document: Document,
+    /// The vote tally for the contender.
+    pub final_vote_tally: u32,
+}
+
+impl FinalizedContender {
+    pub fn try_from_contender_with_serialized_document(
+        value: FinalizedContenderWithSerializedDocument,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
+        let FinalizedContenderWithSerializedDocument {
+            identity_id,
+            serialized_document,
+            final_vote_tally,
+        } = value;
+
+        Ok(FinalizedContender {
+            identity_id,
+            document: Document::from_bytes(&serialized_document, document_type, platform_version)?,
+            final_vote_tally,
+        })
+    }
+}
+
+impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializedDocument {
+    type Error = Error;
+
+    fn try_from(value: ContenderWithSerializedDocument) -> Result<Self, Self::Error> {
+        let ContenderWithSerializedDocument {
+            identity_id,
+            serialized_document,
+            vote_tally,
+        } = value;
+
+        Ok(FinalizedContenderWithSerializedDocument {
+            identity_id,
+            serialized_document: serialized_document.ok_or(Error::Drive(
+                DriveError::CorruptedCodeExecution("expected serialized document"),
+            ))?,
+            final_vote_tally: vote_tally.ok_or(Error::Drive(
+                DriveError::CorruptedCodeExecution("expected vote tally"),
+            ))?,
+        })
+    }
 }
 
 /// Represents a contender in the contested document vote poll.

@@ -932,9 +932,21 @@ mod tests {
                 };
 
             assert!(finished_results);
-            
+
             // The timestamp is 0 because there were no blocks
-            assert_eq!(contested_vote_polls_by_timestamps, vec![SerializedContestedVotePollsByTimestamp { timestamp: 0, serialized_contested_vote_polls: vec![vec![0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100, 111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65, 110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 7, 113, 117, 97, 110, 116, 117, 109]] }]);
+            assert_eq!(
+                contested_vote_polls_by_timestamps,
+                vec![SerializedContestedVotePollsByTimestamp {
+                    timestamp: 0,
+                    serialized_contested_vote_polls: vec![vec![
+                        0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91,
+                        126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6,
+                        100, 111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109,
+                        101, 65, 110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18,
+                        7, 113, 117, 97, 110, 116, 117, 109
+                    ]]
+                }]
+            );
         }
     }
 }

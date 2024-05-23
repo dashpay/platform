@@ -1,3 +1,4 @@
+use crate::common::encode::encode_u64;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollWithContractInfo,
     ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,
@@ -11,7 +12,6 @@ use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use platform_version::version::PlatformVersion;
-use crate::common::encode::encode_u64;
 
 /// The votes tree structure looks like this
 ///
