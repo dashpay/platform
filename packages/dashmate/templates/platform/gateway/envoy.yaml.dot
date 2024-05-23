@@ -135,13 +135,13 @@
                   path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
                 route:
                   cluster: dapi_api
-                  idle_timeout: 80s
+                  idle_timeout: 85s
                   # Upstream response timeout
-                  timeout: 80s
+                  timeout: 85s
                   max_stream_duration:
                     # Entire stream/request timeout
-                    max_stream_duration: 80s
-                    grpc_timeout_header_max: 80s
+                    max_stream_duration: 85s
+                    grpc_timeout_header_max: 85s
               # DAPI getConsensusParams endpoint
               - match:
                   path: "/org.dash.platform.dapi.v0.Platform/getConsensusParams"

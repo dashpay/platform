@@ -13,7 +13,10 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::ConsensusError;
 
 use crate::error::execution::ExecutionError;
-use crate::execution::types::state_transition_container::v0::StateTransitionContainerGettersV0;
+use crate::execution::types::state_transition_container::v0::{
+    DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
+    SuccessfullyDecodedStateTransition,
+};
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform_state::PlatformState;
@@ -21,6 +24,7 @@ use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformDeserializable;
 #[cfg(test)]
 use dpp::state_transition::StateTransition;
+use dpp::util::hash::hash_single;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 #[cfg(test)]
@@ -77,7 +81,8 @@ where
     /// Checks a state transition to determine if it should be added to the mempool.
     ///
     /// This function performs a few checks, including validating the state transition and ensuring that the
-    /// user can pay for it. It may be inaccurate in rare cases, so the proposer needs to re-check transactions
+    /// user can pay for it. From the time a state transition is added to the mempool to the time it is included in a proposed block,
+    /// a previously valid state transition may have become invalid, so the proposer needs to re-check transactions
     /// before proposing a block.
     ///
     /// # Arguments
@@ -95,47 +100,49 @@ where
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
+        let mut state_transition_hash = None;
+        if tracing::enabled!(tracing::Level::TRACE) {
+            state_transition_hash = Some(hash_single(raw_tx));
+        }
+
         let mut check_tx_result = CheckTxResult {
             level: check_tx_level,
             fee_result: None,
             unique_identifiers: vec![],
             priority: 0,
+            state_transition_name: None,
+            state_transition_hash,
         };
 
         let raw_state_transitions = vec![raw_tx];
-        let state_transition_container =
-            self.decode_raw_state_transitions(&raw_state_transitions, platform_version)?;
+        let mut decoded_state_transitions: Vec<DecodedStateTransition> = self
+            .decode_raw_state_transitions(&raw_state_transitions, platform_version)?
+            .into();
 
-        let (
-            mut valid_state_transitions,
-            mut invalid_state_transitions,
-            mut invalid_state_transitions_with_protocol_error,
-        ) = state_transition_container.destructure();
-
-        // Return internal error if happened
-        if !invalid_state_transitions_with_protocol_error.is_empty() {
-            let (_, protocol_error) = invalid_state_transitions_with_protocol_error.remove(0);
-
-            return Err(protocol_error.into());
-        }
-
-        // Return consensus error if happened
-        if !invalid_state_transitions.is_empty() {
-            let (_, consensus_error) = invalid_state_transitions.remove(0);
-
-            return Ok(ValidationResult::new_with_data_and_errors(
-                check_tx_result,
-                vec![consensus_error],
-            ));
-        }
-
-        // If there are no errors, then state transition is valid
-        if valid_state_transitions.is_empty() {
+        if decoded_state_transitions.len() != 1 {
             return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "valid state transition must be present",
+                "expected exactly one decoded state transition",
             )));
         }
-        let (_, state_transition) = valid_state_transitions.remove(0);
+
+        let state_transition = match decoded_state_transitions.remove(0) {
+            DecodedStateTransition::SuccessfullyDecoded(SuccessfullyDecodedStateTransition {
+                decoded,
+                ..
+            }) => decoded,
+            DecodedStateTransition::InvalidEncoding(InvalidStateTransition { error, .. }) => {
+                return Ok(ValidationResult::new_with_data_and_errors(
+                    check_tx_result,
+                    vec![error],
+                ));
+            }
+            DecodedStateTransition::FailedToDecode(InvalidWithProtocolErrorStateTransition {
+                error,
+                ..
+            }) => {
+                return Err(error.into());
+            }
+        };
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -148,6 +155,8 @@ where
 
         check_tx_result.priority =
             user_fee_increase.saturating_mul(PRIORITY_USER_FEE_INCREASE_MULTIPLIER);
+
+        check_tx_result.state_transition_name = Some(state_transition.name().to_string());
 
         check_tx_result.unique_identifiers = state_transition.unique_identifiers();
 

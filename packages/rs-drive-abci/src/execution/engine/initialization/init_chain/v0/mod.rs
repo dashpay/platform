@@ -61,6 +61,17 @@ where
             ..Default::default()
         };
 
+        // !!! Very important to understand !!!
+        // We update the core info at the initial core height. This means that we use the quorums
+        // at the initial core height for block 1.
+        // The initial core height is either the height of the fork at which platform activates
+        //  or it is the request.initial_core_height.
+        // Block 1 is signed with the quorum chosen based on this info/height.
+        // It is also worth saying that the quorum chosen will be the most recently built quorum.
+        // On block 1 the proposer will most likely propose a new core chain locked height.
+        // That will cause the core info to update again, so very often block 2 will be signed by
+        //  a different quorum.
+
         self.update_core_info(
             None,
             &mut initial_platform_state,

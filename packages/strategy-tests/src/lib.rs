@@ -394,6 +394,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
@@ -449,6 +450,7 @@ impl Strategy {
                     signer,
                     identity_nonce_counter,
                     contract_nonce_counter,
+                    mempool_document_counter,
                     rng,
                     platform_version,
                 );
@@ -541,6 +543,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -566,11 +569,31 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
+                        // Get the first 10 identities who are eligible to submit documents for this contract
+                        let first_10_eligible_identities: Vec<Identity> = current_identities
+                            .iter()
+                            .filter(|identity| {
+                                mempool_document_counter
+                                    .get(&(identity.id(), contract.id()))
+                                    .unwrap_or(&0)
+                                    < &24u64
+                            })
+                            .take(10)
+                            .cloned()
+                            .collect();
+
+                        if first_10_eligible_identities.len() == 0 {
+                            tracing::warn!(
+                                "No eligible identities to submit a document to contract {}",
+                                contract.id().to_string(Encoding::Base64)
+                            );
+                        }
+
                         // TO-DO: these documents should be created according to the data contract's validation rules
                         let documents = document_type
                             .random_documents_with_params(
                                 count as u32,
-                                current_identities,
+                                &first_10_eligible_identities,
                                 Some(block_info.time_ms),
                                 Some(block_info.height),
                                 Some(block_info.core_height),

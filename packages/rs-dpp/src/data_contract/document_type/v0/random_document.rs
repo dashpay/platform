@@ -3,14 +3,23 @@
 //! This module defines the CreateRandomDocument trait and its functions, which
 //! create various types of random documents.
 //!
+//!
 
+#[cfg(feature = "documents-faker")]
+use std::collections::BTreeMap;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(feature = "documents-faker")]
+use platform_value::Value;
+use platform_value::{Bytes32, Identifier};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
@@ -21,11 +30,120 @@ use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::{Bytes32, Identifier};
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
 
 impl CreateRandomDocument for DocumentTypeV0 {
+    /// Create random documents using json-schema-faker-rs
+    #[cfg(feature = "documents-faker")]
+    fn random_documents_faker(
+        &self,
+        owner_id: Identifier,
+        entropy: &Bytes32,
+        count: u32,
+        platform_version: &PlatformVersion,
+        substitutions: &BTreeMap<&str, Value>,
+    ) -> Result<Vec<Document>, ProtocolError> {
+        use anyhow::Context;
+
+        use crate::document::{
+            extended_document_property_names::FEATURE_VERSION,
+            property_names::{ID, OWNER_ID, REVISION},
+            serialization_traits::DocumentPlatformValueMethodsV0,
+        };
+
+        let json_schema = &self.schema.clone().try_into()?;
+        let json_documents = json_schema_faker::generate(json_schema, count as u16)
+            .context("cannot generate a random document with json-schema-faker-rs")?;
+
+        let fix_document = |mut document: platform_value::Value| {
+            let id = Document::generate_document_id_v0(
+                &self.data_contract_id,
+                &owner_id,
+                self.name.as_str(),
+                entropy.as_slice(),
+            );
+            let now = SystemTime::now();
+            let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+            let time_ms = duration_since_epoch.as_millis() as u64;
+
+            if self.documents_mutable {
+                document.as_map_mut().into_iter().for_each(|d| {
+                    d.push((REVISION.into(), 1.into()));
+                });
+            }
+            document.as_map_mut().into_iter().for_each(|d| {
+                d.push((ID.into(), id.into()));
+            });
+            document.as_map_mut().into_iter().for_each(|d| {
+                d.push((OWNER_ID.into(), owner_id.into()));
+            });
+            if self.required_fields.contains(FEATURE_VERSION) {
+                document.as_map_mut().into_iter().for_each(|d| {
+                    d.push((FEATURE_VERSION.into(), "0".into()));
+                });
+            }
+            if self.required_fields.contains(CREATED_AT) {
+                document.as_map_mut().into_iter().for_each(|d| {
+                    d.push((CREATED_AT.into(), time_ms.into()));
+                });
+            }
+            if self.required_fields.contains(UPDATED_AT) {
+                document.as_map_mut().into_iter().for_each(|d| {
+                    d.push((UPDATED_AT.into(), time_ms.into()));
+                });
+            }
+
+            document
+        };
+
+        json_documents
+            .into_iter()
+            .map(|d| {
+                let p_value: Value = d.into();
+                let fixed_value = fix_document(p_value);
+
+                // TODO: tl;dr use PlatformDeserialize instead of Deserialize for Documents
+                //
+                // `properties` is a `BTreeMap` with `platform_value::Value` as values, since
+                // `Document::from_platform_value` does deserialization through Serde's data model
+                // it losts some information like distinction between `Value::Bytes` and `Value::Bytes32`;
+                // The solution here is to let deserialize a `Document`, but put `properties` unprocessed
+                // since they were `platform_value::Value` and will be the same type again and no deserialization
+                // is needed, especially that lossy kind.
+                let mut properties = fixed_value
+                    .to_map_ref()
+                    .ok()
+                    .and_then(|m| Value::map_into_btree_string_map(m.clone()).ok())
+                    .unwrap_or_default();
+                let mut document = Document::from_platform_value(fixed_value, platform_version);
+                if let Ok(Document::V0(d)) = document.as_mut() {
+                    // This moves stored properties back to the document so it could skip unnecessary
+                    // and wrong deserialization part
+                    d.properties.iter_mut().for_each(|(k, v)| {
+                        substitutions
+                            .get(k.as_str())
+                            .cloned()
+                            .or(properties.remove(k))
+                            .into_iter()
+                            .for_each(|prop| {
+                                // TODO: schema and internal DocumentType representations are incompatible
+                                // Properties are tweaked though, because the only integer type supported by
+                                // DPP is i64, while `platform_value::Value` distincts them, and json schema is
+                                // even more permissive; however, we want our proofs to work and proofs use the
+                                // DPP model.
+                                *v = match prop {
+                                    Value::U64(x) => Value::I64(x as i64),
+                                    Value::U32(x) => Value::I64(x as i64),
+                                    Value::I32(x) => Value::I64(x as i64),
+                                    x => x,
+                                };
+                            })
+                    });
+                }
+                document
+            })
+            .collect()
+    }
+
     /// Creates a random Document using a seed if given, otherwise entropy.
     fn random_document(
         &self,
