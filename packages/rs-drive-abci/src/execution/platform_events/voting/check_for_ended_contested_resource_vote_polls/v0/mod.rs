@@ -82,6 +82,23 @@ where
 
                 // We award the document to the top contender
                 if let Some(top_contender) = maybe_top_contender {
+                    // We want to keep a record of how everyone voted
+                    self.keep_record_of_vote_poll(
+                        block_info,
+                        &top_contender,
+                        &resolved_vote_poll,
+                        transaction,
+                        platform_version,
+                    )?;
+                    // We need to clean up the vote poll
+                    // This means removing it and also removing all current votes
+                    self.clean_up_after_vote_poll_end(
+                        block_info,
+                        &resolved_vote_poll,
+                        transaction,
+                        platform_version,
+                    )?;
+                    // We award the document to the winner of the vote poll
                     self.award_document_to_winner(
                         block_info,
                         top_contender,

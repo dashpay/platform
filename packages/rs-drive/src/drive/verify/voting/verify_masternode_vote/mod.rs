@@ -8,9 +8,9 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-use crate::drive::votes::resolved::votes::ResolvedVote;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
+use crate::drive::object_size_info::{DataContractResolvedInfo, DocumentTypeInfo};
 
 impl Drive {
     /// Verifies the authenticity of a masternode vote using the provided proof.
@@ -41,7 +41,9 @@ impl Drive {
     pub fn verify_masternode_vote(
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],
-        vote: &ResolvedVote,
+        vote: &Vote,
+        contract: DataContractResolvedInfo,
+        document_type: DocumentTypeInfo,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Vote>), Error> {
@@ -56,6 +58,8 @@ impl Drive {
                 proof,
                 masternode_pro_tx_hash,
                 vote,
+                contract,
+                document_type,
                 verify_subset_of_proof,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

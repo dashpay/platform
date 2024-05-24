@@ -1,3 +1,6 @@
+use grovedb::{PathQuery, SizedQuery};
+use dpp::data_contract::DataContract;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use crate::drive::Drive;
 
 use crate::error::Error;
@@ -6,6 +9,9 @@ use crate::drive::verify::RootHash;
 
 use crate::drive::votes::resolved::votes::ResolvedVote;
 use dpp::voting::votes::Vote;
+use crate::drive::object_size_info::{DataContractResolvedInfo, DocumentTypeInfo};
+use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
+use crate::query::Query;
 
 impl Drive {
     /// Verifies the balance of an identity by their identity ID.
@@ -38,9 +44,23 @@ impl Drive {
     pub(crate) fn verify_masternode_vote_v0(
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],
-        vote: &ResolvedVote,
+        vote: &Vote,
+        contract: DataContractResolvedInfo,
+        document_type: DocumentTypeInfo,
         verify_subset_of_proof: bool,
     ) -> Result<(RootHash, Option<Vote>), Error> {
+        // First we should get the overall document_type_path
+        let path = vote_contested_resource_identity_votes_tree_path_for_identity_vec(
+            &masternode_pro_tx_hash,
+        );
+
+        let vote_id = vote.unique_id()?;
+
+        let mut query = Query::new();
+        query.insert_key(vote_id.to_vec());
+
+        Ok(PathQuery::new(path, SizedQuery::new(query, Some(1), None)))
+            
         todo!()
         // let mut path_query = Self::identity_balance_query(&identity_id);
         // path_query.query.limit = Some(1);
