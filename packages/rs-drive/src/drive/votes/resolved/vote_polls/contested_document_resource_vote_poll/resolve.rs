@@ -42,6 +42,7 @@ pub trait ContestedDocumentResourceVotePollResolver {
         platform_version: &PlatformVersion,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error>;
 
+    /// Resolve owned
     fn resolve_owned(
         self,
         drive: &Drive,
@@ -49,6 +50,7 @@ pub trait ContestedDocumentResourceVotePollResolver {
         platform_version: &PlatformVersion,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error>;
 
+    /// Resolve into a struct that allows for a borrowed contract
     fn resolve_allow_borrowed<'a>(
         &self,
         drive: &Drive,
@@ -56,6 +58,7 @@ pub trait ContestedDocumentResourceVotePollResolver {
         platform_version: &PlatformVersion,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
+    /// Resolve owned into a struct that allows for a borrowed contract
     fn resolve_owned_allow_borrowed<'a>(
         self,
         drive: &Drive,

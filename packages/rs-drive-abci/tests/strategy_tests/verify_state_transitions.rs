@@ -26,6 +26,9 @@ use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatch
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
+use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
+use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
+use drive::drive::votes::resolved::votes::ResolvedVote;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
@@ -751,8 +754,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 }
                 StateTransitionAction::MasternodeVoteAction(masternode_vote_action) => {
                     match masternode_vote_action.vote_ref() {
-                        Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
-                            VotePoll::ContestedDocumentResourceVotePoll(
+                        ResolvedVote::ResolvedResourceVote(resource_vote) => match resource_vote
+                            .vote_poll()
+                        {
+                            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
                                 contested_document_resource_vote_poll,
                             ) => {
                                 let config = bincode::config::standard()
@@ -771,7 +776,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 .votes
                                 .push(get_proofs_request_v0::VoteStatusRequest{
                                     request_type: Some(RequestType::ContestedResourceVoteStatusRequest(vote_status_request::ContestedResourceVoteStatusRequest {
-                                        contract_id: contested_document_resource_vote_poll.contract_id.to_vec(),
+                                        contract_id: contested_document_resource_vote_poll.contract.id().to_vec(),
                                         document_type_name: contested_document_resource_vote_poll.document_type_name.clone(),
                                         index_name: contested_document_resource_vote_poll.index_name.clone(),
                                         voter_identifier: masternode_vote_action.pro_tx_hash().to_vec(),

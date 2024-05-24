@@ -108,11 +108,14 @@ pub struct FinalizedContender {
     pub identity_id: Identifier,
     /// The document associated with the contender.
     pub document: Document,
+    /// The still serialized document
+    pub serialized_document: Vec<u8>,
     /// The vote tally for the contender.
     pub final_vote_tally: u32,
 }
 
 impl FinalizedContender {
+    /// Try to get the finalized contender from a finalized contender with a serialized document
     pub fn try_from_contender_with_serialized_document(
         value: FinalizedContenderWithSerializedDocument,
         document_type: DocumentTypeRef,
@@ -127,6 +130,7 @@ impl FinalizedContender {
         Ok(FinalizedContender {
             identity_id,
             document: Document::from_bytes(&serialized_document, document_type, platform_version)?,
+            serialized_document,
             final_vote_tally,
         })
     }

@@ -8,6 +8,7 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
+use crate::drive::votes::resolved::votes::ResolvedVote;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
 
@@ -40,7 +41,7 @@ impl Drive {
     pub fn verify_masternode_vote(
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],
-        vote: &Vote,
+        vote: &ResolvedVote,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Vote>), Error> {

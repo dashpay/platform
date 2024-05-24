@@ -2,8 +2,8 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
-use platform_version::version::PlatformVersion;
 
 impl<C> Platform<C>
 where
@@ -11,7 +11,7 @@ where
 {
     /// Checks for ended vote polls
     #[inline(always)]
-    pub(in crate::execution) fn check_for_ended_vote_polls_v0(
+    pub(super) fn check_for_ended_vote_polls_v0(
         &self,
         block_info: &BlockInfo,
         transaction: TransactionArg,

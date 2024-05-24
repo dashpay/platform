@@ -32,6 +32,7 @@ pub struct VotePollsByEndDateDriveQuery {
 }
 
 impl VotePollsByEndDateDriveQuery {
+    /// Get the path query for an abci query that gets vote polls by the end time
     pub fn path_query_for_end_time_included(end_time: TimestampMillis, limit: u16) -> PathQuery {
         let path = vote_contested_resource_end_date_queries_tree_path_vec();
 

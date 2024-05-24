@@ -38,6 +38,8 @@ use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
+use crate::drive::votes::resolved::votes::resolve::VoteResolver;
+use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::error::Error;
 use crate::error::proof::ProofError;
 use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
@@ -377,6 +379,7 @@ impl Drive {
             StateTransition::MasternodeVote(masternode_vote) => {
                 let pro_tx_hash = masternode_vote.pro_tx_hash();
                 let vote = masternode_vote.vote();
+                vote.resolve();
                 // we expect to get an identity that matches the state transition
                 let (root_hash, vote) = Drive::verify_masternode_vote(
                     proof,

@@ -29,8 +29,9 @@ use crate::version::drive_abci_versions::{
     DriveAbciStateTransitionCommonValidationVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
-    DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
-    DriveAbciValidationVersions, DriveAbciVersion, PenaltyAmounts,
+    DriveAbciValidationConstants, DriveAbciValidationDataTriggerAndBindingVersions,
+    DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion,
+    DriveAbciVotingMethodVersions, PenaltyAmounts,
 };
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -623,6 +624,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 update_broadcasted_withdrawal_statuses: 0,
                 append_signatures_and_broadcast_withdrawal_transactions: 0,
             },
+            voting: DriveAbciVotingMethodVersions {
+                check_for_ended_vote_polls: 0,
+                check_for_ended_contested_resource_vote_polls: 0,
+                tally_votes_for_contested_document_resource_vote_poll: 0,
+                award_document_to_winner: 0,
+                lock_vote_poll: 0,
+                delay_vote_poll: 0,
+            },
             state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
                 execute_event: 0,
                 process_raw_state_transitions: 0,
@@ -777,6 +786,10 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 unique_key_already_present: 10000000,
                 validation_of_added_keys_structure_failure: 10000000,
                 validation_of_added_keys_proof_of_possession_failure: 50000000,
+            },
+            event_constants: DriveAbciValidationConstants {
+                maximum_vote_polls_to_process: 0,
+                maximum_contenders_to_consider: 0,
             },
         },
         query: DriveAbciQueryVersions {

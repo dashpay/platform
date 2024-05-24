@@ -9,7 +9,6 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::platform_value::Value;
-    use drive::drive::config::DriveConfig;
     use drive_abci::config::{ExecutionConfig, PlatformConfig};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
@@ -18,23 +17,21 @@ mod tests {
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
     use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
-    use dapi_grpc::platform::v0::get_consensus_params_response::Version;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use dpp::document::{Document, DocumentV0Getters};
+    use dpp::document::Document;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use drive::drive::object_size_info::DataContractResolvedInfo;
-    use drive::drive::votes::resolve_contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
-    use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+    use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
     use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{StartIdentities, Strategy};
 
     #[test]
     fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block() {
@@ -351,7 +348,7 @@ mod tests {
 
         let resolved_contested_document_vote_poll_drive_query =
             ResolvedContestedDocumentVotePollDriveQuery {
-                vote_poll: ContestedDocumentResourceVotePollWithContractInfo {
+                vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
                     contract: DataContractResolvedInfo::BorrowedDataContract(&dpns_contract),
                     document_type_name: document_type.name().clone(),
                     index_name: index_name.clone(),

@@ -1,4 +1,5 @@
-pub(crate) mod resolve;
+/// resolver module
+pub mod resolve;
 
 use crate::drive::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
 use crate::error::drive::DriveError;

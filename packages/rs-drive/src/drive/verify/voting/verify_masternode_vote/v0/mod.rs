@@ -4,6 +4,7 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
+use crate::drive::votes::resolved::votes::ResolvedVote;
 use dpp::voting::votes::Vote;
 
 impl Drive {
@@ -37,7 +38,7 @@ impl Drive {
     pub(crate) fn verify_masternode_vote_v0(
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],
-        vote: &Vote,
+        vote: &ResolvedVote,
         verify_subset_of_proof: bool,
     ) -> Result<(RootHash, Option<Vote>), Error> {
         todo!()

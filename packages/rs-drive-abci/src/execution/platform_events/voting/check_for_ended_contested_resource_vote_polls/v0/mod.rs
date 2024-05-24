@@ -3,10 +3,11 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::document::DocumentV0Getters;
+use dpp::version::PlatformVersion;
+use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use drive::grovedb::TransactionArg;
 use drive::query::vote_poll_vote_state_query::FinalizedContender;
 use drive::query::VotePollsByEndDateDriveQuery;
-use platform_version::version::PlatformVersion;
 
 impl<C> Platform<C>
 where
@@ -31,7 +32,7 @@ where
                     .maximum_vote_polls_to_process,
                 &self.drive,
                 transaction,
-                &mut [],
+                &mut vec![],
                 platform_version,
             )?;
 
@@ -40,7 +41,7 @@ where
                 vote_poll.resolve(&self.drive, transaction, platform_version)?;
             let document_type = resolved_vote_poll.document_type()?;
             // let's see who actually won
-            let mut contenders = self.tally_votes_for_contested_document_resource_vote_poll(
+            let contenders = self.tally_votes_for_contested_document_resource_vote_poll(
                 &vote_poll,
                 transaction,
                 platform_version,
@@ -58,22 +59,37 @@ where
                             document_type,
                             platform_version,
                         )
+                        .map_err(Error::Drive)
                     })
-                    .collect()?;
+                    .collect::<Result<Vec<_>, Error>>()?;
                 // Now we sort by the document creation date
                 let maybe_top_contender = top_contenders.into_iter().max_by(|a, b| {
                     a.document
                         .created_at()
                         .cmp(&b.document.created_at())
                         .then_with(|| {
-                            // Second criterion: length of the serialized document
-                            a.document.id().cmp(&b.document.id())
-                            // Alternatively, you can use another field, such as identity_id
-                            // a.identity_id.cmp(&b.identity_id)
+                            a.document
+                                .created_at_block_height()
+                                .cmp(&b.document.created_at_block_height())
                         })
+                        .then_with(|| {
+                            a.document
+                                .created_at_core_block_height()
+                                .cmp(&b.document.created_at_core_block_height())
+                        })
+                        .then_with(|| a.document.id().cmp(&b.document.id()))
                 });
 
                 // We award the document to the top contender
+                if let Some(top_contender) = maybe_top_contender {
+                    self.award_document_to_winner(
+                        block_info,
+                        top_contender,
+                        resolved_vote_poll,
+                        transaction,
+                        platform_version,
+                    )?;
+                }
             }
         }
 

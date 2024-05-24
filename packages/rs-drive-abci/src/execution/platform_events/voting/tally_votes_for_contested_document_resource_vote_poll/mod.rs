@@ -2,15 +2,10 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::block_info::BlockInfo;
-use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::grovedb::TransactionArg;
-use drive::query::vote_poll_vote_state_query::{
-    ContenderWithSerializedDocument, FinalizedContenderWithSerializedDocument,
-};
-use serde_json::map::BTreeMap;
+use drive::query::vote_poll_vote_state_query::FinalizedContenderWithSerializedDocument;
 
 mod v0;
 

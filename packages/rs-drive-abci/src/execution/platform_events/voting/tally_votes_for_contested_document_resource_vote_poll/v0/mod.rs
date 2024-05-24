@@ -1,14 +1,12 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::grovedb::TransactionArg;
 use drive::query::vote_poll_vote_state_query::{
-    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery,
-    ContestedDocumentVotePollDriveQueryResultType, FinalizedContenderWithSerializedDocument,
+    ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
+    FinalizedContenderWithSerializedDocument,
 };
 
 impl<C> Platform<C>
@@ -39,14 +37,14 @@ where
             order_ascending: true,
         };
 
-        Ok(query
+        query
             .execute_no_proof(&self.drive, transaction, &mut vec![], platform_version)?
             .contenders
             .into_iter()
             .map(|contender| {
-                let finalized: FinalizedContenderWithSerializedDocument = contender.into();
-                finalized
+                let finalized: FinalizedContenderWithSerializedDocument = contender.try_into()?;
+                Ok(finalized)
             })
-            .collect())
+            .collect::<Result<Vec<_>, Error>>()
     }
 }
