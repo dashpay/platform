@@ -127,9 +127,10 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
   );
 
   return {
-    getBlock: wrappedGetBlock,
-    getBlockchainStatus: wrappedGetBlockchainStatus,
-    getMasternodeStatus: wrappedGetMasternodeStatus,
+    // TODO: Enable when an attack resistance is proved
+    // getBlock: wrappedGetBlock,
+    // getBlockchainStatus: wrappedGetBlockchainStatus,
+    // getMasternodeStatus: wrappedGetMasternodeStatus,
     getTransaction: wrappedGetTransaction,
     broadcastTransaction: wrappedBroadcastTransaction,
   };
