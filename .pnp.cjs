@@ -2588,7 +2588,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
           ["@dashevo/dashcore-lib", "npm:0.21.1"],\
-          ["@dashevo/dashd-rpc", "npm:18.2.0"],\
+          ["@dashevo/dashd-rpc", "https://github.com/dashpay/dashd-rpc.git#commit=fa79bb472b2cde1c57cebd08105fda232ac713ab"],\
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -2772,6 +2772,15 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@dashevo/dashd-rpc", [\
+      ["https://github.com/dashpay/dashd-rpc.git#commit=fa79bb472b2cde1c57cebd08105fda232ac713ab", {\
+        "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-https-e2e1b2b8fb-82313afb58.zip/node_modules/@dashevo/dashd-rpc/",\
+        "packageDependencies": [\
+          ["@dashevo/dashd-rpc", "https://github.com/dashpay/dashd-rpc.git#commit=fa79bb472b2cde1c57cebd08105fda232ac713ab"],\
+          ["async", "npm:3.2.4"],\
+          ["bluebird", "npm:3.7.2"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:18.2.0", {\
         "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-18.2.0-194a5d4c4b-38341b8d5a.zip/node_modules/@dashevo/dashd-rpc/",\
         "packageDependencies": [\

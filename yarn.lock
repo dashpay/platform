@@ -1550,7 +1550,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.21.1"
-    "@dashevo/dashd-rpc": "npm:^18.2.0"
+    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#feat/get-raw-transaction-multi"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
@@ -1639,6 +1639,16 @@ __metadata:
     tsd: "npm:^0.28.1"
     unorm: "npm:^1.6.0"
   checksum: 68502e40788cba834e3ac2199998b2b47965d1b900a838899cab1085e20bd10c7c5595d9667416eaac7174859f18da718ab13a9846eb6e77cc2b234c991a6e7f
+  languageName: node
+  linkType: hard
+
+"@dashevo/dashd-rpc@github:dashpay/dashd-rpc#feat/get-raw-transaction-multi":
+  version: 18.2.0
+  resolution: "@dashevo/dashd-rpc@https://github.com/dashpay/dashd-rpc.git#commit=fa79bb472b2cde1c57cebd08105fda232ac713ab"
+  dependencies:
+    async: "npm:^3.2.4"
+    bluebird: "npm:^3.7.2"
+  checksum: 82313afb58312396d757a631ad1afe65112b161656a45e4194e546add91f4467852b7aa8c8ce5441b119b74bea9179eba68337131fd963bf18e7cca9e81edd81
   languageName: node
   linkType: hard
 

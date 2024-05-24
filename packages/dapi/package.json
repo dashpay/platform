@@ -36,7 +36,7 @@
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dashcore-lib": "~0.21.1",
-    "@dashevo/dashd-rpc": "^18.2.0",
+    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#feat/get-raw-transaction-multi",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "@grpc/grpc-js": "1.4.4",

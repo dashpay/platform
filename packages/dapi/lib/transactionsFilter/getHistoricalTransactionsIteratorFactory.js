@@ -1,22 +1,11 @@
 const {
   MerkleBlock,
-  Transaction,
   util: { buffer: BufferUtils },
 } = require('@dashevo/dashcore-lib');
 
-const MAX_HEADERS_PER_REQUEST = 2000;
+const getTransactions = require('./getTransactions');
 
-/**
- * @param {CoreRpcClient} coreRpcApi
- * @param {string[]} transactionHashes
- * @return {Promise<Transaction[]>}
- */
-async function getTransactions(coreRpcApi, transactionHashes) {
-  const rawTransactions = await Promise.all(transactionHashes.map(
-    (transactionHash) => coreRpcApi.getRawTransaction(transactionHash),
-  ));
-  return rawTransactions.map((tx) => new Transaction(tx));
-}
+const MAX_HEADERS_PER_REQUEST = 2000;
 
 /**
  * @param {number} batchIndex
