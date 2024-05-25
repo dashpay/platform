@@ -323,7 +323,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
     }
 }
 
-type MempoolDocumentCounter<'c> = &'c BTreeMap<(Identifier, Identifier), u64>;
+pub type MempoolDocumentCounter<'c> = &'c BTreeMap<(Identifier, Identifier), u64>;
 
 fn choose_capable_identities<'i>(
     identities: &'i [Identity],
@@ -445,7 +445,7 @@ impl Strategy {
     /// This function is central to simulating the lifecycle of block processing and strategy execution
     /// on the Dash Platform. It encapsulates the complexity of transaction generation, identity management,
     /// and contract dynamics within a block's context.
-    pub async fn state_transitions_for_block(
+    pub fn state_transitions_for_block(
         &mut self,
         document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
         identity_fetch_callback: &mut impl FnMut(
@@ -459,7 +459,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        mempool_document_counter: &BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: MempoolDocumentCounter,
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
@@ -608,7 +608,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        mempool_document_counter: &BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: MempoolDocumentCounter,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
