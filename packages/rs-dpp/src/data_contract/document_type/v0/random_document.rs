@@ -399,7 +399,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
 
         if identities.len() < count as usize {
             return Err(ProtocolError::CorruptedCodeExecution(format!(
-                "expected {count} identities"
+                "not enough identities to create {count} documents"
             )));
         }
 

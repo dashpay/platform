@@ -50,7 +50,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::platform_value::{BinaryData, Value};
+use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -643,19 +643,25 @@ impl Strategy {
                         );
 
                         // TO-DO: these documents should be created according to the data contract's validation rules
-                        let documents_with_identity_and_entropy = document_type
-                            .random_documents_with_params(
-                                count as u32,
-                                &eligible_identities,
-                                Some(block_info.time_ms),
-                                Some(block_info.height),
-                                Some(block_info.core_height),
-                                *fill_type,
-                                *fill_size,
-                                rng,
-                                platform_version,
-                            )
-                            .expect("expected random_documents_with_params");
+                        let mut documents_with_identity_and_entropy: Vec<(
+                            Document,
+                            &Identity,
+                            Bytes32,
+                        )> = Vec::new();
+                        match document_type.random_documents_with_params(
+                            count as u32,
+                            &eligible_identities,
+                            Some(block_info.time_ms),
+                            Some(block_info.height),
+                            Some(block_info.core_height),
+                            *fill_type,
+                            *fill_size,
+                            rng,
+                            platform_version,
+                        ) {
+                            Ok(documents) => documents_with_identity_and_entropy = documents,
+                            Err(e) => tracing::warn!("Failed to create random documents: {}", e),
+                        }
 
                         documents_with_identity_and_entropy.into_iter().for_each(
                             |(document, identity, entropy)| {
