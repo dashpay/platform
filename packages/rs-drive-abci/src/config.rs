@@ -201,7 +201,7 @@ pub struct PlatformConfig {
 
     /// Path to data storage
     pub db_path: PathBuf,
-    
+
     /// Path to checkpoints
     pub checkpoints_path: PathBuf,
 

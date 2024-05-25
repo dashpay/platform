@@ -45,7 +45,6 @@ mod init_chain;
 mod prepare_proposal;
 mod process_proposal;
 mod verify_vote_extension;
-mod apply_snapshot_chunk;
 
 pub use check_tx::check_tx;
 pub use echo::echo;
@@ -56,4 +55,3 @@ pub use init_chain::init_chain;
 pub use prepare_proposal::prepare_proposal;
 pub use process_proposal::process_proposal;
 pub use verify_vote_extension::verify_vote_extension;
-pub use apply_snapshot_chunk::apply_snapshot_chunk;

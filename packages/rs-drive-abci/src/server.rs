@@ -2,8 +2,8 @@
 //!
 
 use crate::abci::app::CheckTxAbciApplication;
-use crate::abci::app::StateSyncAbciApplication;
 use crate::abci::app::ConsensusAbciApplication;
+use crate::abci::app::StateSyncAbciApplication;
 use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
 use crate::query::QueryService;
@@ -31,7 +31,8 @@ pub fn start(
             tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
                 check_tx_service,
             ),
-        ).add_service(
+        )
+        .add_service(
             tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
                 state_sync_service,
             ),

@@ -11,13 +11,13 @@ mod full;
 mod state_sync;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::snapshot::SnapshotFetchingSession;
 use crate::rpc::core::DefaultCoreRPC;
 pub use check_tx::CheckTxAbciApplication;
-pub use state_sync::StateSyncAbciApplication;
 pub use consensus::ConsensusAbciApplication;
 use dpp::version::PlatformVersion;
 pub use full::FullAbciApplication;
-use crate::platform_types::snapshot::SnapshotFetchingSession;
+pub use state_sync::StateSyncAbciApplication;
 
 /// Platform-based ABCI application
 pub trait PlatformApplication<C = DefaultCoreRPC> {
@@ -26,12 +26,12 @@ pub trait PlatformApplication<C = DefaultCoreRPC> {
 }
 
 /// Transactional ABCI application
-pub trait TransactionalApplication<'a> {
+pub trait TransactionalApplication<'p> {
     /// Creates and keeps a new transaction
     fn start_transaction(&self);
 
     /// Returns the current transaction
-    fn transaction(&self) -> &RwLock<Option<Transaction<'a>>>;
+    fn transaction(&self) -> &RwLock<Option<Transaction<'p>>>;
 
     /// Commits created transaction
     fn commit_transaction(&self, platform_version: &PlatformVersion) -> Result<(), Error>;
@@ -44,7 +44,7 @@ pub trait BlockExecutionApplication {
 }
 
 /// Application that can maintain state sync
-pub trait StateSyncApplication<'a> {
+pub trait StateSyncApplication<'p> {
     /// Returns the current snapshot fetching session
-    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'a>>>;
+    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'p>>>;
 }

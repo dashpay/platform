@@ -1,12 +1,17 @@
-use crate::error::Error;
+use std::{
+    path::{Path, PathBuf},
+    pin::Pin,
+};
+
 use bincode::{config, Decode, Encode};
 use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
+use drive::grovedb::replication::MultiStateSyncSession;
 use drive::grovedb::GroveDb;
 use prost::Message;
-use std::path::{Path, PathBuf};
 use tenderdash_abci::proto::{abci as proto, abci};
-use drive::grovedb::replication::MultiStateSyncSession;
+
+use crate::error::Error;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 
@@ -60,7 +65,6 @@ pub struct SnapshotManager {
     freq: i64,
     number_stored_snapshots: usize,
     checkpoints_path: String,
-
 }
 
 /// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
@@ -72,7 +76,7 @@ pub struct SnapshotFetchingSession<'db> {
     pub app_hash: Vec<u8>,
     // sender_metrics: Option<HashMap<String, Metrics>>,
     /// Snapshot accepted
-    pub state_sync_info: MultiStateSyncSession<'db>,
+    pub state_sync_info: Pin<Box<MultiStateSyncSession<'db>>>,
 }
 
 impl SnapshotFetchingSession<'_> {
@@ -106,7 +110,6 @@ impl SnapshotFetchingSession<'_> {
          */
         Ok(vec![])
     }
-
 }
 
 struct Metrics {
@@ -227,26 +230,26 @@ impl SnapshotManager {
     }
 
     /*
-    fn update_sender_metric(&mut self, sender: String, metric_type: MetricType) {
-        let ref mut metrics = match &self.sender_metrics {
-            Some(ref mut metrics) => metrics, //metrics.get_mut(&sender),
-            None => {
-                let mut metrics = HashMap::new();
-                self.sender_metrics = Some(metrics);
-                &metrics
-            }
-        };
-        let ref mut sender_metrics = match metrics.get_mut(&sender) {
-            Some(sender_metrics) => sender_metrics,
-            None => {
-                let mut sender_metrics = Metrics::new();
-                &sender_metrics
-            }
-        };
-        sender_metrics.incr(metric_type);
-  }
+      fn update_sender_metric(&mut self, sender: String, metric_type: MetricType) {
+          let ref mut metrics = match &self.sender_metrics {
+              Some(ref mut metrics) => metrics, //metrics.get_mut(&sender),
+              None => {
+                  let mut metrics = HashMap::new();
+                  self.sender_metrics = Some(metrics);
+                  &metrics
+              }
+          };
+          let ref mut sender_metrics = match metrics.get_mut(&sender) {
+              Some(sender_metrics) => sender_metrics,
+              None => {
+                  let mut sender_metrics = Metrics::new();
+                  &sender_metrics
+              }
+          };
+          sender_metrics.incr(metric_type);
+    }
 
-     */
+       */
     pub(crate) fn load_snapshot_chunk(
         &self,
         grove: &GroveDb,
@@ -266,66 +269,66 @@ impl SnapshotManager {
 mod tests {
     use super::*;
     use std::fs;
-/*
-    #[test]
-    fn test_create_snapshot() {
-        let test_cases = vec![
-            (1000, 1000, vec![1000]),
-            (1000, 1001, vec![1000, 1001]),
-            (1000, 1002, vec![1000, 1001, 1002]),
-            (1000, 1004, vec![1002, 1003, 1004]),
-            (1000, 1005, vec![1003, 1004, 1005]),
-        ];
-        for (start, end, want) in test_cases {
-            let grove_dir = tempfile::tempdir().unwrap();
-            let checkpoints_dir = tempfile::tempdir().unwrap();
-            let grove = GroveDb::open(grove_dir.path()).unwrap();
-            let manager = SnapshotManager::new(
-                checkpoints_dir.path().to_str().unwrap().to_string(),
-                Some(3),
-                Some(1),
-            );
-            for height in start..=end {
-                manager.create_snapshot(&grove, height).unwrap();
-            }
-            let snapshots = manager.get_snapshots(&grove).unwrap();
-            let res: Vec<i64> = snapshots.iter().map(|s| s.height).collect();
-            assert_eq!(want, res);
+    /*
+       #[test]
+       fn test_create_snapshot() {
+           let test_cases = vec![
+               (1000, 1000, vec![1000]),
+               (1000, 1001, vec![1000, 1001]),
+               (1000, 1002, vec![1000, 1001, 1002]),
+               (1000, 1004, vec![1002, 1003, 1004]),
+               (1000, 1005, vec![1003, 1004, 1005]),
+           ];
+           for (start, end, want) in test_cases {
+               let grove_dir = tempfile::tempdir().unwrap();
+               let checkpoints_dir = tempfile::tempdir().unwrap();
+               let grove = GroveDb::open(grove_dir.path()).unwrap();
+               let manager = SnapshotManager::new(
+                   checkpoints_dir.path().to_str().unwrap().to_string(),
+                   Some(3),
+                   Some(1),
+               );
+               for height in start..=end {
+                   manager.create_snapshot(&grove, height).unwrap();
+               }
+               let snapshots = manager.get_snapshots(&grove).unwrap();
+               let res: Vec<i64> = snapshots.iter().map(|s| s.height).collect();
+               assert_eq!(want, res);
 
-            let paths: Vec<String> = snapshots.iter().map(|s| s.path.to_string()).collect();
-            for path in paths {
-                assert!(Path::new(&path).exists());
-            }
-            fs::remove_dir_all(grove_dir.path()).unwrap();
-        }
-    }
+               let paths: Vec<String> = snapshots.iter().map(|s| s.path.to_string()).collect();
+               for path in paths {
+                   assert!(Path::new(&path).exists());
+               }
+               fs::remove_dir_all(grove_dir.path()).unwrap();
+           }
+       }
 
-    #[test]
-    fn test_offer_snapshot() {
-        let grove_dir = tempfile::tempdir().unwrap();
-        let replication_dir = tempfile::tempdir().unwrap();
-        let grove = GroveDb::open(grove_dir.path()).unwrap();
-        let mut manager = SnapshotManager::new("".to_string(), Some(3), Some(1));
-        let app_hash = vec![1, 2, 3, 4, 5];
-        let snapshot_1000 = abci::Snapshot {
-            height: 1000,
-            version: 0,
-            hash: app_hash.clone(),
-            metadata: vec![],
-        };
-        manager
-            .offer_snapshot(&grove, snapshot_1000.clone(), app_hash.clone())
-            .unwrap();
-        let snapshot_2000 = abci::Snapshot {
-            height: 2000,
-            version: 0,
-            hash: app_hash.clone(),
-            metadata: vec![],
-        };
-        manager
-            .offer_snapshot(&grove, snapshot_2000.clone(), app_hash.clone())
-            .unwrap();
-    }
+       #[test]
+       fn test_offer_snapshot() {
+           let grove_dir = tempfile::tempdir().unwrap();
+           let replication_dir = tempfile::tempdir().unwrap();
+           let grove = GroveDb::open(grove_dir.path()).unwrap();
+           let mut manager = SnapshotManager::new("".to_string(), Some(3), Some(1));
+           let app_hash = vec![1, 2, 3, 4, 5];
+           let snapshot_1000 = abci::Snapshot {
+               height: 1000,
+               version: 0,
+               hash: app_hash.clone(),
+               metadata: vec![],
+           };
+           manager
+               .offer_snapshot(&grove, snapshot_1000.clone(), app_hash.clone())
+               .unwrap();
+           let snapshot_2000 = abci::Snapshot {
+               height: 2000,
+               version: 0,
+               hash: app_hash.clone(),
+               metadata: vec![],
+           };
+           manager
+               .offer_snapshot(&grove, snapshot_2000.clone(), app_hash.clone())
+               .unwrap();
+       }
 
- */
+    */
 }
