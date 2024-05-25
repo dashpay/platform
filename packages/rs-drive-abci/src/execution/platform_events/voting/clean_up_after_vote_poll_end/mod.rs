@@ -10,8 +10,8 @@ use drive::grovedb::TransactionArg;
 mod v0;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Checks for ended vote polls
     pub(in crate::execution) fn clean_up_after_vote_poll_end(

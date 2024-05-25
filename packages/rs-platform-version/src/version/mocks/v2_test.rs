@@ -231,7 +231,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions {
                     register_contested_resource_identity_vote: 0,
                     register_identity_vote: 0,
-                    add_vote_poll_end_date_query: 0,
+                    add_vote_poll_end_date_query_operations: 0,
                 },
                 cleanup: DriveVoteCleanupMethodVersions {
                     remove_votes_for_identity: 0,
@@ -1162,7 +1162,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
         },
         voting_versions: VotingVersions {
-            default_vote_time_ms: 0,
+            default_vote_poll_time_duration_ms: 1_209_600_000, //2 weeks
         },
         asset_lock_versions: AssetLockVersions {
             reduced_asset_lock_value: FeatureVersionBounds {

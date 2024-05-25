@@ -11,8 +11,8 @@ use drive::query::vote_poll_vote_state_query::FinalizedContender;
 mod v0;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Keeps a record of the vote poll after it has finished
     pub(in crate::execution) fn keep_record_of_vote_poll(
@@ -29,7 +29,13 @@ impl<C> Platform<C>
             .voting
             .keep_record_of_vote_poll
         {
-            0 => self.keep_record_of_vote_poll_v0(block_info, contender, vote_poll, transaction, platform_version),
+            0 => self.keep_record_of_vote_poll_v0(
+                block_info,
+                contender,
+                vote_poll,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "keep_record_of_vote_poll".to_string(),
                 known_versions: vec![0],

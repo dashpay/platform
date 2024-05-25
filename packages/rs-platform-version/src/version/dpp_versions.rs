@@ -225,7 +225,7 @@ pub struct IdentityVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct VotingVersions {
-    pub default_vote_time_ms: u64,
+    pub default_vote_poll_time_duration_ms: u64,
 }
 
 #[derive(Clone, Debug, Default)]

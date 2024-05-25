@@ -16,17 +16,11 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
-    /// any votes poll should be closed.
-    pub fn add_vote_poll_end_date_query_operations(
+    /// any votes poll should be closed. This will remove them to recoup space
+    pub fn remove_vote_poll_end_date_query_operations(
         &self,
-        creator_identity_id: Option<[u8; 32]>,
-        vote_poll: VotePoll,
+        vote_polls: Vec<VotePoll>,
         end_date: TimestampMillis,
-        block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -36,21 +30,17 @@ impl Drive {
             .methods
             .vote
             .contested_resource_insert
-            .add_vote_poll_end_date_query_operations
+            .remove_vote_poll_end_date_query_operations
         {
-            0 => self.add_vote_poll_end_date_query_operations_v0(
-                creator_identity_id,
-                vote_poll,
+            0 => self.remove_vote_poll_end_date_query_operations_v0(
+                vote_polls,
                 end_date,
-                block_info,
-                estimated_costs_only_with_layer_info,
-                previous_batch_operations,
                 batch_operations,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "add_vote_poll_end_date_query_operations".to_string(),
+                method: "remove_vote_poll_end_date_query".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

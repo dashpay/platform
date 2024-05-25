@@ -68,7 +68,7 @@ impl VotePollsByEndDateDriveQuery {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<ContestedDocumentResourceVotePoll>, Error> {
+    ) -> Result<BTreeMap<TimestampMillis, Vec<ContestedDocumentResourceVotePoll>>, Error> {
         let path_query = Self::path_query_for_end_time_included(end_time, limit);
         let query_result = drive.grove_get_path_query(
             &path_query,
@@ -80,20 +80,38 @@ impl VotePollsByEndDateDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(Vec::new()),
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(BTreeMap::new()),
             Err(e) => Err(e),
-            Ok((query_result_elements, _)) => query_result_elements
-                .to_elements()
-                .into_iter()
-                .map(|element| {
-                    let contested_document_resource_vote_poll_bytes =
-                        element.into_item_bytes().map_err(Error::from)?;
-                    let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes(
-                        &contested_document_resource_vote_poll_bytes,
-                    )?;
-                    Ok(vote_poll)
-                })
-                .collect::<Result<Vec<_>, Error>>(),
+            Ok((query_result_elements, _)) => {
+                let vote_polls_by_end_date = query_result_elements
+                    .to_path_key_elements()
+                    .into_iter()
+                    .map(|(path, _, element)| {
+                        let Some(last_path_component) = path.last() else {
+                            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                                "we should always have a path not be null".to_string(),
+                            )));
+                        };
+                        let timestamp = decode_u64(last_path_component).map_err(Error::from)?;
+                        let contested_document_resource_vote_poll_bytes =
+                            element.into_item_bytes().map_err(Error::from)?;
+                        let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes(
+                            &contested_document_resource_vote_poll_bytes,
+                        )?;
+                        Ok((timestamp, vote_poll))
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?
+                    .into_iter()
+                    .fold(
+                        BTreeMap::new(),
+                        |mut acc: BTreeMap<u64, Vec<ContestedDocumentResourceVotePoll>>,
+                         (timestamp, vote_poll)| {
+                            acc.entry(timestamp).or_default().push(vote_poll);
+                            acc
+                        },
+                    );
+                Ok(vote_polls_by_end_date)
+            },
         }
     }
 

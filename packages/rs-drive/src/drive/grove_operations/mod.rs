@@ -181,6 +181,7 @@ pub type IsSumSubTree = bool;
 pub type IsSumTree = bool;
 
 /// Batch delete apply type
+#[derive(Debug, Copy, Clone)]
 pub enum BatchDeleteApplyType {
     /// Stateless batch delete
     StatelessBatchDelete {
