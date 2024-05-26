@@ -22,7 +22,6 @@ class CoreMethodsFacade {
     this.getBlockByHash = getBlockByHashFactory(grpcTransport);
     this.getBlockByHeight = getBlockByHeightFactory(grpcTransport);
     this.getBlockHash = getBlockHashFactory(jsonRpcTransport);
-    this.getMnListDiff = getMnListDiffFactory(jsonRpcTransport);
     this.getBlockchainStatus = getBlockchainStatusFactory(grpcTransport);
     this.getMasternodeStatus = getMasternodeStatusFactory(grpcTransport);
     this.getTransaction = getTransactionFactory(grpcTransport);

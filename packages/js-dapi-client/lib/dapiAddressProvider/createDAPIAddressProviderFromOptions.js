@@ -7,10 +7,6 @@ const ListDAPIAddressProvider = require('./ListDAPIAddressProvider');
 const SimplifiedMasternodeListProvider = require('../SimplifiedMasternodeListProvider/SimplifiedMasternodeListProvider');
 const SimplifiedMasternodeListDAPIAddressProvider = require('./SimplifiedMasternodeListDAPIAddressProvider');
 
-const JsonRpcTransport = require('../transport/JsonRpcTransport/JsonRpcTransport');
-const requestJsonRpc = require('../transport/JsonRpcTransport/requestJsonRpc');
-const createJsonTransportError = require('../transport/JsonRpcTransport/createJsonTransportError');
-
 const DAPIClientError = require('../errors/DAPIClientError');
 
 const networkConfigs = require('../networkConfigs');
