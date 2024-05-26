@@ -103,25 +103,6 @@ describe('CoreMethodsFacade', () => {
     });
   });
 
-  describe('#getMnListDiff', () => {
-    it('should get mn list diff', async () => {
-      const baseBlockHash = '0000047d24635e347be3aaaeb66c26be94901a2f962feccd4f95090191f208c1';
-      const blockHash = '000000000b0339e07bce8b3186a6a57a3c45d10e16c4bce18ef81b667bc822b2';
-
-      const response = {
-        baseBlockHash,
-        blockHash,
-        deletedMNs: [],
-        mnList: [],
-      };
-      jsonRpcTransportMock.request.resolves(response);
-      await coreMethods.getMnListDiff(baseBlockHash, blockHash);
-
-      expect(grpcTransportMock.request).to.be.not.called();
-      expect(jsonRpcTransportMock.request).to.be.calledOnce();
-    });
-  });
-
   describe('#getBlockchainStatus', () => {
     it('should get status', async () => {
       const response = new GetBlockchainStatusResponse();

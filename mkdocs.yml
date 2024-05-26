@@ -49,7 +49,6 @@ plugins:
             'DAPI-Client/usage/application/core/getBlockByHash.md': 'https://docs.dash.org/projects/platform/en/stable/docs/dapi-client-js/usage/core/getblockbyhash.html'
             'DAPI-Client/usage/application/core/getBlockByHeight.md': 'https://docs.dash.org/projects/platform/en/stable/docs/dapi-client-js/usage/core/getblockbyheight.html'
             'DAPI-Client/usage/application/core/getBlockHash.md': 'https://docs.dash.org/projects/platform/en/stable/docs/dapi-client-js/usage/core/getblockhash.html'
-            'DAPI-Client/usage/application/core/getMnListDiff.md': 'https://docs.dash.org/projects/platform/en/stable/docs/dapi-client-js/usage/core/getmnlistdiff.html'
             'DAPI-Client/usage/application/core/getStatus.md': 'https://docs.dash.org/projects/platform/en/stable/docs/dapi-client-js/usage/core/getstatus.html'
             'DAPI-Client/usage/application/core/getTransaction.md': 'https://docs.dash.org/projects/platform/en/stable/docs/dapi-client-js/usage/core/gettransaction.html'
             'DAPI-Client/usage/utils/subscribeToTransactionsWithProofs.md': 'https://docs.dash.org/projects/platform/en/stable/docs/dapi-client-js/usage/core/subscribetotransactionswithproofs.html'

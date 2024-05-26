@@ -4,7 +4,6 @@ const getBestBlockHashFactory = require('./getBestBlockHashFactory');
 const getBlockByHashFactory = require('./getBlockByHashFactory');
 const getBlockByHeightFactory = require('./getBlockByHeightFactory');
 const getBlockHashFactory = require('./getBlockHashFactory');
-const getMnListDiffFactory = require('./getMnListDiffFactory');
 const getBlockchainStatusFactory = require('./getBlockchainStatusFactory');
 const getMasternodeStatusFactory = require('./getMasternodeStatusFactory');
 const getTransactionFactory = require('./getTransaction/getTransactionFactory');

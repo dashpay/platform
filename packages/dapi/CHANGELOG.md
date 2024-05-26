@@ -274,10 +274,10 @@
         * `getAddressSummary`
         * `getBestBlockHash`
         * `getBlockHash`
-        * `getMnListDiff`
         * `getUTXO`
     * Core gRPC
         * `subscribeToTransactionsWithProofs`
+        * `subscribeToMasternodeList`
         * `getBlock`
         * `getStatus`
         * `getTransaction`
