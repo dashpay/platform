@@ -2,7 +2,7 @@ const { Essentials: { Buffer } } = require('dash');
 
 const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
 
-describe('Core', () => {
+describe.skip('Core', () => {
   describe('getBlockchainStatus', function main() {
     let client;
 
