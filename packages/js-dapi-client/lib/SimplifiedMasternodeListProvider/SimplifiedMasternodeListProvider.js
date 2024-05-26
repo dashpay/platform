@@ -1,27 +1,24 @@
 const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
 const SimplifiedMNListDiff = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListDiff');
+const {
+  v0: {
+    MasternodeListRequest,
+    CorePromiseClient,
+  },
+} = require('@dashevo/dapi-grpc');
+
+const logger = require('../logger');
 
 class SimplifiedMasternodeListProvider {
   /**
-   *
-   * @param {JsonRpcTransport} jsonRpcTransport - JsonRpcTransport instance
+   * @param {GrpcTransport} grpcTransport - JsonRpcTransport instance
    * @param {object} [options] - Options
-   * @param {number} [options.updateInterval]
    * @param {string} [options.network]
    */
-  constructor(jsonRpcTransport, options = {}) {
-    this.jsonRpcTransport = jsonRpcTransport;
+  constructor(grpcTransport, options = {}) {
+    this.grpcTransport = grpcTransport;
 
-    this.options = {
-      updateInterval: 60000,
-      ...options,
-    };
-
-    this.simplifiedMNList = new SimplifiedMNList(undefined, this.options.network);
-
-    this.lastUpdateDate = 0;
-
-    this.baseBlockHash = SimplifiedMasternodeListProvider.NULL_HASH;
+    this.options = options;
   }
 
   /**
@@ -29,63 +26,84 @@ class SimplifiedMasternodeListProvider {
    * @returns {Promise<SimplifiedMNList>}
    */
   async getSimplifiedMNList() {
-    if (this.needsUpdate()) {
-      await this.updateMasternodeList();
+    if (this.simplifiedMNList === undefined) {
+      this.simplifiedMNList = new SimplifiedMNList(undefined, this.options.network);
+
+      await this.subscribeToMasternodeList();
     }
 
     return this.simplifiedMNList;
   }
 
   /**
-   * Checks whether simplified masternode list needs update
+   * Subscribe to simplified masternodes list updates. No need to call it manually
    * @private
-   * @returns {boolean}
+   * @returns {Promise<void>}
    */
-  needsUpdate() {
-    return Date.now() - this.options.updateInterval > this.lastUpdateDate;
-  }
-
-  /**
-   * Updates simplified masternodes list. No need to call it manually
-   * @private
-   */
-  async updateMasternodeList() {
-    const diff = await this.getSimplifiedMNListDiff();
-
-    try {
-      this.simplifiedMNList.applyDiff(diff);
-    } catch (e) {
-      if (e.message === 'Cannot apply diff: previous blockHash needs to equal the new diff\'s baseBlockHash') {
-        this.reset();
-
-        await this.updateMasternodeList();
-
-        return;
-      }
-
-      throw e;
-    }
-
-    this.baseBlockHash = diff.blockHash;
-
-    this.lastUpdateDate = Date.now();
-  }
-
-  /**
-   * Fetches masternode diff from DAPI
-   * @private
-   * @returns {Promise<SimplifiedMNListDiff>}
-   */
-  async getSimplifiedMNListDiff() {
-    const blockHash = await this.jsonRpcTransport.request('getBestBlockHash');
-
-    const rawSimplifiedMNListDiff = await this.jsonRpcTransport.request(
-      'getMnListDiff',
-      { baseBlockHash: this.baseBlockHash, blockHash },
-      { addresses: [this.jsonRpcTransport.getLastUsedAddress()] },
+  async subscribeToMasternodeList() {
+    const stream = await this.grpcTransport.request(
+      CorePromiseClient,
+      'subscribeToTransactionsWithProofs',
+      new MasternodeListRequest(),
+      {
+        retries: Infinity,
+      },
     );
 
-    return new SimplifiedMNListDiff(rawSimplifiedMNListDiff, this.options.network);
+    return new Promise((resolve, reject) => {
+      let resolved = false;
+
+      const restartStream = () => {
+        this.reset();
+        stream.removeAllListeners();
+        stream.cancel();
+
+        this.subscribeToMasternodeList().then(() => {
+          if (!resolved) {
+            resolve();
+            resolved = true;
+          }
+        }).catch((e) => {
+          if (!resolved) {
+            reject(e);
+            resolved = true;
+          }
+        });
+      };
+
+      stream.on('error', (error) => {
+        logger.error(`Masternode list sync failed: ${error.message}. Restarted.`, { error });
+
+        restartStream();
+      });
+
+      stream.on('end', () => {
+        logger.error('Masternode list sync stopped. Restarted.');
+
+        restartStream();
+      });
+
+      stream.on('data', async (response) => {
+        const simplifiedMNListDiffBuffer = Buffer.from(response.getMasternodeListDiff_asU8());
+        const simplifiedMNListDiff = new SimplifiedMNListDiff(
+          simplifiedMNListDiffBuffer,
+          this.options.network,
+        );
+
+        try {
+          this.simplifiedMNList.applyDiff(simplifiedMNListDiff);
+
+          if (!resolved) {
+            resolve();
+            resolved = true;
+          }
+        } catch (e) {
+          logger.error(`Masternode list sync failed: ${e.message}. Restarted.`, { error: e });
+
+          restartStream();
+        }
+      });
+    });
   }
 
   /**
@@ -94,10 +112,6 @@ class SimplifiedMasternodeListProvider {
    */
   reset() {
     this.simplifiedMNList = new SimplifiedMNList(undefined, this.options.network);
-
-    this.lastUpdateDate = 0;
-
-    this.baseBlockHash = SimplifiedMasternodeListProvider.NULL_HASH;
   }
 }
 

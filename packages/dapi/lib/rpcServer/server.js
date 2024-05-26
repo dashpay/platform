@@ -4,7 +4,6 @@ const errorHandlerDecorator = require('./errorHandlerDecorator');
 
 const getBestBlockHash = require('./commands/getBestBlockHash');
 const getBlockHash = require('./commands/getBlockHash');
-const getMnListDiff = require('./commands/getMnListDiff');
 const generateToAddress = require('./commands/generateToAddress');
 
 // Following commands are not implemented yet:
@@ -13,7 +12,6 @@ const generateToAddress = require('./commands/generateToAddress');
 const createCommands = (dashcoreAPI) => ({
   getBestBlockHash: getBestBlockHash(dashcoreAPI),
   getBlockHash: getBlockHash(dashcoreAPI),
-  getMnListDiff: getMnListDiff(dashcoreAPI),
 });
 
 const createRegtestCommands = (dashcoreAPI) => ({

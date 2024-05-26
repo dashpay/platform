@@ -28,6 +28,8 @@
 @class GetMasternodeStatusResponse;
 @class GetTransactionRequest;
 @class GetTransactionResponse;
+@class MasternodeListRequest;
+@class MasternodeListResponse;
 @class TransactionsWithProofsRequest;
 @class TransactionsWithProofsResponse;
 
@@ -76,6 +78,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark subscribeToTransactionsWithProofs(TransactionsWithProofsRequest) returns (stream TransactionsWithProofsResponse)
 
 - (GRPCUnaryProtoCall *)subscribeToTransactionsWithProofsWithMessage:(TransactionsWithProofsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark subscribeToMasternodeList(MasternodeListRequest) returns (stream MasternodeListResponse)
+
+- (GRPCUnaryProtoCall *)subscribeToMasternodeListWithMessage:(MasternodeListRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -139,6 +145,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)subscribeToTransactionsWithProofsWithRequest:(TransactionsWithProofsRequest *)request eventHandler:(void(^)(BOOL done, TransactionsWithProofsResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 - (GRPCProtoCall *)RPCTosubscribeToTransactionsWithProofsWithRequest:(TransactionsWithProofsRequest *)request eventHandler:(void(^)(BOOL done, TransactionsWithProofsResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+
+
+#pragma mark subscribeToMasternodeList(MasternodeListRequest) returns (stream MasternodeListResponse)
+
+- (void)subscribeToMasternodeListWithRequest:(MasternodeListRequest *)request eventHandler:(void(^)(BOOL done, MasternodeListResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+
+- (GRPCProtoCall *)RPCTosubscribeToMasternodeListWithRequest:(MasternodeListRequest *)request eventHandler:(void(^)(BOOL done, MasternodeListResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 
 @end

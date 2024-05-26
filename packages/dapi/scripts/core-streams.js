@@ -19,9 +19,12 @@ const {
 
 const {
   v0: {
+    MasternodeListRequest,
     TransactionsWithProofsRequest,
     BlockHeadersWithChainLocksRequest,
     pbjs: {
+      MasternodeListRequest: PBJSMasternodeListRequest,
+      MasternodeListResponse: PBJSMasternodeListResponse,
       TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
       TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
       BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
@@ -30,6 +33,8 @@ const {
   },
   getCoreDefinition,
 } = require('@dashevo/dapi-grpc');
+
+const { Block } = require('@dashevo/dashcore-lib');
 
 // Load config from .env
 dotenv.config();
@@ -58,6 +63,8 @@ const subscribeToNewBlockHeaders = require('../lib/grpcServer/handlers/blockhead
 const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
 const getMemPoolTransactionsFactory = require('../lib/transactionsFilter/getMemPoolTransactionsFactory');
+const MasternodeListSync = require('../lib/MasternodeListSync');
+const subscribeToMasternodeListHandlerFactory = require('../lib/grpcServer/handlers/core/subscribeToMasternodeListHandlerFactory');
 
 async function main() {
   // Validate config
@@ -97,6 +104,9 @@ async function main() {
     bloomFilterEmitterCollection,
   );
 
+  const masternodeListSync = new MasternodeListSync(dashCoreRpcClient, config.network);
+  await masternodeListSync.syncToBestBlock();
+
   // Send raw transactions via `subscribeToTransactionsWithProofs` stream if matched
   dashCoreZmqClient.on(
     dashCoreZmqClient.topics.rawtx,
@@ -104,9 +114,18 @@ async function main() {
   );
 
   // Send merkle blocks via `subscribeToTransactionsWithProofs` stream
+  // and update masternode list
   dashCoreZmqClient.on(
     dashCoreZmqClient.topics.rawblock,
-    emitBlockEventToFilterCollection,
+    (rawBlock) => {
+      const block = new Block(rawBlock);
+
+      masternodeListSync.sync(block.hash).catch((e) => {
+        logger.error(e);
+      });
+
+      emitBlockEventToFilterCollection(block);
+    },
   );
 
   // TODO: check if we can receive this event before 'rawtx', and if we can,
@@ -186,11 +205,27 @@ async function main() {
     wrapInErrorHandler(subscribeToBlockHeadersWithChainLocksHandler),
   );
 
+  const subscribeToMasternodeListHandler = subscribeToMasternodeListHandlerFactory(
+    masternodeListSync,
+  );
+
+  const wrappedSubscribeToMasternodeListHandler = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      MasternodeListRequest,
+      PBJSMasternodeListRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSMasternodeListResponse,
+    ),
+    wrapInErrorHandler(subscribeToMasternodeListHandler),
+  );
+
   const grpcServer = createServer(
     getCoreDefinition(0),
     {
       subscribeToTransactionsWithProofs: wrappedSubscribeToTransactionsWithProofs,
       subscribeToBlockHeadersWithChainLocks: wrappedSubscribeToBlockHeadersWithChainLocks,
+      subscribeToMasternodeList: wrappedSubscribeToMasternodeListHandler,
     },
   );
 

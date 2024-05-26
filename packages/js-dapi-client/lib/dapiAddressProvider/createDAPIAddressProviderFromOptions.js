@@ -14,6 +14,8 @@ const createJsonTransportError = require('../transport/JsonRpcTransport/createJs
 const DAPIClientError = require('../errors/DAPIClientError');
 
 const networkConfigs = require('../networkConfigs');
+const GrpcTransport = require('../transport/GrpcTransport/GrpcTransport');
+const createGrpcTransportError = require('../transport/GrpcTransport/createGrpcTransportError');
 
 /**
  * @typedef {createDAPIAddressProviderFromOptions}
@@ -82,16 +84,15 @@ function createDAPIAddressProviderFromOptions(options) {
       options,
     );
 
-    const jsonRpcTransport = new JsonRpcTransport(
+    const grpcTransport = new GrpcTransport(
       createDAPIAddressProviderFromOptions,
-      requestJsonRpc,
       listDAPIAddressProvider,
-      createJsonTransportError,
+      createGrpcTransportError,
       options,
     );
 
     const smlProvider = new SimplifiedMasternodeListProvider(
-      jsonRpcTransport,
+      grpcTransport,
       { network: options.network },
     );
 

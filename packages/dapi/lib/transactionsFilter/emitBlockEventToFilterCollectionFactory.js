@@ -9,11 +9,9 @@ function emitBlockEventToFilterCollectionFactory(bloomFilterEmitterCollection) {
   /**
    * Emit `block` event to bloom filter collection
    *
-   * @param {Buffer} rawBlock
+   * @param {Block} block
    */
-  function emitBlockEventToFilterCollection(rawBlock) {
-    const block = new Block(rawBlock);
-
+  function emitBlockEventToFilterCollection(block) {
     logger.debug(`block ${block.hash} received`);
 
     bloomFilterEmitterCollection.emit('block', block);

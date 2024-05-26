@@ -76,6 +76,15 @@ type CoresubscribeToTransactionsWithProofs = {
   readonly responseType: typeof core_pb.TransactionsWithProofsResponse;
 };
 
+type CoresubscribeToMasternodeList = {
+  readonly methodName: string;
+  readonly service: typeof Core;
+  readonly requestStream: false;
+  readonly responseStream: true;
+  readonly requestType: typeof core_pb.MasternodeListRequest;
+  readonly responseType: typeof core_pb.MasternodeListResponse;
+};
+
 export class Core {
   static readonly serviceName: string;
   static readonly getBlockchainStatus: CoregetBlockchainStatus;
@@ -86,6 +95,7 @@ export class Core {
   static readonly getEstimatedTransactionFee: CoregetEstimatedTransactionFee;
   static readonly subscribeToBlockHeadersWithChainLocks: CoresubscribeToBlockHeadersWithChainLocks;
   static readonly subscribeToTransactionsWithProofs: CoresubscribeToTransactionsWithProofs;
+  static readonly subscribeToMasternodeList: CoresubscribeToMasternodeList;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -176,5 +186,6 @@ export class CoreClient {
   ): UnaryResponse;
   subscribeToBlockHeadersWithChainLocks(requestMessage: core_pb.BlockHeadersWithChainLocksRequest, metadata?: grpc.Metadata): ResponseStream<core_pb.BlockHeadersWithChainLocksResponse>;
   subscribeToTransactionsWithProofs(requestMessage: core_pb.TransactionsWithProofsRequest, metadata?: grpc.Metadata): ResponseStream<core_pb.TransactionsWithProofsResponse>;
+  subscribeToMasternodeList(requestMessage: core_pb.MasternodeListRequest, metadata?: grpc.Metadata): ResponseStream<core_pb.MasternodeListResponse>;
 }
 
