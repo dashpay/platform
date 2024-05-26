@@ -1,4 +1,3 @@
-const { Block } = require('@dashevo/dashcore-lib');
 const logger = require('../logger');
 
 /**
