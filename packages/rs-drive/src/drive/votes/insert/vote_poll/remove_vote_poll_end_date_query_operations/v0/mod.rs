@@ -1,4 +1,4 @@
-use crate::drive::votes::paths::{vote_contested_resource_end_date_queries_at_time_tree_path_vec, vote_contested_resource_end_date_queries_tree_path_vec};
+use crate::drive::votes::paths::{vote_contested_resource_end_date_queries_at_time_tree_path_vec, vote_contested_resource_end_date_queries_tree_path, vote_contested_resource_end_date_queries_tree_path_vec};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -37,11 +37,13 @@ impl Drive {
             is_known_to_be_subtree_with_sum: Some((false, false)),
         };
         
+        let time_path_borrowed: Vec<&[u8]> = time_path.iter().map(|a| a.as_slice()).collect();
+        
         for vote_poll in vote_polls {
             let unique_id = vote_poll.unique_id()?;
 
             self.batch_delete(
-                time_path.as_ref().into(),
+                time_path_borrowed.as_slice().into(),
                 unique_id.as_bytes(),
                 delete_apply_type,
                 transaction,
@@ -52,7 +54,7 @@ impl Drive {
 
 
 
-        let end_date_query_path = vote_contested_resource_end_date_queries_tree_path_vec();
+        let end_date_query_path = vote_contested_resource_end_date_queries_tree_path();
 
         let end_date_key = encode_u64(end_date);
 
@@ -61,8 +63,8 @@ impl Drive {
         };
 
         self.batch_delete(
-            end_date_query_path.into(),
-            end_date_key.as_bytes(),
+            (&end_date_query_path).into(),
+            end_date_key.as_slice(),
             delete_apply_type,
             transaction,
             batch_operations,
