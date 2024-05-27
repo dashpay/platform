@@ -1,4 +1,4 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{BlockExecutionApplication, ConsensusAbciApplication, PlatformApplication, SnapshotManagerApplication, TransactionalApplication};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
@@ -11,6 +11,7 @@ use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
+use crate::platform_types::snapshot::SnapshotManager;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -23,6 +24,8 @@ pub struct FullAbciApplication<'a, C> {
     pub transaction: RwLock<Option<Transaction<'a>>>,
     /// The current block execution context
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    /// The snapshot manager
+    pub snapshot_manager: SnapshotManager,
 }
 
 impl<'a, C> FullAbciApplication<'a, C> {
@@ -32,6 +35,7 @@ impl<'a, C> FullAbciApplication<'a, C> {
             platform,
             transaction: Default::default(),
             block_execution_context: Default::default(),
+            snapshot_manager: SnapshotManager::default(),
         }
     }
 }
@@ -39,6 +43,12 @@ impl<'a, C> FullAbciApplication<'a, C> {
 impl<'a, C> PlatformApplication<C> for FullAbciApplication<'a, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
+    }
+}
+
+impl<'a, C> SnapshotManagerApplication for FullAbciApplication<'a, C> {
+    fn snapshot_manager(&self) -> &SnapshotManager {
+        &self.snapshot_manager
     }
 }
 

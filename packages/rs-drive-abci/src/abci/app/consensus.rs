@@ -1,6 +1,4 @@
-use crate::abci::app::{
-    BlockExecutionApplication, PlatformApplication, StateSyncApplication, TransactionalApplication,
-};
+use crate::abci::app::{BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication, StateSyncApplication, TransactionalApplication};
 use crate::abci::handler::error::error_into_exception;
 use crate::abci::{handler, AbciError};
 use crate::error::execution::ExecutionError;
@@ -12,7 +10,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
-use std::sync::RwLock;
+use std::sync::{LockResult, RwLock};
 use tenderdash_abci::proto::abci as proto;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
@@ -27,7 +25,9 @@ pub struct ConsensusAbciApplication<'p, C> {
     transaction: RwLock<Option<Transaction<'p>>>,
     /// The current block execution context
     block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    /// The State sync session
     snapshot_fetching_session: RwLock<Option<SnapshotFetchingSession<'p>>>,
+    /// The snapshot manager
     snapshot_manager: SnapshotManager,
 }
 
@@ -47,6 +47,12 @@ impl<'p, C> ConsensusAbciApplication<'p, C> {
 impl<'p, C> PlatformApplication<C> for ConsensusAbciApplication<'p, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
+    }
+}
+
+impl<'p, C> SnapshotManagerApplication for ConsensusAbciApplication<'p, C> {
+    fn snapshot_manager(&self) -> &SnapshotManager {
+        &self.snapshot_manager
     }
 }
 
@@ -171,7 +177,7 @@ where
     ) -> Result<proto::ResponseOfferSnapshot, proto::ResponseException> {
         match request.snapshot {
             None => Err(error_into_exception(Error::Abci(AbciError::BadRequest(
-                "offer_snapshot missing snapshot".to_string(),
+                "offer_snapshot missing snapshot in request".to_string(),
             )))),
             Some(offered_snapshot) => {
                 match self.snapshot_fetching_session.write() {
@@ -180,36 +186,25 @@ where
                         match *session_write {
                             Some(ref mut session) => {
                                 // Access and modify `session` here
-                                // Example: session.modify_some_field();
-                                match &session.snapshot {
-                                    None => {}
-                                    Some(already_offered_snapshot) => {
-                                        if offered_snapshot.height
-                                            <= already_offered_snapshot.height
-                                        {
-                                            return Err(error_into_exception(Error::Abci(
-                                                AbciError::BadRequest(
-                                                    "offer_snapshot already syncing newest height"
-                                                        .to_string(),
-                                                ),
-                                            )));
-                                        }
-                                        /*
-                                        if offered_snapshot.version != already_offered_snapshot.version {
-                                            return Err(error_into_exception(Error::Abci(AbciError::BadRequest("fd".to_string()))))
-                                        }
-                                        */
-                                    }
+                                if offered_snapshot.height
+                                    <= session.snapshot.height
+                                {
+                                    return Err(error_into_exception(Error::Abci(
+                                        AbciError::BadRequest(
+                                            "offer_snapshot already syncing newest height"
+                                                .to_string(),
+                                        ),
+                                    )));
                                 }
 
                                 match self.platform.drive.grove.wipe() {
                                     Ok(_) => {
-                                        let mut response = proto::ResponseOfferSnapshot::default();
+                                        let response = proto::ResponseOfferSnapshot::default();
 
                                         let state_sync_info =
-                                            self.platform.drive.grove.start_new_session();
+                                            self.platform.drive.grove.start_syncing_session();
 
-                                        session.snapshot = Option::from(offered_snapshot);
+                                        session.snapshot = offered_snapshot;
                                         session.app_hash = request.app_hash;
                                         session.state_sync_info = state_sync_info;
 
@@ -224,7 +219,6 @@ where
                                 }
                             }
                             None => {
-                                // Handle the case where the Option is None
                                 Err(error_into_exception(Error::Abci(AbciError::BadRequest(
                                     "offer_snapshot unable to lock session".to_string(),
                                 ))))
@@ -232,7 +226,6 @@ where
                         }
                     }
                     Err(_poisoned) => {
-                        // Handle the case where the lock is poisoned
                         Err(error_into_exception(Error::Abci(AbciError::BadRequest(
                             "offer_snapshot unable to lock session (poisoned)".to_string(),
                         ))))
@@ -246,56 +239,46 @@ where
         &self,
         request: proto::RequestApplySnapshotChunk,
     ) -> Result<proto::ResponseApplySnapshotChunk, proto::ResponseException> {
-        let mut session_write_guard = self.snapshot_fetching_session().write().unwrap();
-
-        match session_write_guard.as_mut() {
-            Some(session) => {
-                match session.state_sync_info.apply_chunk(
-                    &self.platform.drive.grove,
-                    (&request.chunk_id, request.chunk),
-                    1u16,
-                ) {
-                    Ok(next_chunk_ids) => {
-                        return Ok(proto::ResponseApplySnapshotChunk {
-                            result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
-                            refetch_chunks: vec![],
-                            reject_senders: vec![],
-                            next_chunks: next_chunk_ids,
-                        });
+        match self.snapshot_fetching_session().write() {
+            Ok(mut session_write_guard) => {
+                match session_write_guard.as_mut() {
+                    Some(session) => {
+                        match session.state_sync_info.apply_chunk(
+                            &self.platform.drive.grove,
+                            (&request.chunk_id, request.chunk),
+                            1u16,
+                        ) {
+                            Ok(next_chunk_ids) => {
+                                return Ok(proto::ResponseApplySnapshotChunk {
+                                    result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
+                                    refetch_chunks: vec![],
+                                    reject_senders: vec![],
+                                    next_chunks: next_chunk_ids,
+                                });
+                            }
+                            Err(e) => {
+                                return Err(Error::Abci(AbciError::BadRequest(format!(
+                                    "apply_snapshot_chunk unable to apply chunk:{}",
+                                    e
+                                ))))
+                                    .map_err(error_into_exception);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        return Err(Error::Abci(AbciError::BadRequest(format!(
-                            "offer_snapshot unable to wipe grovedb:{}",
-                            e
-                        ))))
-                        .map_err(error_into_exception);
+                    None => {
+                        // Handle the case where there is no transaction
+                        return Err(Error::Abci(AbciError::BadRequest(
+                            "apply_snapshot_chunk unable to lock session".to_string(),
+                        )))
+                            .map_err(error_into_exception);
                     }
                 }
-            }
-            None => {
-                // Handle the case where there is no transaction
-                return Err(Error::Abci(AbciError::BadRequest(
-                    "offer_snapshot unable to lock session".to_string(),
-                )))
-                .map_err(error_into_exception);
+            },
+            Err(_poisoned) => {
+                return Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                    "apply_snapshot_chunk unable to lock session (poisoned)".to_string(),
+                ))))
             }
         }
     }
-}
-
-fn with_transaction_ref<'a, 'p: 'a, C, F, R>(
-    app: &'a ConsensusAbciApplication<'p, C>,
-    f: F,
-) -> Result<R, Error>
-where
-    F: FnOnce(&Transaction<'p>) -> R,
-{
-    let transaction_guard = app.transaction.read().unwrap();
-    let transaction =
-        transaction_guard
-            .as_ref()
-            .ok_or(Error::Execution(ExecutionError::NotInTransaction(
-                "trying to finalize block without a current transaction",
-            )))?;
-    Ok(f(transaction))
 }

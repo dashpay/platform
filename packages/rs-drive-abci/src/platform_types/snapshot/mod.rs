@@ -38,26 +38,6 @@ pub struct Snapshot {
     pub metadata: Vec<u8>,
 }
 
-/// Offered snapshot entity
-///
-/*
-struct OfferedSnapshot {
-    pub snapshot: abci::Snapshot,
-    pub app_hash: Vec<u8>,
-}
-
-impl From<Snapshot> for abci::Snapshot {
-    fn from(snapshot: Snapshot) -> Self {
-        abci::Snapshot {
-            height: snapshot.height as u64,
-            version: snapshot.version as u32,
-            hash: snapshot.hash.into(),
-            metadata: snapshot.metadata,
-        }
-    }
-}
-*/
-
 /// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
 /// number of snapshots and remove the old ones
 #[derive(Default, Clone)]
@@ -71,45 +51,12 @@ pub struct SnapshotManager {
 /// number of snapshots and remove the old ones
 pub struct SnapshotFetchingSession<'db> {
     /// Snapshot accepted
-    pub snapshot: Option<abci::Snapshot>,
+    pub snapshot: abci::Snapshot,
     /// Snapshot accepted
     pub app_hash: Vec<u8>,
     // sender_metrics: Option<HashMap<String, Metrics>>,
     /// Snapshot accepted
     pub state_sync_info: Pin<Box<MultiStateSyncSession<'db>>>,
-}
-
-impl SnapshotFetchingSession<'_> {
-    /// Create a new snapshot for the given height, if a height is not a multiple of N,
-    /// it will be skipped.
-    pub fn apply_snapshot_chunk(
-        &mut self,
-        grove: &GroveDb,
-        chunk_id: Vec<u8>,
-        chunk: Vec<u8>,
-        sender: String,
-        mut state_sync_info: MultiStateSyncSession,
-    ) -> Result<Vec<Vec<u8>>, Error> {
-        /*
-        let (next_chunk_ids, state_sync_info) = grove
-            .apply_chunk(state_sync_info, (&chunk_id, chunk))
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
-
-         */
-        /*
-        match result {
-            Ok(next_chunk_ids) => {
-                self.update_sender_metric(sender, MetricType::Success);
-                next_chunk_ids
-            }
-            Err(e) => {
-                return Err(Error::Drive(GroveDB(e)));
-            }
-        }
-
-         */
-        Ok(vec![])
-    }
 }
 
 struct Metrics {
@@ -250,19 +197,7 @@ impl SnapshotManager {
     }
 
        */
-    pub(crate) fn load_snapshot_chunk(
-        &self,
-        grove: &GroveDb,
-        chunk_id: String,
-    ) -> Result<Vec<u8>, Error> {
-        /*
-        grove
-            .fetch_chunk(chunk_id, Some(CHUNK_SIZE_16MB))
-            .map_err(|e| Error::Drive(GroveDB(e)))
 
-         */
-        Ok(vec![])
-    }
 }
 
 #[cfg(test)]

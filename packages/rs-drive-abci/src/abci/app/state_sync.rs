@@ -32,6 +32,7 @@ where
 {
     /// Platform
     platform: Arc<Platform<C>>,
+    /// Snapshot manager
     snapshot_manager: SnapshotManager,
 }
 
@@ -81,7 +82,6 @@ impl<C> grpc_abci_server::AbciApplication for StateSyncAbciApplication<C>
 where
     C: CoreRPCLike + Send + Sync + 'static,
 {
-    // server
     async fn list_snapshots(
         &self,
         _: tonic::Request<proto::RequestListSnapshots>,

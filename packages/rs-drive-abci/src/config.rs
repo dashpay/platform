@@ -205,6 +205,9 @@ pub struct PlatformConfig {
     /// Path to checkpoints
     pub checkpoints_path: PathBuf,
 
+    /// Enable snapshot
+    pub snapshots_enabled: bool,
+
     /// Path to store rejected / invalid items (like transactions).
     /// Used mainly for debugging.
     ///
@@ -353,6 +356,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/checkpoints"),
+            snapshots_enabled: true,
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             tokio_console_enabled: false,
@@ -378,6 +382,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
+            snapshots_enabled: true,
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
@@ -403,6 +408,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
+            snapshots_enabled: true,
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),

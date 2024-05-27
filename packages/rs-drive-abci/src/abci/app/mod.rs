@@ -11,7 +11,7 @@ mod full;
 mod state_sync;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
-use crate::platform_types::snapshot::SnapshotFetchingSession;
+use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::DefaultCoreRPC;
 pub use check_tx::CheckTxAbciApplication;
 pub use consensus::ConsensusAbciApplication;
@@ -23,6 +23,12 @@ pub use state_sync::StateSyncAbciApplication;
 pub trait PlatformApplication<C = DefaultCoreRPC> {
     /// Returns Platform
     fn platform(&self) -> &Platform<C>;
+}
+
+/// Platform-based ABCI application
+pub trait SnapshotManagerApplication {
+    /// Returns Platform
+    fn snapshot_manager(&self) -> &SnapshotManager;
 }
 
 /// Transactional ABCI application
