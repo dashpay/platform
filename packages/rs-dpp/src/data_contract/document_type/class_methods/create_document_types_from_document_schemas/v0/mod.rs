@@ -1,4 +1,5 @@
-use crate::consensus::basic::data_contract::DataContractEmptySchemaError;
+use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
@@ -16,16 +17,16 @@ impl DocumentTypeV0 {
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         documents_can_be_deleted_contract_default: bool,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
 
         if document_schemas.is_empty() {
-            return Err(ProtocolError::ConsensusError(Box::new(
-                DataContractEmptySchemaError::new(data_contract_id).into(),
-            )));
+            return Err(consensus_or_protocol_data_contract_error(
+                DocumentTypesAreMissingError::new(data_contract_id).into(),
+            ));
         }
 
         for (name, schema) in document_schemas.into_iter() {
@@ -43,7 +44,7 @@ impl DocumentTypeV0 {
                     documents_keep_history_contract_default,
                     documents_mutable_contract_default,
                     documents_can_be_deleted_contract_default,
-                    validate,
+                    full_validation,
                     validation_operations,
                     platform_version,
                 )?,

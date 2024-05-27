@@ -61,7 +61,7 @@ impl ErrorWithCode for BasicError {
             Self::DuplicateIndexNameError { .. } => 10211,
             Self::InvalidDataContractVersionError { .. } => 10212,
             Self::IncompatibleDataContractSchemaError { .. } => 10213,
-            Self::DataContractEmptySchemaError { .. } => 10214,
+            Self::ContractError(DataContractError::DocumentTypesAreMissingError { .. }) => 10214,
             Self::DataContractImmutablePropertiesUpdateError { .. } => 10215,
             Self::DataContractUniqueIndicesChangedError { .. } => 10216,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 10217,
@@ -93,7 +93,8 @@ impl ErrorWithCode for BasicError {
             Self::UnknownTransferableTypeError { .. } => 10243,
             Self::UnknownTradeModeError { .. } => 10244,
             Self::UnknownDocumentCreationRestrictionModeError { .. } => 10245,
-            Self::ContractError(DataContractError::RegexError(_)) => 10246,
+            Self::ContractError(DataContractError::RegexError(_)) => 10247,
+            Self::IncompatibleDocumentTypeSchemaError { .. } => 10246,
 
             // Document Errors: 10400-10499
             Self::DataContractNotPresentError { .. } => 10400,
@@ -220,6 +221,7 @@ impl ErrorWithCode for StateError {
             Self::IdentityInsufficientBalanceError(_) => 40210,
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
             Self::DocumentTypeUpdateError(_) => 40212,
+            Self::DataContractUpdatePermissionError(_) => 40213,
 
             // Prefunded specialized balances Errors: 40400-40499
             Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,

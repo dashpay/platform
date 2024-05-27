@@ -124,7 +124,7 @@ pub struct StrategyConfig {
 /// Identities to register on the first block of the strategy
 #[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
 pub struct StartIdentities {
-    pub number_of_identities: u8,
+    pub number_of_identities: u16,
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
     pub extra_keys: KeyMaps,
@@ -244,7 +244,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Strategy {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -274,7 +274,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             .map(|(serialized_contract, maybe_updates)| {
                 let contract = CreatedDataContract::versioned_deserialize(
                     serialized_contract.as_slice(),
-                    validate,
+                    full_validation,
                     platform_version,
                 )?;
                 let maybe_updates = maybe_updates
@@ -284,7 +284,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
                             .map(|(key, serialized_contract_update)| {
                                 let update = CreatedDataContract::versioned_deserialize(
                                     serialized_contract_update.as_slice(),
-                                    validate,
+                                    full_validation,
                                     platform_version,
                                 )?;
                                 Ok((key, update))
@@ -305,7 +305,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
         let operations = operations
             .into_iter()
             .map(|operation| {
-                Operation::versioned_deserialize(operation.as_slice(), validate, platform_version)
+                Operation::versioned_deserialize(
+                    operation.as_slice(),
+                    full_validation,
+                    platform_version,
+                )
             })
             .collect::<Result<Vec<Operation>, ProtocolError>>()?;
 
@@ -391,6 +395,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
@@ -446,6 +451,7 @@ impl Strategy {
                     signer,
                     identity_nonce_counter,
                     contract_nonce_counter,
+                    mempool_document_counter,
                     rng,
                     platform_version,
                 );
@@ -538,6 +544,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -563,11 +570,31 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
+                        // Get the first 10 identities who are eligible to submit documents for this contract
+                        let first_10_eligible_identities: Vec<Identity> = current_identities
+                            .iter()
+                            .filter(|identity| {
+                                mempool_document_counter
+                                    .get(&(identity.id(), contract.id()))
+                                    .unwrap_or(&0)
+                                    < &24u64
+                            })
+                            .take(10)
+                            .cloned()
+                            .collect();
+
+                        if first_10_eligible_identities.len() == 0 {
+                            tracing::warn!(
+                                "No eligible identities to submit a document to contract {}",
+                                contract.id().to_string(Encoding::Base64)
+                            );
+                        }
+
                         // TO-DO: these documents should be created according to the data contract's validation rules
                         let documents = document_type
                             .random_documents_with_params(
                                 count as u32,
-                                current_identities,
+                                &first_10_eligible_identities,
                                 Some(block_info.time_ms),
                                 Some(block_info.height),
                                 Some(block_info.core_height),

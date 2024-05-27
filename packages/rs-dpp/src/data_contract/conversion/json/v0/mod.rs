@@ -5,7 +5,7 @@ use serde_json::Value as JsonValue;
 pub trait DataContractJsonConversionMethodsV0 {
     fn from_json(
         json_value: JsonValue,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where

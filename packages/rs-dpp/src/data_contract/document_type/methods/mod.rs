@@ -6,6 +6,7 @@ mod index_for_types;
 mod max_size;
 mod prefunded_voting_balances_for_document;
 mod serialize_value_for_key;
+#[cfg(feature = "validation")]
 mod validate_update;
 
 use std::collections::BTreeMap;

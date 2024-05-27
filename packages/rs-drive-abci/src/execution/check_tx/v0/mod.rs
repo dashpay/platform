@@ -10,20 +10,27 @@ use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
-use dpp::consensus::basic::decode::SerializedObjectParsingError;
-use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 
+use crate::error::execution::ExecutionError;
+use crate::execution::types::state_transition_container::v0::{
+    DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
+    SuccessfullyDecodedStateTransition,
+};
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform_state::PlatformState;
+#[cfg(test)]
 use dpp::serialization::PlatformDeserializable;
+#[cfg(test)]
 use dpp::state_transition::StateTransition;
+use dpp::util::hash::hash_single;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 #[cfg(test)]
 use drive::grovedb::Transaction;
+
+const PRIORITY_USER_FEE_INCREASE_MULTIPLIER: u32 = 100;
 
 impl<C> Platform<C>
 where
@@ -74,7 +81,8 @@ where
     /// Checks a state transition to determine if it should be added to the mempool.
     ///
     /// This function performs a few checks, including validating the state transition and ensuring that the
-    /// user can pay for it. It may be inaccurate in rare cases, so the proposer needs to re-check transactions
+    /// user can pay for it. From the time a state transition is added to the mempool to the time it is included in a proposed block,
+    /// a previously valid state transition may have become invalid, so the proposer needs to re-check transactions
     /// before proposing a block.
     ///
     /// # Arguments
@@ -92,40 +100,47 @@ where
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
-        if raw_tx.len() as u64
-            > platform_version
-                .dpp
-                .state_transitions
-                .max_state_transition_size
-        {
-            // The state transition is too big
-            let consensus_error =
-                ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
-                    StateTransitionMaxSizeExceededError::new(
-                        raw_tx.len() as u64,
-                        platform_version
-                            .dpp
-                            .state_transitions
-                            .max_state_transition_size,
-                    ),
-                ));
-            tracing::debug!(
-                ?consensus_error,
-                "State transition too big on check tx (starts with {})",
-                hex::encode(raw_tx.split_at(80).0)
-            );
-
-            return Ok(ValidationResult::new_with_error(consensus_error));
+        let mut state_transition_hash = None;
+        if tracing::enabled!(tracing::Level::TRACE) {
+            state_transition_hash = Some(hash_single(raw_tx));
         }
 
-        let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
-            Ok(state_transition) => state_transition,
-            Err(err) => {
-                return Ok(ValidationResult::new_with_error(
-                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
-                        SerializedObjectParsingError::new(err.to_string()),
-                    )),
-                ))
+        let mut check_tx_result = CheckTxResult {
+            level: check_tx_level,
+            fee_result: None,
+            unique_identifiers: vec![],
+            priority: 0,
+            state_transition_name: None,
+            state_transition_hash,
+        };
+
+        let raw_state_transitions = vec![raw_tx];
+        let mut decoded_state_transitions: Vec<DecodedStateTransition> = self
+            .decode_raw_state_transitions(&raw_state_transitions, platform_version)?
+            .into();
+
+        if decoded_state_transitions.len() != 1 {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "expected exactly one decoded state transition",
+            )));
+        }
+
+        let state_transition = match decoded_state_transitions.remove(0) {
+            DecodedStateTransition::SuccessfullyDecoded(SuccessfullyDecodedStateTransition {
+                decoded,
+                ..
+            }) => decoded,
+            DecodedStateTransition::InvalidEncoding(InvalidStateTransition { error, .. }) => {
+                return Ok(ValidationResult::new_with_data_and_errors(
+                    check_tx_result,
+                    vec![error],
+                ));
+            }
+            DecodedStateTransition::FailedToDecode(InvalidWithProtocolErrorStateTransition {
+                error,
+                ..
+            }) => {
+                return Err(error.into());
             }
         };
 
@@ -136,9 +151,14 @@ where
             core_rpc: &self.core_rpc,
         };
 
-        let unique_identifiers = state_transition.unique_identifiers();
+        let user_fee_increase = state_transition.user_fee_increase() as u32;
 
-        let priority = state_transition.user_fee_increase() as u32 * 100;
+        check_tx_result.priority =
+            user_fee_increase.saturating_mul(PRIORITY_USER_FEE_INCREASE_MULTIPLIER);
+
+        check_tx_result.state_transition_name = Some(state_transition.name().to_string());
+
+        check_tx_result.unique_identifiers = state_transition.unique_identifiers();
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
@@ -146,32 +166,40 @@ where
             check_tx_level,
         )?;
 
-        // We should run the execution event in dry run to see if we would have enough fees for the transition
-        validation_result.and_then_borrowed_validation(|execution_event| {
-            if let Some(execution_event) = execution_event {
-                self.validate_fees_of_event(
-                    execution_event,
-                    platform_state.last_block_info(),
-                    None,
-                    platform_version,
-                )
-                .map(|validation_result| {
-                    validation_result.map(|fee_result| CheckTxResult {
-                        level: check_tx_level,
-                        fee_result: Some(fee_result),
-                        unique_identifiers,
-                        priority,
-                    })
-                })
-            } else {
-                Ok(ValidationResult::new_with_data(CheckTxResult {
-                    level: check_tx_level,
-                    fee_result: None,
-                    unique_identifiers,
-                    priority,
-                }))
-            }
-        })
+        // If there are any validation errors happen we return
+        // the validation result with errors and CheckTxResult data
+        if !validation_result.is_valid() {
+            return Ok(ValidationResult::new_with_data_and_errors(
+                check_tx_result,
+                validation_result.errors,
+            ));
+        }
+
+        // If we are here then state transition pre-validation succeeded
+
+        // We should run the execution event in dry run (estimated fees)
+        // to see if we would have enough fees for the transition
+        if let Some(execution_event) = validation_result.into_data()? {
+            let validation_result = self.validate_fees_of_event(
+                &execution_event,
+                platform_state.last_block_info(),
+                None,
+                platform_version,
+            )?;
+
+            let (estimated_fee_result, errors) = validation_result.into_data_and_errors()?;
+
+            check_tx_result.fee_result = Some(estimated_fee_result);
+
+            Ok(ValidationResult::new_with_data_and_errors(
+                check_tx_result,
+                errors,
+            ))
+        } else {
+            // In case of asset lock based transitions, we don't have execution event
+            // because we already validated remaining balance
+            Ok(ValidationResult::new_with_data(check_tx_result))
+        }
     }
 }
 
@@ -626,7 +654,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 909520);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 905460);
 
         let check_result = platform
             .check_tx(

@@ -1096,6 +1096,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             config: 0,
             methods: DataContractMethodVersions {
                 validate_document: 0,
+                validate_update: 0,
                 schema: 0,
             },
             document_type_versions: DocumentTypeVersions {

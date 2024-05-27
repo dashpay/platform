@@ -1,6 +1,6 @@
 [package]
 name = "json-schema-compatibility-validator"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.7"
 edition = "2021"
 rust-version = "1.76"
 authors = [

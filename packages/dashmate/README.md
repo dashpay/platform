@@ -71,11 +71,11 @@ $ dashmate update
 ║ Drive ABCI       │ dashpay/drive:0.24           │ updated    ║
 ║ Drive Tenderdash │ dashpay/tenderdash:0.11.2    │ up to date ║
 ║ DAPI API         │ dashpay/dapi:0.24            │ updated    ║
-║ DAPI Envoy       │ dashpay/envoy:0.24           │ updated    ║
+║ Gateway          │ dashpay/envoy:0.24           │ updated    ║
 ║ Dashmate Helper  │ dashpay/dashmate-helper:0.24 │ updated    ║
 ╚══════════════════╧══════════════════════════════╧════════════╝
 $ dashmate update --format=json 
-[{"name":"core","title":"Core","updated":false,"image":"dashpay/dashd:19.2.0"},{"name":"drive_abci","title":"Drive ABCI","pulled":false,"image":"dashpay/drive:0.24"},{"name":"drive_tenderdash","title":"Drive Tenderdash","pulled":true,"image":"dashpay/tenderdash:0.11.2"},{"name":"dapi_api","title":"DAPI API","pulled":false,"image":"dashpay/dapi:0.24"},{"name":"dapi_envoy","title":"DAPI Envoy","pulled":false,"image":"dashpay/envoy:0.24"},{"name":"dashmate_helper","title":"Dashmate Helper","pulled":false,"image":"dashpay/dashmate-helper:0.24"}]
+[{"name":"core","title":"Core","updated":false,"image":"dashpay/dashd:19.2.0"},{"name":"drive_abci","title":"Drive ABCI","pulled":false,"image":"dashpay/drive:0.24"},{"name":"drive_tenderdash","title":"Drive Tenderdash","pulled":true,"image":"dashpay/tenderdash:0.11.2"},{"name":"dapi_api","title":"DAPI API","pulled":false,"image":"dashpay/dapi:0.24"},{"name":"gateway","title":"Gateway","pulled":false,"image":"dashpay/envoy:0.24"},{"name":"dashmate_helper","title":"Dashmate Helper","pulled":false,"image":"dashpay/dashmate-helper:0.24"}]
 $ dashmate start
 ```
 
@@ -177,6 +177,8 @@ USAGE
   $ dashmate start [-v] [--config <value>] [-w]
 
 FLAGS
+  -f, --force               force start even if any services are already running
+  -p, --platform            start only platform
   -v, --verbose             use verbose mode for output
   -w, --wait-for-readiness  wait for nodes to be ready
   --config=<value>          configuration name to use
@@ -193,12 +195,15 @@ The `stop` command is used to stop a running node.
 
 ```
 USAGE
-  $ dashmate stop [-v] [--config <value>] [-f]
+  $ dashmate stop [--config <value>] [-v] [-f] [-p] [-s]
 
 FLAGS
-  -f, --force       force stop even if any is running
+  -f, --force       force stop even if any service is running
+  -p, --platform    stop only platform
+  -s, --safe        wait for dkg before stop
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
+
 ```
 
 To stop a node:
@@ -212,11 +217,13 @@ The `restart` command is used to restart a node with the default or specified co
 
 ```
 USAGE
-  $ dashmate restart [-v] [--config <value>]
+  $ dashmate restart [--config <value>] [-v] [-p] [-s]
 
 FLAGS
-  -v, --verbose     use verbose mode for output
-  --config=<value>  configuration name to use
+  -p, --platform        restart only platform
+  -s, --safe            wait for dkg before stop
+  -v, --verbose         use verbose mode for output
+      --config=<value>  configuration name to use
 ```
 
 ### Show node status
@@ -391,7 +398,8 @@ USAGE
   $ dashmate group stop [-v] [--group <value>] [-f]
 
 FLAGS
-  -f, --force      force stop even if any service is running
+  -f, --force      force stop even if any is running
+  -s, --safe       wait for dkg before stop
   -v, --verbose    use verbose mode for output
   --group=<value>  group name to use
 ```
@@ -402,11 +410,15 @@ The `group restart` command is used to restart group nodes belonging to the defa
 
 ```
 USAGE
-  $ dashmate group restart [-v] [--group <value>]
+  $ dashmate group restart [--group <value>] [-v] [-s]
 
 FLAGS
-  -v, --verbose    use verbose mode for output
-  --group=<value>  group name to use
+  -s, --safe           wait for dkg before stop
+  -v, --verbose        use verbose mode for output
+      --group=<value>  group name to use
+
+DESCRIPTION
+  Restart group nodes
 ```
 
 #### Show group status
@@ -503,7 +515,7 @@ again all your service configs (dashd.conf, config.toml, etc.), you can issue th
 
 ```bash
 dashmate config render
-Config "testnet" service configs rendered
+"testnet" service configs rendered
 ```
 
 ### Development

@@ -1,60 +1,76 @@
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
+use std::time::Duration;
 
-/// This is a container that holds state transitions
-
-#[derive(Debug, Default)]
-pub struct StateTransitionContainerV0<'a> {
-    /// The asset lock state transitions
-    pub(super) valid_state_transitions: Vec<(&'a Vec<u8>, StateTransition)>,
-    /// Deserialization errors
-    pub(super) invalid_state_transitions: Vec<(&'a Vec<u8>, ConsensusError)>,
-    /// Deserialization errors that broke platform, these should not exist, but are still handled
-    pub(super) invalid_state_transitions_with_protocol_error: Vec<(&'a Vec<u8>, ProtocolError)>,
+/// Decoded state transition result
+#[derive(Debug)]
+pub enum DecodedStateTransition<'a> {
+    SuccessfullyDecoded(SuccessfullyDecodedStateTransition<'a>),
+    InvalidEncoding(InvalidStateTransition<'a>),
+    FailedToDecode(InvalidWithProtocolErrorStateTransition<'a>),
 }
 
-pub trait StateTransitionContainerGettersV0<'a> {
-    fn valid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, StateTransition)];
-    fn invalid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, ConsensusError)];
-    fn invalid_state_transitions_with_protocol_error(
-        &'a self,
-    ) -> &'a [(&'a Vec<u8>, ProtocolError)];
+/// Invalid encoded state transition
+#[derive(Debug)]
+pub struct InvalidStateTransition<'a> {
+    pub raw: &'a [u8],
+    pub error: ConsensusError,
+    pub elapsed_time: Duration,
+}
 
-    fn destructure(
-        self,
-    ) -> (
-        Vec<(&'a Vec<u8>, StateTransition)>,
-        Vec<(&'a Vec<u8>, ConsensusError)>,
-        Vec<(&'a Vec<u8>, ProtocolError)>,
-    );
+/// State transition that failed to decode
+#[derive(Debug)]
+pub struct InvalidWithProtocolErrorStateTransition<'a> {
+    pub raw: &'a [u8],
+    pub error: ProtocolError,
+    pub elapsed_time: Duration,
+}
+
+/// Successfully decoded state transition
+#[derive(Debug)]
+pub struct SuccessfullyDecodedStateTransition<'a> {
+    pub decoded: StateTransition,
+    pub raw: &'a [u8],
+    pub elapsed_time: Duration,
+}
+
+/// This is a container that holds state transitions
+#[derive(Debug)]
+pub struct StateTransitionContainerV0<'a> {
+    // We collect all decoding results in the same vector because we want to
+    // keep the original input order when we process them and log results we can
+    // easily match with txs in block
+    state_transitions: Vec<DecodedStateTransition<'a>>,
 }
 
 impl<'a> StateTransitionContainerV0<'a> {
-    pub fn push_valid_state_transition(
-        &mut self,
-        raw_state_transition: &'a Vec<u8>,
-        valid_state_transition: StateTransition,
-    ) {
-        self.valid_state_transitions
-            .push((raw_state_transition, valid_state_transition))
+    pub fn new(state_transitions: Vec<DecodedStateTransition<'a>>) -> Self {
+        Self { state_transitions }
     }
+}
 
-    pub fn push_invalid_raw_state_transition(
-        &mut self,
-        invalid_raw_state_transition: &'a Vec<u8>,
-        error: ConsensusError,
-    ) {
-        self.invalid_state_transitions
-            .push((invalid_raw_state_transition, error))
+impl<'a> IntoIterator for &'a StateTransitionContainerV0<'a> {
+    type Item = &'a DecodedStateTransition<'a>;
+    type IntoIter = std::slice::Iter<'a, DecodedStateTransition<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.state_transitions.iter()
     }
+}
 
-    pub fn push_invalid_raw_state_transition_with_protocol_error(
-        &mut self,
-        invalid_raw_state_transition: &'a Vec<u8>,
-        error: ProtocolError,
-    ) {
-        self.invalid_state_transitions_with_protocol_error
-            .push((invalid_raw_state_transition, error))
+impl<'a> IntoIterator for StateTransitionContainerV0<'a> {
+    type Item = DecodedStateTransition<'a>;
+    type IntoIter = std::vec::IntoIter<DecodedStateTransition<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.state_transitions.into_iter()
+    }
+}
+
+#[allow(clippy::from_over_into)]
+impl<'a> Into<Vec<DecodedStateTransition<'a>>> for StateTransitionContainerV0<'a> {
+    fn into(self) -> Vec<DecodedStateTransition<'a>> {
+        self.state_transitions
     }
 }

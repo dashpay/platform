@@ -6,7 +6,7 @@
 use dpp::prelude::Identifier;
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr};
 
 /// Existing document ID
 ///
@@ -144,7 +144,7 @@ impl Config {
     /// expectations from different tests.
     ///
     /// When empty string is provided, expectations are stored in the root of the dump directory.
-    pub async fn setup_api(&self, namespace: &str) -> Arc<dash_sdk::Sdk> {
+    pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {
         let dump_dir = match namespace.is_empty() {
             true => self.dump_dir.clone(),
             false => self.dump_dir.join(sanitize_filename::sanitize(namespace)),
@@ -194,7 +194,7 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mock_sdk = dash_sdk::SdkBuilder::new_mock()
+            let mut mock_sdk = dash_sdk::SdkBuilder::new_mock()
                 .build()
                 .expect("initialize api");
 

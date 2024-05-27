@@ -40,7 +40,7 @@ impl DocumentType {
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         documents_can_be_deleted_contract_default: bool,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
@@ -58,7 +58,7 @@ impl DocumentType {
                 documents_keep_history_contract_default,
                 documents_mutable_contract_default,
                 documents_can_be_deleted_contract_default,
-                validate,
+                full_validation,
                 validation_operations,
                 platform_version,
             ),
@@ -72,16 +72,23 @@ impl DocumentType {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+    use super::*;
+
+    use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
+    use crate::data_contract::errors::DataContractError;
+    use assert_matches::assert_matches;
     use platform_value::Identifier;
     use std::ops::Deref;
 
     #[test]
     pub fn should_not_allow_creating_document_types_with_empty_schema() {
-        let result = crate::data_contract::document_type::DocumentType::create_document_types_from_document_schemas(
-            Identifier::random(),
+        let id = Identifier::random();
+
+        let result = DocumentType::create_document_types_from_document_schemas(
+            id,
             Default::default(),
             None,
             false,
@@ -89,18 +96,15 @@ mod test {
             false,
             false,
             &mut vec![],
-            crate::version::PlatformVersion::latest(),
+            PlatformVersion::latest(),
         );
 
-        match result {
-            Err(crate::ProtocolError::ConsensusError(e)) => match e.deref() {
-                ConsensusError::BasicError(err) => match err {
-                    BasicError::DataContractEmptySchemaError(_) => {}
-                    _ => panic!("Expected DataContractEmptySchemaError"),
-                },
-                _ => panic!("Expected basic consensus error"),
-            },
-            _ => panic!("Expected consensus error"),
-        }
+        assert_matches!(result, Err(ProtocolError::ConsensusError(e)) => {
+            assert_matches!(e.deref(), ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::DocumentTypesAreMissingError(
+                    DocumentTypesAreMissingError { .. }
+                )
+            )));
+        });
     }
 }

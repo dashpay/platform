@@ -57,8 +57,11 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
@@ -462,7 +465,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_if_trying_to_update_config() {
+        fn should_return_invalid_result_if_trying_to_update_config() {
             let TestData {
                 mut data_contract,
                 platform,
@@ -650,9 +653,15 @@ mod tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
-            panic!("expected a paid consensus error");
-        };
-        assert_eq!(consensus_error.to_string(), "Data Contract updated schema is not backward compatible with one defined in Data Contract with id 86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e. Field: '/creationRestrictionMode', Operation: 'remove'");
+        assert!(matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(error)
+                ), _
+            ) if error.data_contract_id() == &contract.id()
+                && error.document_type_name() == "card"
+                && error.additional_message() == "document type can not change creation restriction mode: changing from Owner Only to No Restrictions"
+        ));
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "1.0.0-dev.12"
+version = "1.0.0-dev.15"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -44,7 +44,7 @@ tracing = { version = "0.1.37", default-features = false, features = [] }
 clap = { version = "4.4.10", features = ["derive"] }
 envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.7" }
-dapi-grpc = { path = "../dapi-grpc" }
+dapi-grpc = { path = "../dapi-grpc", features = ["server"] }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
   "env-filter",
   "ansi",
@@ -64,8 +64,8 @@ file-rotate = { version = "0.7.3" }
 reopen = { version = "1.0.3" }
 delegate = { version = "0.9.0" }
 regex = { version = "1.8.1" }
-metrics = { version = "0.21" }
-metrics-exporter-prometheus = { version = "0.12" }
+metrics = { version = "0.22.3" }
+metrics-exporter-prometheus = { version = "0.14.0" }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
 tokio = { version = "1.36", features = [
@@ -98,6 +98,7 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 drive = { path = "../rs-drive" }
 strategy-tests = { path = "../strategy-tests" }
+assert_matches = "1.5.0"
 
 # For tests of grovedb verify
 rocksdb = { version = "0.22.0" }

@@ -1,7 +1,9 @@
+use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
 use crate::consensus::basic::decode::DecodingError;
 use crate::consensus::basic::BasicError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use thiserror::Error;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
@@ -20,6 +22,9 @@ pub enum DataContractError {
 
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
+
+    #[error(transparent)]
+    DocumentTypesAreMissingError(DocumentTypesAreMissingError),
 
     #[error("missing required key: {0}")]
     MissingRequiredKey(String),

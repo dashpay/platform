@@ -14,12 +14,10 @@ mod v0;
 
 // @append_only
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug)]
 pub enum CheckTxLevel {
-    #[default]
-    Unknown,
-    FirstTimeCheck,
-    Recheck,
+    FirstTimeCheck = 0,
+    Recheck = 1,
 }
 
 impl TryFrom<u8> for CheckTxLevel {
@@ -53,7 +51,7 @@ impl TryFrom<i32> for CheckTxLevel {
 }
 
 /// The result of a check tx
-#[derive(Default, Clone)]
+#[derive(Clone, Debug)]
 pub struct CheckTxResult {
     /// The level used when checking the transaction
     pub level: CheckTxLevel,
@@ -67,6 +65,10 @@ pub struct CheckTxResult {
     /// Priority to return to tenderdash. State Transitions with higher priority take precedence
     /// over state transitions with lower priority
     pub priority: u32,
+    /// State transition type name. Using for logging
+    pub state_transition_name: Option<String>,
+    /// State transition ID. Using for logging
+    pub state_transition_hash: Option<[u8; 32]>,
 }
 
 impl<C> Platform<C>

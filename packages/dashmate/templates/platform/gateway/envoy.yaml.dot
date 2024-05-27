@@ -1,0 +1,487 @@
+!ignore filters: &filters
+  - name: envoy.http_connection_manager
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+      stat_prefix: ingress_http
+      normalize_path: true
+      merge_slashes: true
+      use_remote_address: true
+      path_with_escaped_slashes_action: UNESCAPE_AND_REDIRECT
+      # Settings applied both to HTTP1 and HTTP2
+      common_http_protocol_options:
+        # A single HTTP connection timeout.
+        max_connection_duration: 600s
+        # How long to keep the connection alive when there are no streams (requests).
+        idle_timeout: 300s
+        # Request (stream) timeout.
+        # HTTP2 support multiple streams (requests) per connection.
+        # For HTTP1 it applies for single request.
+        # This param is overwritten in specific routes.
+        max_stream_duration: 15s
+        # Reject malformed requests with headers containing underscores.
+        headers_with_underscores_action: REJECT_REQUEST
+      # HTTP2 specific settings
+      http2_protocol_options:
+        # As a side effect this field acts as a soft limit on the number of bytes Envoy will buffer per-stream in the
+        # QUIC stream send and receive buffers. Once the buffer reaches this pointer, watermark callbacks will fire
+        # to stop the flow of data to the stream buffers. So we reduce it from 16 MiB to 64 KiB
+        initial_stream_window_size: 65536  # 64 KiB
+        # The same but for connection-level flow-control
+        initial_connection_window_size: 1048576  # 1 MiB
+        # This option sets the maximum number of concurrent streams allowed for each connection.
+        # It means N requests can be in flight at the same time on a single connection.
+        max_concurrent_streams: {{= it.platform.gateway.listeners.dapiAndDrive.http2.maxConcurrentStreams }}
+      # Stream idle timeout
+      stream_idle_timeout: 15s
+{{? it.platform.gateway.log.accessLogs }}
+      access_log:
+      {{~ it.platform.gateway.log.accessLogs :log }}
+        {{ loggerType = {file: 'file.v3.FileAccessLog', stdout: 'stream.v3.StdoutAccessLog', stderr: 'stream.v3.StderrAccessLog'}; }}
+        - name: envoy.access_loggers.{{=log.type}}
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.access_loggers.{{=loggerType[log.type]}}
+            {{? log.type === 'file' }}
+            path: "/var/log/{{=log.path.split('/').reverse()[0]}}"
+            {{?? log.type === 'stream' }}
+            {{=log.destination}}
+            {{?}}
+            log_format:
+            {{? log.format === 'json' }}
+              json_format:
+              {{? log.template === null }}
+                timestamp: "%START_TIME%"
+                client: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+                protocol: "%PROTOCOL%"
+                method: "%REQ(:METHOD)%"
+                uri: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                "http-status": "%RESPONSE_CODE%"
+                "grpc-status": "%GRPC_STATUS%"
+                "rx-bytes": "%BYTES_RECEIVED%"
+                "tx-bytes": "%BYTES_SENT%"
+                "response-flags": "%RESPONSE_FLAGS%"
+                duration: "%DURATION%"
+              {{??}}
+                {{ template = Object.entries(log.template); }}
+                {{~ template :entry }}
+                "{{=entry[0]}}": "{{=entry[1]}}"
+                {{~}}
+              {{?}}
+            {{??}}
+              text_format_source:
+                {{? log.template === null }}
+                inline_string: "[%START_TIME%] \"%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%\" %RESPONSE_CODE% %GRPC_STATUS% %RESPONSE_FLAGS% R:%BYTES_RECEIVED% S:%BYTES_SENT% D:%DURATION%\n"
+                {{??}}
+                inline_string: "{{=log.template}}\n"
+                {{?}}
+            {{?}}
+      {{~}}
+{{?}}
+      http_filters:
+        # TODO: Introduce when stable https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/adaptive_concurrency_filter.html
+        {{? it.platform.gateway.rateLimiter.enabled}}
+        - name: envoy.filters.http.ratelimit
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            domain: edge_proxy_per_ip
+            # The rate limit service timeout before the request is considered failed
+            timeout: 5s
+            # Reject a request if rate limit service is unavailable
+            failure_mode_deny: true
+            # Respond with RESOURCE_EXHAUSTED status code if request is rejected
+            rate_limited_as_resource_exhausted: true
+            rate_limit_service:
+              grpc_service:
+                envoy_grpc:
+                  cluster_name: ratelimit_service
+                timeout: 0.5s
+              transport_api_version: V3
+        {{?}}
+        - name: envoy.filters.http.grpc_web
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
+        - name: envoy.filters.http.cors
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+        - name: envoy.filters.http.router
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      route_config:
+        name: local_route
+        virtual_hosts:
+          - name: http_services
+            domains: [ "*" ]
+            routes:
+              # DAPI core streaming endpoints
+              - match:
+                  prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
+                route:
+                  cluster: dapi_core_streams
+                  idle_timeout: 300s
+                  # Upstream response timeout
+                  timeout: 600s
+                  max_stream_duration:
+                    # Entire stream/request timeout
+                    max_stream_duration: 600s
+                    grpc_timeout_header_max: 600s
+              # Other DAPI Core endpoints
+              - match:
+                  prefix: "/org.dash.platform.dapi.v0.Core"
+                route:
+                  cluster: dapi_api
+                  # Upstream response timeout
+                  timeout: 15s
+              # DAPI waitForStateTransitionResult endpoint with bigger timeout
+              - match:
+                  path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
+                route:
+                  cluster: dapi_api
+                  idle_timeout: 85s
+                  # Upstream response timeout
+                  timeout: 85s
+                  max_stream_duration:
+                    # Entire stream/request timeout
+                    max_stream_duration: 85s
+                    grpc_timeout_header_max: 85s
+              # DAPI getConsensusParams endpoint
+              - match:
+                  path: "/org.dash.platform.dapi.v0.Platform/getConsensusParams"
+                route:
+                  cluster: dapi_api
+                  # Upstream response timeout
+                  timeout: 10s
+              # DAPI broadcastStateTransition endpoint
+              - match:
+                  path: "/org.dash.platform.dapi.v0.Platform/broadcastStateTransition"
+                route:
+                  cluster: dapi_api
+                  # Upstream response timeout
+                  timeout: 10s
+              # getProofs endpoint only for internal use (DAPI -> Drive)
+              - match:
+                  path: "/org.dash.platform.dapi.v0.Platform/getProofs"
+                response_headers_to_add:
+                  - header:
+                      key: "Content-Type"
+                      value: "application/grpc-web+proto"
+                  - header:
+                      key: "grpc-status"
+                      value: "12"
+                  - header:
+                      key: "grpc-message"
+                      value: "getProofs endpoint is only for internal use"
+                direct_response:
+                  status: 204
+              # Drive gRPC endpoints
+              - match:
+                  prefix: "/org.dash.platform.dapi.v0.Platform"
+                route:
+                  cluster: drive_grpc
+                  # Upstream response timeout
+                  timeout: 10s
+              # Static responses of unsupported api versions
+              # core static response
+              - match:
+                  safe_regex:
+                    regex: "\/org\\.dash\\.platform\\.dapi\\.v[1-9]+\\."
+                response_headers_to_add:
+                  - header:
+                      key: "Content-Type"
+                      value: "application/grpc-web+proto"
+                  - header:
+                      key: "grpc-status"
+                      value: "12"
+                  - header:
+                      key: "grpc-message"
+                      value: "Specified service version is not supported"
+                direct_response:
+                  status: 204
+              # JSON RPC endpoints
+              - match:
+                  path: "/"
+                route:
+                  cluster: dapi_json_rpc
+                  # Upstream response timeout
+                  timeout: 10s
+            {{? it.platform.gateway.rateLimiter.enabled }}
+            rate_limits:
+              - actions:
+                  remote_address: {}
+            {{?}}
+            typed_per_filter_config:
+              envoy.filters.http.cors:
+                "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
+                allow_origin_string_match:
+                  - prefix: "*"
+                allow_methods: GET, PUT, DELETE, POST, OPTIONS
+                allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout
+                max_age: "1728000"
+                expose_headers: custom-header-1,grpc-status,grpc-message
+
+static_resources:
+  listeners:
+    - name: dapi_and_drive
+      address:
+        socket_address:
+          address: 0.0.0.0  # For docker container only. Must be a local/private interface.
+          port_value: 10000
+      {{? it.platform.gateway.ssl.provider === 'self-signed'}}
+      listener_filters:
+        - name: envoy.filters.listener.tls_inspector
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      filter_chains:
+        - filter_chain_match:
+            transport_protocol: raw_buffer
+          filters: *filters
+        - filter_chain_match:
+            transport_protocol: tls
+          filters: *filters
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                alpn_protocols: [ "h2, http/1.1" ]
+                tls_certificates:
+                  - certificate_chain:
+                      filename: "/etc/ssl/bundle.crt"
+                    private_key:
+                      filename: "/etc/ssl/private.key"
+        {{??}}
+      filter_chains:
+        filters: *filters
+        transport_socket:
+          name: envoy.transport_sockets.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+            common_tls_context:
+              alpn_protocols: [ "h2, http/1.1" ]
+              tls_certificates:
+                - certificate_chain:
+                    filename: "/etc/ssl/bundle.crt"
+                  private_key:
+                    filename: "/etc/ssl/private.key"
+        {{?}}
+    {{? it.platform.gateway.metrics.enabled }}
+    # Forward /stats/prometheus (which is a part of admin endpoint)
+    # to a separate listener with default Prometheus path /metrics
+    - name: prometheus_metrics
+      address:
+        socket_address:
+          address: "0.0.0.0"
+          port_value: 9090
+      filter_chains:
+       - filters:
+           - name: "envoy.http_connection_manager"
+             typed_config:
+               "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+               stat_prefix: ingress_metrics
+               route_config:
+                 name: local_route
+                 virtual_hosts:
+                   - name: local_service
+                     domains: [ "*" ]
+                     routes:
+                       - match:
+                           prefix: "/metrics"
+                         route:
+                           cluster: admin
+                           prefix_rewrite: "/stats/prometheus"
+               http_filters:
+                 - name: envoy.filters.http.router
+                   typed_config:
+                     "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+    {{?}}
+  clusters:
+    - name: dapi_api
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              initial_stream_window_size: 65536  # 64 KiB
+              initial_connection_window_size: 1048576  # 1 MiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            # The maximum number of parallel requests
+            max_requests: {{= it.platform.gateway.upstreams.dapiApi.maxRequests }}
+      load_assignment:
+        cluster_name: dapi_api
+        endpoints:
+        - lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: dapi_api
+                  port_value: 3005
+    - name: dapi_core_streams
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              initial_stream_window_size: 65536  # 64 KiB
+              initial_connection_window_size: 1048576  # 1 MiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            max_requests: {{= it.platform.gateway.upstreams.dapiCoreStreams.maxRequests }}
+      load_assignment:
+        cluster_name: dapi_core_streams
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dapi_core_streams
+                      port_value: 3006
+    - name: dapi_json_rpc
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            # The maximum number of parallel connections
+            max_connections: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
+            # The maximum number of parallel requests
+            max_requests: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
+      load_assignment:
+        cluster_name: dapi_json_rpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: dapi_api
+                      port_value: 3004
+    - name: drive_grpc
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              initial_stream_window_size: 65536  # 64 KiB
+              initial_connection_window_size: 1048576  # 1 MiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            # The maximum number of parallel requests.
+            max_requests: {{= it.platform.gateway.upstreams.driveGrpc.maxRequests }}
+      load_assignment:
+        cluster_name: drive_grpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: drive_abci
+                      port_value: 26670
+    {{? it.platform.gateway.rateLimiter.enabled }}
+    - name: ratelimit_service
+      type: STRICT_DNS
+      connect_timeout: 1s
+      protocol_selection: USE_CONFIGURED_PROTOCOL
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: ratelimit_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: gateway_rate_limiter
+                      port_value: 8081
+    {{?}}
+    {{? it.platform.gateway.metrics.enabled && it.platform.gateway.admin.enabled }}
+    - name: admin
+      connect_timeout: 0.25s
+      type: STATIC
+      load_assignment:
+        cluster_name: admin
+        endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: "127.0.0.1"
+                    port_value: 9901
+    {{?}}
+
+{{? it.platform.gateway.admin.enabled }}
+admin:
+ address:
+   socket_address:
+     address: 0.0.0.0 # For docker container only. Must be a local/private interface.
+     port_value: 9901
+{{?}}
+
+# Dynamically adjust limits based on memory usage and number of active connections
+# TODO: We can use data provided by drive, tenderdash, or dapi to configure adaptive limits based on load
+# https://www.envoyproxy.io/docs/envoy/v1.30.1/api-v3/extensions/resource_monitors/injected_resource/v3/injected_resource.proto
+overload_manager:
+  refresh_interval: 0.25s
+  resource_monitors:
+    # Monitor heap size
+    - name: "envoy.resource_monitors.fixed_heap"
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.resource_monitors.fixed_heap.v3.FixedHeapConfig
+        # Maximum heap size in bytes. If the heap size exceeds this value, Envoy will take actions to reduce memory usage.
+        max_heap_size_bytes: {{= it.platform.gateway.maxHeapSizeInBytes }}
+    # Monitor the number of active downstream connections
+    - name: "envoy.resource_monitors.global_downstream_max_connections"
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.resource_monitors.downstream_connections.v3.DownstreamConnectionsConfig
+        max_active_downstream_connections: {{= it.platform.gateway.maxConnections }}
+  actions:
+    # Reduce the heap size by releasing free memory if the current heap size is 92% of the maximum heap size.
+    - name: "envoy.overload_actions.shrink_heap"
+      triggers:
+        - name: "envoy.resource_monitors.fixed_heap"
+          threshold:
+            value: 0.92
+    # Disable HTTP keepalive connections if the current heap size is 92% of the maximum heap size
+    # OR the number of active downstream connections is 95% of the maximum number of connections.
+    # Envoy will drain HTTP/2 and HTTP/3 connections using GOAWAY with a drain grace period.
+    # For HTTP/1, Envoy will set a drain timer to close the more idle recently used connections.
+    - name: "envoy.overload_actions.disable_http_keepalive"
+      triggers:
+        - name: "envoy.resource_monitors.fixed_heap"
+          threshold:
+            value: 0.92
+        - name: "envoy.resource_monitors.global_downstream_max_connections"
+          threshold:
+            value: 0.95
+    # Stop accepting new HTTP connections in configured listeners if the number of active downstream
+    # connections reached the maximum.
+    # TODO: Use `envoy.load_shed_points.tcp_listener_accept` instead `envoy.overload_actions.stop_accepting_connections`
+    #   when `loadshed_points` start to support `global_downstream_max_connections` monitor.
+    - name: "envoy.overload_actions.stop_accepting_connections"
+      triggers:
+        - name: "envoy.resource_monitors.global_downstream_max_connections"
+          threshold:
+              value: 1.0
+    # Stop accepting new HTTP requests if the current heap size is 95% of the maximum heap size.
+    - name: "envoy.overload_actions.stop_accepting_requests"
+      triggers:
+        - name: "envoy.resource_monitors.fixed_heap"
+          threshold:
+            value: 0.95
+  loadshed_points:
+    # Stop accepting new TCP connections if the current heap size is 95% of the maximum heap size
+    - name: "envoy.load_shed_points.tcp_listener_accept"
+      triggers:
+        - name: "envoy.resource_monitors.fixed_heap"
+          threshold:
+            value: 0.95

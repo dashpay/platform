@@ -13,6 +13,11 @@ export default class GroupStopCommand extends GroupBaseCommand {
       description: 'force stop even if any is running',
       default: false,
     }),
+    safe: Flags.boolean({
+      char: 's',
+      description: 'wait for dkg before stop',
+      default: false,
+    }),
   };
 
   /**
@@ -27,6 +32,7 @@ export default class GroupStopCommand extends GroupBaseCommand {
     args,
     {
       force: isForce,
+      safe: isSafe,
       verbose: isVerbose,
     },
     dockerCompose,
@@ -63,6 +69,7 @@ export default class GroupStopCommand extends GroupBaseCommand {
       await tasks.run({
         isVerbose,
         isForce,
+        isSafe,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

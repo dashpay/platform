@@ -24,8 +24,8 @@ services:
       org.dashmate.service.title: "Core"
     restart: unless-stopped
     ports:
-      - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
-      - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
+      - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err}
+      - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err}
     volumes:
       - core_data:/home/dash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/home/dash/.dashcore/dash.conf:ro
@@ -72,16 +72,15 @@ services:
       - DB_PATH=/var/lib/dash/rs-drive-abci/db
       - ABCI_CONSENSUS_BIND_ADDRESS=tcp://0.0.0.0:26658
       - GRPC_BIND_ADDRESS=0.0.0.0:26670
-      - PROMETHEUS_BIND_ADDRESS=http://0.0.0.0:29090
+      - PROMETHEUS_BIND_ADDRESS=${PLATFORM_DRIVE_ABCI_METRICS_URL}
       - TOKIO_CONSOLE_ENABLED=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_ENABLED:?err}
       - TOKIO_CONSOLE_ADDRESS=0.0.0.0:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
-      - TOKIO_CONSOLE_RETENTION_SECS=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_RETENTION_SECS:?err}
+      - TOKIO_CONSOLE_RETENTION_SECS=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_RETENTION:?err}
     stop_grace_period: 30s
     expose:
       - 26658
       - 26659
       - 26670
-      - 29090
     env_file:
       # Logger settings
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/abci/logger.env
@@ -89,6 +88,7 @@ services:
       - platform
     ports:
       - ${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_HOST:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
+      - ${PLATFORM_DRIVE_ABCI_METRICS_HOST:?err}:${PLATFORM_DRIVE_ABCI_METRICS_PORT:?err}:29090
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
@@ -140,13 +140,13 @@ services:
       - DRIVE_RPC_PORT=26670
     command: yarn run api
     stop_grace_period: 10s
-    profiles:
-      - platform
     expose:
       - 3004
       - 3005
+    profiles:
+      - platform
 
-  dapi_tx_filter_stream:
+  dapi_core_streams:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "DAPI Transactions Filter Stream"
@@ -170,30 +170,40 @@ services:
       - TENDERMINT_RPC_PORT=26657
       - DRIVE_RPC_HOST=drive_abci
       - DRIVE_RPC_PORT=26670
+    expose:
+      - 3006
     command: yarn run core-streams
     stop_grace_period: 10s
     profiles:
       - platform
-    expose:
-      - 3006
 
-  dapi_envoy:
-    image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}
+  gateway:
+    image: ${PLATFORM_GATEWAY_DOCKER_IMAGE:?err}
     labels:
-      org.dashmate.service.title: "DAPI Envoy"
+      org.dashmate.service.title: "Gateway"
     restart: unless-stopped
     ports:
-      - ${PLATFORM_DAPI_ENVOY_HTTP_HOST:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native
+      # HTTP entry point to the platform.
+      # Supports HTTP1 and HTTP2
+      # Serves JSON RPC, gRPC, and gRPC-Web
+      - ${PLATFORM_GATEWAY_LISTENERS_DAPI_AND_DRIVE_HOST:?err}:${PLATFORM_GATEWAY_LISTENERS_DAPI_AND_DRIVE_PORT:?err}:10000
+      - ${PLATFORM_GATEWAY_METRICS_HOST:?err}:${PLATFORM_GATEWAY_METRICS_PORT:?err}:9090
+      - ${PLATFORM_GATEWAY_ADMIN_HOST:?err}:${PLATFORM_GATEWAY_ADMIN_PORT:?err}:9901
     depends_on:
       - dapi_api
-      - dapi_tx_filter_stream
+      - dapi_core_streams
+      - drive_abci
+    networks:
+      - default
+      - gateway_rate_limiter
     environment:
       - ENVOY_UID=${LOCAL_UID:?err}
       - ENVOY_GID=${LOCAL_GID:?err}
+      - LOG_LEVEL=${PLATFORM_GATEWAY_LOG_LEVEL:?err}
     volumes:
-      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
-      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/ssl/bundle.crt:/etc/ssl/bundle.crt:ro
-      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/ssl/private.key:/etc/ssl/private.key:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/ssl/bundle.crt:/etc/ssl/bundle.crt:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/ssl/private.key:/etc/ssl/private.key:ro
     stop_grace_period: 10s
     profiles:
       - platform
@@ -205,6 +215,9 @@ volumes:
 
 networks:
   default:
+    driver: bridge
     ipam:
       config:
         - subnet: ${DOCKER_NETWORK_SUBNET:?err}
+  gateway_rate_limiter:
+    driver: bridge

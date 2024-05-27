@@ -4,19 +4,36 @@ pub use prost::Message;
 pub mod core {
     #![allow(non_camel_case_types)]
     pub mod v0 {
-        include!("core/proto/org.dash.platform.dapi.v0.rs");
+        #[cfg(all(feature = "server", not(feature = "client")))]
+        include!("core/server/org.dash.platform.dapi.v0.rs");
+
+        #[cfg(all(feature = "client", not(feature = "server")))]
+        include!("core/client/org.dash.platform.dapi.v0.rs");
+
+        #[cfg(all(feature = "server", feature = "client"))]
+        include!("core/client_server/org.dash.platform.dapi.v0.rs");
     }
 }
 
 #[cfg(feature = "platform")]
 pub mod platform {
     pub mod v0 {
-        include!("platform/proto/org.dash.platform.dapi.v0.rs");
+        #[cfg(all(feature = "server", not(feature = "client")))]
+        include!("platform/server/org.dash.platform.dapi.v0.rs");
+
+        #[cfg(all(feature = "client", not(feature = "server")))]
+        include!("platform/client/org.dash.platform.dapi.v0.rs");
+
+        #[cfg(all(feature = "server", feature = "client"))]
+        include!("platform/client_server/org.dash.platform.dapi.v0.rs");
     }
+
     #[cfg(feature = "tenderdash-proto")]
     pub use tenderdash_proto as proto;
 
+    #[cfg(any(feature = "server", feature = "client"))]
     mod versioning;
+    #[cfg(any(feature = "server", feature = "client"))]
     pub use versioning::{VersionedGrpcMessage, VersionedGrpcResponse};
 }
 

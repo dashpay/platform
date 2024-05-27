@@ -2,34 +2,18 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::epoch::Epoch;
-use serde_json::json;
 
-use dpp::consensus::basic::data_contract::{
-    DataContractInvalidIndexDefinitionUpdateError, IncompatibleDataContractSchemaError,
-    InvalidDataContractVersionError,
-};
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::schema::{
-    validate_schema_compatibility, IncompatibleJsonSchemaOperation,
-};
-use dpp::data_contract::errors::DataContractError;
-use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::data_contract::JsonValue;
-use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::ValueMap;
+use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 
 use crate::error::execution::ExecutionError;
@@ -144,13 +128,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let old_data_contract = &contract_fetch_info.contract;
 
-        // Check version is bumped
-        // Failure (version != previous version + 1): Keep ST and transform it to a nonce bump action.
-        // How: A user pushed an update that was not the next version.
+        let validation_result =
+            old_data_contract.validate_update(new_data_contract, platform_version)?;
 
-        let new_version = new_data_contract.version();
-        let old_version = old_data_contract.version();
-        if new_version < old_version || new_version - old_version != 1 {
+        if !validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                     self,
@@ -159,260 +140,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
                 bump_action,
-                vec![BasicError::InvalidDataContractVersionError(
-                    InvalidDataContractVersionError::new(old_version + 1, new_version),
-                )
-                .into()],
+                validation_result.errors,
             ));
-        }
-
-        // Validate that the config was not updated
-        // * Includes verifications that:
-        //     - Old contract is not read_only
-        //     - New contract is not read_only
-        //     - Keeps history did not change
-        //     - Can be deleted did not change
-        //     - Documents keep history did not change
-        //     - Documents can be deleted contract default did not change
-        //     - Documents mutable contract default did not change
-        //     - Requires identity encryption bounded key did not change
-        //     - Requires identity decryption bounded key did not change
-        // * Failure (contract does not exist): Keep ST and transform it to a nonce bump action.
-        // * How: A user pushed an update to a contract that changed its configuration.
-
-        let config_validation_result = old_data_contract.config().validate_config_update(
-            new_data_contract.config(),
-            self.data_contract().id(),
-            platform_version,
-        )?;
-
-        if !config_validation_result.is_valid() {
-            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                ),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                config_validation_result.errors,
-            ));
-        }
-
-        // We should now validate that new indexes contains all old indexes
-        // This is most easily done by using the index level construct
-
-        for (new_contract_document_type_name, new_contract_document_type) in
-            new_data_contract.document_types()
-        {
-            let Some(old_contract_document_type) =
-                old_data_contract.document_type_optional_for_name(new_contract_document_type_name)
-            else {
-                // if it's a new document type (ie the old data contract didn't have it)
-                // then new indices on it are fine and we don't need to validate that configuration didn't change
-                continue;
-            };
-
-            let validate_update_result = old_contract_document_type
-                .validate_update(new_contract_document_type, platform_version)?;
-
-            if !validate_update_result.is_valid() {
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                ),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    validate_update_result.errors,
-                ));
-            }
-
-            // We currently don't allow indexes to change
-            if new_contract_document_type.index_structure()
-                != old_contract_document_type.index_structure()
-            {
-                // We want to figure out what changed, so we compare one way then the other
-
-                // If the new contract document type doesn't contain all previous indexes
-                if let Some(non_subset_path) = new_contract_document_type
-                    .index_structure()
-                    .contains_subset_first_non_subset_path(
-                        old_contract_document_type.index_structure(),
-                    )
-                {
-                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                            self,
-                        ),
-                    );
-
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        bump_action,
-                        vec![BasicError::DataContractInvalidIndexDefinitionUpdateError(
-                            DataContractInvalidIndexDefinitionUpdateError::new(
-                                new_contract_document_type_name.clone(),
-                                non_subset_path,
-                            ),
-                        )
-                        .into()],
-                    ));
-                }
-
-                // If the old contract document type doesn't contain all new indexes
-                if let Some(non_subset_path) = old_contract_document_type
-                    .index_structure()
-                    .contains_subset_first_non_subset_path(
-                        new_contract_document_type.index_structure(),
-                    )
-                {
-                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                            self,
-                        ),
-                    );
-
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        bump_action,
-                        vec![BasicError::DataContractInvalidIndexDefinitionUpdateError(
-                            DataContractInvalidIndexDefinitionUpdateError::new(
-                                new_contract_document_type_name.clone(),
-                                non_subset_path,
-                            ),
-                        )
-                        .into()],
-                    ));
-                }
-            }
-        }
-
-        // Schema defs should be compatible
-
-        // TODO: WE need to combine defs with documents schema and and resolve all refs
-        //  Having such full schema we can make sure that changes in defs are actually
-        //  affect document schema. Current simplified solution just apply the same logic
-        //  as for document schema
-        if let Some(old_defs) = old_data_contract.schema_defs() {
-            let Some(new_defs) = self.data_contract().schema_defs() else {
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                        self,
-                    ),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![BasicError::IncompatibleDataContractSchemaError(
-                        IncompatibleDataContractSchemaError::new(
-                            self.data_contract().id(),
-                            "remove".to_string(),
-                            "/$defs".to_string(),
-                        ),
-                    )
-                    .into()],
-                ));
-            };
-
-            // Old defs are in state so should be valid
-            let old_defs_json: JsonValue = old_defs
-                .to_json_value()
-                .map_err(ProtocolError::ValueError)?;
-
-            let new_defs_json: JsonValue = match new_defs.to_json_value() {
-                Ok(json_value) => json_value,
-                Err(e) => {
-                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                            self,
-                        ),
-                    );
-
-                    let data_contract_error: DataContractError =
-                        (e, "json schema new defs invalid").into();
-
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        bump_action,
-                        vec![ConsensusError::BasicError(BasicError::ContractError(
-                            data_contract_error,
-                        ))],
-                    ));
-                }
-            };
-
-            let old_defs_schema = json!({
-                "$defs": old_defs_json
-            });
-
-            let new_defs_schema = json!({
-                "$defs": new_defs_json
-            });
-
-            let compatibility_validation_result = validate_schema_compatibility(
-                &old_defs_schema,
-                &new_defs_schema,
-                platform_version,
-            )?;
-
-            if !compatibility_validation_result.is_valid() {
-                let validation_result = convert_compatibility_to_consensus_validation_result(
-                    self,
-                    compatibility_validation_result,
-                );
-
-                return Ok(validation_result);
-            }
-        }
-
-        for (document_type_name, old_document_schema) in old_data_contract.document_schemas() {
-            // The old document schema is in the state already so we are guaranteed that it can be transformed into a JSON value
-            let old_document_schema_json: JsonValue = old_document_schema
-                .clone()
-                .try_into()
-                .map_err(ProtocolError::ValueError)?;
-
-            let new_document_schema = new_data_contract
-                .document_type_optional_for_name(&document_type_name)
-                .map(|document_type| document_type.schema().clone())
-                .unwrap_or(ValueMap::new().into());
-
-            // The new document schema is not the state already so we are not guaranteed that it can be transformed into a JSON value
-            // If it can not we should throw a consensus validation error
-            let new_document_schema_json: JsonValue = match new_document_schema.clone().try_into() {
-                Ok(json_value) => json_value,
-                Err(e) => {
-                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                            self,
-                        ),
-                    );
-
-                    let data_contract_error: DataContractError =
-                        (e, "json schema new schema invalid").into();
-
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        bump_action,
-                        vec![ConsensusError::BasicError(BasicError::ContractError(
-                            data_contract_error,
-                        ))],
-                    ));
-                }
-            };
-
-            let compatibility_validation_result = validate_schema_compatibility(
-                &old_document_schema_json,
-                &new_document_schema_json,
-                platform_version,
-            )?;
-
-            if !compatibility_validation_result.is_valid() {
-                let validation_result = convert_compatibility_to_consensus_validation_result(
-                    self,
-                    compatibility_validation_result,
-                );
-
-                return Ok(validation_result);
-            }
         }
 
         Ok(action)
@@ -428,7 +157,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
             self,
-            validation_mode.should_validate_contract_on_transform_into_action(),
+            validation_mode.should_fully_validate_contract_on_transform_into_action(),
             &mut validation_operations,
             platform_version,
         );
@@ -457,28 +186,468 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     }
 }
 
-fn convert_compatibility_to_consensus_validation_result(
-    state_transition: &DataContractUpdateTransition,
-    validation_result: SimpleValidationResult<IncompatibleJsonSchemaOperation>,
-) -> ConsensusValidationResult<StateTransitionAction> {
-    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-            state_transition,
-        ),
-    );
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use assert_matches::assert_matches;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::errors::DataContractError;
+    use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+    use dpp::platform_value::Value;
+    use dpp::prelude::IdentityNonce;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceActionAccessorsV0;
+    use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
-    let errors = validation_result
-        .errors
-        .into_iter()
-        .map(|operation| {
-            IncompatibleDataContractSchemaError::new(
-                state_transition.data_contract().id(),
-                operation.name,
-                operation.path,
+    mod validate_state_v0 {
+        use super::*;
+
+        #[test]
+        fn should_return_invalid_result_when_transform_into_action_failed() {
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
             )
-            .into()
-        })
-        .collect();
+            .data_contract_owned();
 
-    return ConsensusValidationResult::new_with_data_and_errors(bump_action, errors);
+            let identity_id = data_contract.owner_id();
+            let data_contract_id = data_contract.id();
+
+            let mut data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            // Make the contract invalid
+            let DataContractInSerializationFormat::V0(ref mut contract) =
+                data_contract_for_serialization;
+
+            contract
+                .document_schemas
+                .insert("invalidType".to_string(), Value::Null);
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &Epoch::default(),
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to validate advanced structure");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )
+                )] if message == "document schema must be an object: structure error: value is not a map"
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityDataContractNonceAction(action))
+                if action.identity_id() == identity_id && action.identity_contract_nonce() == identity_contract_nonce && action.data_contract_id() == data_contract_id
+            );
+
+            // We have tons of operations here so not sure we want to assert all of them
+            assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_data_contract_does_not_exist() {
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let identity_id = data_contract.owner_id();
+            let data_contract_id = data_contract.id();
+
+            let data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &Epoch::default(),
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to validate advanced structure");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractNotPresentError(e)
+                )] if e.data_contract_id() == data_contract_id
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityDataContractNonceAction(action))
+                if action.identity_id() == identity_id && action.identity_contract_nonce() == identity_contract_nonce && action.data_contract_id() == data_contract_id
+            );
+
+            // We have tons of operations here so not sure we want to assert all of them
+            assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_new_data_contract_has_incompatible_changes() {
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to apply contract");
+
+            let identity_id = data_contract.owner_id();
+            let data_contract_id = data_contract.id();
+
+            let data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &Epoch::default(),
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to validate advanced structure");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::InvalidDataContractVersionError(e)
+                )] if e.expected_version() == 2 && e.version() == 1
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityDataContractNonceAction(action))
+                if action.identity_id() == identity_id && action.identity_contract_nonce() == identity_contract_nonce && action.data_contract_id() == data_contract_id
+            );
+
+            // We have tons of operations here so not sure we want to assert all of them
+            assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        #[test]
+        fn should_pass_when_contract_exists_and_update_is_compatible() {
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to apply contract");
+
+            let data_contract_id = data_contract.id();
+
+            data_contract.set_version(2);
+
+            let data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &Epoch::default(),
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to validate advanced structure");
+
+            assert_matches!(result.errors.as_slice(), []);
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::DataContractUpdateAction(action))
+                if action.data_contract_ref().id() == data_contract_id
+            );
+
+            // We have tons of operations here so not sure we want to assert all of them
+            assert!(!execution_context.operations_slice().is_empty());
+        }
+    }
+
+    mod transform_into_action_v0 {
+        use super::*;
+
+        #[test]
+        fn should_return_invalid_result_when_new_data_contract_is_not_valid() {
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let identity_id = data_contract.owner_id();
+            let data_contract_id = data_contract.id();
+
+            let mut data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            // Make the contract invalid
+            let DataContractInSerializationFormat::V0(ref mut contract) =
+                data_contract_for_serialization;
+
+            contract
+                .document_schemas
+                .insert("invalidType".to_string(), Value::Null);
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let result = transition
+                .transform_into_action_v0(
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    platform_version,
+                )
+                .expect("failed to validate advanced structure");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )
+                )] if message == "document schema must be an object: structure error: value is not a map"
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityDataContractNonceAction(action))
+                if action.identity_id() == identity_id && action.identity_contract_nonce() == identity_contract_nonce && action.data_contract_id() == data_contract_id
+            );
+
+            // We have tons of operations here so not sure we want to assert all of them
+            assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        #[test]
+        fn should_pass_when_new_data_contract_is_valid() {
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let data_contract_id = data_contract.id();
+
+            let data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let result = transition
+                .transform_into_action_v0(
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    platform_version,
+                )
+                .expect("failed to validate advanced structure");
+
+            assert_matches!(result.errors.as_slice(), []);
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::DataContractUpdateAction(action)) if action.data_contract_ref().id() == data_contract_id
+            );
+
+            // We have tons of operations here so not sure we want to assert all of them
+            assert!(!execution_context.operations_slice().is_empty());
+        }
+    }
 }

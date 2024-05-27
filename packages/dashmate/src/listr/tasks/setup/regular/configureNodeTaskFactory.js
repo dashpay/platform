@@ -86,7 +86,7 @@ export default function configureNodeTaskFactory(createIpAndPortsForm) {
             ctx.config.set('core.p2p.port', form.coreP2PPort);
 
             if (ctx.isHP) {
-              ctx.config.set('platform.dapi.envoy.http.port', form.platformHTTPPort);
+              ctx.config.set('platform.gateway.listeners.dapiAndDrive.port', form.platformHTTPPort);
               ctx.config.set('platform.drive.tenderdash.p2p.port', form.platformP2PPort);
             }
           }
