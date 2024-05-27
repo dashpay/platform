@@ -309,6 +309,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            contested_index: None,
         }];
 
         let old_index_structure =

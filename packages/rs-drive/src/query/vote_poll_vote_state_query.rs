@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::drive::votes::paths::VotePollPaths;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
@@ -230,6 +231,30 @@ impl ContestedDocumentVotePollDriveQuery {
         })
     }
 
+    /// Resolves with a known contract provider
+    pub fn resolve_with_known_contracts_provider<'a>(
+        &self,
+        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+    ) -> Result<ResolvedContestedDocumentVotePollDriveQuery<'a>, Error> {
+        let ContestedDocumentVotePollDriveQuery {
+            vote_poll,
+            result_type,
+            offset,
+            limit,
+            start_at,
+            order_ascending,
+        } = self;
+        Ok(ResolvedContestedDocumentVotePollDriveQuery {
+            vote_poll: vote_poll.resolve_with_known_contracts_provider(known_contracts_provider_fn)?,
+            result_type: *result_type,
+            offset: *offset,
+            limit: *limit,
+            start_at: *start_at,
+            order_ascending: *order_ascending,
+        })
+    }
+
+    /// Resolves with a provided borrowed contract
     pub fn resolve_with_provided_borrowed_contract<'a>(
         &self,
         data_contract: &'a DataContract,

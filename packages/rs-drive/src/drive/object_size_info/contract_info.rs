@@ -59,12 +59,12 @@ impl<'a> DataContractInfo<'a> {
                         platform_version,
                     )?
                     .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
-                Ok(DataContractResolvedInfo::DataContractFetchInfo(
+                Ok(DataContractResolvedInfo::ArcDataContractFetchInfo(
                     contract_fetch_info,
                 ))
             }
             DataContractInfo::DataContractFetchInfo(contract_fetch_info) => Ok(
-                DataContractResolvedInfo::DataContractFetchInfo(contract_fetch_info),
+                DataContractResolvedInfo::ArcDataContractFetchInfo(contract_fetch_info),
             ),
             DataContractInfo::BorrowedDataContract(contract) => {
                 Ok(DataContractResolvedInfo::BorrowedDataContract(contract))
@@ -121,7 +121,10 @@ impl AsRef<DataContract> for DataContractOwnedResolvedInfo {
 pub enum DataContractResolvedInfo<'a> {
     /// Information necessary for fetched data contracts, encapsulated in an
     /// `Arc` to ensure thread-safe shared ownership and access.
-    DataContractFetchInfo(Arc<DataContractFetchInfo>),
+    ArcDataContractFetchInfo(Arc<DataContractFetchInfo>),
+    
+    /// Arc Data contract
+    ArcDataContract(Arc<DataContract>),
 
     /// A borrowed reference to a resolved data contract. This variant is suitable
     /// for scenarios where temporary, read-only access to a data contract is required.
@@ -137,9 +140,10 @@ impl<'a> DataContractResolvedInfo<'a> {
     /// The id of the contract
     pub fn id(&self) -> Identifier {
         match self {
-            DataContractResolvedInfo::DataContractFetchInfo(fetch_info) => fetch_info.contract.id(),
+            DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info) => fetch_info.contract.id(),
             DataContractResolvedInfo::BorrowedDataContract(data_contract) => data_contract.id(),
             DataContractResolvedInfo::OwnedDataContract(data_contract) => data_contract.id(),
+            DataContractResolvedInfo::ArcDataContract(data_contract) => data_contract.id(),
         }
     }
 }
@@ -147,9 +151,10 @@ impl<'a> AsRef<DataContract> for DataContractResolvedInfo<'a> {
     /// The ref of the contract
     fn as_ref(&self) -> &DataContract {
         match self {
-            DataContractResolvedInfo::DataContractFetchInfo(fetch_info) => &fetch_info.contract,
+            DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info) => &fetch_info.contract,
             DataContractResolvedInfo::BorrowedDataContract(borrowed) => borrowed,
             DataContractResolvedInfo::OwnedDataContract(owned) => owned,
+            DataContractResolvedInfo::ArcDataContract(data_contract) => data_contract.as_ref(),
         }
     }
 }

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::drive::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollWithContractInfo,
@@ -9,6 +10,7 @@ use crate::error::Error;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::TransactionArg;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::identifier::Identifier;
 use dpp::prelude::DataContract;
 use platform_version::version::PlatformVersion;
 
@@ -58,6 +60,12 @@ pub trait ContestedDocumentResourceVotePollResolver {
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+    ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
+
+    /// Resolves into a struct, the contract itself will be held with Arc
+    fn resolve_with_known_contracts_provider<'a>(
+        &self,
+        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
     /// Resolve by providing the contract
@@ -136,7 +144,29 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
         Ok(
             ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
-                contract: DataContractResolvedInfo::DataContractFetchInfo(contract),
+                contract: DataContractResolvedInfo::ArcDataContractFetchInfo(contract),
+                document_type_name: document_type_name.clone(),
+                index_name: index_name.clone(),
+                index_values: index_values.clone(),
+            },
+        )
+    }
+
+    fn resolve_with_known_contracts_provider<'a>(
+        &self,
+        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+    ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error> {
+        let ContestedDocumentResourceVotePoll {
+            contract_id,
+            document_type_name,
+            index_name,
+            index_values,
+        } = self;
+
+        let contract = known_contracts_provider_fn(contract_id)?.ok_or(Error::DataContract(DataContractError::MissingContract(format!("data contract with id {} can not be provided", contract_id))))?;
+        Ok(
+            ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                contract: DataContractResolvedInfo::ArcDataContract(contract),
                 document_type_name: document_type_name.clone(),
                 index_name: index_name.clone(),
                 index_values: index_values.clone(),
@@ -154,7 +184,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_name,
             index_values,
         } = self;
-        
+
         if contract_id != data_contract.id_ref() {
             return Err(Error::DataContract(DataContractError::ProvidedContractMismatch(format!("data contract provided {} is not the one required {}", data_contract.id_ref(), contract_id))));
         }
@@ -184,7 +214,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
         Ok(
             ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
-                contract: DataContractResolvedInfo::DataContractFetchInfo(contract),
+                contract: DataContractResolvedInfo::ArcDataContractFetchInfo(contract),
                 document_type_name,
                 index_name,
                 index_values,

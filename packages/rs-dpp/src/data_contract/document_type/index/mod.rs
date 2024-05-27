@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Eq)]
 pub enum OrderBy {
@@ -13,18 +13,20 @@ use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use anyhow::anyhow;
 
-use crate::data_contract::document_type::ContestedIndexFieldMatch::Regex;
 use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVote;
 use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use std::cmp::Ordering;
-use std::{collections::BTreeMap, convert::TryFrom};
+use std::{collections::BTreeMap, convert::TryFrom, fmt};
+use serde::de::{VariantAccess, Visitor};
+use regex::Regex;
 
 pub mod random_index;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
 pub enum ContestedIndexResolution {
     MasternodeVote = 0,
 }
@@ -49,6 +51,91 @@ pub enum ContestedIndexFieldMatch {
     Regex(regex::Regex),
     PositiveIntegerMatch(u128),
 }
+
+#[cfg(feature = "index-serde-conversion")]
+impl Serialize for ContestedIndexFieldMatch {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        match *self {
+            ContestedIndexFieldMatch::Regex(ref regex) => {
+                serializer.serialize_newtype_variant("ContestedIndexFieldMatch", 0, "Regex", regex.as_str())
+            }
+            ContestedIndexFieldMatch::PositiveIntegerMatch(ref num) => {
+                serializer.serialize_newtype_variant("ContestedIndexFieldMatch", 1, "PositiveIntegerMatch", num)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "index-serde-conversion")]
+impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
+    fn deserialize<D>(deserializer: D) -> Result<ContestedIndexFieldMatch, D::Error>
+        where
+            D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field { Regex, PositiveIntegerMatch }
+
+        struct FieldVisitor;
+
+        impl<'de> Visitor<'de> for FieldVisitor {
+            type Value = Field;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("`regex` or `positive_integer_match`")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Field, E>
+                where
+                    E: de::Error,
+            {
+                match value {
+                    "regex" => Ok(Field::Regex),
+                    "positive_integer_match" => Ok(Field::PositiveIntegerMatch),
+                    _ => Err(de::Error::unknown_variant(value, &["regex", "positive_integer_match"])),
+                }
+            }
+        }
+
+        struct ContestedIndexFieldMatchVisitor;
+
+        impl<'de> Visitor<'de> for ContestedIndexFieldMatchVisitor {
+            type Value = ContestedIndexFieldMatch;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("enum ContestedIndexFieldMatch")
+            }
+
+            fn visit_enum<V>(self, mut visitor: V) -> Result<ContestedIndexFieldMatch, V::Error>
+                where
+                    V: de::EnumAccess<'de>,
+            {
+                match visitor.variant()? {
+                    (Field::Regex, v) => {
+                        let regex_str: &str = v.newtype_variant()?;
+                        Regex::new(regex_str)
+                            .map(ContestedIndexFieldMatch::Regex)
+                            .map_err(de::Error::custom)
+                    }
+                    (Field::PositiveIntegerMatch, v) => {
+                        let num: u128 = v.newtype_variant()?;
+                        Ok(ContestedIndexFieldMatch::PositiveIntegerMatch(num))
+                    }
+                }
+            }
+        }
+
+        deserializer.deserialize_enum(
+            "ContestedIndexFieldMatch",
+            &["regex", "positive_integer_match"],
+            ContestedIndexFieldMatchVisitor,
+        )
+    }
+}
+
 
 impl PartialOrd for ContestedIndexFieldMatch {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -87,7 +174,7 @@ impl Ord for ContestedIndexFieldMatch {
 impl Clone for ContestedIndexFieldMatch {
     fn clone(&self) -> Self {
         match self {
-            Regex(regex) => Regex(regex::Regex::new(regex.as_str()).unwrap()),
+            ContestedIndexFieldMatch::Regex(regex) => ContestedIndexFieldMatch::Regex(regex::Regex::new(regex.as_str()).unwrap()),
             ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
                 ContestedIndexFieldMatch::PositiveIntegerMatch(*int)
             }
@@ -98,8 +185,8 @@ impl Clone for ContestedIndexFieldMatch {
 impl PartialEq for ContestedIndexFieldMatch {
     fn eq(&self, other: &Self) -> bool {
         match self {
-            Regex(regex) => match other {
-                Regex(other_regex) => regex.as_str() == other_regex.as_str(),
+            ContestedIndexFieldMatch::Regex(regex) => match other {
+                ContestedIndexFieldMatch::Regex(other_regex) => regex.as_str() == other_regex.as_str(),
                 _ => false,
             },
             ContestedIndexFieldMatch::PositiveIntegerMatch(int) => match other {
@@ -115,7 +202,7 @@ impl Eq for ContestedIndexFieldMatch {}
 impl ContestedIndexFieldMatch {
     pub fn matches(&self, value: &Value) -> bool {
         match self {
-            Regex(regex) => {
+            ContestedIndexFieldMatch::Regex(regex) => {
                 if let Some(string) = value.as_str() {
                     regex.is_match(string)
                 } else {
@@ -131,6 +218,7 @@ impl ContestedIndexFieldMatch {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
 pub struct ContestedIndexInformation {
     pub field_matches: BTreeMap<String, ContestedIndexFieldMatch>,
     pub resolution: ContestedIndexResolution,
@@ -375,8 +463,8 @@ impl TryFrom<&[(Value, Value)]> for Index {
                                             }
                                             "regexPattern" => {
                                                 let regex = field_match_value.to_str()?.to_owned();
-                                                field_matches = Some(Regex(
-                                                    regex::Regex::new(&regex).map_err(|e| {
+                                                field_matches = Some(ContestedIndexFieldMatch::Regex(
+                                                    Regex::new(&regex).map_err(|e| {
                                                         RegexError(format!(
                                                             "invalid field match regex: {}",
                                                             e.to_string()
