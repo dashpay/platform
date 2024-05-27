@@ -31,4 +31,9 @@ impl Vote {
             Vote::ResourceVote(resource_vote) => resource_vote.vote_poll().specialized_balance_id(),
         }
     }
+    pub fn unique_id(&self) -> Result<Identifier, ProtocolError> {
+        match self {
+            Vote::ResourceVote(resource_vote) => resource_vote.vote_poll().unique_id(),
+        }
+    }
 }

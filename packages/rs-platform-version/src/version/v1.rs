@@ -231,7 +231,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     register_contested_resource_identity_vote: 0,
                     register_identity_vote: 0,
                     add_vote_poll_end_date_query_operations: 0,
-                    remove_vote_poll_end_date_query_operations: 0,
+                    remove_contested_resource_vote_poll_end_date_query_operations: 0,
                 },
                 cleanup: DriveVoteCleanupMethodVersions {
                     remove_votes_for_identity: 0,

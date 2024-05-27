@@ -42,8 +42,6 @@ use crate::drive::Drive;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::object_size_info::{DataContractResolvedInfo, DocumentTypeInfo};
 use crate::drive::verify::RootHash;
-use crate::drive::votes::resolved::votes::resolve::VoteResolver;
-use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::error::Error;
 use crate::error::proof::ProofError;
 use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
@@ -383,26 +381,32 @@ impl Drive {
             StateTransition::MasternodeVote(masternode_vote) => {
                 let pro_tx_hash = masternode_vote.pro_tx_hash();
                 let vote = masternode_vote.vote();
-                let (contract, document_type_name) = match  vote { Vote::ResourceVote(resource_vote) => {
-                    match resource_vote.vote_poll() {
-                        VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
-                            (known_contracts_provider_fn(&contested_document_resource_vote_poll.contract_id)?.ok_or(
-                                Error::Proof(ProofError::UnknownContract(format!(
+                let (contract, document_type_name) = match vote {
+                    Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
+                        VotePoll::ContestedDocumentResourceVotePoll(
+                            contested_document_resource_vote_poll,
+                        ) => (
+                            known_contracts_provider_fn(
+                                &contested_document_resource_vote_poll.contract_id,
+                            )?
+                            .ok_or(Error::Proof(
+                                ProofError::UnknownContract(format!(
                                     "unknown contract with id {}",
                                     contested_document_resource_vote_poll.contract_id
-                                ))),
-                            )?, contested_document_resource_vote_poll.document_type_name.as_str())
-                        }
-                    }
-                } };
-                
+                                )),
+                            ))?,
+                            contested_document_resource_vote_poll
+                                .document_type_name
+                                .as_str(),
+                        ),
+                    },
+                };
+
                 // we expect to get an identity that matches the state transition
                 let (root_hash, vote) = Drive::verify_masternode_vote(
                     proof,
                     pro_tx_hash.to_buffer(),
                     vote,
-                    DataContractResolvedInfo::BorrowedDataContract(&contract),
-                    DocumentTypeInfo::DocumentTypeNameAsStr(document_type_name),
                     false,
                     platform_version,
                 )?;

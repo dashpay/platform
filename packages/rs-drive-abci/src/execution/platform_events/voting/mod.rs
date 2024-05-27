@@ -1,7 +1,7 @@
 mod award_document_to_winner;
 mod check_for_ended_contested_resource_vote_polls;
 mod check_for_ended_vote_polls;
-mod clean_up_after_vote_poll_end;
+mod clean_up_after_contested_resources_vote_polls_end;
 mod delay_vote_poll;
 mod keep_record_of_vote_poll;
 mod lock_vote_poll;

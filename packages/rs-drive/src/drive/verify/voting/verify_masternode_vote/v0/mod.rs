@@ -1,17 +1,18 @@
-use grovedb::{PathQuery, SizedQuery};
-use dpp::data_contract::DataContract;
-use dpp::data_contract::document_type::DocumentTypeRef;
 use crate::drive::Drive;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
+use grovedb::{GroveDb, PathQuery, SizedQuery};
 
 use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-use crate::drive::votes::resolved::votes::ResolvedVote;
-use dpp::voting::votes::Vote;
 use crate::drive::object_size_info::{DataContractResolvedInfo, DocumentTypeInfo};
 use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
+use crate::drive::votes::resolved::votes::ResolvedVote;
+use crate::error::proof::ProofError;
 use crate::query::Query;
+use dpp::voting::votes::Vote;
 
 impl Drive {
     /// Verifies the balance of an identity by their identity ID.
@@ -45,8 +46,6 @@ impl Drive {
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],
         vote: &Vote,
-        contract: DataContractResolvedInfo,
-        document_type: DocumentTypeInfo,
         verify_subset_of_proof: bool,
     ) -> Result<(RootHash, Option<Vote>), Error> {
         // First we should get the overall document_type_path
@@ -59,46 +58,20 @@ impl Drive {
         let mut query = Query::new();
         query.insert_key(vote_id.to_vec());
 
-        Ok(PathQuery::new(path, SizedQuery::new(query, Some(1), None)))
-            
-        todo!()
-        // let mut path_query = Self::identity_balance_query(&identity_id);
-        // path_query.query.limit = Some(1);
-        // let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
-        //     GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
-        // } else {
-        //     GroveDb::verify_query_with_absence_proof(proof, &path_query)?
-        // };
-        // if proved_key_values.len() == 1 {
-        //     let (path, key, maybe_element) = &proved_key_values.remove(0);
-        //     if path != &balance_path() {
-        //         return Err(Error::Proof(ProofError::CorruptedProof(
-        //             "we did not get back an element for the correct path in balances".to_string(),
-        //         )));
-        //     }
-        //     if key != &identity_id {
-        //         return Err(Error::Proof(ProofError::CorruptedProof(
-        //             "we did not get back an element for the correct key in balances".to_string(),
-        //         )));
-        //     }
-        //
-        //     let signed_balance = maybe_element
-        //         .as_ref()
-        //         .map(|element| {
-        //             element
-        //                 .as_sum_item_value()
-        //                 .map_err(Error::GroveDB)?
-        //                 .try_into()
-        //                 .map_err(|_| {
-        //                     Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
-        //                 })
-        //         })
-        //         .transpose()?;
-        //     Ok((root_hash, signed_balance))
-        // } else {
-        //     Err(Error::Proof(ProofError::TooManyElements(
-        //         "expected one identity balance",
-        //     )))
-        // }
+        let path_query = PathQuery::new(path, SizedQuery::new(query, Some(1), None));
+
+        let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
+        } else {
+            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
+        };
+        if proved_key_values.len() == 1 {
+            let (path, key, maybe_element) = &proved_key_values.remove(0);
+            todo!()
+        } else {
+            Err(Error::Proof(ProofError::TooManyElements(
+                "expected one masternode vote",
+            )))
+        }
     }
 }

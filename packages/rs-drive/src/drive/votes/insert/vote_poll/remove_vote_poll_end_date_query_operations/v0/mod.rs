@@ -1,21 +1,23 @@
-use crate::drive::votes::paths::{vote_contested_resource_end_date_queries_at_time_tree_path_vec, vote_contested_resource_end_date_queries_tree_path, vote_contested_resource_end_date_queries_tree_path_vec};
+use crate::common::encode::encode_u64;
+use crate::drive::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
+use crate::drive::votes::paths::{
+    vote_contested_resource_end_date_queries_at_time_tree_path_vec,
+    vote_contested_resource_end_date_queries_tree_path,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::TimestampMillis;
-use dpp::serialization::PlatformSerializable;
-use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use crate::common::encode::encode_u64;
-use crate::drive::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
-    pub(in crate::drive::votes::insert) fn remove_vote_poll_end_date_query_operations_v0(
+    pub(in crate::drive::votes::insert) fn remove_contested_resource_vote_poll_end_date_query_operations_v0(
         &self,
-        vote_polls: Vec<VotePoll>,
+        vote_polls: &[ContestedDocumentResourceVotePoll],
         end_date: TimestampMillis,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -30,15 +32,14 @@ impl Drive {
 
         // Let's start by inserting a tree for the end date
 
-
         let time_path = vote_contested_resource_end_date_queries_at_time_tree_path_vec(end_date);
 
         let delete_apply_type = StatefulBatchDelete {
             is_known_to_be_subtree_with_sum: Some((false, false)),
         };
-        
+
         let time_path_borrowed: Vec<&[u8]> = time_path.iter().map(|a| a.as_slice()).collect();
-        
+
         for vote_poll in vote_polls {
             let unique_id = vote_poll.unique_id()?;
 
@@ -51,8 +52,6 @@ impl Drive {
                 &platform_version.drive,
             )?;
         }
-
-
 
         let end_date_query_path = vote_contested_resource_end_date_queries_tree_path();
 

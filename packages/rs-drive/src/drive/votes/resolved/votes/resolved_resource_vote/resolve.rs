@@ -1,4 +1,3 @@
-use crate::drive::votes::resolved::votes::resolve::VoteResolver;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::v0::resolve::ResourceVoteResolverV0;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::ResolvedResourceVote;
 use crate::drive::Drive;

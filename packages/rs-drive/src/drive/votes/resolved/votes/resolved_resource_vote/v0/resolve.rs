@@ -1,5 +1,4 @@
 use crate::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
-use crate::drive::votes::resolved::votes::resolve::VoteResolver;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::v0::ResolvedResourceVoteV0;
 use crate::drive::Drive;
 use crate::error::Error;

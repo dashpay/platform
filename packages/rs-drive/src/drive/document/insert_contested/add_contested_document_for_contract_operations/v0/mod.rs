@@ -48,9 +48,12 @@ impl Drive {
             platform_version,
         )?;
 
-        let end_date = block_info
-            .time_ms
-            .saturating_add(platform_version.dpp.voting_versions.default_vote_poll_time_duration_ms);
+        let end_date = block_info.time_ms.saturating_add(
+            platform_version
+                .dpp
+                .voting_versions
+                .default_vote_poll_time_duration_ms,
+        );
 
         self.add_vote_poll_end_date_query_operations(
             document_and_contract_info.owned_document_info.owner_id,

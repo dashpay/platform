@@ -286,7 +286,7 @@ pub struct DriveVoteContestedResourceInsertMethodVersions {
     pub register_contested_resource_identity_vote: FeatureVersion,
     pub register_identity_vote: FeatureVersion,
     pub add_vote_poll_end_date_query_operations: FeatureVersion,
-    pub remove_vote_poll_end_date_query_operations: FeatureVersion,
+    pub remove_contested_resource_vote_poll_end_date_query_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

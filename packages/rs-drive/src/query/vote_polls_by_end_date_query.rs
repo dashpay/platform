@@ -6,12 +6,11 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::{GroveError, Query};
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::DocumentPropertyType;
 use dpp::fee::Credits;
 use dpp::prelude::{TimestampIncluded, TimestampMillis};
 use dpp::serialization::PlatformDeserializable;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use grovedb::query_result_type::{Key, QueryResultElements, QueryResultType};
+use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{PathQuery, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -111,7 +110,7 @@ impl VotePollsByEndDateDriveQuery {
                         },
                     );
                 Ok(vote_polls_by_end_date)
-            },
+            }
         }
     }
 

@@ -3,6 +3,7 @@ use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
@@ -23,5 +24,11 @@ impl Default for ResourceVoteV0 {
             vote_poll: VotePoll::default(),
             resource_vote_choice: ResourceVoteChoice::Abstain,
         }
+    }
+}
+
+impl ResourceVoteV0 {
+    pub fn vote_poll_unique_id(&self) -> Result<Identifier, ProtocolError> {
+        self.vote_poll.unique_id()
     }
 }

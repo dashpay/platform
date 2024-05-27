@@ -37,13 +37,13 @@ where
             )?;
 
         for (end_date, vote_polls) in vote_polls {
-            for vote_poll in vote_polls {
+            for vote_poll in &vote_polls {
                 let resolved_vote_poll =
                     vote_poll.resolve(&self.drive, transaction, platform_version)?;
                 let document_type = resolved_vote_poll.document_type()?;
                 // let's see who actually won
                 let contenders = self.tally_votes_for_contested_document_resource_vote_poll(
-                    &vote_poll,
+                    vote_poll,
                     transaction,
                     platform_version,
                 )?;
@@ -91,14 +91,6 @@ where
                             transaction,
                             platform_version,
                         )?;
-                        // We need to clean up the vote poll
-                        // This means removing it and also removing all current votes
-                        self.clean_up_after_vote_poll_end(
-                            block_info,
-                            &resolved_vote_poll,
-                            transaction,
-                            platform_version,
-                        )?;
                         // We award the document to the winner of the vote poll
                         self.award_document_to_winner(
                             block_info,
@@ -110,6 +102,14 @@ where
                     }
                 }
             }
+            // We need to clean up the vote poll
+            // This means removing it and also removing all current votes
+            self.clean_up_after_contested_resources_vote_polls_end(
+                block_info,
+                &vote_polls,
+                transaction,
+                platform_version,
+            )?;
         }
 
         Ok(())

@@ -11,8 +11,8 @@ impl DocumentTypeV0 {
         document: &Document,
     ) -> Option<VotePoll> {
         self.indexes()
-            .iter()
-            .find(|(name, index)| {
+            .values()
+            .find(|index| {
                 if let Some(contested_index_info) = &index.contested_index {
                     contested_index_info
                         .field_matches
@@ -28,7 +28,7 @@ impl DocumentTypeV0 {
                     false
                 }
             })
-            .map(|(name, index)| {
+            .map(|index| {
                 let index_values = index.extract_values(document.properties());
                 VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
                     contract_id: self.data_contract_id,

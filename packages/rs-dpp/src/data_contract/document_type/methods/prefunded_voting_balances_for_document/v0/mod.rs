@@ -12,8 +12,8 @@ impl DocumentTypeV0 {
         platform_version: &PlatformVersion,
     ) -> Option<(String, Credits)> {
         self.indexes()
-            .iter()
-            .find(|(name, index)| {
+            .values()
+            .find(|index| {
                 if let Some(contested_index_info) = &index.contested_index {
                     contested_index_info
                         .field_matches
@@ -29,9 +29,9 @@ impl DocumentTypeV0 {
                     false
                 }
             })
-            .map(|(index_name, _)| {
+            .map(|index| {
                 (
-                    index_name.clone(),
+                    index.name.clone(),
                     platform_version
                         .fee_version
                         .vote_resolution_fund_fees

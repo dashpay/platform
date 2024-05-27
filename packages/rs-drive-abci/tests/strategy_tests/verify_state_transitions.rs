@@ -799,11 +799,13 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                     let response_proof = response.proof_owned().expect("proof should be present");
 
+                    let vote: Vote = masternode_vote_action.vote_ref().clone().into();
+
                     // we expect to get a vote that matches the state transition
                     let (root_hash_vote, maybe_vote) = Drive::verify_masternode_vote(
                         &response_proof.grovedb_proof,
                         masternode_vote_action.pro_tx_hash().into_buffer(),
-                        masternode_vote_action.vote_ref(),
+                        &vote,
                         true,
                         platform_version,
                     )
@@ -817,9 +819,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     );
 
                     if *was_executed {
-                        let vote = maybe_vote.expect("expected a vote");
+                        let executed_vote = maybe_vote.expect("expected a vote");
 
-                        assert_eq!(&vote, masternode_vote_action.vote_ref());
+                        assert_eq!(&executed_vote, &vote);
                     }
                 }
                 StateTransitionAction::BumpIdentityNonceAction(_) => {}

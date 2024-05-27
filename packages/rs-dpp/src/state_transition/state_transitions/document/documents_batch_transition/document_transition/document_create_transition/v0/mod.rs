@@ -31,6 +31,7 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
+#[cfg(feature = "state-transition-value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveTupleFromMapHelper;
 use platform_version::version::PlatformVersion;
 

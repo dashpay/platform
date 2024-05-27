@@ -713,7 +713,7 @@ impl StateTransition {
         let data = self.signable_bytes()?;
 
         bls.verify_signature(self.signature().as_slice(), &data, public_key)
-            .map(|e| ())
+            .map(|_| ())
             .map_err(|e| {
                 // TODO: it shouldn't respond with consensus error
                 ProtocolError::from(ConsensusError::SignatureError(
