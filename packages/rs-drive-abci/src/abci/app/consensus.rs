@@ -1,4 +1,7 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication, StateSyncApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
+    StateSyncApplication, TransactionalApplication,
+};
 use crate::abci::handler::error::error_into_exception;
 use crate::abci::{handler, AbciError};
 use crate::error::execution::ExecutionError;
@@ -186,9 +189,7 @@ where
                         match *session_write {
                             Some(ref mut session) => {
                                 // Access and modify `session` here
-                                if offered_snapshot.height
-                                    <= session.snapshot.height
-                                {
+                                if offered_snapshot.height <= session.snapshot.height {
                                     return Err(error_into_exception(Error::Abci(
                                         AbciError::BadRequest(
                                             "offer_snapshot already syncing newest height"
@@ -218,11 +219,9 @@ where
                                     ))),
                                 }
                             }
-                            None => {
-                                Err(error_into_exception(Error::Abci(AbciError::BadRequest(
-                                    "offer_snapshot unable to lock session".to_string(),
-                                ))))
-                            }
+                            None => Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                                "offer_snapshot unable to lock session".to_string(),
+                            )))),
                         }
                     }
                     Err(_poisoned) => {
@@ -250,7 +249,8 @@ where
                         ) {
                             Ok(next_chunk_ids) => {
                                 return Ok(proto::ResponseApplySnapshotChunk {
-                                    result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
+                                    result: proto::response_apply_snapshot_chunk::Result::Accept
+                                        .into(),
                                     refetch_chunks: vec![],
                                     reject_senders: vec![],
                                     next_chunks: next_chunk_ids,
@@ -261,7 +261,7 @@ where
                                     "apply_snapshot_chunk unable to apply chunk:{}",
                                     e
                                 ))))
-                                    .map_err(error_into_exception);
+                                .map_err(error_into_exception);
                             }
                         }
                     }
@@ -270,10 +270,10 @@ where
                         return Err(Error::Abci(AbciError::BadRequest(
                             "apply_snapshot_chunk unable to lock session".to_string(),
                         )))
-                            .map_err(error_into_exception);
+                        .map_err(error_into_exception);
                     }
                 }
-            },
+            }
             Err(_poisoned) => {
                 return Err(error_into_exception(Error::Abci(AbciError::BadRequest(
                     "apply_snapshot_chunk unable to lock session (poisoned)".to_string(),

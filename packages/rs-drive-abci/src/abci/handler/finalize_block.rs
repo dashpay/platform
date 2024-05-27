@@ -1,19 +1,25 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
+    TransactionalApplication,
+};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use std::sync::atomic::Ordering;
 use tenderdash_abci::proto::abci as proto;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 pub fn finalize_block<'a, A, C>(
     app: &A,
     request: proto::RequestFinalizeBlock,
 ) -> Result<proto::ResponseFinalizeBlock, Error>
 where
-    A: PlatformApplication<C> + SnapshotManagerApplication + TransactionalApplication<'a> + BlockExecutionApplication,
+    A: PlatformApplication<C>
+        + SnapshotManagerApplication
+        + TransactionalApplication<'a>
+        + BlockExecutionApplication,
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("finalize_block");
@@ -76,9 +82,10 @@ where
         app.snapshot_manager()
             .create_snapshot(&app.platform().drive.grove, block_height as i64)
             .map_err(|e| {
-                Error::Execution(ExecutionError::CorruptedDriveResponse(
-                    format!("Unable to create snapshot:{}", e),
-                ))
+                Error::Execution(ExecutionError::CorruptedDriveResponse(format!(
+                    "Unable to create snapshot:{}",
+                    e
+                )))
             })?;
     }
 

@@ -1,17 +1,20 @@
-use crate::abci::app::{BlockExecutionApplication, ConsensusAbciApplication, PlatformApplication, SnapshotManagerApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, ConsensusAbciApplication, PlatformApplication,
+    SnapshotManagerApplication, TransactionalApplication,
+};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::snapshot::SnapshotManager;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
-use crate::platform_types::snapshot::SnapshotManager;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
