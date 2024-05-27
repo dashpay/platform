@@ -281,6 +281,58 @@ impl_transport_request_grpc!(
     get_data_contracts
 );
 
+// rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourcesRequest,
+    platform_proto::GetContestedResourcesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resources
+);
+
+//  rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourceVoteStateRequest,
+    platform_proto::GetContestedResourceVoteStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resource_vote_state
+);
+
+// rpc getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourceVotersForIdentityRequest,
+    platform_proto::GetContestedResourceVotersForIdentityResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resource_voters_for_identity
+);
+// rpc getContestedResourceIdentityVoteStatus(GetContestedResourceIdentityVoteStatusRequest) returns (GetContestedResourceIdentityVoteStatusResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourceIdentityVoteStatusRequest,
+    platform_proto::GetContestedResourceIdentityVoteStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resource_identity_vote_status
+);
+// rpc getContestedVotePollsByEndDate(GetContestedVotePollsByEndDateRequest) returns (GetContestedVotePollsByEndDateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedVotePollsByEndDateRequest,
+    platform_proto::GetContestedVotePollsByEndDateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_vote_polls_by_end_date
+);
+
+// rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetPrefundedSpecializedBalanceRequest,
+    platform_proto::GetPrefundedSpecializedBalanceResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_prefunded_specialized_balance
+);
+
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(
