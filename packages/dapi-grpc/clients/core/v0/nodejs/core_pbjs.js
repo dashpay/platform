@@ -191,7 +191,7 @@ $root.org = (function() {
                          * @typedef getBestBlockHeightCallback
                          * @type {function}
                          * @param {Error|null} error Error, if any
-                         * @param {org.dash.platform.dapi.v0.BestBlockHeightResponse} [response] BestBlockHeightResponse
+                         * @param {org.dash.platform.dapi.v0.GetBestBlockHeightResponse} [response] GetBestBlockHeightResponse
                          */
 
                         /**
@@ -199,13 +199,13 @@ $root.org = (function() {
                          * @function getBestBlockHeight
                          * @memberof org.dash.platform.dapi.v0.Core
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightRequest} request BestBlockHeightRequest message or plain object
-                         * @param {org.dash.platform.dapi.v0.Core.getBestBlockHeightCallback} callback Node-style callback called with the error, if any, and BestBlockHeightResponse
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightRequest} request GetBestBlockHeightRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Core.getBestBlockHeightCallback} callback Node-style callback called with the error, if any, and GetBestBlockHeightResponse
                          * @returns {undefined}
                          * @variation 1
                          */
                         Object.defineProperty(Core.prototype.getBestBlockHeight = function getBestBlockHeight(request, callback) {
-                            return this.rpcCall(getBestBlockHeight, $root.org.dash.platform.dapi.v0.BestBlockHeightRequest, $root.org.dash.platform.dapi.v0.BestBlockHeightResponse, request, callback);
+                            return this.rpcCall(getBestBlockHeight, $root.org.dash.platform.dapi.v0.GetBestBlockHeightRequest, $root.org.dash.platform.dapi.v0.GetBestBlockHeightResponse, request, callback);
                         }, "name", { value: "getBestBlockHeight" });
 
                         /**
@@ -213,8 +213,8 @@ $root.org = (function() {
                          * @function getBestBlockHeight
                          * @memberof org.dash.platform.dapi.v0.Core
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightRequest} request BestBlockHeightRequest message or plain object
-                         * @returns {Promise<org.dash.platform.dapi.v0.BestBlockHeightResponse>} Promise
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightRequest} request GetBestBlockHeightRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetBestBlockHeightResponse>} Promise
                          * @variation 2
                          */
 
@@ -3097,23 +3097,23 @@ $root.org = (function() {
                         return GetBlockResponse;
                     })();
 
-                    v0.BestBlockHeightRequest = (function() {
+                    v0.GetBestBlockHeightRequest = (function() {
 
                         /**
-                         * Properties of a BestBlockHeightRequest.
+                         * Properties of a GetBestBlockHeightRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IBestBlockHeightRequest
+                         * @interface IGetBestBlockHeightRequest
                          */
 
                         /**
-                         * Constructs a new BestBlockHeightRequest.
+                         * Constructs a new GetBestBlockHeightRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a BestBlockHeightRequest.
-                         * @implements IBestBlockHeightRequest
+                         * @classdesc Represents a GetBestBlockHeightRequest.
+                         * @implements IGetBestBlockHeightRequest
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightRequest=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightRequest=} [properties] Properties to set
                          */
-                        function BestBlockHeightRequest(properties) {
+                        function GetBestBlockHeightRequest(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -3121,60 +3121,60 @@ $root.org = (function() {
                         }
 
                         /**
-                         * Creates a new BestBlockHeightRequest instance using the specified properties.
+                         * Creates a new GetBestBlockHeightRequest instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightRequest=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.BestBlockHeightRequest} BestBlockHeightRequest instance
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetBestBlockHeightRequest} GetBestBlockHeightRequest instance
                          */
-                        BestBlockHeightRequest.create = function create(properties) {
-                            return new BestBlockHeightRequest(properties);
+                        GetBestBlockHeightRequest.create = function create(properties) {
+                            return new GetBestBlockHeightRequest(properties);
                         };
 
                         /**
-                         * Encodes the specified BestBlockHeightRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.BestBlockHeightRequest.verify|verify} messages.
+                         * Encodes the specified GetBestBlockHeightRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBestBlockHeightRequest.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightRequest} message BestBlockHeightRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightRequest} message GetBestBlockHeightRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        BestBlockHeightRequest.encode = function encode(message, writer) {
+                        GetBestBlockHeightRequest.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             return writer;
                         };
 
                         /**
-                         * Encodes the specified BestBlockHeightRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.BestBlockHeightRequest.verify|verify} messages.
+                         * Encodes the specified GetBestBlockHeightRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBestBlockHeightRequest.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightRequest} message BestBlockHeightRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightRequest} message GetBestBlockHeightRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        BestBlockHeightRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetBestBlockHeightRequest.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a BestBlockHeightRequest message from the specified reader or buffer.
+                         * Decodes a GetBestBlockHeightRequest message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.BestBlockHeightRequest} BestBlockHeightRequest
+                         * @returns {org.dash.platform.dapi.v0.GetBestBlockHeightRequest} GetBestBlockHeightRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        BestBlockHeightRequest.decode = function decode(reader, length) {
+                        GetBestBlockHeightRequest.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.BestBlockHeightRequest();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBestBlockHeightRequest();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
@@ -3187,94 +3187,94 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a BestBlockHeightRequest message from the specified reader or buffer, length delimited.
+                         * Decodes a GetBestBlockHeightRequest message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.BestBlockHeightRequest} BestBlockHeightRequest
+                         * @returns {org.dash.platform.dapi.v0.GetBestBlockHeightRequest} GetBestBlockHeightRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        BestBlockHeightRequest.decodeDelimited = function decodeDelimited(reader) {
+                        GetBestBlockHeightRequest.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a BestBlockHeightRequest message.
+                         * Verifies a GetBestBlockHeightRequest message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightRequest
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        BestBlockHeightRequest.verify = function verify(message) {
+                        GetBestBlockHeightRequest.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             return null;
                         };
 
                         /**
-                         * Creates a BestBlockHeightRequest message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetBestBlockHeightRequest message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightRequest
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.BestBlockHeightRequest} BestBlockHeightRequest
+                         * @returns {org.dash.platform.dapi.v0.GetBestBlockHeightRequest} GetBestBlockHeightRequest
                          */
-                        BestBlockHeightRequest.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.BestBlockHeightRequest)
+                        GetBestBlockHeightRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetBestBlockHeightRequest)
                                 return object;
-                            return new $root.org.dash.platform.dapi.v0.BestBlockHeightRequest();
+                            return new $root.org.dash.platform.dapi.v0.GetBestBlockHeightRequest();
                         };
 
                         /**
-                         * Creates a plain object from a BestBlockHeightRequest message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetBestBlockHeightRequest message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.BestBlockHeightRequest} message BestBlockHeightRequest
+                         * @param {org.dash.platform.dapi.v0.GetBestBlockHeightRequest} message GetBestBlockHeightRequest
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        BestBlockHeightRequest.toObject = function toObject() {
+                        GetBestBlockHeightRequest.toObject = function toObject() {
                             return {};
                         };
 
                         /**
-                         * Converts this BestBlockHeightRequest to JSON.
+                         * Converts this GetBestBlockHeightRequest to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightRequest
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightRequest
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        BestBlockHeightRequest.prototype.toJSON = function toJSON() {
+                        GetBestBlockHeightRequest.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        return BestBlockHeightRequest;
+                        return GetBestBlockHeightRequest;
                     })();
 
-                    v0.BestBlockHeightResponse = (function() {
+                    v0.GetBestBlockHeightResponse = (function() {
 
                         /**
-                         * Properties of a BestBlockHeightResponse.
+                         * Properties of a GetBestBlockHeightResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IBestBlockHeightResponse
-                         * @property {number|null} [height] BestBlockHeightResponse height
+                         * @interface IGetBestBlockHeightResponse
+                         * @property {number|null} [height] GetBestBlockHeightResponse height
                          */
 
                         /**
-                         * Constructs a new BestBlockHeightResponse.
+                         * Constructs a new GetBestBlockHeightResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a BestBlockHeightResponse.
-                         * @implements IBestBlockHeightResponse
+                         * @classdesc Represents a GetBestBlockHeightResponse.
+                         * @implements IGetBestBlockHeightResponse
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightResponse=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightResponse=} [properties] Properties to set
                          */
-                        function BestBlockHeightResponse(properties) {
+                        function GetBestBlockHeightResponse(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -3282,35 +3282,35 @@ $root.org = (function() {
                         }
 
                         /**
-                         * BestBlockHeightResponse height.
+                         * GetBestBlockHeightResponse height.
                          * @member {number} height
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @instance
                          */
-                        BestBlockHeightResponse.prototype.height = 0;
+                        GetBestBlockHeightResponse.prototype.height = 0;
 
                         /**
-                         * Creates a new BestBlockHeightResponse instance using the specified properties.
+                         * Creates a new GetBestBlockHeightResponse instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightResponse=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.BestBlockHeightResponse} BestBlockHeightResponse instance
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetBestBlockHeightResponse} GetBestBlockHeightResponse instance
                          */
-                        BestBlockHeightResponse.create = function create(properties) {
-                            return new BestBlockHeightResponse(properties);
+                        GetBestBlockHeightResponse.create = function create(properties) {
+                            return new GetBestBlockHeightResponse(properties);
                         };
 
                         /**
-                         * Encodes the specified BestBlockHeightResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.BestBlockHeightResponse.verify|verify} messages.
+                         * Encodes the specified GetBestBlockHeightResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBestBlockHeightResponse.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightResponse} message BestBlockHeightResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightResponse} message GetBestBlockHeightResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        BestBlockHeightResponse.encode = function encode(message, writer) {
+                        GetBestBlockHeightResponse.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             if (message.height != null && Object.hasOwnProperty.call(message, "height"))
@@ -3319,33 +3319,33 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Encodes the specified BestBlockHeightResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.BestBlockHeightResponse.verify|verify} messages.
+                         * Encodes the specified GetBestBlockHeightResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBestBlockHeightResponse.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IBestBlockHeightResponse} message BestBlockHeightResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetBestBlockHeightResponse} message GetBestBlockHeightResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        BestBlockHeightResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetBestBlockHeightResponse.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a BestBlockHeightResponse message from the specified reader or buffer.
+                         * Decodes a GetBestBlockHeightResponse message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.BestBlockHeightResponse} BestBlockHeightResponse
+                         * @returns {org.dash.platform.dapi.v0.GetBestBlockHeightResponse} GetBestBlockHeightResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        BestBlockHeightResponse.decode = function decode(reader, length) {
+                        GetBestBlockHeightResponse.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.BestBlockHeightResponse();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBestBlockHeightResponse();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
@@ -3361,30 +3361,30 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a BestBlockHeightResponse message from the specified reader or buffer, length delimited.
+                         * Decodes a GetBestBlockHeightResponse message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.BestBlockHeightResponse} BestBlockHeightResponse
+                         * @returns {org.dash.platform.dapi.v0.GetBestBlockHeightResponse} GetBestBlockHeightResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        BestBlockHeightResponse.decodeDelimited = function decodeDelimited(reader) {
+                        GetBestBlockHeightResponse.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a BestBlockHeightResponse message.
+                         * Verifies a GetBestBlockHeightResponse message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        BestBlockHeightResponse.verify = function verify(message) {
+                        GetBestBlockHeightResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             if (message.height != null && message.hasOwnProperty("height"))
@@ -3394,32 +3394,32 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Creates a BestBlockHeightResponse message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetBestBlockHeightResponse message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.BestBlockHeightResponse} BestBlockHeightResponse
+                         * @returns {org.dash.platform.dapi.v0.GetBestBlockHeightResponse} GetBestBlockHeightResponse
                          */
-                        BestBlockHeightResponse.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.BestBlockHeightResponse)
+                        GetBestBlockHeightResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetBestBlockHeightResponse)
                                 return object;
-                            var message = new $root.org.dash.platform.dapi.v0.BestBlockHeightResponse();
+                            var message = new $root.org.dash.platform.dapi.v0.GetBestBlockHeightResponse();
                             if (object.height != null)
                                 message.height = object.height >>> 0;
                             return message;
                         };
 
                         /**
-                         * Creates a plain object from a BestBlockHeightResponse message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetBestBlockHeightResponse message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.BestBlockHeightResponse} message BestBlockHeightResponse
+                         * @param {org.dash.platform.dapi.v0.GetBestBlockHeightResponse} message GetBestBlockHeightResponse
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        BestBlockHeightResponse.toObject = function toObject(message, options) {
+                        GetBestBlockHeightResponse.toObject = function toObject(message, options) {
                             if (!options)
                                 options = {};
                             var object = {};
@@ -3431,17 +3431,17 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Converts this BestBlockHeightResponse to JSON.
+                         * Converts this GetBestBlockHeightResponse to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.BestBlockHeightResponse
+                         * @memberof org.dash.platform.dapi.v0.GetBestBlockHeightResponse
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        BestBlockHeightResponse.prototype.toJSON = function toJSON() {
+                        GetBestBlockHeightResponse.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        return BestBlockHeightResponse;
+                        return GetBestBlockHeightResponse;
                     })();
 
                     v0.BroadcastTransactionRequest = (function() {

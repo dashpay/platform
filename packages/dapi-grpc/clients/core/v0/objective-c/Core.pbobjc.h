@@ -340,19 +340,19 @@ GPB_FINAL @interface GetBlockResponse : GPBMessage
 
 @end
 
-#pragma mark - BestBlockHeightRequest
+#pragma mark - GetBestBlockHeightRequest
 
-GPB_FINAL @interface BestBlockHeightRequest : GPBMessage
+GPB_FINAL @interface GetBestBlockHeightRequest : GPBMessage
 
 @end
 
-#pragma mark - BestBlockHeightResponse
+#pragma mark - GetBestBlockHeightResponse
 
-typedef GPB_ENUM(BestBlockHeightResponse_FieldNumber) {
-  BestBlockHeightResponse_FieldNumber_Height = 1,
+typedef GPB_ENUM(GetBestBlockHeightResponse_FieldNumber) {
+  GetBestBlockHeightResponse_FieldNumber_Height = 1,
 };
 
-GPB_FINAL @interface BestBlockHeightResponse : GPBMessage
+GPB_FINAL @interface GetBestBlockHeightResponse : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t height;
 

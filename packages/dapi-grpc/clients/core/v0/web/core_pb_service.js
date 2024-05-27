@@ -42,8 +42,8 @@ Core.getBestBlockHeight = {
   service: Core,
   requestStream: false,
   responseStream: true,
-  requestType: core_pb.BestBlockHeightRequest,
-  responseType: core_pb.BestBlockHeightResponse
+  requestType: core_pb.GetBestBlockHeightRequest,
+  responseType: core_pb.GetBestBlockHeightResponse
 };
 
 Core.broadcastTransaction = {

@@ -31,8 +31,8 @@ class CoreStub(object):
                 )
         self.getBestBlockHeight = channel.unary_stream(
                 '/org.dash.platform.dapi.v0.Core/getBestBlockHeight',
-                request_serializer=core__pb2.BestBlockHeightRequest.SerializeToString,
-                response_deserializer=core__pb2.BestBlockHeightResponse.FromString,
+                request_serializer=core__pb2.GetBestBlockHeightRequest.SerializeToString,
+                response_deserializer=core__pb2.GetBestBlockHeightResponse.FromString,
                 )
         self.broadcastTransaction = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Core/broadcastTransaction',
@@ -138,8 +138,8 @@ def add_CoreServicer_to_server(servicer, server):
             ),
             'getBestBlockHeight': grpc.unary_stream_rpc_method_handler(
                     servicer.getBestBlockHeight,
-                    request_deserializer=core__pb2.BestBlockHeightRequest.FromString,
-                    response_serializer=core__pb2.BestBlockHeightResponse.SerializeToString,
+                    request_deserializer=core__pb2.GetBestBlockHeightRequest.FromString,
+                    response_serializer=core__pb2.GetBestBlockHeightResponse.SerializeToString,
             ),
             'broadcastTransaction': grpc.unary_unary_rpc_method_handler(
                     servicer.broadcastTransaction,
@@ -239,8 +239,8 @@ class Core(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_stream(request, target, '/org.dash.platform.dapi.v0.Core/getBestBlockHeight',
-            core__pb2.BestBlockHeightRequest.SerializeToString,
-            core__pb2.BestBlockHeightResponse.FromString,
+            core__pb2.GetBestBlockHeightRequest.SerializeToString,
+            core__pb2.GetBestBlockHeightResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

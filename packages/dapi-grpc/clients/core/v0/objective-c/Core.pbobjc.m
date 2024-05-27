@@ -910,14 +910,14 @@ typedef struct GetBlockResponse__storage_ {
 
 @end
 
-#pragma mark - BestBlockHeightRequest
+#pragma mark - GetBestBlockHeightRequest
 
-@implementation BestBlockHeightRequest
+@implementation GetBestBlockHeightRequest
 
 
-typedef struct BestBlockHeightRequest__storage_ {
+typedef struct GetBestBlockHeightRequest__storage_ {
   uint32_t _has_storage_[1];
-} BestBlockHeightRequest__storage_;
+} GetBestBlockHeightRequest__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -925,12 +925,12 @@ typedef struct BestBlockHeightRequest__storage_ {
   static GPBDescriptor *descriptor = nil;
   if (!descriptor) {
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[BestBlockHeightRequest class]
+        [GPBDescriptor allocDescriptorForClass:[GetBestBlockHeightRequest class]
                                      rootClass:[CoreRoot class]
                                           file:CoreRoot_FileDescriptor()
                                         fields:NULL
                                     fieldCount:0
-                                   storageSize:sizeof(BestBlockHeightRequest__storage_)
+                                   storageSize:sizeof(GetBestBlockHeightRequest__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
@@ -942,16 +942,16 @@ typedef struct BestBlockHeightRequest__storage_ {
 
 @end
 
-#pragma mark - BestBlockHeightResponse
+#pragma mark - GetBestBlockHeightResponse
 
-@implementation BestBlockHeightResponse
+@implementation GetBestBlockHeightResponse
 
 @dynamic height;
 
-typedef struct BestBlockHeightResponse__storage_ {
+typedef struct GetBestBlockHeightResponse__storage_ {
   uint32_t _has_storage_[1];
   uint32_t height;
-} BestBlockHeightResponse__storage_;
+} GetBestBlockHeightResponse__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -962,20 +962,20 @@ typedef struct BestBlockHeightResponse__storage_ {
       {
         .name = "height",
         .dataTypeSpecific.clazz = Nil,
-        .number = BestBlockHeightResponse_FieldNumber_Height,
+        .number = GetBestBlockHeightResponse_FieldNumber_Height,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(BestBlockHeightResponse__storage_, height),
+        .offset = (uint32_t)offsetof(GetBestBlockHeightResponse__storage_, height),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[BestBlockHeightResponse class]
+        [GPBDescriptor allocDescriptorForClass:[GetBestBlockHeightResponse class]
                                      rootClass:[CoreRoot class]
                                           file:CoreRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(BestBlockHeightResponse__storage_)
+                                   storageSize:sizeof(GetBestBlockHeightResponse__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");

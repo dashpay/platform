@@ -14,12 +14,12 @@
 #import <RxLibrary/GRXWriter.h>
 #endif
 
-@class BestBlockHeightRequest;
-@class BestBlockHeightResponse;
 @class BlockHeadersWithChainLocksRequest;
 @class BlockHeadersWithChainLocksResponse;
 @class BroadcastTransactionRequest;
 @class BroadcastTransactionResponse;
+@class GetBestBlockHeightRequest;
+@class GetBestBlockHeightResponse;
 @class GetBlockRequest;
 @class GetBlockResponse;
 @class GetBlockchainStatusRequest;
@@ -59,9 +59,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getBlockWithMessage:(GetBlockRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getBestBlockHeight(BestBlockHeightRequest) returns (stream BestBlockHeightResponse)
+#pragma mark getBestBlockHeight(GetBestBlockHeightRequest) returns (stream GetBestBlockHeightResponse)
 
-- (GRPCUnaryProtoCall *)getBestBlockHeightWithMessage:(BestBlockHeightRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getBestBlockHeightWithMessage:(GetBestBlockHeightRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)
 
@@ -112,11 +112,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetBlockWithRequest:(GetBlockRequest *)request handler:(void(^)(GetBlockResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getBestBlockHeight(BestBlockHeightRequest) returns (stream BestBlockHeightResponse)
+#pragma mark getBestBlockHeight(GetBestBlockHeightRequest) returns (stream GetBestBlockHeightResponse)
 
-- (void)getBestBlockHeightWithRequest:(BestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, BestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+- (void)getBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
-- (GRPCProtoCall *)RPCTogetBestBlockHeightWithRequest:(BestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, BestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+- (GRPCProtoCall *)RPCTogetBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)

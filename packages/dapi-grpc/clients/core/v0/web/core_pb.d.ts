@@ -358,37 +358,37 @@ export namespace GetBlockResponse {
   }
 }
 
-export class BestBlockHeightRequest extends jspb.Message {
+export class GetBestBlockHeightRequest extends jspb.Message {
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): BestBlockHeightRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: BestBlockHeightRequest): BestBlockHeightRequest.AsObject;
+  toObject(includeInstance?: boolean): GetBestBlockHeightRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetBestBlockHeightRequest): GetBestBlockHeightRequest.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: BestBlockHeightRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): BestBlockHeightRequest;
-  static deserializeBinaryFromReader(message: BestBlockHeightRequest, reader: jspb.BinaryReader): BestBlockHeightRequest;
+  static serializeBinaryToWriter(message: GetBestBlockHeightRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetBestBlockHeightRequest;
+  static deserializeBinaryFromReader(message: GetBestBlockHeightRequest, reader: jspb.BinaryReader): GetBestBlockHeightRequest;
 }
 
-export namespace BestBlockHeightRequest {
+export namespace GetBestBlockHeightRequest {
   export type AsObject = {
   }
 }
 
-export class BestBlockHeightResponse extends jspb.Message {
+export class GetBestBlockHeightResponse extends jspb.Message {
   getHeight(): number;
   setHeight(value: number): void;
 
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): BestBlockHeightResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: BestBlockHeightResponse): BestBlockHeightResponse.AsObject;
+  toObject(includeInstance?: boolean): GetBestBlockHeightResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetBestBlockHeightResponse): GetBestBlockHeightResponse.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: BestBlockHeightResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): BestBlockHeightResponse;
-  static deserializeBinaryFromReader(message: BestBlockHeightResponse, reader: jspb.BinaryReader): BestBlockHeightResponse;
+  static serializeBinaryToWriter(message: GetBestBlockHeightResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetBestBlockHeightResponse;
+  static deserializeBinaryFromReader(message: GetBestBlockHeightResponse, reader: jspb.BinaryReader): GetBestBlockHeightResponse;
 }
 
-export namespace BestBlockHeightResponse {
+export namespace GetBestBlockHeightResponse {
   export type AsObject = {
     height: number,
   }

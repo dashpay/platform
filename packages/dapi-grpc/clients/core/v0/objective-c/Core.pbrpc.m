@@ -115,24 +115,24 @@
              responseClass:[GetBlockResponse class]];
 }
 
-#pragma mark getBestBlockHeight(BestBlockHeightRequest) returns (stream BestBlockHeightResponse)
+#pragma mark getBestBlockHeight(GetBestBlockHeightRequest) returns (stream GetBestBlockHeightResponse)
 
-- (void)getBestBlockHeightWithRequest:(BestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, BestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+- (void)getBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler{
   [[self RPCTogetBestBlockHeightWithRequest:request eventHandler:eventHandler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetBestBlockHeightWithRequest:(BestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, BestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+- (GRPCProtoCall *)RPCTogetBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler{
   return [self RPCToMethod:@"getBestBlockHeight"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[BestBlockHeightResponse class]
+             responseClass:[GetBestBlockHeightResponse class]
         responsesWriteable:[GRXWriteable writeableWithEventHandler:eventHandler]];
 }
-- (GRPCUnaryProtoCall *)getBestBlockHeightWithMessage:(BestBlockHeightRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+- (GRPCUnaryProtoCall *)getBestBlockHeightWithMessage:(GetBestBlockHeightRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getBestBlockHeight"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[BestBlockHeightResponse class]];
+             responseClass:[GetBestBlockHeightResponse class]];
 }
 
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)
