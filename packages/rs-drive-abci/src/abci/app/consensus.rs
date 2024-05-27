@@ -13,8 +13,10 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
+use std::pin::Pin;
 use std::sync::{LockResult, RwLock};
 use tenderdash_abci::proto::abci as proto;
+use drive::grovedb::replication::{CURRENT_STATE_SYNC_VERSION, MultiStateSyncSession};
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -178,6 +180,15 @@ where
         &self,
         request: proto::RequestOfferSnapshot,
     ) -> Result<proto::ResponseOfferSnapshot, proto::ResponseException> {
+        if request.app_hash.len() != 32 {
+            return Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                "offer_snapshot invalid app_hash in request".to_string(),
+            ))));
+        }
+
+        let mut request_app_hash = [0u8; 32];
+        request_app_hash.copy_from_slice(&request.app_hash);
+
         match request.snapshot {
             None => Err(error_into_exception(Error::Abci(AbciError::BadRequest(
                 "offer_snapshot missing snapshot in request".to_string(),
@@ -205,11 +216,21 @@ where
                                         let state_sync_info =
                                             self.platform.drive.grove.start_syncing_session();
 
-                                        session.snapshot = offered_snapshot;
-                                        session.app_hash = request.app_hash;
-                                        session.state_sync_info = state_sync_info;
+                                        match self.platform.drive.grove.start_snapshot_syncing(request_app_hash, CURRENT_STATE_SYNC_VERSION) {
+                                            Ok((_,mut state_sync_info)) => {
+                                                session.snapshot = offered_snapshot;
+                                                session.app_hash = request.app_hash;
+                                                session.state_sync_info = state_sync_info;
 
-                                        Ok(response)
+                                                Ok(response)
+                                            }
+                                            Err(e) => Err(error_into_exception(Error::Abci(
+                                                AbciError::BadRequest(format!(
+                                                    "offer_snapshot unable start_snapshot_syncing:{}",
+                                                    e
+                                                )),
+                                            ))),
+                                        }
                                     }
                                     Err(e) => Err(error_into_exception(Error::Abci(
                                         AbciError::BadRequest(format!(
