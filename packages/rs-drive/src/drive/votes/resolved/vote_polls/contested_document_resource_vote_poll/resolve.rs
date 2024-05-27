@@ -8,6 +8,8 @@ use crate::error::contract::DataContractError;
 use crate::error::Error;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::TransactionArg;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::prelude::DataContract;
 use platform_version::version::PlatformVersion;
 
 /// A trait for resolving information related to a contested document resource vote poll.
@@ -56,6 +58,12 @@ pub trait ContestedDocumentResourceVotePollResolver {
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+    ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
+
+    /// Resolve by providing the contract
+    fn resolve_with_provided_borrowed_contract<'a>(
+        &self,
+        data_contract: &'a DataContract,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
     /// Resolve owned into a struct that allows for a borrowed contract
@@ -129,6 +137,30 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         Ok(
             ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
                 contract: DataContractResolvedInfo::DataContractFetchInfo(contract),
+                document_type_name: document_type_name.clone(),
+                index_name: index_name.clone(),
+                index_values: index_values.clone(),
+            },
+        )
+    }
+
+    fn resolve_with_provided_borrowed_contract<'a>(
+        &self,
+        data_contract: &'a DataContract,
+    ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error> {
+        let ContestedDocumentResourceVotePoll {
+            contract_id,
+            document_type_name,
+            index_name,
+            index_values,
+        } = self;
+        
+        if contract_id != data_contract.id_ref() {
+            return Err(Error::DataContract(DataContractError::ProvidedContractMismatch(format!("data contract provided {} is not the one required {}", data_contract.id_ref(), contract_id))));
+        }
+        Ok(
+            ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                contract: DataContractResolvedInfo::BorrowedDataContract(data_contract),
                 document_type_name: document_type_name.clone(),
                 index_name: index_name.clone(),
                 index_values: index_values.clone(),

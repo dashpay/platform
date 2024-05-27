@@ -15,6 +15,7 @@ use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
+use dpp::data_contract::DataContract;
 use platform_version::version::PlatformVersion;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
@@ -221,6 +222,28 @@ impl ContestedDocumentVotePollDriveQuery {
         } = self;
         Ok(ResolvedContestedDocumentVotePollDriveQuery {
             vote_poll: vote_poll.resolve_allow_borrowed(drive, transaction, platform_version)?,
+            result_type: *result_type,
+            offset: *offset,
+            limit: *limit,
+            start_at: *start_at,
+            order_ascending: *order_ascending,
+        })
+    }
+
+    pub fn resolve_with_provided_borrowed_contract<'a>(
+        &self,
+        data_contract: &'a DataContract,
+    ) -> Result<ResolvedContestedDocumentVotePollDriveQuery<'a>, Error> {
+        let ContestedDocumentVotePollDriveQuery {
+            vote_poll,
+            result_type,
+            offset,
+            limit,
+            start_at,
+            order_ascending,
+        } = self;
+        Ok(ResolvedContestedDocumentVotePollDriveQuery {
+            vote_poll: vote_poll.resolve_with_provided_borrowed_contract(data_contract)?,
             result_type: *result_type,
             offset: *offset,
             limit: *limit,
