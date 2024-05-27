@@ -6,6 +6,7 @@ service Core {
   rpc getBlockchainStatus (GetBlockchainStatusRequest) returns (GetBlockchainStatusResponse);
   rpc getMasternodeStatus (GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse);
   rpc getBlock (GetBlockRequest) returns (GetBlockResponse);
+  rpc getBestBlockHeight (BestBlockHeightRequest) returns (stream BestBlockHeightResponse);
   rpc broadcastTransaction (BroadcastTransactionRequest) returns (BroadcastTransactionResponse);
   rpc getTransaction (GetTransactionRequest) returns (GetTransactionResponse);
   rpc getEstimatedTransactionFee (GetEstimatedTransactionFeeRequest) returns (GetEstimatedTransactionFeeResponse);
@@ -98,6 +99,14 @@ message GetBlockRequest {
 
 message GetBlockResponse {
   bytes block = 1;
+}
+
+message BestBlockHeightRequest {
+
+}
+
+message BestBlockHeightResponse {
+  uint32 height = 1;
 }
 
 message BroadcastTransactionRequest {

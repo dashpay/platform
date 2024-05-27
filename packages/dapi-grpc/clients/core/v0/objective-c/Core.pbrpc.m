@@ -115,6 +115,26 @@
              responseClass:[GetBlockResponse class]];
 }
 
+#pragma mark getBestBlockHeight(BestBlockHeightRequest) returns (stream BestBlockHeightResponse)
+
+- (void)getBestBlockHeightWithRequest:(BestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, BestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+  [[self RPCTogetBestBlockHeightWithRequest:request eventHandler:eventHandler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetBestBlockHeightWithRequest:(BestBlockHeightRequest *)request eventHandler:(void(^)(BOOL done, BestBlockHeightResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+  return [self RPCToMethod:@"getBestBlockHeight"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[BestBlockHeightResponse class]
+        responsesWriteable:[GRXWriteable writeableWithEventHandler:eventHandler]];
+}
+- (GRPCUnaryProtoCall *)getBestBlockHeightWithMessage:(BestBlockHeightRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getBestBlockHeight"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[BestBlockHeightResponse class]];
+}
+
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)
 
 - (void)broadcastTransactionWithRequest:(BroadcastTransactionRequest *)request handler:(void(^)(BroadcastTransactionResponse *_Nullable response, NSError *_Nullable error))handler{

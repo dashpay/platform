@@ -1,6 +1,6 @@
 const logger = require('../../logger');
 const { StandardPlugin } = require('..');
-const { dashToDuffs } = require('../../utils');
+// const { dashToDuffs } = require('../../utils');
 
 const defaultOpts = {
   firstExecutionRequired: true,
@@ -31,23 +31,23 @@ class ChainPlugin extends StandardPlugin {
    * @return {Promise<boolean|*>}
    */
   async execStatusFetch() {
-    const res = await this.fetchStatus();
+    const bestHeight = await this.transport.getBestBlockHeight();
 
-    if (!res) {
+    if (!bestHeight) {
       return false;
     }
 
     const { network } = this.storage.application;
     const chainStore = this.storage.getChainStore(network);
-    const { chain: { blocksCount: blocks }, network: { fee: { relay } } } = res;
 
-    logger.debug('ChainPlugin - Setting up starting chainHeight', blocks);
+    logger.debug('ChainPlugin - Setting up starting chainHeight', bestHeight);
 
-    chainStore.updateChainHeight(blocks);
+    chainStore.updateChainHeight(bestHeight);
 
-    if (relay) {
-      chainStore.state.fees.minRelay = dashToDuffs(relay);
-    }
+    // TODO: Is it going to work without this?
+    // if (relay) {
+    //   chainStore.state.fees.minRelay = dashToDuffs(relay);
+    // }
 
     return true;
   }

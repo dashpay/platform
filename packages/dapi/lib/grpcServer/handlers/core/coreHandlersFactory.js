@@ -19,7 +19,7 @@ const {
     GetTransactionRequest,
     GetBlockchainStatusRequest,
     GetMasternodeStatusRequest,
-    GetBlockRequest,
+    GetBestBlockHeightRequest,
     pbjs: {
       BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
       BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
@@ -31,6 +31,8 @@ const {
       GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
       GetBlockRequest: PBJSGetBlockRequest,
       GetBlockResponse: PBJSGetBlockResponse,
+      GetBestBlockHeightRequest: PBJSGetBestBlockHeightRequest,
+      GetBestBlockHeightResponse: PBJSGetBestBlockHeightResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -39,6 +41,9 @@ const logger = require('../../../logger');
 
 const getBlockHandlerFactory = require(
   './getBlockHandlerFactory',
+);
+const getBestBlockHeightHandlerFactory = require(
+  './getBestBlockHeightHandlerFactory',
 );
 const getBlockchainStatusHandlerFactory = require(
   './getBlockchainStatusHandlerFactory',
@@ -72,6 +77,19 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
       PBJSGetBlockResponse,
     ),
     wrapInErrorHandler(getBlockHandler),
+  );
+
+  // getBestBlockHeight
+  const getBestBlockHeight = getBestBlockHeightHandlerFactory(coreRPCClient);
+  const wrappedGetBestBlockHeight = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetBestBlockHeightRequest,
+      PBJSGetBestBlockHeightRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetBestBlockHeightResponse,
+    ),
+    wrapInErrorHandler(getBestBlockHeight),
   );
 
   // getBlockchainStatus
@@ -129,6 +147,7 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
   return {
     // TODO: Enable when an attack resistance is proved
     // getBlock: wrappedGetBlock,
+    getBestBlockHeight: wrappedGetBestBlockHeight,
     // getBlockchainStatus: wrappedGetBlockchainStatus,
     // getMasternodeStatus: wrappedGetMasternodeStatus,
     getTransaction: wrappedGetTransaction,

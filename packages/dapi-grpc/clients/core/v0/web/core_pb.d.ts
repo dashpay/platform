@@ -358,6 +358,42 @@ export namespace GetBlockResponse {
   }
 }
 
+export class BestBlockHeightRequest extends jspb.Message {
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): BestBlockHeightRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: BestBlockHeightRequest): BestBlockHeightRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: BestBlockHeightRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): BestBlockHeightRequest;
+  static deserializeBinaryFromReader(message: BestBlockHeightRequest, reader: jspb.BinaryReader): BestBlockHeightRequest;
+}
+
+export namespace BestBlockHeightRequest {
+  export type AsObject = {
+  }
+}
+
+export class BestBlockHeightResponse extends jspb.Message {
+  getHeight(): number;
+  setHeight(value: number): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): BestBlockHeightResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: BestBlockHeightResponse): BestBlockHeightResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: BestBlockHeightResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): BestBlockHeightResponse;
+  static deserializeBinaryFromReader(message: BestBlockHeightResponse, reader: jspb.BinaryReader): BestBlockHeightResponse;
+}
+
+export namespace BestBlockHeightResponse {
+  export type AsObject = {
+    height: number,
+  }
+}
+
 export class BroadcastTransactionRequest extends jspb.Message {
   getTransaction(): Uint8Array | string;
   getTransaction_asU8(): Uint8Array;

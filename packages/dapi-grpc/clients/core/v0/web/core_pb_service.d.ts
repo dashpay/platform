@@ -31,6 +31,15 @@ type CoregetBlock = {
   readonly responseType: typeof core_pb.GetBlockResponse;
 };
 
+type CoregetBestBlockHeight = {
+  readonly methodName: string;
+  readonly service: typeof Core;
+  readonly requestStream: false;
+  readonly responseStream: true;
+  readonly requestType: typeof core_pb.BestBlockHeightRequest;
+  readonly responseType: typeof core_pb.BestBlockHeightResponse;
+};
+
 type CorebroadcastTransaction = {
   readonly methodName: string;
   readonly service: typeof Core;
@@ -81,6 +90,7 @@ export class Core {
   static readonly getBlockchainStatus: CoregetBlockchainStatus;
   static readonly getMasternodeStatus: CoregetMasternodeStatus;
   static readonly getBlock: CoregetBlock;
+  static readonly getBestBlockHeight: CoregetBestBlockHeight;
   static readonly broadcastTransaction: CorebroadcastTransaction;
   static readonly getTransaction: CoregetTransaction;
   static readonly getEstimatedTransactionFee: CoregetEstimatedTransactionFee;
@@ -147,6 +157,7 @@ export class CoreClient {
     requestMessage: core_pb.GetBlockRequest,
     callback: (error: ServiceError|null, responseMessage: core_pb.GetBlockResponse|null) => void
   ): UnaryResponse;
+  getBestBlockHeight(requestMessage: core_pb.BestBlockHeightRequest, metadata?: grpc.Metadata): ResponseStream<core_pb.BestBlockHeightResponse>;
   broadcastTransaction(
     requestMessage: core_pb.BroadcastTransactionRequest,
     metadata: grpc.Metadata,
