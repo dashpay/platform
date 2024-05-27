@@ -335,6 +335,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            contested_index: None,
         }];
 
         let new_indices = vec![
@@ -345,6 +346,7 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
+                contested_index: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -353,6 +355,7 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
+                contested_index: None,
             },
         ];
 
@@ -387,6 +390,7 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
+                contested_index: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -395,6 +399,7 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
+                contested_index: None,
             },
         ];
 
@@ -405,6 +410,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            contested_index: None,
         }];
 
         let old_index_structure =
@@ -437,6 +443,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            contested_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -452,6 +459,7 @@ mod tests {
                 },
             ],
             unique: false,
+            contested_index: None,
         }];
 
         let old_index_structure =
@@ -490,6 +498,7 @@ mod tests {
                 },
             ],
             unique: false,
+            contested_index: None,
         }];
 
         let new_indices = vec![Index {
@@ -499,6 +508,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            contested_index: None,
         }];
 
         let old_index_structure =
