@@ -1,4 +1,11 @@
+const {
+  v0: {
+    MasternodeListResponse,
+  },
+} = require('@dashevo/dapi-grpc');
+
 const MasternodeListSync = require('../../../MasternodeListSync');
+const logger = require('../../../logger');
 
 /**
  * @param {MasternodeListSync} masternodeListSync
@@ -9,15 +16,39 @@ function subscribeToMasternodeListHandlerFactory(masternodeListSync) {
    * @return {Promise<void>}
    */
   async function subscribeToMasternodeListHandler(call) {
-    /**
-     * @param {SimplifiedMNListDiff} diff
-     */
-    const sendDiff = (diff) => {
-      call.write(diff.toBuffer());
+    const requestLogger = logger.child({
+      endpoint: 'subscribeToMasternodeListHandler',
+      request: Math.floor(Math.random() * 1000),
+    });
+
+    requestLogger.debug('Start stream');
+
+    // We create a closure here to have an independent listener for each call,
+    // so we can easily remove it when the call ends
+    const sendDiff = (diff, blockHeight, blockHash, full) => {
+      const diffBuffer = diff.toBuffer();
+
+      const response = new MasternodeListResponse();
+
+      response.setMasternodeListDiff(diffBuffer);
+
+      let message = 'Masternode list diff sent';
+      if (full) {
+        message = 'Full masternode list sent';
+      }
+
+      requestLogger.trace({
+        blockHeight,
+        blockHash,
+      }, message);
+
+      call.write(response);
     };
 
     const shutdown = () => {
       call.end();
+
+      requestLogger.trace('Shutdown stream');
 
       masternodeListSync.removeListener(MasternodeListSync.EVENT_DIFF, sendDiff);
     };
@@ -27,7 +58,13 @@ function subscribeToMasternodeListHandlerFactory(masternodeListSync) {
 
     masternodeListSync.on(MasternodeListSync.EVENT_DIFF, sendDiff);
 
-    sendDiff(masternodeListSync.getFullList());
+    // Send full masternode list on subscribe
+    sendDiff(
+      masternodeListSync.getFullDiff(),
+      masternodeListSync.getBlockHeight(),
+      masternodeListSync.getBlockHash(),
+      true,
+    );
   }
 
   return subscribeToMasternodeListHandler;

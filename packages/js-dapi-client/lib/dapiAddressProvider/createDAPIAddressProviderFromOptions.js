@@ -89,7 +89,7 @@ function createDAPIAddressProviderFromOptions(options) {
 
     const smlProvider = new SimplifiedMasternodeListProvider(
       grpcTransport,
-      { network: options.network },
+      options,
     );
 
     return new SimplifiedMasternodeListDAPIAddressProvider(

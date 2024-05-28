@@ -34,8 +34,6 @@ const {
   getCoreDefinition,
 } = require('@dashevo/dapi-grpc');
 
-const { Block } = require('@dashevo/dashcore-lib');
-
 // Load config from .env
 dotenv.config();
 
@@ -104,8 +102,23 @@ async function main() {
     bloomFilterEmitterCollection,
   );
 
-  const masternodeListSync = new MasternodeListSync(dashCoreRpcClient, config.network);
-  await masternodeListSync.syncToBestBlock();
+  const blockHeadersCache = new BlockHeadersCache();
+
+  const chainDataProvider = new ChainDataProvider(
+    dashCoreRpcClient,
+    dashCoreZmqClient,
+    blockHeadersCache,
+  );
+
+  await chainDataProvider.init();
+
+  const masternodeListSync = new MasternodeListSync(
+    dashCoreRpcClient,
+    chainDataProvider,
+    config.network,
+  );
+
+  await masternodeListSync.init();
 
   // Send raw transactions via `subscribeToTransactionsWithProofs` stream if matched
   dashCoreZmqClient.on(
@@ -114,37 +127,19 @@ async function main() {
   );
 
   // Send merkle blocks via `subscribeToTransactionsWithProofs` stream
-  // and update masternode list
   dashCoreZmqClient.on(
     dashCoreZmqClient.topics.rawblock,
-    (rawBlock) => {
-      const block = new Block(rawBlock);
-
-      masternodeListSync.sync(block.hash).catch((e) => {
-        logger.error(e);
-      });
-
-      emitBlockEventToFilterCollection(block);
-    },
+    emitBlockEventToFilterCollection,
   );
 
   // TODO: check if we can receive this event before 'rawtx', and if we can,
-  // we need to test tx in this message first before emitng lock to the bloom
+  // we need to test tx in this message first before emitting lock to the bloom
   // filter collection
   // Send transaction instant locks via `subscribeToTransactionsWithProofs` stream
   dashCoreZmqClient.on(
     dashCoreZmqClient.topics.rawtxlocksig,
     emitInstantLockToFilterCollection,
   );
-
-  const blockHeadersCache = new BlockHeadersCache();
-
-  const chainDataProvider = new ChainDataProvider(
-    dashCoreRpcClient,
-    dashCoreZmqClient,
-    blockHeadersCache,
-  );
-  await chainDataProvider.init();
 
   // Start GRPC server
   logger.info('Starting GRPC server');

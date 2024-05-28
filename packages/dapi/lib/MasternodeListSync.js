@@ -4,21 +4,39 @@ const logger = require('./logger');
 
 const NULL_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
+/**
+ * @param {ChainLock} chainLock
+ * @return {string}
+ */
+function chainLockToBlockHashHex(chainLock) {
+  return chainLock.blockHash.toString('hex');
+}
+
 class MasternodeListSync extends EventEmitter {
   /**
    * @type {SimplifiedMNListDiff}
    */
-  fullList;
+  fullDiff;
+
+  /**
+   * @type {number}
+   */
+  blockHeight = 0;
 
   /**
    * @type {string}
    */
-  previousBlockHash;
+  blockHash;
 
   /**
    * @type {CoreRpcClient}
    */
   coreRpc;
+
+  /**
+   * @type {ChainDataProvider}
+   */
+  chainDataProvider;
 
   /**
    * @type {string}
@@ -27,49 +45,123 @@ class MasternodeListSync extends EventEmitter {
 
   /**
    * @param {CoreRpcClient} coreRpc
+   * @param {ChainDataProvider} chainDataProvider
    * @param {string} network
    */
-  constructor(coreRpc, network) {
+  constructor(coreRpc, chainDataProvider, network) {
     super();
 
     this.coreRpc = coreRpc;
+    this.chainDataProvider = chainDataProvider;
     this.network = network;
+    this.logger = logger.child({
+      service: 'MasternodeListSync',
+    });
 
     this.setMaxListeners(1000);
   }
 
   /**
    * @param {string} blockHash
+   * @param {number} blockHeight
    * @return {Promise<void>}
    */
-  async sync(blockHash) {
+  async sync(blockHash, blockHeight) {
     const fullDiffObject = await this.coreRpc.getMnListDiff(NULL_HASH, blockHash);
 
-    this.fullList = new SimplifiedMNListDiff(fullDiffObject, this.network);
+    // TODO: It's a dirty hack to fix serialisation issue, introduced by reverting version of the
+    //  diff from 2 to 1. So now version 1 of diff contains entries of version 1 and 2 and
+    //  we don't know how to parse it since version field is introduced in version 2.
+    fullDiffObject.nVersion = 2;
 
-    const latestDiffObject = await this.coreRpc.getMnListDiff(this.previousBlockHash, blockHash);
-    const latestDiff = new SimplifiedMNListDiff(latestDiffObject, this.network);
+    const previousBlockHash = this.blockHash;
+    const previousBlockHeight = this.blockHeight;
 
-    this.emit(MasternodeListSync.EVENT_DIFF, latestDiff);
+    this.fullDiff = new SimplifiedMNListDiff(fullDiffObject, this.network);
+    this.blockHeight = blockHeight;
+    this.blockHash = blockHash;
 
-    logger.debug(`Masternode list updated to ${blockHash}`);
+    this.logger.debug(
+      {
+        blockHash,
+        blockHeight,
+        network: this.network,
+      },
+      `Full masternode list updated to block ${blockHeight}`,
+    );
+
+    if (previousBlockHash) {
+      const diffObject = await this.coreRpc.getMnListDiff(previousBlockHash, blockHash);
+
+      // TODO: It's a dirty hack to fix serialisation issue, introduced by reverting version of the
+      //  diff from 2 to 1. So now version 1 of diff contains entries of version 1 and 2 and we
+      //  don't know how to parse it since version field is introduced in version 2.
+      diffObject.nVersion = 2;
+
+      const diff = new SimplifiedMNListDiff(diffObject, this.network);
+
+      this.logger.debug({
+        previousBlockHash,
+        blockHash,
+        previousBlockHeight,
+        blockHeight,
+        network: this.network,
+      }, `New diff from block ${previousBlockHeight} to ${blockHeight} received`);
+
+      this.emit(MasternodeListSync.EVENT_DIFF, diff, blockHeight, blockHash);
+    }
+
+    this.blockHash = blockHash;
   }
 
   /**
-   * Sync to the tip
-   *
    * @return {Promise<void>}
    */
-  async syncToBestBlock() {
-    const blockHash = await this.coreRpc.getBestBlockHash();
-    await this.sync(blockHash);
+  async init() {
+    // Init makes sure, that we have full diff, so we need to use the existing best chain lock
+    // or wait for the first one
+    return new Promise((resolve, reject) => {
+      const bestChainLock = this.chainDataProvider.getBestChainLock();
+
+      this.chainDataProvider.on(this.chainDataProvider.events.NEW_CHAIN_LOCK, (chainLock) => {
+        const blockHash = chainLockToBlockHashHex(chainLock);
+
+        this.sync(blockHash, chainLock.height).then(() => {
+          // Resolve the promise when chain lock is arrive we don't have any yet
+          if (!bestChainLock) {
+            resolve();
+          }
+        }).catch(reject);
+      });
+
+      if (bestChainLock) {
+        const bestBlockHash = chainLockToBlockHashHex(bestChainLock);
+
+        // Resolve promise when we have the best chain lock
+        this.sync(bestBlockHash, bestChainLock.height).then(resolve).catch(reject);
+      }
+    });
   }
 
   /**
    * @return {SimplifiedMNListDiff}
    */
-  getFullList() {
-    return this.fullList;
+  getFullDiff() {
+    return this.fullDiff;
+  }
+
+  /**
+   * @return {number}
+   */
+  getBlockHeight() {
+    return this.blockHeight;
+  }
+
+  /**
+   * @return {string}
+   */
+  getBlockHash() {
+    return this.blockHash;
   }
 }
 

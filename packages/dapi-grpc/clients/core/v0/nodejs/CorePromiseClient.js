@@ -40,6 +40,8 @@ const {
             GetEstimatedTransactionFeeResponse: PBJSGetEstimatedTransactionFeeResponse,
             TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
             TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+            MasternodeListRequest: PBJSMasternodeListRequest,
+            MasternodeListResponse: PBJSMasternodeListResponse,
           },
         },
       },
@@ -56,6 +58,7 @@ const {
   BlockHeadersWithChainLocksResponse: ProtocBlockHeadersWithChainLocksResponse,
   GetEstimatedTransactionFeeResponse: ProtocGetEstimatedTransactionFeeResponse,
   TransactionsWithProofsResponse: ProtocTransactionsWithProofsResponse,
+  MasternodeListResponse: ProtocMasternodeListResponse,
 } = require('./core_protoc');
 
 const getCoreDefinition = require('../../../../lib/getCoreDefinition');
@@ -353,6 +356,38 @@ class CorePromiseClient {
             ),
             protobufToJsonFactory(
               PBJSTransactionsWithProofsRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {MasternodeListRequest} masternodeListRequest The request proto
+   * @param {?Object<string, string>} metadata User defined call metadata
+   * @param {CallOptions} [options={}]
+   * @return {!grpc.web.ClientReadableStream<!MasternodeListResponse>|undefined}
+   *     The XHR Node Readable Stream
+   */
+  subscribeToMasternodeList(masternodeListRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.subscribeToMasternodeList(
+      masternodeListRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocMasternodeListResponse,
+              PBJSMasternodeListResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSMasternodeListRequest,
             ),
           ),
         ],
