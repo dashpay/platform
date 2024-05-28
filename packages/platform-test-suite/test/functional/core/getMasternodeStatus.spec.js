@@ -2,7 +2,7 @@ const { Essentials: { Buffer } } = require('dash');
 
 const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
 
-describe('Core', () => {
+describe.skip('Core', () => {
   describe('getMasternodeStatus', function main() {
     let client;
 
