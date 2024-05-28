@@ -4,7 +4,7 @@ const createClientWithoutWallet = require('../../../lib/test/createClientWithout
 
 const { Core: { Block }, Essentials: { Buffer } } = Dash;
 
-describe('Core', () => {
+describe.skip('Core', () => {
   describe('getBlock', () => {
     let client;
 

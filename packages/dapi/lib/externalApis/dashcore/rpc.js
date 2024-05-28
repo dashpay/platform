@@ -1,8 +1,8 @@
 const RpcClient = require('@dashevo/dashd-rpc');
+const lodash = require('lodash');
 const DashCoreRpcError = require('../../errors/DashCoreRpcError');
 const constants = require('./constants');
 const config = require('../../config');
-const lodash = require('lodash');
 
 const client = new RpcClient(config.dashcore.rpc);
 
@@ -171,9 +171,11 @@ const getRawTransaction = (txid, verboseMode = 0) => new Promise((resolve, rejec
 });
 
 const getRawTransactionMulti = (txids, verboseMode = 0) => {
+  console.log('!!!!!!!');
+  console.dir(txids);
   const promises = lodash.chunk(txids, 100).map((chunk) => {
     return new Promise((resolve, reject) => {
-      client.getrawtransaction({ 0: chunk }, verboseMode, (err, r) => {
+      client.getRawTransactionMulti({ 0: chunk }, verboseMode, (err, r) => {
         if (err) {
           reject(new DashCoreRpcError(err.message, null, err.code));
         } else {
@@ -183,7 +185,10 @@ const getRawTransactionMulti = (txids, verboseMode = 0) => {
     });
   });
 
-  return Promise.all(promises).then((responses) => responses.flat());
+  return Promise.all(promises).then((responses) => {
+    console.dir(responses);
+    return responses.flat();
+  });
 };
 
 const getRawBlock = (blockhash) => getBlock(blockhash, false);

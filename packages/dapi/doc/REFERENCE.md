@@ -13,26 +13,6 @@
 
 ## Layer 1 endpoints
 
-### generate
-
-Note: regtest only
-
-Generates blocks on demand for regression tests.
-
-##### Params
-
-| name    | type   | description                            |
-|---------|--------|----------------------------------------|
-| args.amount  | number | Amount of blocks to generate |
-
-##### Response
-
-| name         | type                   | description                                                |
-|--------------|------------------------|------------------------------------------------------------|
-| blockHashes  | promise (string array) | Returns a promise containing strings of block hashes       |
-
----
-
 ### getBestBlockHash
 
 Returns best block hash (hash of the chaintip)
