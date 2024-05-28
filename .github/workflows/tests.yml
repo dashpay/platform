@@ -150,9 +150,7 @@ jobs:
         run: corepack enable
 
       - name: Audit NPM
-        # TODO: We can't update rimraf because karma is using it. Remove the exclude when new version of karma is
-        #   available.
-        run: yarn npm audit --environment production --all --recursive --exclude rimraf
+        run: yarn npm audit --environment production --all --recursive
 
   js-codeql:
     name: JS code security audit
