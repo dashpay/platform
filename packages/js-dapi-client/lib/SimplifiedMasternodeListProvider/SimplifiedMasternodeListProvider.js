@@ -1,31 +1,33 @@
 const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
 const SimplifiedMNListDiff = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListDiff');
-const {
-  v0: {
-    MasternodeListRequest,
-    CorePromiseClient,
-  },
-} = require('@dashevo/dapi-grpc');
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const logger = require('../logger');
 
 class SimplifiedMasternodeListProvider {
   /**
-   * @param {GrpcTransport} grpcTransport - JsonRpcTransport instance
+   * @param {Function} createStream - JsonRpcTransport instance
    * @param {object} [options] - Options
    * @param {string} [options.network]
    * @param {string} [options.loggerOptions]
    */
-  constructor(grpcTransport, options = {}) {
-    this.grpcTransport = grpcTransport;
+  constructor(createStream, options = {}) {
+    this.createStream = createStream;
     this.options = options;
     this.logger = logger.getForId(
       this.options.loggerOptions.identifier,
       this.options.loggerOptions.level,
     );
 
+    /**
+     * @type {ReconnectableStream}
+     */
     this.stream = undefined;
-    this.simplifiedMNList = undefined;
+
+    /**
+     * @type {SimplifiedMNList}
+     */
+    this.simplifiedMNList = new SimplifiedMNList(undefined);
   }
 
   /**
@@ -33,10 +35,8 @@ class SimplifiedMasternodeListProvider {
    * @returns {Promise<SimplifiedMNList>}
    */
   async getSimplifiedMNList() {
-    if (this.simplifiedMNList === undefined) {
-      this.simplifiedMNList = new SimplifiedMNList(undefined, this.options.network);
-
-      await this.subscribeToMasternodeList(0);
+    if (this.stream === undefined) {
+      await this.subscribeToMasternodeList();
     }
 
     return this.simplifiedMNList;
@@ -47,100 +47,57 @@ class SimplifiedMasternodeListProvider {
    * @private
    * @returns {Promise<void>}
    */
-  async subscribeToMasternodeList(sessionId) {
-    this.logger.debug(
-      'Starting masternode list stream',
-      { session: sessionId },
-    );
+  async subscribeToMasternodeList() {
+    this.logger.debug('Starting masternode list stream');
 
-    this.stream = await this.grpcTransport.request(
-      CorePromiseClient,
-      'subscribeToMasternodeList',
-      new MasternodeListRequest(),
-      {
-        timeout: undefined,
-      },
-    );
+    this.stream = await this.createStream();
 
-    this.logger.debug(
-      'Masternode list stream started',
-      { session: sessionId },
-    );
+    let diffCount = 0;
+    let resolved = false;
+
+    const rejectDiff = (error) => {
+      this.stream.cancel();
+      this.stream.retryOnError(error);
+    };
 
     return new Promise((resolve, reject) => {
-      let resolved = false;
-      let restarted = false;
-      let diffCount = 0;
+      const errorHandler = (error) => {
+        this.stream = null;
 
-      const restartStream = () => {
-        if (restarted) {
+        if (error.code === GrpcErrorCodes.CANCELLED) {
+          if (!resolved) {
+            resolve();
+            resolved = true;
+          }
+
           return;
         }
 
-        restarted = true;
-
-        this.stream.cancel();
-        this.stream = undefined;
-        this.simplifiedMNList = new SimplifiedMNList(undefined);
-
-        this.logger.debug(
-          'Restarting masternode list stream',
-          { session: sessionId },
+        this.logger.error(
+          `Masternode list sync failed: ${error.message}`,
+          { error, diffCount },
         );
 
-        // Start new session in 1 second
-        setTimeout(() => {
-          this.subscribeToMasternodeList(sessionId + 1).then(() => {
-            if (!resolved) {
-              resolve();
-              resolved = true;
-            }
-          }).catch((e) => {
-            if (!resolved) {
-              reject(e);
-              resolved = true;
-            }
-          });
-        }, 1000);
+        if (!resolved) {
+          reject(error);
+          resolved = true;
+        }
       };
 
-      this.stream.on('error', (error) => {
-        if (restarted) {
-          return;
-        }
-
-        this.logger.warn(
-          `Masternode list sync failed: ${error.message}`,
-          { error, session: sessionId },
-        );
-
-        restartStream();
-      });
-
-      this.stream.on('end', () => {
-        if (restarted) {
-          return;
-        }
-
-        this.logger.warn(
-          'Masternode list sync stopped',
-          { session: sessionId },
-        );
-
-        restartStream();
-      });
-
-      this.stream.on('data', async (response) => {
-        if (restarted) {
-          return;
-        }
-
+      const dataHandler = (response) => {
         diffCount += 1;
 
-        this.logger.debug(
-          'Received masternode list diff',
-          { session: sessionId, diffCount },
-        );
+        if (diffCount === 1) {
+          this.logger.silly(
+            'Full masternode list diff received',
+            { diffCount },
+          );
+        } else {
+          this.logger.silly(
+            'Received masternode list diff',
+            { diffCount },
+          );
+        }
 
         let simplifiedMNListDiff;
         let simplifiedMNListDiffBuffer;
@@ -154,47 +111,37 @@ class SimplifiedMasternodeListProvider {
           this.logger.warn(
             `Can't parse masternode list diff: ${e.message}`,
             {
-              session: sessionId,
               diffCount,
               network: this.options.network,
               error: e,
               simplifiedMNListDiff: simplifiedMNListDiffBuffer.toString('hex'),
             },
           );
-          restartStream();
+
+          rejectDiff(e);
+
           return;
         }
 
-        this.logger.debug(
-          'Parsed masternode list diff',
+        this.logger.silly(
+          'Parsed masternode list diff successfully',
           {
-            session: sessionId,
             diffCount,
             blockHash: simplifiedMNListDiff.blockHash,
           },
         );
 
         try {
-          this.simplifiedMNList.applyDiff(simplifiedMNListDiff);
-
-          this.logger.debug(
-            'Masternode list diff applied successfully',
-            {
-              session: sessionId,
-              diffCount,
-              blockHash: simplifiedMNListDiff.blockHash,
-            },
-          );
-
-          if (!resolved) {
-            resolve();
-            resolved = true;
+          // Restart list when we receive a full diff
+          if (diffCount === 1) {
+            this.simplifiedMNList = new SimplifiedMNList(simplifiedMNListDiff);
+          } else {
+            this.simplifiedMNList.applyDiff(simplifiedMNListDiff);
           }
         } catch (e) {
           this.logger.warn(
             `Can't apply masternode list diff: ${e.message}`,
             {
-              session: sessionId,
               diffCount,
               network: this.options.network,
               blockHash: simplifiedMNListDiff.blockHash,
@@ -203,10 +150,56 @@ class SimplifiedMasternodeListProvider {
             },
           );
 
-          restartStream();
+          rejectDiff(e);
         }
-      });
+
+        this.logger.silly(
+          'Masternode list diff applied successfully',
+          {
+            diffCount,
+            blockHash: simplifiedMNListDiff.blockHash,
+          },
+        );
+
+        if (!resolved) {
+          resolve();
+          resolved = true;
+        }
+      };
+
+      const beforeReconnectHandler = () => {
+        diffCount = 0;
+
+        this.logger.debug(
+          'Restarting masternode list stream',
+          { diffCount },
+        );
+      };
+
+      const endHandler = () => {
+        this.logger.warn(
+          'Masternode list sync stopped',
+          { diffCount },
+        );
+
+        this.stream = null;
+      };
+
+      this.stream.on('data', dataHandler);
+      this.stream.on('beforeReconnect', beforeReconnectHandler);
+      this.stream.on('error', errorHandler);
+      this.stream.on('end', endHandler);
     });
+  }
+
+  /**
+   * Unsubscribe from masternode list updates
+   */
+  unsubscribe() {
+    if (this.stream) {
+      this.stream.cancel();
+      this.stream = null;
+    }
   }
 }
 

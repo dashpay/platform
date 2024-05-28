@@ -6,12 +6,11 @@ const ListDAPIAddressProvider = require('./ListDAPIAddressProvider');
 
 const SimplifiedMasternodeListProvider = require('../SimplifiedMasternodeListProvider/SimplifiedMasternodeListProvider');
 const SimplifiedMasternodeListDAPIAddressProvider = require('./SimplifiedMasternodeListDAPIAddressProvider');
+const createMasternodeListStreamFactory = require('../SimplifiedMasternodeListProvider/createMasternodeListStreamFactory');
 
 const DAPIClientError = require('../errors/DAPIClientError');
 
 const networkConfigs = require('../networkConfigs');
-const GrpcTransport = require('../transport/GrpcTransport/GrpcTransport');
-const createGrpcTransportError = require('../transport/GrpcTransport/createGrpcTransportError');
 
 /**
  * @typedef {createDAPIAddressProviderFromOptions}
@@ -80,15 +79,14 @@ function createDAPIAddressProviderFromOptions(options) {
       options,
     );
 
-    const grpcTransport = new GrpcTransport(
+    const createStream = createMasternodeListStreamFactory(
       createDAPIAddressProviderFromOptions,
       listDAPIAddressProvider,
-      createGrpcTransportError,
       options,
     );
 
     const smlProvider = new SimplifiedMasternodeListProvider(
-      grpcTransport,
+      createStream,
       options,
     );
 
