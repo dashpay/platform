@@ -1,6 +1,6 @@
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 /// A resource votes is a votes determining what we should do with a contested resource.
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 ///
 #[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, Default)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

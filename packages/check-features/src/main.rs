@@ -4,7 +4,7 @@ use toml::Value;
 
 fn main() {
     let crates = [
-        //("rs-sdk", vec![]),
+        ("rs-sdk", vec![]),
         ("rs-drive-abci", vec![]),
         ("rs-dpp", vec!["documents-faker"]),
         ("rs-drive", vec![]),
@@ -77,7 +77,10 @@ fn check_crate(crate_name: &str, to_ignore: Vec<&str>) {
 
     for (feature, _) in features.as_table().unwrap().iter() {
         // Skip special feature groups
-        if feature == "default" || feature.ends_with("features") || to_ignore.contains(&feature.as_str()) {
+        if feature == "default"
+            || feature.ends_with("features")
+            || to_ignore.contains(&feature.as_str())
+        {
             continue;
         }
 

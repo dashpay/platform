@@ -4,12 +4,12 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

@@ -4,14 +4,14 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub mod contested_document_resource_vote_poll;
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq, From)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
