@@ -13,6 +13,7 @@ use bincode::{Decode, Encode};
     feature = "state-transition-validation"
 ))]
 use dashcore::signer;
+#[cfg(feature = "state-transition-validation")]
 use dashcore::signer::double_sha;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
