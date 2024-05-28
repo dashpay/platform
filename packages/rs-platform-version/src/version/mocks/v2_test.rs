@@ -315,6 +315,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     verify_masternode_vote: 0,
                     verify_start_at_contender_in_proof: 0,
                     verify_vote_poll_vote_state_proof: 0,
+                    verify_contests_proof: 0,
                 },
                 state_transition: DriveVerifyStateTransitionMethodVersions {
                     verify_state_transition_was_executed_with_proof: 0,

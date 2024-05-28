@@ -136,6 +136,7 @@ mod tests {
         use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
+        use drive::query::vote_polls_by_document_type_query::ResolvedVotePollsByDocumentTypeQuery;
         use simple_signer::signer::SimpleSigner;
         use crate::platform_types::platform_state::PlatformState;
         use crate::rpc::core::MockCoreRPCLike;
@@ -719,7 +720,7 @@ mod tests {
                                 contract_id: dpns_contract.id().to_vec(),
                                 document_type_name: domain.name().clone(),
                                 index_name: index_name.clone(),
-                                start_index_values: vec![dash_encoded],
+                                start_index_values: vec![dash_encoded.clone()],
                                 end_index_values: vec![],
                                 start_at_value_info: None,
                                 count: None,
@@ -750,6 +751,59 @@ mod tests {
             };
 
             assert_eq!(contested_resource_values.len(), 2);
+
+            let query_validation_result = platform
+                .query_contested_resources(
+                    GetContestedResourcesRequest {
+                        version: Some(get_contested_resources_request::Version::V0(
+                            GetContestedResourcesRequestV0 {
+                                contract_id: dpns_contract.id().to_vec(),
+                                document_type_name: domain.name().clone(),
+                                index_name: index_name.clone(),
+                                start_index_values: vec![dash_encoded],
+                                end_index_values: vec![],
+                                start_at_value_info: None,
+                                count: None,
+                                order_ascending: true,
+                                prove: true,
+                            },
+                        )),
+                    },
+                    &platform_state,
+                    platform_version,
+                )
+                .expect("expected to execute query")
+                .into_data()
+                .expect("expected query to be valid");
+
+            let get_contested_resources_response::Version::V0(GetContestedResourcesResponseV0 {
+                metadata: _,
+                result,
+            }) = query_validation_result.version.expect("expected a version");
+
+            let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result else {
+                panic!("expected proof")
+            };
+
+            let resolved_contested_document_vote_poll_drive_query =
+                ResolvedVotePollsByDocumentTypeQuery {
+                    contract: DataContractResolvedInfo::BorrowedDataContract(
+                        dpns_contract.as_ref(),
+                    ),
+                    document_type_name: domain.name(),
+                    index_name: &index_name,
+                    start_index_values: &vec!["dash".into()],
+                    end_index_values: &vec![],
+                    limit: None,
+                    order_ascending: true,
+                    start_at_value: &None,
+                };
+
+            let (_, contests) = resolved_contested_document_vote_poll_drive_query
+                .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
+                .expect("expected to verify proof");
+
+            assert_eq!(contests.len(), 2);
         }
 
         #[test]

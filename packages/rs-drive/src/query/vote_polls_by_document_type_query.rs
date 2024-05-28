@@ -249,13 +249,13 @@ impl VotePollsByDocumentTypeQuery {
 }
 
 impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
-    fn document_type(&self) -> Result<DocumentTypeRef, Error> {
+    pub(crate) fn document_type(&self) -> Result<DocumentTypeRef, Error> {
         Ok(self
             .contract
             .as_ref()
             .document_type_for_name(self.document_type_name.as_str())?)
     }
-    fn index(&self) -> Result<&Index, Error> {
+    pub(crate) fn index(&self) -> Result<&Index, Error> {
         let index = self
             .contract
             .as_ref()
@@ -318,7 +318,10 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         Ok((start_values_vec, end_values_vec))
     }
 
-    fn property_name_being_searched(&self, index: &'a Index) -> Result<&'a IndexProperty, Error> {
+    pub(crate) fn property_name_being_searched(
+        &self,
+        index: &'a Index,
+    ) -> Result<&'a IndexProperty, Error> {
         let offset = self.start_index_values.len();
         index
             .properties
@@ -330,12 +333,12 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         ))))
     }
 
-    fn result_is_in_key(&self) -> bool {
+    pub(crate) fn result_is_in_key(&self) -> bool {
         // this means that the keys are the values that we are interested in
         self.end_index_values.is_empty()
     }
 
-    fn result_path_index(&self) -> usize {
+    pub(crate) fn result_path_index(&self) -> usize {
         // 5 because of:
         // voting sub tree (112)
         // contested ('c')
@@ -346,13 +349,16 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
     }
 
     /// Operations to construct a path query.
-    fn construct_path_query(&self, platform_version: &PlatformVersion) -> Result<PathQuery, Error> {
+    pub(crate) fn construct_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
         let index = self.index()?;
-        self.construct_path_query_internal(index, platform_version)
+        self.construct_path_query_with_known_index(index, platform_version)
     }
 
     /// Operations to construct a path query.
-    fn construct_path_query_internal(
+    pub(crate) fn construct_path_query_with_known_index(
         &self,
         index: &Index,
         platform_version: &PlatformVersion,
@@ -433,7 +439,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Value>, Error> {
         let index = self.index()?;
-        let path_query = self.construct_path_query_internal(index, platform_version)?;
+        let path_query = self.construct_path_query_with_known_index(index, platform_version)?;
         let query_result = drive.grove_get_raw_path_query(
             &path_query,
             transaction,
