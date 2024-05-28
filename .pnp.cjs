@@ -3620,7 +3620,7 @@ const RAW_RUNTIME_STATE =
           ["promise-call-limit", "npm:1.0.1"],\
           ["read-package-json-fast", "npm:2.0.3"],\
           ["readdir-scoped-modules", "npm:1.1.0"],\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:3.0.2"],\
           ["semver", "npm:7.5.3"],\
           ["ssri", "npm:8.0.1"],\
           ["treeverse", "npm:1.0.4"],\
@@ -3723,7 +3723,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@npmcli/move-file", "npm:1.1.2"],\
           ["mkdirp", "npm:1.0.4"],\
-          ["rimraf", "npm:4.4.1"]\
+          ["rimraf", "npm:3.0.2"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -6631,7 +6631,7 @@ const RAW_RUNTIME_STATE =
           ["mkdirp-infer-owner", "npm:2.0.0"],\
           ["npm-normalize-package-bin", "npm:1.0.1"],\
           ["read-cmd-shim", "npm:2.0.0"],\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:3.0.2"],\
           ["write-file-atomic", "npm:4.0.1"]\
         ],\
         "linkType": "HARD"\
@@ -8422,7 +8422,7 @@ const RAW_RUNTIME_STATE =
           ["os-browserify", "npm:0.3.0"],\
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:3.0.2"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
@@ -10405,7 +10405,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["flat-cache", "npm:3.0.4"],\
           ["flatted", "npm:3.2.7"],\
-          ["rimraf", "npm:4.4.1"]\
+          ["rimraf", "npm:3.0.2"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -12181,7 +12181,7 @@ const RAW_RUNTIME_STATE =
           ["cross-spawn", "npm:7.0.3"],\
           ["istanbul-lib-coverage", "npm:3.2.2"],\
           ["p-map", "npm:3.0.0"],\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:3.0.2"],\
           ["uuid", "npm:8.3.2"]\
         ],\
         "linkType": "HARD"\
@@ -12611,7 +12611,7 @@ const RAW_RUNTIME_STATE =
           ["mkdirp", "npm:0.5.6"],\
           ["qjobs", "npm:1.2.0"],\
           ["range-parser", "npm:1.2.1"],\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:3.0.2"],\
           ["socket.io", "npm:4.5.2"],\
           ["source-map", "npm:0.6.1"],\
           ["tmp", "npm:0.2.1"],\
@@ -14724,7 +14724,7 @@ const RAW_RUNTIME_STATE =
           ["p-map", "npm:3.0.0"],\
           ["process-on-spawn", "npm:1.0.0"],\
           ["resolve-from", "npm:5.0.0"],\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:3.0.2"],\
           ["signal-exit", "npm:3.0.7"],\
           ["spawn-wrap", "npm:2.0.0"],\
           ["test-exclude", "npm:6.0.0"],\
@@ -15212,7 +15212,7 @@ const RAW_RUNTIME_STATE =
           ["npm-registry-fetch", "npm:12.0.2"],\
           ["promise-retry", "npm:2.0.1"],\
           ["read-package-json-fast", "npm:2.0.3"],\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:3.0.2"],\
           ["ssri", "npm:8.0.1"],\
           ["tar", "npm:6.2.1"]\
         ],\
@@ -16534,10 +16534,18 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["rimraf", [\
-      ["npm:4.4.1", {\
-        "packageLocation": "./.yarn/cache/rimraf-npm-4.4.1-80b02e041a-218ef91221.zip/node_modules/rimraf/",\
+      ["npm:2.7.1", {\
+        "packageLocation": "./.yarn/cache/rimraf-npm-2.7.1-9a71f3cc37-4586c296c7.zip/node_modules/rimraf/",\
         "packageDependencies": [\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:2.7.1"],\
+          ["glob", "npm:10.3.10"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:3.0.2", {\
+        "packageLocation": "./.yarn/cache/rimraf-npm-3.0.2-2cb7dac69a-063ffaccaa.zip/node_modules/rimraf/",\
+        "packageDependencies": [\
+          ["rimraf", "npm:3.0.2"],\
           ["glob", "npm:10.3.10"]\
         ],\
         "linkType": "HARD"\
@@ -17141,7 +17149,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["slocket", "npm:1.0.5"],\
           ["bluebird", "npm:3.7.2"],\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:2.7.1"],\
           ["signal-exit", "npm:3.0.7"]\
         ],\
         "linkType": "HARD"\
@@ -17310,7 +17318,7 @@ const RAW_RUNTIME_STATE =
           ["foreground-child", "npm:2.0.0"],\
           ["is-windows", "npm:1.0.2"],\
           ["make-dir", "npm:3.1.0"],\
-          ["rimraf", "npm:4.4.1"],\
+          ["rimraf", "npm:3.0.2"],\
           ["signal-exit", "npm:3.0.7"],\
           ["which", "npm:2.0.2"]\
         ],\
@@ -18155,7 +18163,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/tmp-npm-0.2.1-a9c8d9c0ca-445148d72d.zip/node_modules/tmp/",\
         "packageDependencies": [\
           ["tmp", "npm:0.2.1"],\
-          ["rimraf", "npm:4.4.1"]\
+          ["rimraf", "npm:3.0.2"]\
         ],\
         "linkType": "HARD"\
       }]\
