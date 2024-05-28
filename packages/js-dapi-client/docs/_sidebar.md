@@ -13,6 +13,8 @@
                 - [.getStatus()](usage/application/core/getStatus.md)
                 - [.getTransaction()](usage/application/core/getTransaction.md)
                 - [.subscribeToTransactionsWithProofs()](usage/application/core/subscribeToTransactionsWithProofs.md)
+                - [.subscribeToBlockHeadersWithChainLocks()](usage/application/core/subscribeToBlockHeadersWithChainLocks.md)
+                - [.subscribeToMasternodeList()](usage/application/core/subscribeToMasternodeList.md)
             - Platform 
                 - [.broadcastStateTransition()](usage/application/platform/broadcastStateTransition.md)
                 - [.getDataContract()](usage/application/platform/getDataContract.md)

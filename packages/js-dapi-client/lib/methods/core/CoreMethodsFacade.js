@@ -1,5 +1,4 @@
 const broadcastTransactionFactory = require('./broadcastTransactionFactory');
-const generateToAddressFactory = require('./generateToAddressFactory');
 const getBestBlockHashFactory = require('./getBestBlockHashFactory');
 const getBlockByHashFactory = require('./getBlockByHashFactory');
 const getBlockByHeightFactory = require('./getBlockByHeightFactory');
@@ -18,7 +17,6 @@ class CoreMethodsFacade {
    */
   constructor(jsonRpcTransport, grpcTransport) {
     this.broadcastTransaction = broadcastTransactionFactory(grpcTransport);
-    this.generateToAddress = generateToAddressFactory(jsonRpcTransport);
     this.getBestBlockHash = getBestBlockHashFactory(jsonRpcTransport);
     this.getBlockByHash = getBlockByHashFactory(grpcTransport);
     this.getBlockByHeight = getBlockByHeightFactory(grpcTransport);

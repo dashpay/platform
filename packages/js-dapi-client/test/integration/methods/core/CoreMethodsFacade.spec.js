@@ -44,17 +44,6 @@ describe('CoreMethodsFacade', () => {
     });
   });
 
-  describe('#generateToAddress', () => {
-    it('should generate address', async () => {
-      const response = 'response';
-      jsonRpcTransportMock.request.resolves(response);
-      await coreMethods.generateToAddress(1, 'yTMDce5yEpiPqmgPrPmTj7yAmQPJERUSVy');
-
-      expect(grpcTransportMock.request).to.be.not.called();
-      expect(jsonRpcTransportMock.request).to.be.calledOnce();
-    });
-  });
-
   describe('#getBestBlockHash', () => {
     it('should get best block hash', async () => {
       const response = '000000000b0339e07bce8b3186a6a57a3c45d10e16c4bce18ef81b667bc822b2';
