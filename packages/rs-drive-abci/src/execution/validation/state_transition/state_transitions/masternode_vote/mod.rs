@@ -125,6 +125,7 @@ mod tests {
         use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
         use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
         use dpp::util::hash::hash_double;
+        use dpp::util::strings::convert_to_homograph_safe_chars;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
         use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
         use dpp::voting::vote_polls::VotePoll;
@@ -184,6 +185,7 @@ mod tests {
             platform: &mut TempPlatform<MockCoreRPCLike>,
             platform_state: &Guard<Arc<PlatformState>>,
             seed: u64,
+            name: &str,
             platform_version: &PlatformVersion,
         ) -> (Identity, Identity, Arc<DataContract>) {
             let mut rng = StdRng::seed_from_u64(seed);
@@ -269,15 +271,21 @@ mod tests {
 
             document_1.set("parentDomainName", "dash".into());
             document_1.set("normalizedParentDomainName", "dash".into());
-            document_1.set("label", "quantum".into());
-            document_1.set("normalizedLabel", "quantum".into());
+            document_1.set("label", name.into());
+            document_1.set(
+                "normalizedLabel",
+                convert_to_homograph_safe_chars(name).into(),
+            );
             document_1.set("records.dashUniqueIdentityId", document_1.owner_id().into());
             document_1.set("subdomainRules.allowSubdomains", false.into());
 
             document_2.set("parentDomainName", "dash".into());
             document_2.set("normalizedParentDomainName", "dash".into());
-            document_2.set("label", "quantum".into());
-            document_2.set("normalizedLabel", "quantum".into());
+            document_2.set("label", name.into());
+            document_2.set(
+                "normalizedLabel",
+                convert_to_homograph_safe_chars(name).into(),
+            );
             document_2.set("records.dashUniqueIdentityId", document_2.owner_id().into());
             document_2.set("subdomainRules.allowSubdomains", false.into());
 
@@ -286,13 +294,15 @@ mod tests {
 
             let mut salted_domain_buffer_1: Vec<u8> = vec![];
             salted_domain_buffer_1.extend(salt_1);
-            salted_domain_buffer_1.extend("quantum.dash".as_bytes());
+            salted_domain_buffer_1
+                .extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
 
             let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
 
             let mut salted_domain_buffer_2: Vec<u8> = vec![];
             salted_domain_buffer_2.extend(salt_2);
-            salted_domain_buffer_2.extend("quantum.dash".as_bytes());
+            salted_domain_buffer_2
+                .extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
 
             let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
 
@@ -435,8 +445,23 @@ mod tests {
                 .expect("expected to commit transaction");
 
             assert_eq!(processing_result.valid_count(), 2);
+            (identity_1, identity_2, dpns_contract)
+        }
 
+        fn verify_dpns_name_contest(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            platform_state: &Guard<Arc<PlatformState>>,
+            dpns_contract: &DataContract,
+            identity_1: &Identity,
+            identity_2: &Identity,
+            name: &str,
+            platform_version: &PlatformVersion,
+        ) {
             // Now let's run a query for the vote totals
+
+            let domain = dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type");
 
             let config = bincode::config::standard()
                 .with_big_endian()
@@ -446,7 +471,7 @@ mod tests {
                 .expect("expected to encode the word dash");
 
             let quantum_encoded =
-                bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                bincode::encode_to_vec(Value::Text(convert_to_homograph_safe_chars(name)), config)
                     .expect("expected to encode the word quantum");
 
             let index_name = "parentNameAndLabel".to_string();
@@ -570,12 +595,12 @@ mod tests {
             let resolved_contested_document_vote_poll_drive_query =
                 ResolvedContestedDocumentVotePollDriveQuery {
                     vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
-                        contract: DataContractResolvedInfo::BorrowedDataContract(&dpns_contract),
+                        contract: DataContractResolvedInfo::BorrowedDataContract(dpns_contract),
                         document_type_name: domain.name().clone(),
                         index_name: index_name.clone(),
                         index_values: vec![
                             Value::Text("dash".to_string()),
-                            Value::Text("quantum".to_string()),
+                            Value::Text(convert_to_homograph_safe_chars(name)),
                         ],
                     },
                     result_type: DocumentsAndVoteTally,
@@ -626,8 +651,6 @@ mod tests {
             assert_eq!(first_contender.vote_tally, Some(0));
 
             assert_eq!(second_contender.vote_tally, Some(0));
-
-            (identity_1, identity_2, dpns_contract)
         }
 
         #[test]
@@ -639,8 +662,41 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (contender_1, contender_2, dpns_contract) =
-                create_dpns_name_contest(&mut platform, &platform_state, 7, platform_version);
+            let (identity_1, identity_2, dpns_contract) = create_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                7,
+                "quantum",
+                platform_version,
+            );
+
+            verify_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                dpns_contract.as_ref(),
+                &identity_1,
+                &identity_2,
+                "quantum",
+                platform_version,
+            );
+
+            let (identity_3, identity_4, dpns_contract) = create_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                8,
+                "cooldog",
+                platform_version,
+            );
+
+            verify_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                dpns_contract.as_ref(),
+                &identity_3,
+                &identity_4,
+                "cooldog",
+                platform_version,
+            );
 
             let domain = dpns_contract
                 .document_type_for_name("domain")
@@ -693,7 +749,7 @@ mod tests {
                 panic!("expected contested resources")
             };
 
-            assert_eq!(contested_resource_values.len(), 1);
+            assert_eq!(contested_resource_values.len(), 2);
         }
 
         #[test]
@@ -705,8 +761,13 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (contender_1, contender_2, dpns_contract) =
-                create_dpns_name_contest(&mut platform, &platform_state, 7, platform_version);
+            let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                7,
+                "quantum",
+                platform_version,
+            );
 
             let (masternode_1, signer_1, voting_key_1) =
                 setup_masternode_identity(&mut platform, 29, platform_version);
