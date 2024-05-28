@@ -106,7 +106,6 @@ async function main() {
   logger.info('Starting JSON RPC server');
   rpcServer.start({
     port: config.rpcServer.port,
-    networkType: config.network,
     dashcoreAPI: dashCoreRpcClient,
     logger,
   });
