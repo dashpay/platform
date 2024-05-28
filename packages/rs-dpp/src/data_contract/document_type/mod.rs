@@ -135,6 +135,17 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
+    fn deserialize_value_for_key(
+        &self,
+        key: &str,
+        serialized_value: &Vec<u8>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.deserialize_value_for_key(key, serialized_value, platform_version),
+        }
+    }
+
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.max_size(platform_version),

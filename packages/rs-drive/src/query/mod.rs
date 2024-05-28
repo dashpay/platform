@@ -85,7 +85,14 @@ pub mod vote_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Vote poll contestant votes query module
 pub mod vote_poll_contestant_votes_query;
-mod vote_polls_by_end_date_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote polls by end date query
+pub mod vote_polls_by_end_date_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote polls by document type query
+pub mod vote_polls_by_document_type_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct

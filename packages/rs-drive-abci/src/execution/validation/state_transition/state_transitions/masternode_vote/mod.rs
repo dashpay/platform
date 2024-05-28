@@ -107,10 +107,12 @@ mod tests {
         use std::sync::Arc;
         use arc_swap::Guard;
         use rand::Rng;
-        use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_contested_vote_polls_by_end_date_request, get_contested_vote_polls_by_end_date_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedVotePollsByEndDateRequest, GetContestedVotePollsByEndDateResponse};
+        use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_contested_resources_request, get_contested_resources_response, get_contested_vote_polls_by_end_date_request, get_contested_vote_polls_by_end_date_response, GetContestedResourcesRequest, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedVotePollsByEndDateRequest, GetContestedVotePollsByEndDateResponse};
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
+        use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
+        use dapi_grpc::platform::v0::get_contested_resources_response::{get_contested_resources_response_v0, GetContestedResourcesResponseV0};
         use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_request::GetContestedVotePollsByEndDateRequestV0;
         use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::{get_contested_vote_polls_by_end_date_response_v0, GetContestedVotePollsByEndDateResponseV0};
         use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::get_contested_vote_polls_by_end_date_response_v0::SerializedContestedVotePollsByTimestamp;
@@ -629,6 +631,65 @@ mod tests {
         }
 
         #[test]
+        fn test_contests_request() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (contender_1, contender_2, dpns_contract) =
+                create_dpns_name_contest(&mut platform, &platform_state, 7, platform_version);
+
+            let domain = dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type");
+
+            let index_name = "parentNameAndLabel".to_string();
+
+            let query_validation_result = platform.query_contested_resources(GetContestedResourcesRequest {
+                version: Some(get_contested_resources_request::Version::V0(
+                    GetContestedResourcesRequestV0 {
+                        contract_id: dpns_contract.id().to_vec(),
+                        document_type_name: domain.name().clone(),
+                        index_name: index_name.clone(),
+                        count: None,
+                        ascending: true,
+                        prove: false,
+                    },
+                )),
+            },
+                                               &platform_state,
+                                               platform_version,
+            )
+                .expect("expected to execute query")
+                .into_data()
+                .expect("expected query to be valid");
+
+            let get_contested_resources_response::Version::V0(
+                GetContestedResourcesResponseV0 {
+                    metadata: _,
+                    result,
+                },
+            ) = query_validation_result.version.expect("expected a version");
+
+            let Some(
+                get_contested_resources_response_v0::Result::ContestedResources(
+                    get_contested_resources_response_v0::ContestedResources {
+                        contested_resources, finished_results
+                    },
+                ),
+            ) = result
+                else {
+                    panic!("expected contested resources")
+                };
+
+            assert_eq!(contested_resources.len(), 1);
+            assert!(finished_results);
+        }
+
+        #[test]
         fn test_masternode_voting() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
@@ -937,7 +998,7 @@ mod tests {
             assert_eq!(
                 contested_vote_polls_by_timestamps,
                 vec![SerializedContestedVotePollsByTimestamp {
-                    timestamp: 0,
+                    timestamp: 1_209_600_000, // in ms, 2 weeks after Jan 1 1970
                     serialized_contested_vote_polls: vec![vec![
                         0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91,
                         126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6,

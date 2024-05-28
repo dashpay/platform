@@ -136,4 +136,12 @@ pub enum QuerySyntaxError {
     /// Requesting proof with offset error
     #[error("requesting proof with offset error: {0}")]
     RequestingProofWithOffset(String),
+
+    /// Unknown index error
+    #[error("unknown error: {0}")]
+    UnknownIndex(String),
+
+    /// Missing index values for query
+    #[error("missing index values error: {0}")]
+    MissingIndexValues(String),
 }

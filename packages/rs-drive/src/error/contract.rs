@@ -17,6 +17,10 @@ pub enum DataContractError {
     #[error("data contract provided is incorrect: {0}")]
     ProvidedContractMismatch(String),
 
+    /// Data contract is corrupted
+    #[error("data contract is corrupted: {0}")]
+    CorruptedDataContract(String),
+
     /// Data contract storage error when data contract is too big
     #[error("data contract is too big to be stored: {0}")]
     ContractTooBig(String),

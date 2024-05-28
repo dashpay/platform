@@ -192,6 +192,7 @@ pub struct DocumentTypeMethodVersions {
     pub index_for_types: FeatureVersion,
     pub max_size: FeatureVersion,
     pub serialize_value_for_key: FeatureVersion,
+    pub deserialize_value_for_key: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

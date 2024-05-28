@@ -8,6 +8,7 @@ mod prefunded_voting_balances_for_document;
 mod serialize_value_for_key;
 #[cfg(feature = "validation")]
 mod validate_update;
+mod deserialize_value_for_key;
 
 use std::collections::BTreeMap;
 
@@ -24,6 +25,7 @@ use crate::ProtocolError;
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
 use platform_value::{Identifier, Value};
+use crate::data_contract::document_type::DocumentTypeRef;
 
 // TODO: Some of those methods are only for tests. Hide under feature
 pub trait DocumentTypeV0Methods {
@@ -41,6 +43,12 @@ pub trait DocumentTypeV0Methods {
         value: &Value,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
+    fn deserialize_value_for_key(
+        &self,
+        key: &str,
+        serialized_value: &Vec<u8>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError>;
 
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError>;
 
@@ -173,6 +181,28 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             0 => self.serialize_value_for_key_v0(key, value),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "serialize_value_for_key".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn deserialize_value_for_key(
+        &self,
+        key: &str,
+        value: &Vec<u8>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .deserialize_value_for_key
+        {
+            0 => self.deserialize_value_for_key_v0(key, value),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "deserialize_value_for_key".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

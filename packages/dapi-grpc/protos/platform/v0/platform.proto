@@ -639,12 +639,20 @@ message GetEpochsInfoResponse {
 
 message GetContestedResourcesRequest {
   message GetContestedResourcesRequestV0 {
+    message StartAtValueInfo {
+      bytes start_value = 1;
+      bool start_value_included = 2;
+    }
+
     bytes contract_id = 1;
     string document_type_name = 2;
     string index_name = 3;
-    optional uint32 count = 4;
-    bool ascending = 5;
-    bool prove = 6;
+    repeated bytes start_index_values = 4;
+    repeated bytes end_index_values = 5;
+    optional StartAtValueInfo start_at_value_info = 6;
+    optional uint32 count = 7;
+    bool order_ascending = 8;
+    bool prove = 9;
   }
 
   oneof version {
@@ -654,17 +662,13 @@ message GetContestedResourcesRequest {
 
 message GetContestedResourcesResponse {
   message GetContestedResourcesResponseV0 {
-    message ContestedResources {
-      repeated ContestedResource contested_resources = 1;
+    message ContestedResourceValues {
+      repeated bytes contested_resource_values = 1;
       bool finished_results = 2;
     }
 
-    message ContestedResource {
-      repeated bytes index_values = 1;
-    }
-
     oneof result {
-      ContestedResources contested_resources = 1;
+      ContestedResourceValues contested_resource_values = 1;
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
