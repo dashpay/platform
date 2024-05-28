@@ -7,11 +7,11 @@
 
 use std::collections::BTreeMap;
 
+use dapi_grpc::platform::v0::get_contested_resources_response::get_contested_resources_response_v0::ContestedResource;
 use dpp::prelude::IdentityNonce;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     dashcore::ProTxHash,
@@ -65,6 +65,9 @@ pub type Elements = RetrievedObjects<Vec<u8>, Element>;
 pub type IdentityBalance = u64;
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
+
+/// Contested resources
+pub type ContestedResources = RetrievedObjects<Identifier, ContestedResource>;
 
 /// A contested vote for querying
 pub type ContestedVote = (ContestedDocumentResourceVotePoll, ResourceVoteChoice);

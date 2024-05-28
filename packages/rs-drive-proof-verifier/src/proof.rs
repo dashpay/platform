@@ -1,4 +1,4 @@
-use crate::{types, types::*, ContextProvider, Error};
+use crate::{convert::TryIntoVersioned, types, types::*, ContextProvider, Error};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
@@ -9,10 +9,10 @@ use dapi_grpc::platform::v0::{
     get_identity_balance_and_revision_request, get_identity_balance_request,
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
     get_identity_keys_request, get_identity_nonce_request, get_identity_request,
-    get_path_elements_request, GetIdentitiesContractKeysRequest, GetPathElementsRequest,
-    GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, ResponseMetadata,
+    get_path_elements_request, GetPathElementsRequest, GetPathElementsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    ResponseMetadata,
 };
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
@@ -36,11 +36,12 @@ use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentities
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dpp::identity::{IdentityPublicKey, Purpose};
-use dpp::platform_value;
+use dpp::identity::Purpose;
+use dpp::platform_value::{self};
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
-use drive::query::DriveQuery;
+use drive::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQuery};
+use drive::query::{ContractLookupFn, DriveQuery};
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
@@ -858,18 +859,13 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             epoch: (metadata.epoch as u16).try_into()?,
         };
 
-        let known_contracts_provider_fn =
-            |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
-                provider.get_data_contract(id).map_err(|e| {
-                    drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
-                })
-            };
+        let contracts_provider_fn = known_contracts_provider_fn(provider);
 
         let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
             &block_info,
             &proof.grovedb_proof,
-            &known_contracts_provider_fn,
+            &contracts_provider_fn,
             platform_version,
         )
         .map_err(|e| Error::DriveError {
@@ -1216,7 +1212,7 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
                         contract_id,
                         document_type_name,
                         purposes,
-                        prove,
+                        prove: _,
                     } = v0;
                     let identifiers = identities_ids
                         .into_iter()
@@ -1265,6 +1261,62 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
     }
 }
 
+// rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
+impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
+    type Request = platform::GetContestedResourceVoteStateRequest;
+    type Response = platform::GetContestedResourceVoteStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query: ContestedDocumentVotePollDriveQuery =
+            request.try_into_versioned(platform_version)?;
+
+        // Parse request to get resolved contract that implements verify_*_proof
+        let contracts_provider = known_contracts_provider_fn(provider);
+        let resolved_request =
+            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, contested_resource_vote_state) = resolved_request
+            .verify_vote_poll_vote_state_proof(&proof.grovedb_proof, platform_version)
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let document_type = resolved_request.vote_poll.document_type()?;
+
+        let contenders = contested_resource_vote_state
+            .into_iter()
+            .map(|v| {
+                Contender::try_from_contender_with_serialized_document(
+                    v,
+                    document_type,
+                    platform_version,
+                )
+                .map(|c| (c.identity_id, Some(c)))
+            })
+            .collect::<Result<Contenders, _>>()?;
+
+        Ok((Some(contenders), mtd.clone()))
+    }
+}
+
 /// Convert u32, if 0 return None, otherwise return Some(u16).
 /// Errors when value is out of range.
 fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
@@ -1280,6 +1332,19 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
     };
 
     Ok(i)
+}
+
+/// Returns function that uses [ContextProvider] to provide a [DataContract] to Drive proof verification functions
+fn known_contracts_provider_fn<'a, P: ContextProvider + ?Sized + 'a>(
+    provider: &'a P,
+) -> Box<ContractLookupFn> {
+    let f = |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
+        provider.get_data_contract(id).map_err(|e| {
+            drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
+        })
+    };
+
+    Box::new(f)
 }
 
 /// Determine number of non-None elements

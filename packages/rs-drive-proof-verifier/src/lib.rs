@@ -1,6 +1,7 @@
 //! Proof verification library for Dash Drive
 #![warn(missing_docs)]
 
+pub mod convert;
 /// Errors that can occur during proof verification
 pub mod error;
 /// Implementation of proof verification

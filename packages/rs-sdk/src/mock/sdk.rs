@@ -156,6 +156,10 @@ impl MockDashPlatformSdk {
                     )
                     .await?
                 }
+                "GetContestedResourceVoteStateRequest" => {
+                    self.load_expectation::<proto::GetContestedResourceVoteStateRequest>(filename)
+                        .await?
+                }
                 _ => {
                     return Err(Error::Config(format!(
                         "unknown request type {} in {}",

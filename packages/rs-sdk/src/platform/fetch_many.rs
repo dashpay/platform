@@ -13,8 +13,8 @@ use crate::{
 };
 use dapi_grpc::platform::v0::{
     GetContestedResourceVoteStateRequest, GetDataContractsRequest, GetDocumentsResponse,
-    GetEpochsInfoRequest, GetIdentitiesContractKeysRequest, GetIdentityKeysRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::block::epoch::EpochIndex;
@@ -25,7 +25,6 @@ use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::query::vote_poll_vote_state_query::Contender;
 use drive_proof_verifier::types::{MasternodeProtocolVote, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
@@ -196,6 +195,7 @@ where
         let limit_query = LimitQuery {
             limit: Some(limit),
             query,
+            start_info: None,
         };
 
         Self::fetch_many(sdk, limit_query).await
@@ -317,6 +317,6 @@ impl FetchMany<Identifier> for DataContract {
 /// Fetch multiple contenders for a contested document resource vote poll.
 ///
 /// Returns [Contender](drive_proof_verifier::types::Contenders) indexed by [Identifier](dpp::prelude::Identifier).
-impl FetchMany<ContestedDocumentResourceVotePoll> for Contender {
+impl FetchMany<Identifier> for Contender {
     type Request = GetContestedResourceVoteStateRequest;
 }

@@ -13,9 +13,7 @@ use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, ResponseMetadata};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::platform_value::Identifier;
-use dpp::voting::votes::Vote;
 use dpp::{document::Document, prelude::Identity};
-use drive_proof_verifier::types::ContestedVote;
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
@@ -160,19 +158,8 @@ where
         query: Q,
         settings: RequestSettings,
     ) -> Result<Option<Self>, Error> {
-        let request = query.query(sdk.prove())?;
-
-        let response = request.clone().execute(sdk, settings).await?;
-
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
-
-        let object: Option<Self> = sdk.parse_proof(request, response).await?;
-
-        match object {
-            Some(item) => Ok(item.into()),
-            None => Ok(None),
-        }
+        let (object, _) = Self::fetch_with_metadata(sdk, query, Some(settings)).await?;
+        Ok(object)
     }
 
     /// Fetch single object from the Platform by identifier.

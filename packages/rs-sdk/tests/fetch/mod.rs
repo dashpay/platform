@@ -9,6 +9,7 @@ compile_error!("network-testing or offline-testing must be enabled for tests");
 mod broadcast;
 mod common;
 mod config;
+mod contender;
 mod data_contract;
 mod document;
 mod epoch;
