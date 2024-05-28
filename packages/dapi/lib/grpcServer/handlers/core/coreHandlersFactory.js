@@ -17,16 +17,17 @@ const {
   v0: {
     BroadcastTransactionRequest,
     GetTransactionRequest,
-    // GetBlockchainStatusRequest,
-    // GetMasternodeStatusRequest,
+    GetBlockchainStatusRequest,
+    GetMasternodeStatusRequest,
+    // GetBlockRequest,
     GetBestBlockHeightRequest,
     pbjs: {
       BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
       BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
       GetTransactionRequest: PBJSGetTransactionRequest,
       GetTransactionResponse: PBJSGetTransactionResponse,
-      // GetBlockchainStatusRequest: PBJSGetBlockchainStatusRequest,
-      // GetBlockchainStatusResponse: PBJSGetBlockchainStatusResponse,
+      GetBlockchainStatusRequest: PBJSGetBlockchainStatusRequest,
+      GetBlockchainStatusResponse: PBJSGetBlockchainStatusResponse,
       // GetMasternodeStatusRequest: PBJSGetMasternodeStatusRequest,
       // GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
       // GetBlockRequest: PBJSGetBlockRequest,
@@ -45,9 +46,9 @@ const logger = require('../../../logger');
 const getBestBlockHeightHandlerFactory = require(
   './getBestBlockHeightHandlerFactory',
 );
-// const getBlockchainStatusHandlerFactory = require(
-//   './getBlockchainStatusHandlerFactory',
-// );
+const getBlockchainStatusHandlerFactory = require(
+  './getBlockchainStatusHandlerFactory',
+);
 // const getMasternodeStatusHandlerFactory = require(
 //   './getMasternodeStatusHandlerFactory',
 // );
@@ -93,17 +94,17 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
   );
 
   // getBlockchainStatus
-  // const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(coreRPCClient);
-  // const wrappedGetBlockchainStatus = jsonToProtobufHandlerWrapper(
-  //   jsonToProtobufFactory(
-  //     GetBlockchainStatusRequest,
-  //     PBJSGetBlockchainStatusRequest,
-  //   ),
-  //   protobufToJsonFactory(
-  //     PBJSGetBlockchainStatusResponse,
-  //   ),
-  //   wrapInErrorHandler(getBlockchainStatusHandler),
-  // );
+  const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(coreRPCClient);
+  const wrappedGetBlockchainStatus = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetBlockchainStatusRequest,
+      PBJSGetBlockchainStatusRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetBlockchainStatusResponse,
+    ),
+    wrapInErrorHandler(getBlockchainStatusHandler),
+  );
 
   // getMasternodeStatus
   // const getMasternodeStatusHandler = getMasternodeStatusHandlerFactory(coreRPCClient);
@@ -148,7 +149,7 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
     // TODO: Enable when an attack resistance is proved
     // getBlock: wrappedGetBlock,
     getBestBlockHeight: wrappedGetBestBlockHeight,
-    // getBlockchainStatus: wrappedGetBlockchainStatus,
+    getBlockchainStatus: wrappedGetBlockchainStatus,
     // getMasternodeStatus: wrappedGetMasternodeStatus,
     getTransaction: wrappedGetTransaction,
     broadcastTransaction: wrappedBroadcastTransaction,
