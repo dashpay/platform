@@ -3,7 +3,9 @@ use crate::drive::{defaults, RootTree};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
+#[cfg(feature = "server")]
 use grovedb::batch::KeyInfoPath;
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -20,7 +22,7 @@ pub(crate) fn contract_document_type_path<'a>(
     ]
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the path to a contract document type.
 pub(crate) fn contract_document_type_path_vec(
     contract_id: &[u8],
@@ -34,7 +36,7 @@ pub(crate) fn contract_document_type_path_vec(
     ]
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the path to the primary keys of a contract document type.
 pub(crate) fn contract_documents_primary_key_path<'a>(
     contract_id: &'a [u8],
@@ -49,7 +51,7 @@ pub(crate) fn contract_documents_primary_key_path<'a>(
     ]
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the path to a contract document.
 pub fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
     contract_id: &'a [u8],
@@ -95,7 +97,7 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
         + document_type_name_len
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the size of the path to the time at which a document type was stored.
 pub fn contract_documents_keeping_history_storage_time_reference_path_size(
     document_type_name_len: u32,

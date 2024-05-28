@@ -7,6 +7,7 @@ pub mod accessors;
 pub mod v0;
 
 /// Module containing logic to resolve resources.
+#[cfg(feature = "server")]
 pub(crate) mod resolve;
 
 /// Represents a resolved resource vote in the system.

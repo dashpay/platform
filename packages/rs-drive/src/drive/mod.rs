@@ -39,7 +39,7 @@ pub mod grove_operations;
 pub mod identity;
 #[cfg(feature = "server")]
 pub mod initialization;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod object_size_info;
 
 /// Protocol upgrade module

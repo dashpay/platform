@@ -1,13 +1,23 @@
+#[cfg(feature = "server")]
 mod add_prefunded_specialized_balance;
+#[cfg(feature = "server")]
 mod add_prefunded_specialized_balance_operations;
+#[cfg(feature = "server")]
 mod deduct_from_prefunded_specialized_balance;
+#[cfg(feature = "server")]
 mod deduct_from_prefunded_specialized_balance_operations;
+#[cfg(feature = "server")]
 mod estimation_costs;
+#[cfg(feature = "server")]
 mod fetch;
+#[cfg(feature = "server")]
 mod prove;
 
+#[cfg(feature = "server")]
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+#[cfg(feature = "server")]
 use crate::drive::batch::GroveDbOpBatch;
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::{Drive, RootTree};
 
 pub const PREFUNDED_BALANCES_FOR_VOTING: u8 = 128;
@@ -36,6 +46,7 @@ pub(crate) fn prefunded_specialized_balances_for_voting_path_vec() -> Vec<Vec<u8
 }
 
 impl Drive {
+    #[cfg(feature = "server")]
     /// Add operations for creating initial prefunded specialized balances state structure
     /// In v1 we will only have the prefunded balances for voting
     /// In the future, we could use this for allowing for "free" state transitions as long as the

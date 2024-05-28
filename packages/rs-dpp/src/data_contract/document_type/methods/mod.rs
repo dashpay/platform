@@ -22,7 +22,6 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
-use crate::data_contract::document_type::DocumentTypeRef;
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
 use platform_value::{Identifier, Value};

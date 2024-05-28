@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 pub(crate) mod resolve;
 /// Resolved resource vote module
 pub mod resolved_resource_vote;

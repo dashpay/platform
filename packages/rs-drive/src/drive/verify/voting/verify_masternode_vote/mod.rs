@@ -8,7 +8,6 @@ use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-use crate::drive::object_size_info::{DataContractResolvedInfo, DocumentTypeInfo};
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
 

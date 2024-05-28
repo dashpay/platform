@@ -1,27 +1,33 @@
 use crate::drive::object_size_info::DataContractResolvedInfo;
-use crate::drive::votes::paths::{
-    vote_contested_resource_active_polls_contract_document_tree_path,
-    vote_contested_resource_active_polls_contract_document_tree_path_vec,
-    vote_contested_resource_active_polls_tree_path_vec,
-};
+use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
+#[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
+#[cfg(feature = "server")]
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::{GroveError, Query};
+#[cfg(feature = "server")]
+use crate::query::GroveError;
+use crate::query::Query;
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index, IndexProperty};
 use dpp::data_contract::DataContract;
+#[cfg(feature = "server")]
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
+#[cfg(feature = "server")]
 use grovedb::query_result_type::QueryResultType;
-use grovedb::{PathQuery, SizedQuery, TransactionArg};
+#[cfg(feature = "server")]
+use grovedb::TransactionArg;
+use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 
@@ -68,6 +74,7 @@ pub struct ResolvedVotePollsByDocumentTypeQuery<'a> {
 }
 
 impl VotePollsByDocumentTypeQuery {
+    #[cfg(feature = "server")]
     /// Resolves the contested document vote poll drive query.
     ///
     /// This method processes the query by interacting with the drive, using the provided

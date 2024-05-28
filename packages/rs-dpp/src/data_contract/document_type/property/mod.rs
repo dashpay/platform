@@ -6,7 +6,6 @@ use crate::data_contract::errors::DataContractError;
 
 use crate::consensus::basic::decode::DecodingError;
 use crate::prelude::TimestampMillis;
-use crate::util::vec::DecodeError;
 use crate::ProtocolError;
 use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};

@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 pub(crate) mod resolve;
 
 use crate::drive::votes::resolved::vote_polls::ResolvedVotePoll;

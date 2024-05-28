@@ -1,18 +1,32 @@
 use crate::common::encode::{decode_u64, encode_u64};
 use crate::drive::votes::paths::vote_contested_resource_end_date_queries_tree_path_vec;
 use crate::drive::Drive;
+#[cfg(feature = "server")]
 use crate::error::drive::DriveError;
+#[cfg(feature = "server")]
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::{GroveError, Query};
+#[cfg(feature = "server")]
+use crate::query::GroveError;
+use crate::query::Query;
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
+#[cfg(feature = "server")]
 use dpp::fee::Credits;
 use dpp::prelude::{TimestampIncluded, TimestampMillis};
+#[cfg(feature = "server")]
 use dpp::serialization::PlatformDeserializable;
+#[cfg(feature = "server")]
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+#[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
-use grovedb::{PathQuery, SizedQuery, TransactionArg};
+#[cfg(feature = "server")]
+use grovedb::TransactionArg;
+use grovedb::{PathQuery, SizedQuery};
+#[cfg(feature = "server")]
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "server")]
 use std::collections::BTreeMap;
 
 /// Vote Poll Drive Query struct

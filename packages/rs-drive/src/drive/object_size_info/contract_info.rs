@@ -1,7 +1,9 @@
+#[cfg(feature = "server")]
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -9,6 +11,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::ProtocolError;
+#[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
@@ -23,6 +26,7 @@ pub enum DataContractInfo<'a> {
     /// to access the full contract itself.
     DataContractId(Identifier),
 
+    #[cfg(feature = "server")]
     /// Information necessary for fetching a data contract, encapsulated in an
     /// `Arc` for thread-safe shared ownership. This variant is used when the
     /// data needs to be fetched or is not immediately available.
@@ -38,6 +42,7 @@ pub enum DataContractInfo<'a> {
 }
 
 impl<'a> DataContractInfo<'a> {
+    #[cfg(feature = "server")]
     /// Resolve the data contract info into an object that contains the data contract
     pub(crate) fn resolve(
         self,
@@ -81,6 +86,7 @@ impl<'a> DataContractInfo<'a> {
 /// of data contract states post-retrieval.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataContractOwnedResolvedInfo {
+    #[cfg(feature = "server")]
     /// Information necessary for fetched data contracts, encapsulated in an
     /// `Arc` to ensure thread-safe shared ownership and access.
     DataContractFetchInfo(Arc<DataContractFetchInfo>),
@@ -95,6 +101,7 @@ impl DataContractOwnedResolvedInfo {
     /// The id of the contract
     pub fn id(&self) -> Identifier {
         match self {
+            #[cfg(feature = "server")]
             DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => {
                 fetch_info.contract.id()
             }
@@ -106,6 +113,7 @@ impl AsRef<DataContract> for DataContractOwnedResolvedInfo {
     /// The ref of the contract
     fn as_ref(&self) -> &DataContract {
         match self {
+            #[cfg(feature = "server")]
             DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => {
                 &fetch_info.contract
             }
@@ -119,6 +127,7 @@ impl AsRef<DataContract> for DataContractOwnedResolvedInfo {
 /// of data contract states post-retrieval.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataContractResolvedInfo<'a> {
+    #[cfg(feature = "server")]
     /// Information necessary for fetched data contracts, encapsulated in an
     /// `Arc` to ensure thread-safe shared ownership and access.
     ArcDataContractFetchInfo(Arc<DataContractFetchInfo>),
@@ -140,6 +149,7 @@ impl<'a> DataContractResolvedInfo<'a> {
     /// The id of the contract
     pub fn id(&self) -> Identifier {
         match self {
+            #[cfg(feature = "server")]
             DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info) => {
                 fetch_info.contract.id()
             }
@@ -153,6 +163,7 @@ impl<'a> AsRef<DataContract> for DataContractResolvedInfo<'a> {
     /// The ref of the contract
     fn as_ref(&self) -> &DataContract {
         match self {
+            #[cfg(feature = "server")]
             DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info) => &fetch_info.contract,
             DataContractResolvedInfo::BorrowedDataContract(borrowed) => borrowed,
             DataContractResolvedInfo::OwnedDataContract(owned) => owned,

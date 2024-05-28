@@ -1,17 +1,27 @@
 use crate::drive::votes::paths::VotePollPaths;
+#[cfg(feature = "server")]
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+#[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::{GroveError, Query};
+#[cfg(feature = "server")]
+use crate::query::GroveError;
+use crate::query::Query;
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
+#[cfg(feature = "server")]
 use dpp::platform_value;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+#[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
-use grovedb::{PathQuery, SizedQuery, TransactionArg};
+#[cfg(feature = "server")]
+use grovedb::TransactionArg;
+use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 /// Vote Poll Drive Query struct
@@ -32,6 +42,7 @@ pub struct ContestedDocumentVotePollVotesDriveQuery {
 }
 
 impl ContestedDocumentVotePollVotesDriveQuery {
+    #[cfg(feature = "server")]
     /// Resolves the contested document vote poll drive query.
     ///
     /// This method processes the query by interacting with the drive, using the provided

@@ -1,10 +1,12 @@
+#[cfg(feature = "index-serde-conversion")]
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Eq)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Eq)]
+#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
 pub enum OrderBy {
-    #[serde(rename = "asc")]
+    #[cfg_attr(feature = "index-serde-conversion", serde(rename = "asc"))]
     Asc,
-    #[serde(rename = "desc")]
+    #[cfg_attr(feature = "index-serde-conversion", serde(rename = "desc"))]
     Desc,
 }
 
@@ -18,9 +20,12 @@ use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use regex::Regex;
+#[cfg(feature = "index-serde-conversion")]
 use serde::de::{VariantAccess, Visitor};
 use std::cmp::Ordering;
-use std::{collections::BTreeMap, convert::TryFrom, fmt};
+#[cfg(feature = "index-serde-conversion")]
+use std::fmt;
+use std::{collections::BTreeMap, convert::TryFrom};
 
 pub mod random_index;
 

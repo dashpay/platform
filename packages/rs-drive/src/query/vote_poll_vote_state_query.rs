@@ -5,8 +5,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::{GroveError, Query};
+#[cfg(feature = "server")]
+use crate::query::GroveError;
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
@@ -14,8 +17,11 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+#[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
-use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
+#[cfg(feature = "server")]
+use grovedb::{Element, TransactionArg};
+use grovedb::{PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 
@@ -187,6 +193,7 @@ pub struct ContestedDocumentVotePollDriveQueryExecutionResult {
 }
 
 impl ContestedDocumentVotePollDriveQuery {
+    #[cfg(feature = "server")]
     /// Resolves the contested document vote poll drive query.
     ///
     /// This method processes the query by interacting with the drive, using the provided

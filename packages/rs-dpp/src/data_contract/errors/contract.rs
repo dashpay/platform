@@ -3,7 +3,6 @@ use crate::consensus::basic::decode::DecodingError;
 use crate::consensus::basic::BasicError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use platform_value::Identifier;
 use thiserror::Error;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;

@@ -40,7 +40,6 @@ use platform_version::TryIntoPlatformVersioned;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::drive::object_size_info::{DataContractResolvedInfo, DocumentTypeInfo};
 use crate::drive::verify::RootHash;
 use crate::error::Error;
 use crate::error::proof::ProofError;

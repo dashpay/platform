@@ -1,15 +1,11 @@
 use crate::drive::Drive;
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contract::DataContract;
 use grovedb::{GroveDb, PathQuery, SizedQuery};
 
 use crate::error::Error;
 
 use crate::drive::verify::RootHash;
 
-use crate::drive::object_size_info::{DataContractResolvedInfo, DocumentTypeInfo};
 use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
-use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::error::proof::ProofError;
 use crate::query::Query;
 use dpp::voting::votes::Vote;

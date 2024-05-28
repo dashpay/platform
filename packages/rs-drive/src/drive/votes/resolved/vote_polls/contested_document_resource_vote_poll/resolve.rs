@@ -1,8 +1,11 @@
-use crate::drive::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
-    ContestedDocumentResourceVotePollWithContractInfo,
-    ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,
-};
+#[cfg(feature = "server")]
+use crate::drive::object_size_info::DataContractOwnedResolvedInfo;
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::drive::object_size_info::DataContractResolvedInfo;
+#[cfg(feature = "server")]
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+#[cfg(feature = "verify")]
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
 use crate::error::Error;
@@ -10,6 +13,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
 use dpp::prelude::DataContract;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+#[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
@@ -19,6 +23,7 @@ use std::sync::Arc;
 /// This trait defines a method to resolve and retrieve the necessary contract and index
 /// information associated with a contested document resource vote poll.
 pub trait ContestedDocumentResourceVotePollResolver {
+    #[cfg(feature = "server")]
     /// Resolves the contested document resource vote poll information.
     ///
     /// This method fetches the contract, document type name, index name, and index values
@@ -45,6 +50,7 @@ pub trait ContestedDocumentResourceVotePollResolver {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error>;
+    #[cfg(feature = "server")]
 
     /// Resolve owned
     fn resolve_owned(
@@ -54,6 +60,7 @@ pub trait ContestedDocumentResourceVotePollResolver {
         platform_version: &PlatformVersion,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error>;
 
+    #[cfg(feature = "server")]
     /// Resolve into a struct that allows for a borrowed contract
     fn resolve_allow_borrowed<'a>(
         &self,
@@ -62,18 +69,22 @@ pub trait ContestedDocumentResourceVotePollResolver {
         platform_version: &PlatformVersion,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
+    #[cfg(feature = "verify")]
+
     /// Resolves into a struct, the contract itself will be held with Arc
     fn resolve_with_known_contracts_provider<'a>(
         &self,
         known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
+    #[cfg(feature = "verify")]
     /// Resolve by providing the contract
     fn resolve_with_provided_borrowed_contract<'a>(
         &self,
         data_contract: &'a DataContract,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
+    #[cfg(feature = "server")]
     /// Resolve owned into a struct that allows for a borrowed contract
     fn resolve_owned_allow_borrowed<'a>(
         self,
@@ -84,6 +95,7 @@ pub trait ContestedDocumentResourceVotePollResolver {
 }
 
 impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVotePoll {
+    #[cfg(feature = "server")]
     fn resolve(
         &self,
         drive: &Drive,
@@ -106,6 +118,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         })
     }
 
+    #[cfg(feature = "server")]
     fn resolve_owned(
         self,
         drive: &Drive,
@@ -128,6 +141,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         })
     }
 
+    #[cfg(feature = "server")]
     fn resolve_allow_borrowed<'a>(
         &self,
         drive: &Drive,
@@ -152,6 +166,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         )
     }
 
+    #[cfg(feature = "verify")]
     fn resolve_with_known_contracts_provider<'a>(
         &self,
         known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
@@ -179,6 +194,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         )
     }
 
+    #[cfg(feature = "verify")]
     fn resolve_with_provided_borrowed_contract<'a>(
         &self,
         data_contract: &'a DataContract,
@@ -209,6 +225,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         )
     }
 
+    #[cfg(feature = "server")]
     fn resolve_owned_allow_borrowed<'a>(
         self,
         drive: &Drive,
