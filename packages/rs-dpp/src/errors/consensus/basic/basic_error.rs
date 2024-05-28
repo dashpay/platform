@@ -376,7 +376,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     OverflowError(OverflowError),
-    
 }
 
 impl From<BasicError> for ConsensusError {

@@ -1,6 +1,7 @@
 mod contested_vote_poll_for_document;
 mod create_document_from_data;
 mod create_document_with_prevalidated_properties;
+mod deserialize_value_for_key;
 mod estimated_size;
 mod index_for_types;
 mod max_size;
@@ -8,7 +9,6 @@ mod prefunded_voting_balances_for_document;
 mod serialize_value_for_key;
 #[cfg(feature = "validation")]
 mod validate_update;
-mod deserialize_value_for_key;
 
 use std::collections::BTreeMap;
 
@@ -22,10 +22,10 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
 use platform_value::{Identifier, Value};
-use crate::data_contract::document_type::DocumentTypeRef;
 
 // TODO: Some of those methods are only for tests. Hide under feature
 pub trait DocumentTypeV0Methods {
@@ -46,7 +46,7 @@ pub trait DocumentTypeV0Methods {
     fn deserialize_value_for_key(
         &self,
         key: &str,
-        serialized_value: &Vec<u8>,
+        serialized_value: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Value, ProtocolError>;
 
@@ -190,7 +190,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     fn deserialize_value_for_key(
         &self,
         key: &str,
-        value: &Vec<u8>,
+        value: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Value, ProtocolError> {
         match platform_version

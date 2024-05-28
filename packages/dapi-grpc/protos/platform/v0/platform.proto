@@ -664,7 +664,6 @@ message GetContestedResourcesResponse {
   message GetContestedResourcesResponseV0 {
     message ContestedResourceValues {
       repeated bytes contested_resource_values = 1;
-      bool finished_results = 2;
     }
 
     oneof result {

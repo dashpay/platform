@@ -17,10 +17,10 @@ use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVot
 use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
+use regex::Regex;
+use serde::de::{VariantAccess, Visitor};
 use std::cmp::Ordering;
 use std::{collections::BTreeMap, convert::TryFrom, fmt};
-use serde::de::{VariantAccess, Visitor};
-use regex::Regex;
 
 pub mod random_index;
 
@@ -55,16 +55,23 @@ pub enum ContestedIndexFieldMatch {
 #[cfg(feature = "index-serde-conversion")]
 impl Serialize for ContestedIndexFieldMatch {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         match *self {
-            ContestedIndexFieldMatch::Regex(ref regex) => {
-                serializer.serialize_newtype_variant("ContestedIndexFieldMatch", 0, "Regex", regex.as_str())
-            }
-            ContestedIndexFieldMatch::PositiveIntegerMatch(ref num) => {
-                serializer.serialize_newtype_variant("ContestedIndexFieldMatch", 1, "PositiveIntegerMatch", num)
-            }
+            ContestedIndexFieldMatch::Regex(ref regex) => serializer.serialize_newtype_variant(
+                "ContestedIndexFieldMatch",
+                0,
+                "Regex",
+                regex.as_str(),
+            ),
+            ContestedIndexFieldMatch::PositiveIntegerMatch(ref num) => serializer
+                .serialize_newtype_variant(
+                    "ContestedIndexFieldMatch",
+                    1,
+                    "PositiveIntegerMatch",
+                    num,
+                ),
         }
     }
 }
@@ -72,12 +79,15 @@ impl Serialize for ContestedIndexFieldMatch {
 #[cfg(feature = "index-serde-conversion")]
 impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
     fn deserialize<D>(deserializer: D) -> Result<ContestedIndexFieldMatch, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         #[serde(field_identifier, rename_all = "snake_case")]
-        enum Field { Regex, PositiveIntegerMatch }
+        enum Field {
+            Regex,
+            PositiveIntegerMatch,
+        }
 
         struct FieldVisitor;
 
@@ -89,13 +99,16 @@ impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Field, E>
-                where
-                    E: de::Error,
+            where
+                E: de::Error,
             {
                 match value {
                     "regex" => Ok(Field::Regex),
                     "positive_integer_match" => Ok(Field::PositiveIntegerMatch),
-                    _ => Err(de::Error::unknown_variant(value, &["regex", "positive_integer_match"])),
+                    _ => Err(de::Error::unknown_variant(
+                        value,
+                        &["regex", "positive_integer_match"],
+                    )),
                 }
             }
         }
@@ -110,8 +123,8 @@ impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
             }
 
             fn visit_enum<V>(self, mut visitor: V) -> Result<ContestedIndexFieldMatch, V::Error>
-                where
-                    V: de::EnumAccess<'de>,
+            where
+                V: de::EnumAccess<'de>,
             {
                 match visitor.variant()? {
                     (Field::Regex, v) => {
@@ -135,7 +148,6 @@ impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
         )
     }
 }
-
 
 impl PartialOrd for ContestedIndexFieldMatch {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -174,7 +186,9 @@ impl Ord for ContestedIndexFieldMatch {
 impl Clone for ContestedIndexFieldMatch {
     fn clone(&self) -> Self {
         match self {
-            ContestedIndexFieldMatch::Regex(regex) => ContestedIndexFieldMatch::Regex(regex::Regex::new(regex.as_str()).unwrap()),
+            ContestedIndexFieldMatch::Regex(regex) => {
+                ContestedIndexFieldMatch::Regex(regex::Regex::new(regex.as_str()).unwrap())
+            }
             ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
                 ContestedIndexFieldMatch::PositiveIntegerMatch(*int)
             }
@@ -186,7 +200,9 @@ impl PartialEq for ContestedIndexFieldMatch {
     fn eq(&self, other: &Self) -> bool {
         match self {
             ContestedIndexFieldMatch::Regex(regex) => match other {
-                ContestedIndexFieldMatch::Regex(other_regex) => regex.as_str() == other_regex.as_str(),
+                ContestedIndexFieldMatch::Regex(other_regex) => {
+                    regex.as_str() == other_regex.as_str()
+                }
                 _ => false,
             },
             ContestedIndexFieldMatch::PositiveIntegerMatch(int) => match other {
@@ -463,14 +479,15 @@ impl TryFrom<&[(Value, Value)]> for Index {
                                             }
                                             "regexPattern" => {
                                                 let regex = field_match_value.to_str()?.to_owned();
-                                                field_matches = Some(ContestedIndexFieldMatch::Regex(
-                                                    Regex::new(&regex).map_err(|e| {
-                                                        RegexError(format!(
-                                                            "invalid field match regex: {}",
-                                                            e.to_string()
-                                                        ))
-                                                    })?,
-                                                ));
+                                                field_matches =
+                                                    Some(ContestedIndexFieldMatch::Regex(
+                                                        Regex::new(&regex).map_err(|e| {
+                                                            RegexError(format!(
+                                                                "invalid field match regex: {}",
+                                                                e.to_string()
+                                                            ))
+                                                        })?,
+                                                    ));
                                             }
                                             key => {
                                                 return Err(DataContractError::ValueWrongType(

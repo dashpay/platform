@@ -138,11 +138,13 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
     fn deserialize_value_for_key(
         &self,
         key: &str,
-        serialized_value: &Vec<u8>,
+        serialized_value: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Value, ProtocolError> {
         match self {
-            DocumentTypeRef::V0(v0) => v0.deserialize_value_for_key(key, serialized_value, platform_version),
+            DocumentTypeRef::V0(v0) => {
+                v0.deserialize_value_for_key(key, serialized_value, platform_version)
+            }
         }
     }
 

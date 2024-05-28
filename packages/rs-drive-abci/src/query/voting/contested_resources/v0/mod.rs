@@ -1,20 +1,21 @@
-use dapi_grpc::platform::v0::get_contested_resources_response::{get_contested_resources_response_v0};
+use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
+use bincode::error::EncodeError;
 use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
+use dapi_grpc::platform::v0::get_contested_resources_response::get_contested_resources_response_v0;
 use dapi_grpc::platform::v0::get_contested_resources_response::GetContestedResourcesResponseV0;
-use dpp::{check_validation_result_with_data, platform_value};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::validation::ValidationResult;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
+use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use dpp::{check_validation_result_with_data, ProtocolError};
 use drive::error::query::QuerySyntaxError;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
-use crate::error::query::QueryError;
 
 impl<C> Platform<C> {
     pub(super) fn query_contested_resources_v0(
@@ -25,7 +26,7 @@ impl<C> Platform<C> {
             index_name,
             start_index_values,
             end_index_values,
-            start_at_value_info, 
+            start_at_value_info,
             count,
             order_ascending,
             prove,
@@ -78,7 +79,7 @@ impl<C> Platform<C> {
             ))));
         }
 
-        let bincode_config =                     bincode::config::standard()
+        let bincode_config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
 
@@ -103,8 +104,6 @@ impl<C> Platform<C> {
             Ok(index_values) => index_values,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
-        
-
 
         let end_index_values = match end_index_values
             .into_iter()
@@ -149,34 +148,32 @@ impl<C> Platform<C> {
             index_name,
             start_index_values,
             end_index_values,
-            start_at_value: start_at_value_info
-                .map(|start_at_value_info| {
-
-                    (start_at_value_info.start_value,
-                        start_at_value_info.start_value_included,
-                    )
-                }),
+            start_at_value: start_at_value_info.map(|start_at_value_info| {
+                (
+                    start_at_value_info.start_value,
+                    start_at_value_info.start_value_included,
+                )
+            }),
             limit: Some(limit),
             order_ascending,
         };
 
         let response = if prove {
-            let proof = match query.execute_with_proof(&self.drive, None, None, platform_version) {
-                Ok(result) => result,
-                Err(drive::error::Error::Query(query_error)) => {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        query_error,
-                    )));
-                }
-                Err(e) => return Err(e.into()),
-            };
+            let proof =
+                match query.execute_with_proof(&self.drive, None, &mut vec![], platform_version) {
+                    Ok(result) => result,
+                    Err(drive::error::Error::Query(query_error)) => {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            query_error,
+                        )));
+                    }
+                    Err(e) => return Err(e.into()),
+                };
 
             GetContestedResourcesResponseV0 {
-                result: Some(
-                    get_contested_resources_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof),
-                    ),
-                ),
+                result: Some(get_contested_resources_response_v0::Result::Proof(
+                    self.response_proof_v0(platform_state, proof),
+                )),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
@@ -190,36 +187,20 @@ impl<C> Platform<C> {
                     }
                     Err(e) => return Err(e.into()),
                 };
-            
-            let contested_resource_values = results.into_iter().map(|value| value.).collect();
-            
-            let finished_results = if contested_resource_values.len() = limit {
-                let query = VotePollsByDocumentTypeQuery {
-                    contract_id,
-                    document_type_name,
-                    index_name,
-                    start_index_values,
-                    end_index_values,
-                    start_at_value: start_at_value_info
-                        .map(|start_at_value_info| {
 
-                            (start_at_value_info.start_value,
-                             start_at_value_info.start_value_included,
-                            )
-                        }),
-                    limit: Some(limit),
-                    order_ascending,
-                };
-            } else {
-                true
-            };
+            let contested_resource_values = results
+                .into_iter()
+                .map(|value| bincode::encode_to_vec(value, bincode_config))
+                .collect::<Result<Vec<Vec<u8>>, EncodeError>>()
+                .map_err(|e| {
+                    Error::Protocol(ProtocolError::CorruptedSerialization(e.to_string()))
+                })?;
 
             GetContestedResourcesResponseV0 {
                 result: Some(
                     get_contested_resources_response_v0::Result::ContestedResourceValues(
                         get_contested_resources_response_v0::ContestedResourceValues {
                             contested_resource_values,
-                            finished_results,
                         },
                     ),
                 ),

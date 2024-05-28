@@ -1128,6 +1128,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     index_for_types: 0,
                     max_size: 0,
                     serialize_value_for_key: 0,
+                    deserialize_value_for_key: 0,
                 },
             },
         },

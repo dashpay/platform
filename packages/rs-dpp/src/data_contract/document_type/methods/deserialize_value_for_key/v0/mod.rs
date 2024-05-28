@@ -18,35 +18,29 @@ impl DocumentTypeV0 {
                 let bytes = Identifier::from_bytes(value)?;
                 Ok(Value::Identifier(bytes.to_buffer()))
             }
-            "$createdAt" | "$updatedAt" | "$transferredAt" => {
-                Ok(Value::U64(DocumentPropertyType::decode_date_timestamp(
-                    value,
-                ).ok_or(ProtocolError::DataContractError(
-                    DataContractError::FieldRequirementUnmet(
+            "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(Value::U64(
+                DocumentPropertyType::decode_date_timestamp(value).ok_or(
+                    ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
                         "value must be 8 bytes long".to_string(),
-                    ),
-                ))?))
-            }
+                    )),
+                )?,
+            )),
             "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
-                Ok(Value::U64(DocumentPropertyType::decode_u64(
-                    value,
-                ).ok_or(ProtocolError::DataContractError(
-                    DataContractError::FieldRequirementUnmet(
+                Ok(Value::U64(DocumentPropertyType::decode_u64(value).ok_or(
+                    ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
                         "value must be 8 bytes long".to_string(),
-                    ),
-                ))?))
+                    )),
+                )?))
             }
             "$createdAtCoreBlockHeight"
             | "$updatedAtCoreBlockHeight"
             | "$transferredAtCoreBlockHeight" => {
-                Ok(Value::U32(DocumentPropertyType::decode_u32(
-                    value,
-                ).ok_or(ProtocolError::DataContractError(
-                    DataContractError::FieldRequirementUnmet(
+                Ok(Value::U32(DocumentPropertyType::decode_u32(value).ok_or(
+                    ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
                         "value must be 4 bytes long".to_string(),
-                    ),
-                ))?))
-            },
+                    )),
+                )?))
+            }
             _ => {
                 let property = self.flattened_properties.get(key).ok_or_else(|| {
                     DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties.keys().join(" | "), self.name))

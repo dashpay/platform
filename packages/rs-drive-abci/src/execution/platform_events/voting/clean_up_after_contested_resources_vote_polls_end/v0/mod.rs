@@ -2,15 +2,9 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use dpp::voting::vote_polls::VotePoll;
-use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
-use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::grovedb::TransactionArg;
-use drive::query::vote_poll_vote_state_query::FinalizedContender;
-use drive::query::VotePollsByEndDateDriveQuery;
 
 impl<C> Platform<C>
 where

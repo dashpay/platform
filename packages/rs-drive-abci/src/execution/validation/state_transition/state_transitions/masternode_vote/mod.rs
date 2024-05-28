@@ -648,45 +648,52 @@ mod tests {
 
             let index_name = "parentNameAndLabel".to_string();
 
-            let query_validation_result = platform.query_contested_resources(GetContestedResourcesRequest {
-                version: Some(get_contested_resources_request::Version::V0(
-                    GetContestedResourcesRequestV0 {
-                        contract_id: dpns_contract.id().to_vec(),
-                        document_type_name: domain.name().clone(),
-                        index_name: index_name.clone(),
-                        count: None,
-                        ascending: true,
-                        prove: false,
+            let config = bincode::config::standard()
+                .with_big_endian()
+                .with_no_limit();
+
+            let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                .expect("expected to encode value");
+
+            let query_validation_result = platform
+                .query_contested_resources(
+                    GetContestedResourcesRequest {
+                        version: Some(get_contested_resources_request::Version::V0(
+                            GetContestedResourcesRequestV0 {
+                                contract_id: dpns_contract.id().to_vec(),
+                                document_type_name: domain.name().clone(),
+                                index_name: index_name.clone(),
+                                start_index_values: vec![dash_encoded],
+                                end_index_values: vec![],
+                                start_at_value_info: None,
+                                count: None,
+                                order_ascending: true,
+                                prove: false,
+                            },
+                        )),
                     },
-                )),
-            },
-                                               &platform_state,
-                                               platform_version,
-            )
+                    &platform_state,
+                    platform_version,
+                )
                 .expect("expected to execute query")
                 .into_data()
                 .expect("expected query to be valid");
 
-            let get_contested_resources_response::Version::V0(
-                GetContestedResourcesResponseV0 {
-                    metadata: _,
-                    result,
+            let get_contested_resources_response::Version::V0(GetContestedResourcesResponseV0 {
+                metadata: _,
+                result,
+            }) = query_validation_result.version.expect("expected a version");
+
+            let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
+                get_contested_resources_response_v0::ContestedResourceValues {
+                    contested_resource_values,
                 },
-            ) = query_validation_result.version.expect("expected a version");
+            )) = result
+            else {
+                panic!("expected contested resources")
+            };
 
-            let Some(
-                get_contested_resources_response_v0::Result::ContestedResources(
-                    get_contested_resources_response_v0::ContestedResources {
-                        contested_resources, finished_results
-                    },
-                ),
-            ) = result
-                else {
-                    panic!("expected contested resources")
-                };
-
-            assert_eq!(contested_resources.len(), 1);
-            assert!(finished_results);
+            assert_eq!(contested_resource_values.len(), 1);
         }
 
         #[test]

@@ -57,7 +57,6 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;

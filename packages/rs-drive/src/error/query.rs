@@ -143,5 +143,5 @@ pub enum QuerySyntaxError {
 
     /// Missing index values for query
     #[error("missing index values error: {0}")]
-    MissingIndexValues(String),
+    IndexValuesError(String),
 }

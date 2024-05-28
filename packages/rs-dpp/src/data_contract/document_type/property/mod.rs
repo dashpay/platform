@@ -6,6 +6,7 @@ use crate::data_contract::errors::DataContractError;
 
 use crate::consensus::basic::decode::DecodingError;
 use crate::prelude::TimestampMillis;
+use crate::util::vec::DecodeError;
 use crate::ProtocolError;
 use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -16,7 +17,6 @@ use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::Serialize;
-use crate::util::vec::DecodeError;
 
 pub mod array;
 
@@ -839,44 +839,55 @@ impl DocumentPropertyType {
 
     // Given a field type and a Vec<u8> this function chooses and executes the right decoding method
     pub fn decode_value_for_tree_keys(&self, value: &[u8]) -> Result<Value, ProtocolError> {
-        if value.is_null() {
+        if value.is_empty() {
             return Ok(Value::Null);
         }
         match self {
             DocumentPropertyType::String(_, _) => {
-                let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
-                let vec = value_as_text.as_bytes().to_vec();
-                if vec == &vec![0] {
+                if value == &vec![0] {
                     // we don't want to collide with the definition of an empty string
                     Ok(Value::Text("".to_string()))
                 } else {
-                    Ok(Value::Text(String::from_utf8(value).map_err(ProtocolError::DecodingError("could not decode ut8 bytes into string"))))
+                    Ok(Value::Text(String::from_utf8(value.to_vec()).map_err(
+                        |_| {
+                            ProtocolError::DecodingError(
+                                "could not decode ut8 bytes into string".to_string(),
+                            )
+                        },
+                    )?))
                 }
             }
-            DocumentPropertyType::Date => DocumentPropertyType::decode_date_timestamp(
-                value
-            ).ok_or(ProtocolError::DecodingError("could not decode data timestamp")),
+            DocumentPropertyType::Date => {
+                let timestamp = DocumentPropertyType::decode_date_timestamp(value).ok_or(
+                    ProtocolError::DecodingError("could not decode data timestamp".to_string()),
+                )?;
+                Ok(Value::U64(timestamp))
+            }
             DocumentPropertyType::Integer => {
-                DocumentPropertyType::decode_i64(value).ok_or(ProtocolError::DecodingError("could not decode integer"))
+                let integer = DocumentPropertyType::decode_i64(value).ok_or(
+                    ProtocolError::DecodingError("could not decode integer".to_string()),
+                )?;
+                Ok(Value::I64(integer))
             }
-            DocumentPropertyType::Number => DocumentPropertyType::decode_float(
-                value,
-            ).ok_or(ProtocolError::DecodingError("could not decode float")),
-            DocumentPropertyType::ByteArray(_, _) => {
-                Ok(Value::Bytes(value.to_vec()))
+            DocumentPropertyType::Number => {
+                let float = DocumentPropertyType::decode_float(value).ok_or(
+                    ProtocolError::DecodingError("could not decode float".to_string()),
+                )?;
+                Ok(Value::Float(float))
             }
+            DocumentPropertyType::ByteArray(_, _) => Ok(Value::Bytes(value.to_vec())),
             DocumentPropertyType::Identifier => {
                 let identifier = Identifier::from_bytes(value)?;
                 Ok(identifier.into())
-            },
+            }
             DocumentPropertyType::Boolean => {
                 if value == &vec![0] {
                     Ok(Value::Bool(false))
                 } else if value == &vec![1] {
                     Ok(Value::Bool(true))
                 } else {
-                    Err(DataContractError::ValueWrongType(
-                        "document field type doesn't match document value".to_string(),
+                    Err(ProtocolError::DecodingError(
+                        "could not decode bool".to_string(),
                     ))
                 }
             }
@@ -1162,7 +1173,7 @@ impl DocumentPropertyType {
     }
 
     /// Decodes a float on 64 bits.
-    pub fn decode_float(encoded: &[u8]) -> f64 {
+    pub fn decode_float(encoded: &[u8]) -> Option<f64> {
         // Check if the value is negative by looking at the original sign bit
         let is_negative = (encoded[0] & 0b1000_0000) == 0;
 
@@ -1178,9 +1189,8 @@ impl DocumentPropertyType {
         }
 
         // Read the float value from the transformed vector
-        let val = wtr.read_f64::<BigEndian>().unwrap();
-
-        val
+        let mut cursor = Cursor::new(wtr);
+        cursor.read_f64::<BigEndian>().ok()
     }
 }
 

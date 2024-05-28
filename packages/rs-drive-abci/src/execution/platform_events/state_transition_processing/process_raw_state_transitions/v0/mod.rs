@@ -89,7 +89,7 @@ where
                     let start_time = Instant::now();
 
                     let state_transition_name = state_transition.name();
-                    
+
                     if tracing::enabled!(tracing::Level::TRACE) {
                         let st_hash = hex::encode(hash_single(raw_state_transition));
 
@@ -125,7 +125,7 @@ where
                         state_transition_name: Some(state_transition_name.to_string()),
                     })
                     .unwrap_or_else(error_to_internal_error_execution_result);
-                    
+
                     // Store metrics
                     let elapsed_time = start_time.elapsed() + decoding_elapsed_time;
 

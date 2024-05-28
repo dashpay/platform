@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use crate::drive::votes::paths::VotePollPaths;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
@@ -10,14 +9,15 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::query::{GroveError, Query};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
-use dpp::data_contract::DataContract;
 use platform_version::version::PlatformVersion;
+use std::sync::Arc;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
@@ -245,7 +245,8 @@ impl ContestedDocumentVotePollDriveQuery {
             order_ascending,
         } = self;
         Ok(ResolvedContestedDocumentVotePollDriveQuery {
-            vote_poll: vote_poll.resolve_with_known_contracts_provider(known_contracts_provider_fn)?,
+            vote_poll: vote_poll
+                .resolve_with_known_contracts_provider(known_contracts_provider_fn)?,
             result_type: *result_type,
             offset: *offset,
             limit: *limit,

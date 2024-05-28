@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use crate::drive::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollWithContractInfo,
@@ -7,12 +6,13 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
 use crate::error::Error;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use grovedb::TransactionArg;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
 use dpp::prelude::DataContract;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
+use std::sync::Arc;
 
 /// A trait for resolving information related to a contested document resource vote poll.
 ///
@@ -163,7 +163,12 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_values,
         } = self;
 
-        let contract = known_contracts_provider_fn(contract_id)?.ok_or(Error::DataContract(DataContractError::MissingContract(format!("data contract with id {} can not be provided", contract_id))))?;
+        let contract = known_contracts_provider_fn(contract_id)?.ok_or(Error::DataContract(
+            DataContractError::MissingContract(format!(
+                "data contract with id {} can not be provided",
+                contract_id
+            )),
+        ))?;
         Ok(
             ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
                 contract: DataContractResolvedInfo::ArcDataContract(contract),
@@ -186,7 +191,13 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         } = self;
 
         if contract_id != data_contract.id_ref() {
-            return Err(Error::DataContract(DataContractError::ProvidedContractMismatch(format!("data contract provided {} is not the one required {}", data_contract.id_ref(), contract_id))));
+            return Err(Error::DataContract(
+                DataContractError::ProvidedContractMismatch(format!(
+                    "data contract provided {} is not the one required {}",
+                    data_contract.id_ref(),
+                    contract_id
+                )),
+            ));
         }
         Ok(
             ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {

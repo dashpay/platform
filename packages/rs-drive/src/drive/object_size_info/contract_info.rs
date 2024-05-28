@@ -122,7 +122,7 @@ pub enum DataContractResolvedInfo<'a> {
     /// Information necessary for fetched data contracts, encapsulated in an
     /// `Arc` to ensure thread-safe shared ownership and access.
     ArcDataContractFetchInfo(Arc<DataContractFetchInfo>),
-    
+
     /// Arc Data contract
     ArcDataContract(Arc<DataContract>),
 
@@ -140,7 +140,9 @@ impl<'a> DataContractResolvedInfo<'a> {
     /// The id of the contract
     pub fn id(&self) -> Identifier {
         match self {
-            DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info) => fetch_info.contract.id(),
+            DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info) => {
+                fetch_info.contract.id()
+            }
             DataContractResolvedInfo::BorrowedDataContract(data_contract) => data_contract.id(),
             DataContractResolvedInfo::OwnedDataContract(data_contract) => data_contract.id(),
             DataContractResolvedInfo::ArcDataContract(data_contract) => data_contract.id(),
