@@ -323,12 +323,12 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
     }
 }
 
-pub type MempoolDocumentCounter<'c> = &'c BTreeMap<(Identifier, Identifier), u64>;
+pub type MempoolDocumentCounter<'c> = BTreeMap<(Identifier, Identifier), u64>;
 
 fn choose_capable_identities<'i>(
     identities: &'i [Identity],
     contract: &DataContract,
-    mempool_document_counter: MempoolDocumentCounter,
+    mempool_document_counter: &MempoolDocumentCounter,
     count: usize,
     rng: &mut StdRng,
 ) -> Vec<&'i Identity> {
@@ -459,7 +459,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        mempool_document_counter: MempoolDocumentCounter,
+        mempool_document_counter: &MempoolDocumentCounter,
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
@@ -608,7 +608,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        mempool_document_counter: MempoolDocumentCounter,
+        mempool_document_counter: &MempoolDocumentCounter,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
