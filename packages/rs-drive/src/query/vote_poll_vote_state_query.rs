@@ -2,6 +2,7 @@ use crate::drive::votes::paths::{
     VotePollPaths, RESOURCE_ABSTAIN_VOTE_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8,
     RESOURCE_LOCK_VOTE_TREE_KEY, RESOURCE_LOCK_VOTE_TREE_KEY_U8,
 };
+use super::ContractLookupFn;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
 use crate::drive::Drive;
@@ -330,7 +331,7 @@ impl ContestedDocumentVotePollDriveQuery {
     /// Resolves with a known contract provider
     pub fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+        known_contracts_provider_fn: &'a ContractLookupFn,
     ) -> Result<ResolvedContestedDocumentVotePollDriveQuery<'a>, Error> {
         let ContestedDocumentVotePollDriveQuery {
             vote_poll,

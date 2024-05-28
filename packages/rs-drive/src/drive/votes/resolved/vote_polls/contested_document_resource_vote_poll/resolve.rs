@@ -1,21 +1,15 @@
-#[cfg(feature = "server")]
-use crate::drive::object_size_info::DataContractOwnedResolvedInfo;
-#[cfg(any(feature = "server", feature = "verify"))]
-use crate::drive::object_size_info::DataContractResolvedInfo;
-#[cfg(feature = "server")]
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
-#[cfg(any(feature = "server", feature = "verify"))]
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+use crate::drive::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
+    ContestedDocumentResourceVotePollWithContractInfo,
+    ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,
+};
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
 use crate::error::Error;
+use crate::query::ContractLookupFn;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-#[cfg(feature = "verify")]
-use dpp::identifier::Identifier;
-#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::prelude::DataContract;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-#[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "verify")]
@@ -77,7 +71,7 @@ pub trait ContestedDocumentResourceVotePollResolver {
     /// Resolves into a struct, the contract itself will be held with Arc
     fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+        known_contracts_provider_fn: &'a ContractLookupFn,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
     #[cfg(any(feature = "verify", feature = "server"))]
@@ -172,7 +166,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
     #[cfg(feature = "verify")]
     fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+        known_contracts_provider_fn: &'a ContractLookupFn,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error> {
         let ContestedDocumentResourceVotePoll {
             contract_id,

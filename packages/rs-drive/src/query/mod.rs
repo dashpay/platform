@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{WhereClause, WhereOperator},
@@ -93,6 +95,15 @@ pub mod vote_polls_by_end_date_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Vote polls by document type query
 pub mod vote_polls_by_document_type_query;
+
+/// Function type for looking up a contract by identifier
+///
+/// This function is used to look up a contract by its identifier.
+/// It should be implemented by the caller in order to provide data
+/// contract required for operations like proof verification.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<Option<Arc<DataContract>>, crate::error::Error>
+    + 'a;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// A query to get the votes given out by an identity
