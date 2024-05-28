@@ -18,7 +18,7 @@ const {
     BroadcastTransactionRequest,
     GetTransactionRequest,
     GetBlockchainStatusRequest,
-    GetMasternodeStatusRequest,
+    // GetMasternodeStatusRequest,
     // GetBlockRequest,
     GetBestBlockHeightRequest,
     pbjs: {
