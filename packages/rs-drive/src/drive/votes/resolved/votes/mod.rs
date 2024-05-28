@@ -7,7 +7,6 @@ use crate::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::ResolvedResourceVote;
 use dpp::identifier::Identifier;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dpp::voting::votes::resource_vote::ResourceVote;

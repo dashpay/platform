@@ -1,5 +1,6 @@
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 /// A resource votes is a votes determining what we should do with a contested resource.

@@ -32,7 +32,7 @@ impl Drive {
     pub(super) fn add_contested_reference_and_vote_subtree_to_document_operations_v0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        mut index_path_info: PathInfo<0>,
+        index_path_info: PathInfo<0>,
         storage_flags: Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

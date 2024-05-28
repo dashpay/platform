@@ -1,4 +1,5 @@
 use bincode::{Decode, Encode};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, Default)]

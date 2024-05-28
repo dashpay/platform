@@ -23,6 +23,7 @@ use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, TransactionArg};
 use grovedb::{PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "verify")]
 use std::sync::Arc;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
@@ -238,6 +239,7 @@ impl ContestedDocumentVotePollDriveQuery {
         })
     }
 
+    #[cfg(feature = "verify")]
     /// Resolves with a known contract provider
     pub fn resolve_with_known_contracts_provider<'a>(
         &self,
@@ -262,6 +264,7 @@ impl ContestedDocumentVotePollDriveQuery {
         })
     }
 
+    #[cfg(any(feature = "verify", feature = "server"))]
     /// Resolves with a provided borrowed contract
     pub fn resolve_with_provided_borrowed_contract<'a>(
         &self,
