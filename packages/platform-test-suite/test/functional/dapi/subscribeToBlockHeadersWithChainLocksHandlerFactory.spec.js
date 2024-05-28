@@ -76,7 +76,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
   let sdkClient;
   const network = process.env.NETWORK;
 
-  let bestBlock;
   let bestBlockHeight;
 
   beforeEach(async () => {
@@ -85,11 +84,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       seeds: getDAPISeeds(),
     });
 
-    const bestBlockHash = await dapiClient.core.getBestBlockHash();
-    bestBlock = new Block(
-      await dapiClient.core.getBlockByHash(bestBlockHash),
-    );
-    bestBlockHeight = bestBlock.transactions[0].extraPayload.height;
+    ({ chain: { blocksCount: bestBlockHeight } } = await dapiClient.core.getBlockchainStatus());
   });
 
   after(async () => {
