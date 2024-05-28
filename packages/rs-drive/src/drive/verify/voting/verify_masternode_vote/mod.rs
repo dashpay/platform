@@ -1,13 +1,11 @@
+//! Masternode vote proof verification
+
 mod v0;
 
-use crate::drive::Drive;
-
-use crate::error::drive::DriveError;
-
-use crate::error::Error;
-
 use crate::drive::verify::RootHash;
-
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
 

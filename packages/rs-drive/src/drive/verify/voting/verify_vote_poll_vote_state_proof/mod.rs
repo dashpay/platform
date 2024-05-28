@@ -1,3 +1,5 @@
+//! Verification of the vote poll proofs
+
 mod v0;
 
 use crate::drive::verify::RootHash;
