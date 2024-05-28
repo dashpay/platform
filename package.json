@@ -90,8 +90,7 @@
     "cacache": "18.0.0",
     "node-gyp": "10.0.1",
     "follow-redirects": "^1.15.5",
-    "socks": "^2.8.1",
-    "glob": "^9"
+    "socks": "^2.8.1"
   },
   "dependencies": {
     "node-gyp": "^10.0.1"
