@@ -9,6 +9,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 
 impl MasternodeVoteTransitionV0 {
+    #[cfg(feature = "state-transition-signing")]
     pub fn try_from_vote_with_signer<S: Signer>(
         vote: Vote,
         signer: &S,
