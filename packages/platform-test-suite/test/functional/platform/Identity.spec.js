@@ -1,5 +1,7 @@
 const Dash = require('dash');
 
+const { SimplifiedMNListDiff } = require('@dashevo/dashcore-lib');
+
 const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock');
 
 const { hash, sha256 } = require('@dashevo/wasm-dpp/lib/utils/hash');
@@ -674,13 +676,19 @@ describe('Platform', () => {
       it('should receive masternode identities', async () => {
         await client.platform.initialize();
 
-        const bestBlockHash = await dapiClient.core.getBestBlockHash();
-        const baseBlockHash = await dapiClient.core.getBlockHash(1);
+        const stream = await dapiClient.core.subscribeToMasternodeList();
 
-        const { mnList } = await dapiClient.core.getMnListDiff(
-          baseBlockHash,
-          bestBlockHash,
-        );
+        const { mnList } = await new Promise((resolve, reject) => {
+          stream.on('data', (data) => {
+            const diffBytes = data.getMasternodeListDiff();
+            const diffBuffer = Buffer.from(diffBytes);
+            const diff = new SimplifiedMNListDiff(diffBuffer, process.env.NETWORK);
+
+            resolve(diff);
+          });
+
+          stream.on('error', reject);
+        });
 
         for (const masternodeEntry of mnList) {
           if (!masternodeEntry.isValid) {

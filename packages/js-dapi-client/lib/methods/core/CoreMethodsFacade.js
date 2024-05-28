@@ -9,6 +9,7 @@ const getMasternodeStatusFactory = require('./getMasternodeStatusFactory');
 const getTransactionFactory = require('./getTransaction/getTransactionFactory');
 const subscribeToTransactionsWithProofsFactory = require('./subscribeToTransactionsWithProofsFactory');
 const subscribeToBlockHeadersWithChainLocksFactory = require('./subscribeToBlockHeadersWithChainLocksFactory');
+const subscribeToToMasternodeListFactory = require('./subscribeToMasternodeListFactory');
 
 class CoreMethodsFacade {
   /**
@@ -29,6 +30,9 @@ class CoreMethodsFacade {
       grpcTransport,
     );
     this.subscribeToBlockHeadersWithChainLocks = subscribeToBlockHeadersWithChainLocksFactory(
+      grpcTransport,
+    );
+    this.subscribeToMasternodeList = subscribeToToMasternodeListFactory(
       grpcTransport,
     );
   }
