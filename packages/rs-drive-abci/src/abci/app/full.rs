@@ -1,20 +1,18 @@
-use crate::abci::app::{
-    BlockExecutionApplication, ConsensusAbciApplication, PlatformApplication,
-    SnapshotManagerApplication, TransactionalApplication,
-};
-use crate::abci::handler;
+use crate::abci::app::{BlockExecutionApplication, ConsensusAbciApplication, PlatformApplication, SnapshotManagerApplication, StateSyncApplication, TransactionalApplication};
+use crate::abci::{AbciError, handler};
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::snapshot::SnapshotManager;
+use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
+use drive::grovedb::replication::CURRENT_STATE_SYNC_VERSION;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -27,6 +25,8 @@ pub struct FullAbciApplication<'a, C> {
     pub transaction: RwLock<Option<Transaction<'a>>>,
     /// The current block execution context
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    /// The State sync session
+    pub snapshot_fetching_session: RwLock<Option<SnapshotFetchingSession<'a>>>,
     /// The snapshot manager
     pub snapshot_manager: SnapshotManager,
 }
@@ -38,6 +38,7 @@ impl<'a, C> FullAbciApplication<'a, C> {
             platform,
             transaction: Default::default(),
             block_execution_context: Default::default(),
+            snapshot_fetching_session: Default::default(),
             snapshot_manager: SnapshotManager::default(),
         }
     }
@@ -52,6 +53,12 @@ impl<'a, C> PlatformApplication<C> for FullAbciApplication<'a, C> {
 impl<'a, C> SnapshotManagerApplication for FullAbciApplication<'a, C> {
     fn snapshot_manager(&self) -> &SnapshotManager {
         &self.snapshot_manager
+    }
+}
+
+impl<'a, C> StateSyncApplication<'a> for FullAbciApplication<'a, C> {
+    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'a>>> {
+        &self.snapshot_fetching_session
     }
 }
 
@@ -161,5 +168,154 @@ where
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
         handler::verify_vote_extension(self, request).map_err(error_into_exception)
+    }
+
+    fn offer_snapshot(
+        &self,
+        request: proto::RequestOfferSnapshot,
+    ) -> Result<proto::ResponseOfferSnapshot, proto::ResponseException> {
+        if request.app_hash.len() != 32 {
+            return Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                "offer_snapshot invalid app_hash in request".to_string(),
+            ))));
+        }
+
+        let mut request_app_hash = [0u8; 32];
+        request_app_hash.copy_from_slice(&request.app_hash);
+
+        match request.snapshot {
+            None => Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                "offer_snapshot missing snapshot in request".to_string(),
+            )))),
+            Some(offered_snapshot) => {
+                match self.snapshot_fetching_session.write() {
+                    Ok(mut session_write) => {
+                        // Now `session_write` is a mutable reference to the inner data
+                        match *session_write {
+                            Some(ref mut session) => {
+                                // Access and modify `session` here
+                                if offered_snapshot.height <= session.snapshot.height {
+                                    return Err(error_into_exception(Error::Abci(
+                                        AbciError::BadRequest(
+                                            "offer_snapshot already syncing newest height"
+                                                .to_string(),
+                                        ),
+                                    )));
+                                }
+
+                                match self.platform.drive.grove.wipe() {
+                                    Ok(_) => {
+                                        let response = proto::ResponseOfferSnapshot::default();
+
+                                        match self.platform.drive.grove.start_snapshot_syncing(request_app_hash, CURRENT_STATE_SYNC_VERSION) {
+                                            Ok((_, state_sync_info)) => {
+                                                session.snapshot = offered_snapshot;
+                                                session.app_hash = request.app_hash;
+                                                session.state_sync_info = state_sync_info;
+
+                                                Ok(response)
+                                            }
+                                            Err(e) => Err(error_into_exception(Error::Abci(
+                                                AbciError::BadRequest(format!(
+                                                    "offer_snapshot unable start_snapshot_syncing:{}",
+                                                    e
+                                                )),
+                                            ))),
+                                        }
+                                    }
+                                    Err(e) => Err(error_into_exception(Error::Abci(
+                                        AbciError::BadRequest(format!(
+                                            "offer_snapshot unable to wipe grovedb:{}",
+                                            e
+                                        )),
+                                    ))),
+                                }
+                            }
+                            None => Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                                "offer_snapshot unable to lock session".to_string(),
+                            )))),
+                        }
+                    }
+                    Err(_poisoned) => {
+                        Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                            "offer_snapshot unable to lock session (poisoned)".to_string(),
+                        ))))
+                    }
+                }
+            }
+        }
+    }
+
+    fn apply_snapshot_chunk(
+        &self,
+        request: proto::RequestApplySnapshotChunk,
+    ) -> Result<proto::ResponseApplySnapshotChunk, proto::ResponseException> {
+        let mut is_state_sync_completed: bool = false;
+        match self.snapshot_fetching_session().write() {
+            Ok(mut session_write_guard) => {
+                match session_write_guard.as_mut() {
+                    Some(session) => {
+                        match session.state_sync_info.apply_chunk(
+                            &self.platform.drive.grove,
+                            (&request.chunk_id, request.chunk),
+                            1u16,
+                        ) {
+                            Ok(next_chunk_ids) => {
+                                if (next_chunk_ids.is_empty()) {
+                                    if (session.state_sync_info.is_sync_completed()) {
+                                        is_state_sync_completed = true;
+                                    }
+                                }
+                                if !is_state_sync_completed {
+                                    return Ok(proto::ResponseApplySnapshotChunk {
+                                        result:
+                                        proto::response_apply_snapshot_chunk::Result::Accept
+                                            .into(),
+                                        refetch_chunks: vec![],
+                                        reject_senders: vec![],
+                                        next_chunks: next_chunk_ids,
+                                    });
+                                }
+                            }
+                            Err(e) => {
+                                return Err(Error::Abci(AbciError::BadRequest(format!(
+                                    "apply_snapshot_chunk unable to apply chunk:{}",
+                                    e
+                                ))))
+                                    .map_err(error_into_exception);
+                            }
+                        }
+                    }
+                    None => {
+                        // Handle the case where there is no transaction
+                        return Err(Error::Abci(AbciError::BadRequest(
+                            "apply_snapshot_chunk unable to lock session".to_string(),
+                        )))
+                            .map_err(error_into_exception);
+                    }
+                }
+                // state_sync is completed (is_state_sync_completed is true) we need to commit the transaction
+                match session_write_guard.take() {
+                    None => Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                        "apply_snapshot_chunk unable to lock session (for commit)".to_string(),
+                    )))),
+                    Some(session) => {
+                        let state_sync_info = session.state_sync_info;
+                        self.platform.drive.grove.commit_session(state_sync_info);
+                        return Ok(proto::ResponseApplySnapshotChunk {
+                            result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
+                            refetch_chunks: vec![],
+                            reject_senders: vec![],
+                            next_chunks: vec![],
+                        });
+                    }
+                }
+            }
+            Err(_poisoned) => {
+                return Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                    "apply_snapshot_chunk unable to lock session (poisoned)".to_string(),
+                ))))
+            }
+        }
     }
 }
