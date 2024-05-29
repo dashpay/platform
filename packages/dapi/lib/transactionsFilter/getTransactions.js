@@ -13,7 +13,8 @@ async function getTransactions(coreRpcApi, transactionHashes) {
   }
 
   const rawTransactions = await coreRpcApi.getRawTransactionMulti(transactionHashes);
-  return Object.entries(rawTransactions).map(([, data]) => new Transaction(data));
+  return Object.values(rawTransactions)
+    .map((rawTransaction) => new Transaction(rawTransaction));
 }
 
 module.exports = getTransactions;

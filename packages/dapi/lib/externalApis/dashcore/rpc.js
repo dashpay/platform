@@ -170,9 +170,7 @@ const getRawTransaction = (txid, verboseMode = 0) => new Promise((resolve, rejec
   });
 });
 
-const getRawTransactionMulti = (txids, verboseMode = 0) => {
-  console.log('!!!!!!!');
-  console.dir(txids);
+const getRawTransactionMulti = async (txids, verboseMode = 0) => {
   const promises = lodash.chunk(txids, 100).map((chunk) => {
     return new Promise((resolve, reject) => {
       client.getRawTransactionMulti({ 0: chunk }, verboseMode, (err, r) => {
@@ -185,10 +183,11 @@ const getRawTransactionMulti = (txids, verboseMode = 0) => {
     });
   });
 
-  return Promise.all(promises).then((responses) => {
-    console.dir(responses);
-    return responses.flat();
-  });
+  const responses = await Promise.all(promises);
+
+  return responses.reduce((accumulator, object) => {
+    return { ...accumulator, ...object };
+  }, {});
 };
 
 const getRawBlock = (blockhash) => getBlock(blockhash, false);
