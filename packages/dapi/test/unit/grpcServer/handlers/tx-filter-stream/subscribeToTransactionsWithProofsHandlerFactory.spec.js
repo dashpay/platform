@@ -34,7 +34,7 @@ const subscribeToTransactionsWithProofsHandlerFactory = require(
 );
 
 const ProcessMediator = require('../../../../../lib/transactionsFilter/ProcessMediator');
-const ChainDataProvider = require("../../../../../lib/chainDataProvider/ChainDataProvider");
+const ChainDataProvider = require('../../../../../lib/chainDataProvider/ChainDataProvider');
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -63,6 +63,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   let coreAPIMock;
   let getMemPoolTransactionsMock;
   let chainDataProvider;
+  let zmqClientMock;
 
   beforeEach(function beforeEach() {
     const bloomFilterMessage = new BloomFilter();
@@ -111,7 +112,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       testTransactionAgainstFilterMock,
       coreAPIMock,
       getMemPoolTransactionsMock,
-      chainDataProvider
+      chainDataProvider,
     );
 
     this.sinon.spy(ProcessMediator.prototype, 'emit');
