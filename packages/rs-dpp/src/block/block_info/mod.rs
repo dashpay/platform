@@ -37,8 +37,28 @@ impl BlockInfo {
     }
 
     /// Create default block with specified time
-    pub fn default_with_time(time_ms: u64) -> BlockInfo {
+    pub fn default_with_time(time_ms: TimestampMillis) -> BlockInfo {
         BlockInfo {
+            time_ms,
+            ..Default::default()
+        }
+    }
+
+    /// Create default block with specified height
+    pub fn default_with_height(height: BlockHeight) -> BlockInfo {
+        BlockInfo {
+            height,
+            ..Default::default()
+        }
+    }
+
+    /// Create default block with specified height and time
+    pub fn default_with_height_and_time(
+        height: BlockHeight,
+        time_ms: TimestampMillis,
+    ) -> BlockInfo {
+        BlockInfo {
+            height,
             time_ms,
             ..Default::default()
         }

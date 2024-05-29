@@ -55,19 +55,7 @@ impl Drive {
                 .default_vote_poll_time_duration_ms,
         );
 
-        self.add_vote_poll_end_date_query_operations(
-            document_and_contract_info.owned_document_info.owner_id,
-            VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll),
-            end_date,
-            block_info,
-            estimated_costs_only_with_layer_info,
-            previous_batch_operations,
-            &mut batch_operations,
-            transaction,
-            platform_version,
-        )?;
-
-        self.add_contested_indices_for_contract_operations(
+        let contest_already_existed = self.add_contested_indices_for_contract_operations(
             &document_and_contract_info,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
@@ -75,6 +63,20 @@ impl Drive {
             &mut batch_operations,
             platform_version,
         )?;
+
+        if !contest_already_existed {
+            self.add_vote_poll_end_date_query_operations(
+                document_and_contract_info.owned_document_info.owner_id,
+                VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll),
+                end_date,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                previous_batch_operations,
+                &mut batch_operations,
+                transaction,
+                platform_version,
+            )?;
+        }
 
         Ok(batch_operations)
     }

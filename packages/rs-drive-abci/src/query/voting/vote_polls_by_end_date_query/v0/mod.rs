@@ -39,6 +39,24 @@ impl<C> Platform<C> {
         let end_time = end_time_info
             .map(|end_time_info| (end_time_info.end_time_ms, end_time_info.end_time_included));
 
+        if let (
+            Some((start_time_ms, start_time_included)),
+            Some((end_time_ms, end_time_included)),
+        ) = (start_time, end_time)
+        {
+            if start_time_ms > end_time_ms {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(format!(
+                        "start time {} must be before end time {}",
+                        start_time_ms, end_time_ms
+                    )),
+                ));
+            }
+            if start_time_ms == end_time_ms && (!start_time_included || !end_time_included) {
+                return Ok(QueryValidationResult::new_with_error(QueryError::InvalidArgument("if start time is equal to end time the start and end times must be included".to_string())));
+            }
+        };
+
         let limit = check_validation_result_with_data!(limit.map_or(
             Ok(config.default_query_limit),
             |limit| {
@@ -115,19 +133,36 @@ impl<C> Platform<C> {
             let (vote_polls_by_timestamps, counts): (
                 Vec<SerializedVotePollsByTimestamp>,
                 Vec<usize>,
-            ) = results
-                .into_iter()
-                .map(|(timestamp, contested_document_resource_vote_polls)| {
-                    let len = contested_document_resource_vote_polls.len();
-                    (
-                        SerializedVotePollsByTimestamp {
-                            timestamp,
-                            serialized_vote_polls: contested_document_resource_vote_polls,
-                        },
-                        len,
-                    )
-                })
-                .unzip();
+            ) = if query.order_ascending {
+                results
+                    .into_iter()
+                    .map(|(timestamp, contested_document_resource_vote_polls)| {
+                        let len = contested_document_resource_vote_polls.len();
+                        (
+                            SerializedVotePollsByTimestamp {
+                                timestamp,
+                                serialized_vote_polls: contested_document_resource_vote_polls,
+                            },
+                            len,
+                        )
+                    })
+                    .unzip()
+            } else {
+                results
+                    .into_iter()
+                    .rev()
+                    .map(|(timestamp, contested_document_resource_vote_polls)| {
+                        let len = contested_document_resource_vote_polls.len();
+                        (
+                            SerializedVotePollsByTimestamp {
+                                timestamp,
+                                serialized_vote_polls: contested_document_resource_vote_polls,
+                            },
+                            len,
+                        )
+                    })
+                    .unzip()
+            };
 
             let count: usize = counts.into_iter().sum();
 

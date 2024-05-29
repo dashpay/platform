@@ -161,6 +161,10 @@ mod tests {
         use crate::test::helpers::setup::TempPlatform;
         use dpp::serialization::PlatformDeserializable;
         use drive::query::VotePollsByEndDateDriveQuery;
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+        use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+        use dpp::platform_value::IdentifierBytes32;
+        use dpp::platform_value::Value::Text;
 
         fn setup_masternode_identity(
             platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -204,7 +208,7 @@ mod tests {
 
         fn create_dpns_name_contest(
             platform: &mut TempPlatform<MockCoreRPCLike>,
-            platform_state: &Guard<Arc<PlatformState>>,
+            platform_state: &PlatformState,
             seed: u64,
             name: &str,
             platform_version: &PlatformVersion,
@@ -427,7 +431,12 @@ mod tests {
                         documents_batch_create_serialized_preorder_transition_2.clone(),
                     ],
                     platform_state,
-                    &BlockInfo::default(),
+                    &BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
                     &transaction,
                     platform_version,
                 )
@@ -452,7 +461,12 @@ mod tests {
                         documents_batch_create_serialized_transition_2.clone(),
                     ],
                     platform_state,
-                    &BlockInfo::default(),
+                    &BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
                     &transaction,
                     platform_version,
                 )
@@ -674,156 +688,163 @@ mod tests {
             assert_eq!(second_contender.vote_tally, Some(0));
         }
 
-        #[test]
-        fn test_contests_request() {
-            let platform_version = PlatformVersion::latest();
-            let mut platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_genesis_state();
+        mod contests_requests {
+            use super::*;
+            #[test]
+            fn test_contests_request() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
 
-            let platform_state = platform.state.load();
+                let platform_state = platform.state.load();
 
-            let (identity_1, identity_2, dpns_contract) = create_dpns_name_contest(
-                &mut platform,
-                &platform_state,
-                7,
-                "quantum",
-                platform_version,
-            );
-
-            verify_dpns_name_contest(
-                &mut platform,
-                &platform_state,
-                dpns_contract.as_ref(),
-                &identity_1,
-                &identity_2,
-                "quantum",
-                platform_version,
-            );
-
-            let (identity_3, identity_4, dpns_contract) = create_dpns_name_contest(
-                &mut platform,
-                &platform_state,
-                8,
-                "cooldog",
-                platform_version,
-            );
-
-            verify_dpns_name_contest(
-                &mut platform,
-                &platform_state,
-                dpns_contract.as_ref(),
-                &identity_3,
-                &identity_4,
-                "cooldog",
-                platform_version,
-            );
-
-            let domain = dpns_contract
-                .document_type_for_name("domain")
-                .expect("expected a profile document type");
-
-            let index_name = "parentNameAndLabel".to_string();
-
-            let config = bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit();
-
-            let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
-                .expect("expected to encode value");
-
-            let query_validation_result = platform
-                .query_contested_resources(
-                    GetContestedResourcesRequest {
-                        version: Some(get_contested_resources_request::Version::V0(
-                            GetContestedResourcesRequestV0 {
-                                contract_id: dpns_contract.id().to_vec(),
-                                document_type_name: domain.name().clone(),
-                                index_name: index_name.clone(),
-                                start_index_values: vec![dash_encoded.clone()],
-                                end_index_values: vec![],
-                                start_at_value_info: None,
-                                count: None,
-                                order_ascending: true,
-                                prove: false,
-                            },
-                        )),
-                    },
+                let (identity_1, identity_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
                     &platform_state,
+                    7,
+                    "quantum",
                     platform_version,
-                )
-                .expect("expected to execute query")
-                .into_data()
-                .expect("expected query to be valid");
+                );
 
-            let get_contested_resources_response::Version::V0(GetContestedResourcesResponseV0 {
-                metadata: _,
-                result,
-            }) = query_validation_result.version.expect("expected a version");
-
-            let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
-                get_contested_resources_response_v0::ContestedResourceValues {
-                    contested_resource_values,
-                },
-            )) = result
-            else {
-                panic!("expected contested resources")
-            };
-
-            assert_eq!(contested_resource_values.len(), 2);
-
-            let query_validation_result = platform
-                .query_contested_resources(
-                    GetContestedResourcesRequest {
-                        version: Some(get_contested_resources_request::Version::V0(
-                            GetContestedResourcesRequestV0 {
-                                contract_id: dpns_contract.id().to_vec(),
-                                document_type_name: domain.name().clone(),
-                                index_name: index_name.clone(),
-                                start_index_values: vec![dash_encoded],
-                                end_index_values: vec![],
-                                start_at_value_info: None,
-                                count: None,
-                                order_ascending: true,
-                                prove: true,
-                            },
-                        )),
-                    },
+                verify_dpns_name_contest(
+                    &mut platform,
                     &platform_state,
+                    dpns_contract.as_ref(),
+                    &identity_1,
+                    &identity_2,
+                    "quantum",
                     platform_version,
-                )
-                .expect("expected to execute query")
-                .into_data()
-                .expect("expected query to be valid");
+                );
 
-            let get_contested_resources_response::Version::V0(GetContestedResourcesResponseV0 {
-                metadata: _,
-                result,
-            }) = query_validation_result.version.expect("expected a version");
+                let (identity_3, identity_4, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    8,
+                    "cooldog",
+                    platform_version,
+                );
 
-            let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result else {
-                panic!("expected proof")
-            };
+                verify_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    &identity_3,
+                    &identity_4,
+                    "cooldog",
+                    platform_version,
+                );
 
-            let resolved_contested_document_vote_poll_drive_query =
-                ResolvedVotePollsByDocumentTypeQuery {
-                    contract: DataContractResolvedInfo::BorrowedDataContract(
-                        dpns_contract.as_ref(),
-                    ),
-                    document_type_name: domain.name(),
-                    index_name: &index_name,
-                    start_index_values: &vec!["dash".into()],
-                    end_index_values: &vec![],
-                    limit: None,
-                    order_ascending: true,
-                    start_at_value: &None,
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                    .expect("expected to encode value");
+
+                let query_validation_result = platform
+                    .query_contested_resources(
+                        GetContestedResourcesRequest {
+                            version: Some(get_contested_resources_request::Version::V0(
+                                GetContestedResourcesRequestV0 {
+                                    contract_id: dpns_contract.id().to_vec(),
+                                    document_type_name: domain.name().clone(),
+                                    index_name: index_name.clone(),
+                                    start_index_values: vec![dash_encoded.clone()],
+                                    end_index_values: vec![],
+                                    start_at_value_info: None,
+                                    count: None,
+                                    order_ascending: true,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resources_response::Version::V0(
+                    GetContestedResourcesResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = query_validation_result.version.expect("expected a version");
+
+                let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
+                    get_contested_resources_response_v0::ContestedResourceValues {
+                        contested_resource_values,
+                    },
+                )) = result
+                else {
+                    panic!("expected contested resources")
                 };
 
-            let (_, contests) = resolved_contested_document_vote_poll_drive_query
-                .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
-                .expect("expected to verify proof");
+                assert_eq!(contested_resource_values.len(), 2);
 
-            assert_eq!(contests.len(), 2);
+                let query_validation_result = platform
+                    .query_contested_resources(
+                        GetContestedResourcesRequest {
+                            version: Some(get_contested_resources_request::Version::V0(
+                                GetContestedResourcesRequestV0 {
+                                    contract_id: dpns_contract.id().to_vec(),
+                                    document_type_name: domain.name().clone(),
+                                    index_name: index_name.clone(),
+                                    start_index_values: vec![dash_encoded],
+                                    end_index_values: vec![],
+                                    start_at_value_info: None,
+                                    count: None,
+                                    order_ascending: true,
+                                    prove: true,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resources_response::Version::V0(
+                    GetContestedResourcesResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = query_validation_result.version.expect("expected a version");
+
+                let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result else {
+                    panic!("expected proof")
+                };
+
+                let resolved_contested_document_vote_poll_drive_query =
+                    ResolvedVotePollsByDocumentTypeQuery {
+                        contract: DataContractResolvedInfo::BorrowedDataContract(
+                            dpns_contract.as_ref(),
+                        ),
+                        document_type_name: domain.name(),
+                        index_name: &index_name,
+                        start_index_values: &vec!["dash".into()],
+                        end_index_values: &vec![],
+                        limit: None,
+                        order_ascending: true,
+                        start_at_value: &None,
+                    };
+
+                let (_, contests) = resolved_contested_document_vote_poll_drive_query
+                    .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
+                    .expect("expected to verify proof");
+
+                assert_eq!(contests.len(), 2);
+            }
         }
 
         #[test]
@@ -1098,8 +1119,7 @@ mod tests {
 
         mod end_date_query {
             use super::*;
-            use dpp::platform_value::IdentifierBytes32;
-            use dpp::platform_value::Value::Text;
+            use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::get_vote_polls_by_end_date_request_v0;
 
             #[test]
             fn test_not_proved_end_date_query_request() {
@@ -1110,7 +1130,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     7,
@@ -1127,7 +1147,7 @@ mod tests {
                                     end_time_info: None,
                                     limit: None,
                                     offset: None,
-                                    ascending: false,
+                                    ascending: true,
                                     prove: false,
                                 },
                             )),
@@ -1170,7 +1190,7 @@ mod tests {
                 assert_eq!(
                     vote_polls_by_timestamps,
                     vec![SerializedVotePollsByTimestamp {
-                        timestamp: 1_209_600_000, // in ms, 2 weeks after Jan 1 1970
+                        timestamp: 1_209_603_000, // in ms, 2 weeks after Jan 1 1970
                         serialized_vote_polls: vec![serialized_contested_vote_poll_bytes.clone()]
                     }]
                 );
@@ -1211,7 +1231,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     7,
@@ -1228,7 +1248,7 @@ mod tests {
                                     end_time_info: None,
                                     limit: None,
                                     offset: None,
-                                    ascending: false,
+                                    ascending: true,
                                     prove: true,
                                 },
                             )),
@@ -1270,7 +1290,7 @@ mod tests {
                 assert_eq!(
                     vote_polls_by_timestamps,
                     BTreeMap::from([(
-                        1209600000,
+                        1_209_603_000,
                         vec![VotePoll::ContestedDocumentResourceVotePoll(
                             ContestedDocumentResourceVotePoll {
                                 contract_id: Identifier(IdentifierBytes32([
@@ -1287,6 +1307,1081 @@ mod tests {
                             }
                         )]
                     )])
+                );
+            }
+
+            #[test]
+            fn test_not_proved_end_date_query_multiple_contests() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+                let mut platform_state = (**platform_state).clone();
+
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 500000,
+                            height: 100,
+                            core_height: 42,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create two new contenders, but we are on the same contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    8,
+                    "quantum",
+                    platform_version,
+                );
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "coolio",
+                    platform_version,
+                );
+
+                let GetVotePollsByEndDateResponse { version } = platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: None,
+                                    end_time_info: None,
+                                    limit: None,
+                                    offset: None,
+                                    ascending: true,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_vote_polls_by_end_date_response::Version::V0(
+                    GetVotePollsByEndDateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = version.expect("expected a version");
+
+                let Some(get_vote_polls_by_end_date_response_v0::Result::VotePollsByTimestamps(
+                    get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamps {
+                        vote_polls_by_timestamps,
+                        finished_results,
+                    },
+                )) = result
+                else {
+                    panic!("expected contenders")
+                };
+
+                assert!(finished_results);
+
+                let serialized_contested_vote_poll_bytes_1 = vec![
+                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
+                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
+                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
+                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 7, 113, 117,
+                    97, 110, 116, 117, 109,
+                ];
+
+                let serialized_contested_vote_poll_bytes_2 = vec![
+                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
+                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
+                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
+                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 6, 99, 48, 48,
+                    49, 49, 48,
+                ];
+
+                // The timestamp is 0 because there were no blocks
+                assert_eq!(
+                    vote_polls_by_timestamps,
+                    vec![
+                        SerializedVotePollsByTimestamp {
+                            timestamp: 1_209_603_000, // in ms, 2 weeks after Jan 1 1970 + 3 seconds (chosen block time in test)
+                            serialized_vote_polls: vec![
+                                serialized_contested_vote_poll_bytes_1.clone()
+                            ]
+                        },
+                        SerializedVotePollsByTimestamp {
+                            timestamp: 1_210_103_000, // in ms, 500 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                            serialized_vote_polls: vec![
+                                serialized_contested_vote_poll_bytes_2.clone()
+                            ]
+                        },
+                    ]
+                );
+
+                // Let's try deserializing
+
+                let vote_poll_1 = VotePoll::deserialize_from_bytes(
+                    serialized_contested_vote_poll_bytes_1.as_slice(),
+                )
+                .expect("expected to deserialize");
+
+                assert_eq!(
+                    vote_poll_1,
+                    VotePoll::ContestedDocumentResourceVotePoll(
+                        ContestedDocumentResourceVotePoll {
+                            contract_id: Identifier(IdentifierBytes32([
+                                230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123,
+                                91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83,
+                                197, 49, 85
+                            ])),
+                            document_type_name: "domain".to_string(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![
+                                Text("dash".to_string()),
+                                Text("quantum".to_string())
+                            ]
+                        }
+                    )
+                );
+
+                // Let's try deserializing
+
+                let vote_poll_2 = VotePoll::deserialize_from_bytes(
+                    serialized_contested_vote_poll_bytes_2.as_slice(),
+                )
+                .expect("expected to deserialize");
+
+                assert_eq!(
+                    vote_poll_2,
+                    VotePoll::ContestedDocumentResourceVotePoll(
+                        ContestedDocumentResourceVotePoll {
+                            contract_id: Identifier(IdentifierBytes32([
+                                230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123,
+                                91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83,
+                                197, 49, 85
+                            ])),
+                            document_type_name: "domain".to_string(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![
+                                Text("dash".to_string()),
+                                Text("c00110".to_string())
+                            ]
+                        }
+                    )
+                );
+            }
+
+            #[test]
+            fn test_proved_end_date_query_multiple_contests() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+                let mut platform_state = (**platform_state).clone();
+
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 500000,
+                            height: 100,
+                            core_height: 42,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create two new contenders, but we are on the same contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    8,
+                    "quantum",
+                    platform_version,
+                );
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "coolio",
+                    platform_version,
+                );
+
+                let GetVotePollsByEndDateResponse { version } = platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: None,
+                                    end_time_info: None,
+                                    limit: None,
+                                    offset: None,
+                                    ascending: true,
+                                    prove: true,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_vote_polls_by_end_date_response::Version::V0(
+                    GetVotePollsByEndDateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = version.expect("expected a version");
+
+                let Some(get_vote_polls_by_end_date_response_v0::Result::Proof(proof)) = result
+                else {
+                    panic!("expected contenders")
+                };
+
+                let vote_poll_by_end_date_query = VotePollsByEndDateDriveQuery {
+                    start_time: None,
+                    end_time: None,
+                    offset: None,
+                    limit: None,
+                    order_ascending: true,
+                };
+
+                let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
+                    .verify_vote_polls_by_end_date_proof(
+                        proof.grovedb_proof.as_ref(),
+                        platform_version,
+                    )
+                    .expect("expected to verify proof");
+
+                assert_eq!(
+                    vote_polls_by_timestamps,
+                    BTreeMap::from([
+                        (
+                            1_209_603_000,
+                            vec![VotePoll::ContestedDocumentResourceVotePoll(
+                                ContestedDocumentResourceVotePoll {
+                                    contract_id: Identifier(IdentifierBytes32([
+                                        230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109,
+                                        222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33,
+                                        246, 34, 191, 83, 197, 49, 85
+                                    ])),
+                                    document_type_name: "domain".to_string(),
+                                    index_name: "parentNameAndLabel".to_string(),
+                                    index_values: vec![
+                                        Text("dash".to_string()),
+                                        Text("quantum".to_string())
+                                    ]
+                                }
+                            )]
+                        ),
+                        (
+                            1_210_103_000,
+                            vec![VotePoll::ContestedDocumentResourceVotePoll(
+                                ContestedDocumentResourceVotePoll {
+                                    contract_id: Identifier(IdentifierBytes32([
+                                        230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109,
+                                        222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33,
+                                        246, 34, 191, 83, 197, 49, 85
+                                    ])),
+                                    document_type_name: "domain".to_string(),
+                                    index_name: "parentNameAndLabel".to_string(),
+                                    index_values: vec![
+                                        Text("dash".to_string()),
+                                        Text("c00110".to_string())
+                                    ]
+                                }
+                            )]
+                        )
+                    ])
+                );
+            }
+
+            #[test]
+            fn test_not_proved_end_date_query_multiple_contests_with_start_at() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+                let mut platform_state = (**platform_state).clone();
+
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 500000,
+                            height: 100,
+                            core_height: 42,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create two new contenders, but we are on the same contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    8,
+                    "quantum",
+                    platform_version,
+                );
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "coolio",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 900000,
+                            height: 150,
+                            core_height: 45,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    10,
+                    "crazyman",
+                    platform_version,
+                );
+
+                let GetVotePollsByEndDateResponse { version } = platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: Some(
+                                        get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
+                                            start_time_ms: 1_209_603_000,
+                                            start_time_included: false,
+                                        },
+                                    ),
+                                    end_time_info: None,
+                                    limit: None,
+                                    offset: None,
+                                    ascending: true,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_vote_polls_by_end_date_response::Version::V0(
+                    GetVotePollsByEndDateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = version.expect("expected a version");
+
+                let Some(get_vote_polls_by_end_date_response_v0::Result::VotePollsByTimestamps(
+                    get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamps {
+                        vote_polls_by_timestamps,
+                        finished_results,
+                    },
+                )) = result
+                else {
+                    panic!("expected contenders")
+                };
+
+                assert!(finished_results);
+
+                let serialized_contested_vote_poll_bytes_2 = vec![
+                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
+                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
+                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
+                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 6, 99, 48, 48,
+                    49, 49, 48,
+                ];
+
+                let serialized_contested_vote_poll_bytes_3 = vec![
+                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
+                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
+                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
+                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 8, 99, 114,
+                    97, 122, 121, 109, 97, 110,
+                ];
+
+                assert_eq!(
+                    vote_polls_by_timestamps,
+                    vec![
+                        SerializedVotePollsByTimestamp {
+                            timestamp: 1_210_103_000, // in ms, 500 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                            serialized_vote_polls: vec![
+                                serialized_contested_vote_poll_bytes_2.clone()
+                            ]
+                        },
+                        SerializedVotePollsByTimestamp {
+                            timestamp: 1_210_503_000, // in ms, 900 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                            serialized_vote_polls: vec![
+                                serialized_contested_vote_poll_bytes_3.clone()
+                            ]
+                        },
+                    ]
+                );
+            }
+
+            #[test]
+            fn test_not_proved_end_date_query_multiple_contests_with_end_at() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+                let mut platform_state = (**platform_state).clone();
+
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 500000,
+                            height: 100,
+                            core_height: 42,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create two new contenders, but we are on the same contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    8,
+                    "quantum",
+                    platform_version,
+                );
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "coolio",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 900000,
+                            height: 150,
+                            core_height: 45,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    10,
+                    "crazyman",
+                    platform_version,
+                );
+
+                let GetVotePollsByEndDateResponse { version } = platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: Some(
+                                        get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
+                                            start_time_ms: 1_209_603_000,
+                                            start_time_included: false,
+                                        },
+                                    ),
+                                    end_time_info: Some(
+                                        get_vote_polls_by_end_date_request_v0::EndAtTimeInfo {
+                                            end_time_ms: 1_210_500_000,
+                                            end_time_included: true,
+                                        },
+                                    ),
+                                    limit: None,
+                                    offset: None,
+                                    ascending: true,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_vote_polls_by_end_date_response::Version::V0(
+                    GetVotePollsByEndDateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = version.expect("expected a version");
+
+                let Some(get_vote_polls_by_end_date_response_v0::Result::VotePollsByTimestamps(
+                    get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamps {
+                        vote_polls_by_timestamps,
+                        finished_results,
+                    },
+                )) = result
+                else {
+                    panic!("expected contenders")
+                };
+
+                assert!(finished_results);
+
+                let serialized_contested_vote_poll_bytes_2 = vec![
+                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
+                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
+                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
+                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 6, 99, 48, 48,
+                    49, 49, 48,
+                ];
+
+                assert_eq!(
+                    vote_polls_by_timestamps,
+                    vec![SerializedVotePollsByTimestamp {
+                        timestamp: 1_210_103_000, // in ms, 500 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                        serialized_vote_polls: vec![serialized_contested_vote_poll_bytes_2.clone()]
+                    },]
+                );
+            }
+
+            #[test]
+            fn test_not_proved_end_date_query_multiple_contests_with_end_at_before_start_at() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+                let mut platform_state = (**platform_state).clone();
+
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 500000,
+                            height: 100,
+                            core_height: 42,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create two new contenders, but we are on the same contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    8,
+                    "quantum",
+                    platform_version,
+                );
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "coolio",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 900000,
+                            height: 150,
+                            core_height: 45,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    10,
+                    "crazyman",
+                    platform_version,
+                );
+
+                platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: Some(
+                                        get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
+                                            start_time_ms: 1_209_603_000,
+                                            start_time_included: true,
+                                        },
+                                    ),
+                                    end_time_info: Some(
+                                        get_vote_polls_by_end_date_request_v0::EndAtTimeInfo {
+                                            end_time_ms: 1_209_601_000,
+                                            end_time_included: true,
+                                        },
+                                    ),
+                                    limit: None,
+                                    offset: None,
+                                    ascending: true,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect_err("expected query to be invalid");
+
+                platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: Some(
+                                        get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
+                                            start_time_ms: 1_209_603_000,
+                                            start_time_included: true,
+                                        },
+                                    ),
+                                    end_time_info: Some(
+                                        get_vote_polls_by_end_date_request_v0::EndAtTimeInfo {
+                                            end_time_ms: 1_209_603_000,
+                                            end_time_included: false,
+                                        },
+                                    ),
+                                    limit: None,
+                                    offset: None,
+                                    ascending: true,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect_err("expected query to be invalid");
+            }
+
+            #[test]
+            fn test_not_proved_end_date_query_multiple_contests_with_start_at_ascending_false() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+                let mut platform_state = (**platform_state).clone();
+
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 500000,
+                            height: 100,
+                            core_height: 42,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create two new contenders, but we are on the same contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    8,
+                    "quantum",
+                    platform_version,
+                );
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "coolio",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 900000,
+                            height: 150,
+                            core_height: 45,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    10,
+                    "crazyman",
+                    platform_version,
+                );
+
+                let GetVotePollsByEndDateResponse { version } = platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: Some(
+                                        get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
+                                            start_time_ms: 1_209_603_000,
+                                            start_time_included: false,
+                                        },
+                                    ),
+                                    end_time_info: None,
+                                    limit: None,
+                                    offset: None,
+                                    ascending: false,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_vote_polls_by_end_date_response::Version::V0(
+                    GetVotePollsByEndDateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = version.expect("expected a version");
+
+                let Some(get_vote_polls_by_end_date_response_v0::Result::VotePollsByTimestamps(
+                    get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamps {
+                        vote_polls_by_timestamps,
+                        finished_results,
+                    },
+                )) = result
+                else {
+                    panic!("expected contenders")
+                };
+
+                assert!(finished_results);
+
+                let serialized_contested_vote_poll_bytes_2 = vec![
+                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
+                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
+                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
+                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 6, 99, 48, 48,
+                    49, 49, 48,
+                ];
+
+                let serialized_contested_vote_poll_bytes_3 = vec![
+                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
+                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
+                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
+                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 8, 99, 114,
+                    97, 122, 121, 109, 97, 110,
+                ];
+
+                assert_eq!(
+                    vote_polls_by_timestamps,
+                    vec![
+                        SerializedVotePollsByTimestamp {
+                            timestamp: 1_210_503_000, // in ms, 900 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                            serialized_vote_polls: vec![
+                                serialized_contested_vote_poll_bytes_3.clone()
+                            ]
+                        },
+                        SerializedVotePollsByTimestamp {
+                            timestamp: 1_210_103_000, // in ms, 500 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                            serialized_vote_polls: vec![
+                                serialized_contested_vote_poll_bytes_2.clone()
+                            ]
+                        },
+                    ]
+                );
+            }
+
+            #[test]
+            fn test_proved_end_date_query_multiple_contests_with_start_at() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+                let mut platform_state = (**platform_state).clone();
+
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: BlockInfo {
+                            time_ms: 500000,
+                            height: 100,
+                            core_height: 42,
+                            epoch: Default::default(),
+                        },
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                // we create two new contenders, but we are on the same contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    8,
+                    "quantum",
+                    platform_version,
+                );
+
+                // we create a new contest
+                create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "coolio",
+                    platform_version,
+                );
+
+                let GetVotePollsByEndDateResponse { version } = platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: None,
+                                    end_time_info: None,
+                                    limit: None,
+                                    offset: None,
+                                    ascending: true,
+                                    prove: true,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_vote_polls_by_end_date_response::Version::V0(
+                    GetVotePollsByEndDateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = version.expect("expected a version");
+
+                let Some(get_vote_polls_by_end_date_response_v0::Result::Proof(proof)) = result
+                else {
+                    panic!("expected contenders")
+                };
+
+                let vote_poll_by_end_date_query = VotePollsByEndDateDriveQuery {
+                    start_time: None,
+                    end_time: None,
+                    offset: None,
+                    limit: None,
+                    order_ascending: true,
+                };
+
+                let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
+                    .verify_vote_polls_by_end_date_proof(
+                        proof.grovedb_proof.as_ref(),
+                        platform_version,
+                    )
+                    .expect("expected to verify proof");
+
+                assert_eq!(
+                    vote_polls_by_timestamps,
+                    BTreeMap::from([
+                        (
+                            1_209_603_000,
+                            vec![VotePoll::ContestedDocumentResourceVotePoll(
+                                ContestedDocumentResourceVotePoll {
+                                    contract_id: Identifier(IdentifierBytes32([
+                                        230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109,
+                                        222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33,
+                                        246, 34, 191, 83, 197, 49, 85
+                                    ])),
+                                    document_type_name: "domain".to_string(),
+                                    index_name: "parentNameAndLabel".to_string(),
+                                    index_values: vec![
+                                        Text("dash".to_string()),
+                                        Text("quantum".to_string())
+                                    ]
+                                }
+                            )]
+                        ),
+                        (
+                            1_210_103_000,
+                            vec![VotePoll::ContestedDocumentResourceVotePoll(
+                                ContestedDocumentResourceVotePoll {
+                                    contract_id: Identifier(IdentifierBytes32([
+                                        230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109,
+                                        222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33,
+                                        246, 34, 191, 83, 197, 49, 85
+                                    ])),
+                                    document_type_name: "domain".to_string(),
+                                    index_name: "parentNameAndLabel".to_string(),
+                                    index_values: vec![
+                                        Text("dash".to_string()),
+                                        Text("c00110".to_string())
+                                    ]
+                                }
+                            )]
+                        )
+                    ])
                 );
             }
         }

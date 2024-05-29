@@ -24,7 +24,8 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Adds indices for the top index level and calls for lower levels.
+    /// Adds contested indices for the contract operations
+    /// Will return true if the contest already existed
     pub(crate) fn add_contested_indices_for_contract_operations_v0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -35,7 +36,7 @@ impl Drive {
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         let drive_version = &platform_version.drive;
         let owner_id = document_and_contract_info
             .owned_document_info
@@ -94,6 +95,8 @@ impl Drive {
             PathInfo::PathAsVec::<0>(index_path)
         };
 
+        let mut contest_already_existed = true;
+
         // next we need to store a reference to the document for each index
         for IndexProperty { name, .. } in &contested_index.properties {
             // We on purpose do not want to put index names
@@ -143,7 +146,7 @@ impl Drive {
                 .unwrap_or_default();
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            self.batch_insert_empty_tree_if_not_exists(
+            let inserted = self.batch_insert_empty_tree_if_not_exists(
                 document_top_field
                     .clone()
                     .add_path_info(index_path_info.clone()),
@@ -155,6 +158,11 @@ impl Drive {
                 batch_operations,
                 drive_version,
             )?;
+
+            // if we insert anything, that means that the contest didn't already exist
+            if contest_already_existed {
+                contest_already_existed &= !inserted;
+            }
 
             index_path_info.push(document_top_field)?;
         }
@@ -217,6 +225,8 @@ impl Drive {
             transaction,
             batch_operations,
             drive_version,
-        )
+        )?;
+
+        Ok(contest_already_existed)
     }
 }

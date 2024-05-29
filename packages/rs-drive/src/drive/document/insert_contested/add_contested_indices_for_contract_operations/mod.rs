@@ -12,6 +12,7 @@ mod v0;
 
 impl Drive {
     /// Adds indices for an index level and recurses.
+    /// Will return true if the contest already existed
     pub(crate) fn add_contested_indices_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -22,7 +23,7 @@ impl Drive {
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         match platform_version
             .drive
             .methods
