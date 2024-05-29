@@ -38,6 +38,7 @@ const coreHandlersFactory = require(
 const platformHandlersFactory = require(
   '../lib/grpcServer/handlers/platform/platformHandlersFactory',
 );
+const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
 
 async function main() {
   await loadWasmDpp();
@@ -52,6 +53,21 @@ async function main() {
   }
 
   const isProductionEnvironment = process.env.NODE_ENV === 'production';
+
+  // Subscribe to events from Dash Core
+  const dashCoreZmqClient = new ZmqClient(config.dashcore.zmq.host, config.dashcore.zmq.port);
+
+  // Bind logs on ZMQ connection events
+  dashCoreZmqClient.on(ZmqClient.events.DISCONNECTED, logger.warn.bind(logger));
+  dashCoreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, logger.warn.bind(logger));
+  dashCoreZmqClient.on(ZmqClient.events.MONITOR_ERROR, logger.warn.bind(logger));
+
+  // Wait until zmq connection is established
+  logger.info(`Connecting to Core ZMQ on ${dashCoreZmqClient.connectionString}`);
+
+  await dashCoreZmqClient.start();
+
+  logger.info('Connection to ZMQ established.');
 
   const driveClient = new PlatformPromiseClient(`http://${config.driveRpc.host}:${config.driveRpc.port}`, undefined);
 
@@ -119,6 +135,7 @@ async function main() {
   const coreHandlers = coreHandlersFactory(
     dashCoreRpcClient,
     isProductionEnvironment,
+    dashCoreZmqClient,
   );
   const platformHandlers = platformHandlersFactory(
     rpcClient,
