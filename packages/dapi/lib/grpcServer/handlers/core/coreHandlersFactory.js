@@ -62,9 +62,10 @@ const broadcastTransactionHandlerFactory = require(
 /**
  * @param {CoreRpcClient} coreRPCClient
  * @param {boolean} isProductionEnvironment
+ * @param {ZmqClient} coreZmqClient
  * @returns {Object<string, function>}
  */
-function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
+function coreHandlersFactory(coreRPCClient, isProductionEnvironment, coreZmqClient) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
   // getBlock
@@ -81,7 +82,7 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
   // );
 
   // getBestBlockHeight
-  const getBestBlockHeight = getBestBlockHeightHandlerFactory(coreRPCClient);
+  const getBestBlockHeight = getBestBlockHeightHandlerFactory(coreRPCClient, coreZmqClient);
   const wrappedGetBestBlockHeight = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       GetBestBlockHeightRequest,
