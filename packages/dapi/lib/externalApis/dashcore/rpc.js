@@ -182,9 +182,8 @@ const getRawTransactionMulti = async (txids, verboseMode = 0) => {
       });
     }));
 
-  const responses = await Promise.all(promises);
-
-  return responses.reduce((accumulator, object) => ({ ...accumulator, ...object }), {});
+  return (await Promise.all(promises))
+    .reduce((accumulator, object) => ({ ...accumulator, ...object }), {});
 };
 
 const getRawBlock = (blockhash) => getBlock(blockhash, false);
