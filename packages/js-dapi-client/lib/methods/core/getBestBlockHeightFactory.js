@@ -12,7 +12,7 @@ const {
  */
 function getBestBlockHeightFactory(grpcTransport) {
   /**
-   * Returns block height of chaintip
+   * Returns block height of chain tip
    * @typedef {getBestBlockHeight}
    * @param {DAPIClientOptions} [options]
    * @returns {Promise<string>}
