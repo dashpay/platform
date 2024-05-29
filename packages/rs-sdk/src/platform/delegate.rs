@@ -135,7 +135,8 @@ macro_rules! delegate_from_proof_variant {
 macro_rules! delegate_enum {
     ($request:ident, $response:ident, $object:ty, $(($variant:ident, $req: ty, $resp: ty)),+) => {
         /// Wrapper around multiple requests for one object type.
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, derive_more::From, dapi_grpc_macros::Mockable)]
+        #[derive(Debug, Clone, derive_more::From, dapi_grpc_macros::Mockable)]
+        #[cfg_attr(feature="mocks", derive(serde::Serialize, serde::Deserialize))]
         #[allow(missing_docs)]
         pub enum $request {
             $(
@@ -144,7 +145,8 @@ macro_rules! delegate_enum {
         }
 
         /// Wrapper around multiple responses for one object type.
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default, derive_more::From, dapi_grpc_macros::Mockable)]
+        #[derive(Debug, Clone, Default, derive_more::From, dapi_grpc_macros::Mockable)]
+        #[cfg_attr(feature="mocks", derive(serde::Serialize, serde::Deserialize))]
         #[allow(missing_docs)]
         pub enum $response {
             #[default]

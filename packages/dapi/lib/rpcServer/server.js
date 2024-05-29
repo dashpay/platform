@@ -1,11 +1,9 @@
 const jayson = require('jayson/promise');
-const { isRegtest, isDevnet } = require('../utils');
 const errorHandlerDecorator = require('./errorHandlerDecorator');
 
 const getBestBlockHash = require('./commands/getBestBlockHash');
 const getBlockHash = require('./commands/getBlockHash');
 const getMnListDiff = require('./commands/getMnListDiff');
-const generateToAddress = require('./commands/generateToAddress');
 
 // Following commands are not implemented yet:
 // const getVersion = require('./commands/getVersion');
@@ -14,10 +12,6 @@ const createCommands = (dashcoreAPI) => ({
   getBestBlockHash: getBestBlockHash(dashcoreAPI),
   getBlockHash: getBlockHash(dashcoreAPI),
   getMnListDiff: getMnListDiff(dashcoreAPI),
-});
-
-const createRegtestCommands = (dashcoreAPI) => ({
-  generateToAddress: generateToAddress(dashcoreAPI),
 });
 
 /**
@@ -33,29 +27,21 @@ const createRegtestCommands = (dashcoreAPI) => ({
  */
 const start = ({
   port,
-  networkType,
   dashcoreAPI,
   logger,
 }) => {
   const commands = createCommands(
     dashcoreAPI,
   );
-
-  const areRegtestCommandsEnabled = isRegtest(networkType) || isDevnet(networkType);
-
-  const allCommands = areRegtestCommandsEnabled
-    ? Object.assign(commands, createRegtestCommands(dashcoreAPI))
-    : commands;
-
   /*
   Decorate all commands with decorator that will intercept errors and format
   them before passing to user.
   */
-  Object.keys(allCommands).forEach((commandName) => {
-    allCommands[commandName] = errorHandlerDecorator(allCommands[commandName], logger);
+  Object.keys(commands).forEach((commandName) => {
+    commands[commandName] = errorHandlerDecorator(commands[commandName], logger);
   });
 
-  const server = jayson.server(allCommands);
+  const server = jayson.server(commands);
   server.http().listen(port);
 };
 
