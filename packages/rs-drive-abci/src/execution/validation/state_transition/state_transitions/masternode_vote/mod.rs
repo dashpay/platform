@@ -101,13 +101,13 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
-    use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_contested_vote_polls_by_end_date_request, get_contested_vote_polls_by_end_date_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedVotePollsByEndDateRequest, GetContestedVotePollsByEndDateResponse};
+    use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_vote_polls_by_end_date_request, get_vote_polls_by_end_date_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
-    use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_request::GetContestedVotePollsByEndDateRequestV0;
-    use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::{get_contested_vote_polls_by_end_date_response_v0, GetContestedVotePollsByEndDateResponseV0};
-    use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::get_contested_vote_polls_by_end_date_response_v0::SerializedContestedVotePollsByTimestamp;
+    use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0;
+    use dapi_grpc::platform::v0::get_vote_polls_by_end_date_response::{get_vote_polls_by_end_date_response_v0, GetVotePollsByEndDateResponseV0};
+    use dapi_grpc::platform::v0::get_vote_polls_by_end_date_response::get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamp;
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -125,15 +125,15 @@ mod tests {
         use std::sync::Arc;
         use arc_swap::Guard;
         use rand::Rng;
-        use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_contested_resources_request, get_contested_resources_response, get_contested_vote_polls_by_end_date_request, get_contested_vote_polls_by_end_date_response, GetContestedResourcesRequest, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedVotePollsByEndDateRequest, GetContestedVotePollsByEndDateResponse};
+        use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_contested_resources_request, get_contested_resources_response, get_vote_polls_by_end_date_request, get_vote_polls_by_end_date_response, GetContestedResourcesRequest, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse};
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
         use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
         use dapi_grpc::platform::v0::get_contested_resources_response::{get_contested_resources_response_v0, GetContestedResourcesResponseV0};
-        use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_request::GetContestedVotePollsByEndDateRequestV0;
-        use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::{get_contested_vote_polls_by_end_date_response_v0, GetContestedVotePollsByEndDateResponseV0};
-        use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::get_contested_vote_polls_by_end_date_response_v0::SerializedContestedVotePollsByTimestamp;
+        use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0;
+        use dapi_grpc::platform::v0::get_vote_polls_by_end_date_response::{get_vote_polls_by_end_date_response_v0, GetVotePollsByEndDateResponseV0};
+        use dapi_grpc::platform::v0::get_vote_polls_by_end_date_response::get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamp;
         use super::*;
         use dpp::document::Document;
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -159,6 +159,8 @@ mod tests {
         use crate::platform_types::platform_state::PlatformState;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
+        use dpp::serialization::PlatformDeserializable;
+        use drive::query::VotePollsByEndDateDriveQuery;
 
         fn setup_masternode_identity(
             platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -1094,78 +1096,199 @@ mod tests {
             assert_eq!(second_contender.vote_tally, Some(0));
         }
 
-    #[test]
-    fn test_end_date_query_request() {
-        let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_genesis_state();
+        mod end_date_query {
+            use super::*;
+            use dpp::platform_value::IdentifierBytes32;
+            use dpp::platform_value::Value::Text;
 
-        let platform_state = platform.state.load();
+            #[test]
+            fn test_not_proved_end_date_query_request() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
 
-        let (contender_1, contender_2, dpns_contract) = crate::execution::validation::state_transition::state_transitions::masternode_vote::tests::vote_tests::create_dpns_name_contest(
-            &mut platform,
-            &platform_state,
-            7,
-            "quantum",
-            platform_version,
-        );
+                let platform_state = platform.state.load();
 
-        let GetContestedVotePollsByEndDateResponse { version } = platform
-            .query_contested_vote_polls_by_end_date_query(
-                GetContestedVotePollsByEndDateRequest {
-                    version: Some(get_contested_vote_polls_by_end_date_request::Version::V0(
-                        GetContestedVotePollsByEndDateRequestV0 {
-                            start_time_info: None,
-                            end_time_info: None,
-                            limit: None,
-                            offset: None,
-                            ascending: false,
-                            prove: false,
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let GetVotePollsByEndDateResponse { version } = platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: None,
+                                    end_time_info: None,
+                                    limit: None,
+                                    offset: None,
+                                    ascending: false,
+                                    prove: false,
+                                },
+                            )),
                         },
-                    )),
-                },
-                &platform_state,
-                platform_version,
-            )
-            .expect("expected to execute query")
-            .into_data()
-            .expect("expected query to be valid");
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
 
-        let get_contested_vote_polls_by_end_date_response::Version::V0(
-            GetContestedVotePollsByEndDateResponseV0 {
-                metadata: _,
-                result,
-            },
-        ) = version.expect("expected a version");
+                let get_vote_polls_by_end_date_response::Version::V0(
+                    GetVotePollsByEndDateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = version.expect("expected a version");
 
-        let Some(
-            get_contested_vote_polls_by_end_date_response_v0::Result::ContestedVotePollsByTimestamps(
-                get_contested_vote_polls_by_end_date_response_v0::SerializedContestedVotePollsByTimestamps {
-                    contested_vote_polls_by_timestamps, finished_results
-                },
-            ),
-        ) = result
-            else {
-                panic!("expected contenders")
-            };
+                let Some(get_vote_polls_by_end_date_response_v0::Result::VotePollsByTimestamps(
+                    get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamps {
+                        vote_polls_by_timestamps,
+                        finished_results,
+                    },
+                )) = result
+                else {
+                    panic!("expected contenders")
+                };
 
-        assert!(finished_results);
+                assert!(finished_results);
 
-        // The timestamp is 0 because there were no blocks
-        assert_eq!(
-            contested_vote_polls_by_timestamps,
-            vec![SerializedContestedVotePollsByTimestamp {
-                timestamp: 1_209_600_000, // in ms, 2 weeks after Jan 1 1970
-                serialized_contested_vote_polls: vec![vec![
-                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91,
-                    126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6,
-                    100, 111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109,
-                    101, 65, 110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18,
-                    7, 113, 117, 97, 110, 116, 117, 109
-                ]]
-            }]
-        );
+                let serialized_contested_vote_poll_bytes = vec![
+                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
+                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
+                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
+                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 7, 113, 117,
+                    97, 110, 116, 117, 109,
+                ];
+
+                // The timestamp is 0 because there were no blocks
+                assert_eq!(
+                    vote_polls_by_timestamps,
+                    vec![SerializedVotePollsByTimestamp {
+                        timestamp: 1_209_600_000, // in ms, 2 weeks after Jan 1 1970
+                        serialized_vote_polls: vec![serialized_contested_vote_poll_bytes.clone()]
+                    }]
+                );
+
+                // Let's try deserializing
+
+                let vote_poll = VotePoll::deserialize_from_bytes(
+                    serialized_contested_vote_poll_bytes.as_slice(),
+                )
+                .expect("expected to deserialize");
+
+                assert_eq!(
+                    vote_poll,
+                    VotePoll::ContestedDocumentResourceVotePoll(
+                        ContestedDocumentResourceVotePoll {
+                            contract_id: Identifier(IdentifierBytes32([
+                                230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123,
+                                91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83,
+                                197, 49, 85
+                            ])),
+                            document_type_name: "domain".to_string(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![
+                                Text("dash".to_string()),
+                                Text("quantum".to_string())
+                            ]
+                        }
+                    )
+                );
+            }
+
+            #[test]
+            fn test_proved_end_date_query_request() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let GetVotePollsByEndDateResponse { version } = platform
+                    .query_vote_polls_by_end_date_query(
+                        GetVotePollsByEndDateRequest {
+                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                GetVotePollsByEndDateRequestV0 {
+                                    start_time_info: None,
+                                    end_time_info: None,
+                                    limit: None,
+                                    offset: None,
+                                    ascending: false,
+                                    prove: true,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_vote_polls_by_end_date_response::Version::V0(
+                    GetVotePollsByEndDateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = version.expect("expected a version");
+
+                let Some(get_vote_polls_by_end_date_response_v0::Result::Proof(proof)) = result
+                else {
+                    panic!("expected contenders")
+                };
+
+                let vote_poll_by_end_date_query = VotePollsByEndDateDriveQuery {
+                    start_time: None,
+                    end_time: None,
+                    offset: None,
+                    limit: None,
+                    order_ascending: true,
+                };
+
+                let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
+                    .verify_vote_polls_by_end_date_proof(
+                        proof.grovedb_proof.as_ref(),
+                        platform_version,
+                    )
+                    .expect("expected to verify proof");
+
+                assert_eq!(
+                    vote_polls_by_timestamps,
+                    BTreeMap::from([(
+                        1209600000,
+                        vec![VotePoll::ContestedDocumentResourceVotePoll(
+                            ContestedDocumentResourceVotePoll {
+                                contract_id: Identifier(IdentifierBytes32([
+                                    230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222,
+                                    123, 91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34,
+                                    191, 83, 197, 49, 85
+                                ])),
+                                document_type_name: "domain".to_string(),
+                                index_name: "parentNameAndLabel".to_string(),
+                                index_values: vec![
+                                    Text("dash".to_string()),
+                                    Text("quantum".to_string())
+                                ]
+                            }
+                        )]
+                    )])
+                );
+            }
+        }
     }
-}
 }

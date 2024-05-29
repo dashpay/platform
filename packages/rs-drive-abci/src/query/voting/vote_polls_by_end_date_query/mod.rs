@@ -3,11 +3,9 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_request::Version as RequestVersion;
-use dapi_grpc::platform::v0::get_contested_vote_polls_by_end_date_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{
-    GetContestedVotePollsByEndDateRequest, GetContestedVotePollsByEndDateResponse,
-};
+use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_vote_polls_by_end_date_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse};
 use dpp::version::PlatformVersion;
 
 mod v0;
@@ -15,12 +13,12 @@ mod v0;
 impl<C> Platform<C> {
     /// Querying of the contested vote polls by a query targeting the end date
     /// This is for querying what votes are ending soon, but can be for other time based queries
-    pub fn query_contested_vote_polls_by_end_date_query(
+    pub fn query_vote_polls_by_end_date_query(
         &self,
-        GetContestedVotePollsByEndDateRequest { version }: GetContestedVotePollsByEndDateRequest,
+        GetVotePollsByEndDateRequest { version }: GetVotePollsByEndDateRequest,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetContestedVotePollsByEndDateResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetVotePollsByEndDateResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError(
@@ -33,7 +31,7 @@ impl<C> Platform<C> {
             .drive_abci
             .query
             .voting_based_queries
-            .contested_vote_polls_by_end_date_query;
+            .vote_polls_by_end_date_query;
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,
@@ -41,7 +39,7 @@ impl<C> Platform<C> {
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::UnsupportedQueryVersion(
-                    "contested_vote_polls_by_end_date_query".to_string(),
+                    "vote_polls_by_end_date_query".to_string(),
                     feature_version_bounds.min_version,
                     feature_version_bounds.max_version,
                     platform_version.protocol_version,
@@ -51,17 +49,15 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result = self.query_contested_vote_polls_by_end_date_query_v0(
+                let result = self.query_vote_polls_by_end_date_query_v0(
                     request_v0,
                     platform_state,
                     platform_version,
                 )?;
 
-                Ok(
-                    result.map(|response_v0| GetContestedVotePollsByEndDateResponse {
-                        version: Some(ResponseVersion::V0(response_v0)),
-                    }),
-                )
+                Ok(result.map(|response_v0| GetVotePollsByEndDateResponse {
+                    version: Some(ResponseVersion::V0(response_v0)),
+                }))
             }
         }
     }

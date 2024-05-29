@@ -324,6 +324,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     verify_start_at_contender_in_proof: 0,
                     verify_vote_poll_vote_state_proof: 0,
                     verify_contests_proof: 0,
+                    verify_vote_polls_by_end_date_proof: 0,
                 },
                 state_transition: DriveVerifyStateTransitionMethodVersions {
                     verify_state_transition_was_executed_with_proof: 0,
@@ -876,7 +877,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 },
             },
             voting_based_queries: DriveAbciQueryVotingVersions {
-                contested_vote_polls_by_end_date_query: FeatureVersionBounds {
+                vote_polls_by_end_date_query: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

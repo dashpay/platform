@@ -71,7 +71,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVoteStateRequest",
         "GetContestedResourceVotersForIdentityRequest",
         "GetContestedResourceIdentityVoteStatusRequest",
-        "GetContestedVotePollsByEndDateRequest",
+        "GetVotePollsByEndDateRequest",
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
@@ -101,7 +101,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVoteStateResponse",
         "GetContestedResourceVotersForIdentityResponse",
         "GetContestedResourceIdentityVoteStatusResponse",
-        "GetContestedVotePollsByEndDateResponse",
+        "GetVotePollsByEndDateResponse",
     ];
 
     // Derive VersionedGrpcMessage on requests

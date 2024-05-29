@@ -43,7 +43,7 @@ service Platform {
   // How did an identity vote?
   rpc getContestedResourceIdentityVoteStatus(GetContestedResourceIdentityVoteStatusRequest) returns (GetContestedResourceIdentityVoteStatusResponse);
   // What vote polls will end soon?
-  rpc getContestedVotePollsByEndDate(GetContestedVotePollsByEndDateRequest) returns (GetContestedVotePollsByEndDateResponse);
+  rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
   rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
 }
@@ -678,8 +678,8 @@ message GetContestedResourcesResponse {
   }
 }
 
-message GetContestedVotePollsByEndDateRequest {
-  message GetContestedVotePollsByEndDateRequestV0 {
+message GetVotePollsByEndDateRequest {
+  message GetVotePollsByEndDateRequestV0 {
     message StartAtTimeInfo {
       uint64 start_time_ms = 1;
       bool start_time_included = 2;
@@ -697,31 +697,31 @@ message GetContestedVotePollsByEndDateRequest {
   }
 
   oneof version {
-    GetContestedVotePollsByEndDateRequestV0 v0 = 1;
+    GetVotePollsByEndDateRequestV0 v0 = 1;
   }
 }
 
-message GetContestedVotePollsByEndDateResponse {
-  message GetContestedVotePollsByEndDateResponseV0 {
-    message SerializedContestedVotePollsByTimestamp {
+message GetVotePollsByEndDateResponse {
+  message GetVotePollsByEndDateResponseV0 {
+    message SerializedVotePollsByTimestamp {
       uint64 timestamp = 1;
-      repeated bytes serialized_contested_vote_polls = 2;
+      repeated bytes serialized_vote_polls = 2;
     }
 
-    message SerializedContestedVotePollsByTimestamps {
-      repeated SerializedContestedVotePollsByTimestamp contested_vote_polls_by_timestamps = 1;
+    message SerializedVotePollsByTimestamps {
+      repeated SerializedVotePollsByTimestamp vote_polls_by_timestamps = 1;
       bool finished_results = 2;
     }
 
     oneof result {
-      SerializedContestedVotePollsByTimestamps contested_vote_polls_by_timestamps = 1;
+      SerializedVotePollsByTimestamps vote_polls_by_timestamps = 1;
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
   }
 
   oneof version {
-    GetContestedVotePollsByEndDateResponseV0 v0 = 1;
+    GetVotePollsByEndDateResponseV0 v0 = 1;
   }
 }
 
