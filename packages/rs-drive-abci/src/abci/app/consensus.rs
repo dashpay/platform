@@ -11,12 +11,12 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
+use drive::grovedb::replication::{MultiStateSyncSession, CURRENT_STATE_SYNC_VERSION};
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::{LockResult, RwLock};
 use tenderdash_abci::proto::abci as proto;
-use drive::grovedb::replication::{CURRENT_STATE_SYNC_VERSION, MultiStateSyncSession};
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -274,8 +274,9 @@ where
                                 }
                                 if !is_state_sync_completed {
                                     return Ok(proto::ResponseApplySnapshotChunk {
-                                        result: proto::response_apply_snapshot_chunk::Result::Accept
-                                            .into(),
+                                        result:
+                                            proto::response_apply_snapshot_chunk::Result::Accept
+                                                .into(),
                                         refetch_chunks: vec![],
                                         reject_senders: vec![],
                                         next_chunks: next_chunk_ids,
@@ -308,8 +309,7 @@ where
                         let state_sync_info = session.state_sync_info;
                         self.platform.drive.grove.commit_session(state_sync_info);
                         return Ok(proto::ResponseApplySnapshotChunk {
-                            result: proto::response_apply_snapshot_chunk::Result::Accept
-                                .into(),
+                            result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
                             refetch_chunks: vec![],
                             reject_senders: vec![],
                             next_chunks: vec![],
