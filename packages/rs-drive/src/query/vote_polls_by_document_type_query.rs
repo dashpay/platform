@@ -31,6 +31,8 @@ use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 
+use super::ContractLookupFn;
+
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct VotePollsByDocumentTypeQuery {
@@ -128,7 +130,7 @@ impl VotePollsByDocumentTypeQuery {
     /// Resolves with a known contract provider
     pub fn resolve_with_known_contracts_provider(
         &self,
-        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+        known_contracts_provider_fn: &ContractLookupFn,
     ) -> Result<ResolvedVotePollsByDocumentTypeQuery, Error> {
         let VotePollsByDocumentTypeQuery {
             contract_id,

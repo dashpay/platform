@@ -1892,6 +1892,7 @@ mod tests {
                 keys_per_identity: 3,
                 starting_balances: 100_000_000,
                 extra_keys: BTreeMap::new(),
+                hard_coded: Default::default(),
             },
             identity_inserts: Default::default(),
             identity_contract_nonce_gaps: None,

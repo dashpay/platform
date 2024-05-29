@@ -27,6 +27,8 @@ use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, TransactionArg};
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "verify")]
+use std::sync::Arc;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
@@ -200,7 +202,6 @@ impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializ
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Clone, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Contender {
     /// The identity ID of the contender.
     pub identity_id: Identifier,
@@ -208,41 +209,6 @@ pub struct Contender {
     pub document: Option<Document>,
     /// The vote tally for the contender.
     pub vote_tally: Option<u32>,
-}
-
-impl Contender {
-    /// Create new [Contender] from [ContenderWithSerializedDocument]
-    pub fn try_from_contender_with_serialized_document(
-        value: ContenderWithSerializedDocument,
-        document_type: DocumentTypeRef,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
-        Ok(
-            FinalizedContender::try_from_contender_with_serialized_document(
-                value.try_into()?,
-                document_type,
-                platform_version,
-            )?
-            .into(),
-        )
-    }
-}
-
-impl From<FinalizedContender> for Contender {
-    fn from(value: FinalizedContender) -> Self {
-        let FinalizedContender {
-            identity_id,
-            document,
-            final_vote_tally,
-            ..
-        } = value;
-
-        Contender {
-            identity_id,
-            serialized_document: Some(document),
-            vote_tally: Some(final_vote_tally),
-        }
-    }
 }
 
 /// Represents the result of executing a contested document vote poll drive query.
@@ -365,7 +331,7 @@ impl ContestedDocumentVotePollDriveQuery {
     /// Resolves with a known contract provider
     pub fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &'a ContractLookupFn,
+        known_contracts_provider_fn: &'a super::ContractLookupFn<'a>,
     ) -> Result<ResolvedContestedDocumentVotePollDriveQuery<'a>, Error> {
         let ContestedDocumentVotePollDriveQuery {
             vote_poll,

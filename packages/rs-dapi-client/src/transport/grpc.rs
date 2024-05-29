@@ -315,13 +315,13 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_contested_resource_identity_vote_status
 );
-// rpc getContestedVotePollsByEndDate(GetContestedVotePollsByEndDateRequest) returns (GetContestedVotePollsByEndDateResponse);
+// rpc GetVotePollsByEndDateRequest(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
 impl_transport_request_grpc!(
-    platform_proto::GetContestedVotePollsByEndDateRequest,
-    platform_proto::GetContestedVotePollsByEndDateResponse,
+    platform_proto::GetVotePollsByEndDateRequest,
+    platform_proto::GetVotePollsByEndDateResponse,
     PlatformGrpcClient,
     RequestSettings::default(),
-    get_contested_vote_polls_by_end_date
+    get_vote_polls_by_end_date
 );
 
 // rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
