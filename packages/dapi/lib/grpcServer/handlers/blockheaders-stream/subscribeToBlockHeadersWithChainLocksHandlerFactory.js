@@ -121,7 +121,7 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       throw e;
     }
 
-    const bestBlockHeight = await coreAPI.getBestBlockHeight();
+    const bestBlockHeight = chainDataProvider.getChainHeight();
 
     const historicalCount = count === 0 ? bestBlockHeight - fromBlock.height + 1 : count;
 
