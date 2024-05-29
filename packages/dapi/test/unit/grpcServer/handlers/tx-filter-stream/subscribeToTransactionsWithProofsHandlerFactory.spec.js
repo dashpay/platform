@@ -34,6 +34,7 @@ const subscribeToTransactionsWithProofsHandlerFactory = require(
 );
 
 const ProcessMediator = require('../../../../../lib/transactionsFilter/ProcessMediator');
+const ChainDataProvider = require("../../../../../lib/chainDataProvider/ChainDataProvider");
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -61,6 +62,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
   let testTransactionAgainstFilterMock;
   let coreAPIMock;
   let getMemPoolTransactionsMock;
+  let chainDataProvider;
 
   beforeEach(function beforeEach() {
     const bloomFilterMessage = new BloomFilter();
@@ -93,11 +95,14 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     coreAPIMock = {
       getBlock: this.sinon.stub(),
       getBlockStats: this.sinon.stub(),
-      getBestBlockHeight: this.sinon.stub(),
       getBlockHash: this.sinon.stub(),
     };
 
     getMemPoolTransactionsMock = this.sinon.stub().returns([]);
+
+    zmqClientMock = { on: this.sinon.stub(), topics: { hashblock: 'fake' } };
+
+    chainDataProvider = new ChainDataProvider(coreAPIMock, zmqClientMock);
 
     subscribeToTransactionsWithProofsHandler = subscribeToTransactionsWithProofsHandlerFactory(
       getHistoricalTransactionsIteratorMock,
@@ -106,6 +111,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       testTransactionAgainstFilterMock,
       coreAPIMock,
       getMemPoolTransactionsMock,
+      chainDataProvider
     );
 
     this.sinon.spy(ProcessMediator.prototype, 'emit');
@@ -151,7 +157,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call.request = TransactionsWithProofsRequest.deserializeBinary(call.request.serializeBinary());
 
     coreAPIMock.getBlockStats.resolves({ height: 1 });
-    coreAPIMock.getBestBlockHeight.resolves(10);
+    chainDataProvider.chainHeight = 10;
 
     try {
       await subscribeToTransactionsWithProofsHandler(call);
@@ -184,7 +190,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
     call = new GrpcCallMock(this.sinon, call.request);
 
     coreAPIMock.getBlockStats.resolves({ height: 1 });
-    coreAPIMock.getBestBlockHeight.resolves(10);
+    chainDataProvider.chainHeight = 10;
 
     historicalTxData.push({
       merkleBlock: {
