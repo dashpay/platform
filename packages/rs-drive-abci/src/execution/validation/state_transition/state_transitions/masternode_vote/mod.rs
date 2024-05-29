@@ -688,6 +688,72 @@ mod tests {
             assert_eq!(second_contender.vote_tally, Some(0));
         }
 
+        fn perform_vote(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            platform_state: &Guard<Arc<PlatformState>>,
+            dpns_contract: &DataContract,
+            towards_identity_id: Identifier,
+            name: &str,
+            signer: &SimpleSigner,
+            masternode_id: Identifier,
+            voting_key: &IdentityPublicKey,
+            platform_version: &PlatformVersion,
+        ) {
+            // Let's vote for contender 1
+
+            let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                    ContestedDocumentResourceVotePoll {
+                        contract_id: dpns_contract.id(),
+                        document_type_name: "domain".to_string(),
+                        index_name: "parentNameAndLabel".to_string(),
+                        index_values: vec![
+                            Value::Text("dash".to_string()),
+                            Value::Text(convert_to_homograph_safe_chars(name)),
+                        ],
+                    },
+                ),
+                resource_vote_choice: TowardsIdentity(towards_identity_id),
+            }));
+
+            let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
+                vote,
+                signer,
+                masternode_id,
+                voting_key,
+                1,
+                platform_version,
+                None,
+            )
+            .expect("expected to make transition vote");
+
+            let masternode_vote_serialized_transition = masternode_vote_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![masternode_vote_serialized_transition.clone()],
+                    platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.valid_count(), 1);
+        }
+
         mod contests_requests {
             use super::*;
             #[test]
@@ -847,274 +913,622 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_masternode_voting_and_vote_state_request() {
-            let platform_version = PlatformVersion::latest();
-            let mut platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_genesis_state();
+        mod vote_state_query {
+            use super::*;
+            #[test]
+            fn test_not_proved_vote_state_query_request_after_vote() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
 
-            let platform_state = platform.state.load();
+                let platform_state = platform.state.load();
 
-            let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
-                &mut platform,
-                &platform_state,
-                7,
-                "quantum",
-                platform_version,
-            );
-
-            let (masternode_1, signer_1, voting_key_1) =
-                setup_masternode_identity(&mut platform, 29, platform_version);
-
-            // Let's vote for contender 1
-
-            let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
-                vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
-                    ContestedDocumentResourceVotePoll {
-                        contract_id: dpns_contract.id(),
-                        document_type_name: "domain".to_string(),
-                        index_name: "parentNameAndLabel".to_string(),
-                        index_values: vec![
-                            Value::Text("dash".to_string()),
-                            Value::Text("quantum".to_string()),
-                        ],
-                    },
-                ),
-                resource_vote_choice: TowardsIdentity(contender_1.id()),
-            }));
-
-            let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
-                vote,
-                &signer_1,
-                masternode_1.id(),
-                &voting_key_1,
-                1,
-                platform_version,
-                None,
-            )
-            .expect("expected to make transition vote");
-
-            let masternode_vote_serialized_transition = masternode_vote_transition
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
-
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![masternode_vote_serialized_transition.clone()],
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
                     &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (masternode_1, signer_1, voting_key_1) =
+                    setup_masternode_identity(&mut platform, 29, platform_version);
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    contender_1.id(),
+                    "quantum",
+                    &signer_1,
+                    masternode_1.id(),
+                    &voting_key_1,
+                    platform_version,
+                );
+
+                // Now let's run a query for the vote totals
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                    .expect("expected to encode the word dash");
+
+                let quantum_encoded =
+                    bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                        .expect("expected to encode the word quantum");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let query_validation_result = platform
+                    .query_contested_resource_vote_state(
+                        GetContestedResourceVoteStateRequest {
+                            version: Some(get_contested_resource_vote_state_request::Version::V0(
+                                GetContestedResourceVoteStateRequestV0 {
+                                    contract_id: dpns_contract.id().to_vec(),
+                                    document_type_name: domain.name().clone(),
+                                    index_name: index_name.clone(),
+                                    index_values: vec![
+                                        dash_encoded.clone(),
+                                        quantum_encoded.clone(),
+                                    ],
+                                    result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    start_at_identifier_info: None,
+                                    count: None,
+                                    order_ascending: true,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resource_vote_state_response::Version::V0(
+                    GetContestedResourceVoteStateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = query_validation_result.version.expect("expected a version");
+
+                let Some(
+                    get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
+                        get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
+                            contenders,
+                        },
+                    ),
+                ) = result
+                    else {
+                        panic!("expected contenders")
+                    };
+
+                assert_eq!(contenders.len(), 2);
+
+                let first_contender = contenders.first().unwrap();
+
+                let second_contender = contenders.last().unwrap();
+
+                let first_contender_document = Document::from_bytes(
+                    first_contender
+                        .document
+                        .as_ref()
+                        .expect("expected a document")
+                        .as_slice(),
+                    domain,
                     platform_version,
                 )
-                .expect("expected to process state transition");
+                .expect("expected to get document");
 
-            platform
-                .drive
-                .grove
-                .commit_transaction(transaction)
-                .unwrap()
-                .expect("expected to commit transaction");
-
-            assert_eq!(processing_result.valid_count(), 1);
-
-            // Now let's run a query for the vote totals
-
-            let domain = dpns_contract
-                .document_type_for_name("domain")
-                .expect("expected a profile document type");
-
-            let config = bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit();
-
-            let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
-                .expect("expected to encode the word dash");
-
-            let quantum_encoded =
-                bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
-                    .expect("expected to encode the word quantum");
-
-            let index_name = "parentNameAndLabel".to_string();
-
-            let query_validation_result = platform
-                .query_contested_resource_vote_state(
-                    GetContestedResourceVoteStateRequest {
-                        version: Some(get_contested_resource_vote_state_request::Version::V0(
-                            GetContestedResourceVoteStateRequestV0 {
-                                contract_id: dpns_contract.id().to_vec(),
-                                document_type_name: domain.name().clone(),
-                                index_name: index_name.clone(),
-                                index_values: vec![dash_encoded.clone(), quantum_encoded.clone()],
-                                result_type: ResultType::DocumentsAndVoteTally as i32,
-                                start_at_identifier_info: None,
-                                count: None,
-                                order_ascending: true,
-                                prove: false,
-                            },
-                        )),
-                    },
-                    &platform_state,
+                let second_contender_document = Document::from_bytes(
+                    second_contender
+                        .document
+                        .as_ref()
+                        .expect("expected a document")
+                        .as_slice(),
+                    domain,
                     platform_version,
                 )
-                .expect("expected to execute query")
-                .into_data()
-                .expect("expected query to be valid");
+                .expect("expected to get document");
 
-            let get_contested_resource_vote_state_response::Version::V0(
-                GetContestedResourceVoteStateResponseV0 {
-                    metadata: _,
-                    result,
-                },
-            ) = query_validation_result.version.expect("expected a version");
+                assert_ne!(first_contender_document, second_contender_document);
 
-            let Some(
-                get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
-                    get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
-                        contenders,
-                    },
-                ),
-            ) = result
-            else {
-                panic!("expected contenders")
-            };
+                assert_eq!(first_contender.identifier, contender_1.id().to_vec());
 
-            assert_eq!(contenders.len(), 2);
+                assert_eq!(second_contender.identifier, contender_2.id().to_vec());
 
-            let first_contender = contenders.first().unwrap();
+                assert_eq!(first_contender.vote_count, Some(1));
 
-            let second_contender = contenders.last().unwrap();
+                assert_eq!(second_contender.vote_count, Some(0));
+            }
 
-            let first_contender_document = Document::from_bytes(
-                first_contender
-                    .document
-                    .as_ref()
-                    .expect("expected a document")
-                    .as_slice(),
-                domain,
-                platform_version,
-            )
-            .expect("expected to get document");
+            #[test]
+            fn test_proved_vote_state_query_request_after_vote() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
 
-            let second_contender_document = Document::from_bytes(
-                second_contender
-                    .document
-                    .as_ref()
-                    .expect("expected a document")
-                    .as_slice(),
-                domain,
-                platform_version,
-            )
-            .expect("expected to get document");
+                let platform_state = platform.state.load();
 
-            assert_ne!(first_contender_document, second_contender_document);
-
-            assert_eq!(first_contender.identifier, contender_1.id().to_vec());
-
-            assert_eq!(second_contender.identifier, contender_2.id().to_vec());
-
-            assert_eq!(first_contender.vote_count, Some(1));
-
-            assert_eq!(second_contender.vote_count, Some(0));
-
-            let GetContestedResourceVoteStateResponse { version } = platform
-                .query_contested_resource_vote_state(
-                    GetContestedResourceVoteStateRequest {
-                        version: Some(get_contested_resource_vote_state_request::Version::V0(
-                            GetContestedResourceVoteStateRequestV0 {
-                                contract_id: dpns_contract.id().to_vec(),
-                                document_type_name: domain.name().clone(),
-                                index_name: "parentNameAndLabel".to_string(),
-                                index_values: vec![dash_encoded, quantum_encoded],
-                                result_type: ResultType::DocumentsAndVoteTally as i32,
-                                start_at_identifier_info: None,
-                                count: None,
-                                order_ascending: true,
-                                prove: true,
-                            },
-                        )),
-                    },
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
                     &platform_state,
+                    7,
+                    "quantum",
                     platform_version,
-                )
-                .expect("expected to execute query")
-                .into_data()
-                .expect("expected query to be valid");
+                );
 
-            let get_contested_resource_vote_state_response::Version::V0(
-                GetContestedResourceVoteStateResponseV0 {
-                    metadata: _,
-                    result,
-                },
-            ) = version.expect("expected a version");
+                let (masternode_1, signer_1, voting_key_1) =
+                    setup_masternode_identity(&mut platform, 29, platform_version);
 
-            let Some(get_contested_resource_vote_state_response_v0::Result::Proof(proof)) = result
-            else {
-                panic!("expected contenders")
-            };
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    contender_1.id(),
+                    "quantum",
+                    &signer_1,
+                    masternode_1.id(),
+                    &voting_key_1,
+                    platform_version,
+                );
 
-            let resolved_contested_document_vote_poll_drive_query =
-                ResolvedContestedDocumentVotePollDriveQuery {
-                    vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
-                        contract: DataContractResolvedInfo::BorrowedDataContract(&dpns_contract),
-                        document_type_name: domain.name().clone(),
-                        index_name: index_name.clone(),
-                        index_values: vec![
-                            Value::Text("dash".to_string()),
-                            Value::Text("quantum".to_string()),
-                        ],
+                // Now let's run a query for the vote totals
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                    .expect("expected to encode the word dash");
+
+                let quantum_encoded =
+                    bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                        .expect("expected to encode the word quantum");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let GetContestedResourceVoteStateResponse { version } = platform
+                    .query_contested_resource_vote_state(
+                        GetContestedResourceVoteStateRequest {
+                            version: Some(get_contested_resource_vote_state_request::Version::V0(
+                                GetContestedResourceVoteStateRequestV0 {
+                                    contract_id: dpns_contract.id().to_vec(),
+                                    document_type_name: domain.name().clone(),
+                                    index_name: "parentNameAndLabel".to_string(),
+                                    index_values: vec![dash_encoded, quantum_encoded],
+                                    result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    start_at_identifier_info: None,
+                                    count: None,
+                                    order_ascending: true,
+                                    prove: true,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resource_vote_state_response::Version::V0(
+                    GetContestedResourceVoteStateResponseV0 {
+                        metadata: _,
+                        result,
                     },
-                    result_type: DocumentsAndVoteTally,
-                    offset: None,
-                    limit: None,
-                    start_at: None,
-                    order_ascending: true,
+                ) = version.expect("expected a version");
+
+                let Some(get_contested_resource_vote_state_response_v0::Result::Proof(proof)) =
+                    result
+                else {
+                    panic!("expected contenders")
                 };
 
-            let (_, contenders) = resolved_contested_document_vote_poll_drive_query
-                .verify_vote_poll_vote_state_proof(proof.grovedb_proof.as_ref(), platform_version)
-                .expect("expected to verify proof");
+                let resolved_contested_document_vote_poll_drive_query =
+                    ResolvedContestedDocumentVotePollDriveQuery {
+                        vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                            contract: DataContractResolvedInfo::BorrowedDataContract(
+                                &dpns_contract,
+                            ),
+                            document_type_name: domain.name().clone(),
+                            index_name: index_name.clone(),
+                            index_values: vec![
+                                Value::Text("dash".to_string()),
+                                Value::Text("quantum".to_string()),
+                            ],
+                        },
+                        result_type: DocumentsAndVoteTally,
+                        offset: None,
+                        limit: None,
+                        start_at: None,
+                        order_ascending: true,
+                    };
 
-            assert_eq!(contenders.len(), 2);
+                let (_, contenders) = resolved_contested_document_vote_poll_drive_query
+                    .verify_vote_poll_vote_state_proof(
+                        proof.grovedb_proof.as_ref(),
+                        platform_version,
+                    )
+                    .expect("expected to verify proof");
 
-            let first_contender = contenders.first().unwrap();
+                assert_eq!(contenders.len(), 2);
 
-            let second_contender = contenders.last().unwrap();
+                let first_contender = contenders.first().unwrap();
 
-            let first_contender_document = Document::from_bytes(
-                first_contender
-                    .serialized_document
-                    .as_ref()
-                    .expect("expected a document")
-                    .as_slice(),
-                domain,
-                platform_version,
-            )
-            .expect("expected to get document");
+                let second_contender = contenders.last().unwrap();
 
-            let second_contender_document = Document::from_bytes(
-                second_contender
-                    .serialized_document
-                    .as_ref()
-                    .expect("expected a document")
-                    .as_slice(),
-                domain,
-                platform_version,
-            )
-            .expect("expected to get document");
+                let first_contender_document = Document::from_bytes(
+                    first_contender
+                        .serialized_document
+                        .as_ref()
+                        .expect("expected a document")
+                        .as_slice(),
+                    domain,
+                    platform_version,
+                )
+                .expect("expected to get document");
 
-            assert_ne!(first_contender_document, second_contender_document);
+                let second_contender_document = Document::from_bytes(
+                    second_contender
+                        .serialized_document
+                        .as_ref()
+                        .expect("expected a document")
+                        .as_slice(),
+                    domain,
+                    platform_version,
+                )
+                .expect("expected to get document");
 
-            assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_ne!(first_contender_document, second_contender_document);
 
-            assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(first_contender.identity_id, contender_1.id());
 
-            assert_eq!(first_contender.vote_tally, Some(1));
+                assert_eq!(second_contender.identity_id, contender_2.id());
 
-            assert_eq!(second_contender.vote_tally, Some(0));
+                assert_eq!(first_contender.vote_tally, Some(1));
+
+                assert_eq!(second_contender.vote_tally, Some(0));
+            }
+
+            #[test]
+            fn test_not_proved_vote_state_query_request_after_many_votes() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                for i in 0..50 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_1.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                for i in 0..5 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_2.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                // Now let's run a query for the vote totals
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                    .expect("expected to encode the word dash");
+
+                let quantum_encoded =
+                    bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                        .expect("expected to encode the word quantum");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let query_validation_result = platform
+                    .query_contested_resource_vote_state(
+                        GetContestedResourceVoteStateRequest {
+                            version: Some(get_contested_resource_vote_state_request::Version::V0(
+                                GetContestedResourceVoteStateRequestV0 {
+                                    contract_id: dpns_contract.id().to_vec(),
+                                    document_type_name: domain.name().clone(),
+                                    index_name: index_name.clone(),
+                                    index_values: vec![
+                                        dash_encoded.clone(),
+                                        quantum_encoded.clone(),
+                                    ],
+                                    result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    start_at_identifier_info: None,
+                                    count: None,
+                                    order_ascending: true,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resource_vote_state_response::Version::V0(
+                    GetContestedResourceVoteStateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = query_validation_result.version.expect("expected a version");
+
+                let Some(
+                    get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
+                        get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
+                            contenders,
+                        },
+                    ),
+                ) = result
+                    else {
+                        panic!("expected contenders")
+                    };
+
+                assert_eq!(contenders.len(), 2);
+
+                let first_contender = contenders.first().unwrap();
+
+                let second_contender = contenders.last().unwrap();
+
+                let first_contender_document = Document::from_bytes(
+                    first_contender
+                        .document
+                        .as_ref()
+                        .expect("expected a document")
+                        .as_slice(),
+                    domain,
+                    platform_version,
+                )
+                .expect("expected to get document");
+
+                let second_contender_document = Document::from_bytes(
+                    second_contender
+                        .document
+                        .as_ref()
+                        .expect("expected a document")
+                        .as_slice(),
+                    domain,
+                    platform_version,
+                )
+                .expect("expected to get document");
+
+                assert_ne!(first_contender_document, second_contender_document);
+
+                assert_eq!(first_contender.identifier, contender_1.id().to_vec());
+
+                assert_eq!(second_contender.identifier, contender_2.id().to_vec());
+
+                assert_eq!(first_contender.vote_count, Some(50));
+
+                assert_eq!(second_contender.vote_count, Some(5));
+            }
+
+            #[test]
+            fn test_proved_vote_state_query_request_after_many_votes() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                for i in 0..50 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_1.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                for i in 0..5 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_2.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+                // Now let's run a query for the vote totals
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                    .expect("expected to encode the word dash");
+
+                let quantum_encoded =
+                    bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                        .expect("expected to encode the word quantum");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let GetContestedResourceVoteStateResponse { version } = platform
+                    .query_contested_resource_vote_state(
+                        GetContestedResourceVoteStateRequest {
+                            version: Some(get_contested_resource_vote_state_request::Version::V0(
+                                GetContestedResourceVoteStateRequestV0 {
+                                    contract_id: dpns_contract.id().to_vec(),
+                                    document_type_name: domain.name().clone(),
+                                    index_name: "parentNameAndLabel".to_string(),
+                                    index_values: vec![dash_encoded, quantum_encoded],
+                                    result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    start_at_identifier_info: None,
+                                    count: None,
+                                    order_ascending: true,
+                                    prove: true,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resource_vote_state_response::Version::V0(
+                    GetContestedResourceVoteStateResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = version.expect("expected a version");
+
+                let Some(get_contested_resource_vote_state_response_v0::Result::Proof(proof)) =
+                    result
+                else {
+                    panic!("expected contenders")
+                };
+
+                let resolved_contested_document_vote_poll_drive_query =
+                    ResolvedContestedDocumentVotePollDriveQuery {
+                        vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                            contract: DataContractResolvedInfo::BorrowedDataContract(
+                                &dpns_contract,
+                            ),
+                            document_type_name: domain.name().clone(),
+                            index_name: index_name.clone(),
+                            index_values: vec![
+                                Value::Text("dash".to_string()),
+                                Value::Text("quantum".to_string()),
+                            ],
+                        },
+                        result_type: DocumentsAndVoteTally,
+                        offset: None,
+                        limit: None,
+                        start_at: None,
+                        order_ascending: true,
+                    };
+
+                let (_, contenders) = resolved_contested_document_vote_poll_drive_query
+                    .verify_vote_poll_vote_state_proof(
+                        proof.grovedb_proof.as_ref(),
+                        platform_version,
+                    )
+                    .expect("expected to verify proof");
+
+                assert_eq!(contenders.len(), 2);
+
+                let first_contender = contenders.first().unwrap();
+
+                let second_contender = contenders.last().unwrap();
+
+                let first_contender_document = Document::from_bytes(
+                    first_contender
+                        .serialized_document
+                        .as_ref()
+                        .expect("expected a document")
+                        .as_slice(),
+                    domain,
+                    platform_version,
+                )
+                .expect("expected to get document");
+
+                let second_contender_document = Document::from_bytes(
+                    second_contender
+                        .serialized_document
+                        .as_ref()
+                        .expect("expected a document")
+                        .as_slice(),
+                    domain,
+                    platform_version,
+                )
+                .expect("expected to get document");
+
+                assert_ne!(first_contender_document, second_contender_document);
+
+                assert_eq!(first_contender.identity_id, contender_1.id());
+
+                assert_eq!(second_contender.identity_id, contender_2.id());
+
+                assert_eq!(first_contender.vote_tally, Some(50));
+
+                assert_eq!(second_contender.vote_tally, Some(5));
+            }
         }
 
         mod end_date_query {

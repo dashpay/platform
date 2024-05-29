@@ -12,9 +12,7 @@ use crate::drive::prefunded_specialized_balances::{
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
-use grovedb::Element::Item;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use integer_encoding::VarInt;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
@@ -65,7 +63,7 @@ impl Drive {
         let replace_op = GroveDbOp::replace_op(
             path_holding_total_credits_vec,
             specialized_balance_id.to_vec(),
-            Item(new_total.encode_var_vec(), None),
+            Element::new_sum_item(new_total as i64),
         );
         drive_operations.push(GroveOperation(replace_op));
         Ok(drive_operations)
