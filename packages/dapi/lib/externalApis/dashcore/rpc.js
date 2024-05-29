@@ -171,8 +171,8 @@ const getRawTransaction = (txid, verboseMode = 0) => new Promise((resolve, rejec
 });
 
 const getRawTransactionMulti = async (txids, verboseMode = 0) => {
-  const promises = lodash.chunk(txids, 100).map((chunk) => {
-    return new Promise((resolve, reject) => {
+  const promises = lodash.chunk(txids, 100)
+    .map((chunk) => new Promise((resolve, reject) => {
       client.getRawTransactionMulti({ 0: chunk }, verboseMode, (err, r) => {
         if (err) {
           reject(new DashCoreRpcError(err.message, null, err.code));
@@ -180,14 +180,11 @@ const getRawTransactionMulti = async (txids, verboseMode = 0) => {
           resolve(r.result);
         }
       });
-    });
-  });
+    }));
 
   const responses = await Promise.all(promises);
 
-  return responses.reduce((accumulator, object) => {
-    return { ...accumulator, ...object };
-  }, {});
+  return responses.reduce((accumulator, object) => ({ ...accumulator, ...object }), {});
 };
 
 const getRawBlock = (blockhash) => getBlock(blockhash, false);
