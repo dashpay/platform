@@ -56,9 +56,10 @@ const broadcastTransactionHandlerFactory = require(
 /**
  * @param {CoreRpcClient} coreRPCClient
  * @param {boolean} isProductionEnvironment
+ * @param {ZmqClient} coreZmqClient
  * @returns {Object<string, function>}
  */
-function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
+function coreHandlersFactory(coreRPCClient, isProductionEnvironment, coreZmqClient) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
   // getBlock
