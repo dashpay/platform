@@ -22,6 +22,7 @@ use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
+use dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
@@ -41,7 +42,8 @@ use dpp::platform_value::{self};
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQuery};
-use drive::query::{ContractLookupFn, DriveQuery};
+use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
+use drive::query::{ContractLookupFn, DriveQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
@@ -1261,6 +1263,56 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
     }
 }
 
+impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
+    type Request = platform::GetContestedResourcesRequest;
+    type Response = platform::GetContestedResourcesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query: VotePollsByDocumentTypeQuery =
+            request.try_into_versioned(platform_version)?;
+        let resolved_request = drive_query
+            .resolve_with_known_contracts_provider(&known_contracts_provider_fn(provider))?;
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, items) = resolved_request
+            .verify_contests_proof(&proof.grovedb_proof, platform_version)
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let resources: ContestedResources = items
+            .into_iter()
+            .map(|v| {
+                Document::from_platform_value(v, platform_version)
+                    .map(|doc| (doc.id(), Some(doc.into())))
+            })
+            .collect::<Result<_, _>>()?;
+
+        if resources.is_empty() {
+            return Ok((None, mtd.clone()));
+        }
+
+        Ok((Some(resources), mtd.clone()))
+    }
+}
+
 // rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
 impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
     type Request = platform::GetContestedResourceVoteStateRequest;
@@ -1314,6 +1366,66 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
             .collect::<Result<Contenders, _>>()?;
 
         Ok((Some(contenders), mtd.clone()))
+    }
+}
+
+impl FromProof<platform::GetVotePollsByEndDateRequest>
+    for ContestedDocumentResourceVotePollsGroupedByTimestamp
+{
+    type Request = platform::GetVotePollsByEndDateRequest;
+    type Response = platform::GetVotePollsByEndDateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query: VotePollsByEndDateDriveQuery =
+            request.try_into_versioned(platform_version)?;
+
+        // Parse request to get resolved contract that implements verify_*_proof
+        let contracts_provider = known_contracts_provider_fn(provider);
+        todo!("continue implementation");
+        /*
+            let resolved_request =
+                drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+
+            // Parse response to read proof and metadata
+            let proof = response.proof().or(Err(Error::NoProofInResult))?;
+            let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+            let (root_hash, contested_resource_vote_state) = resolved_request
+                .verify_vote_poll_vote_state_proof(&proof.grovedb_proof, platform_version)
+                .map_err(|e| Error::DriveError {
+                    error: e.to_string(),
+                })?;
+
+            verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+            let document_type = resolved_request.vote_poll.document_type()?;
+
+            let contenders = contested_resource_vote_state
+                .into_iter()
+                .map(|v| {
+                    Contender::try_from_contender_with_serialized_document(
+                        v,
+                        document_type,
+                        platform_version,
+                    )
+                    .map(|c| (c.identity_id, Some(c)))
+                })
+                .collect::<Result<Contenders, _>>()?;
+
+            Ok((Some(contenders), mtd.clone()))
+        */
     }
 }
 
@@ -1376,7 +1488,7 @@ impl<K, T> Length for Vec<(K, Option<T>)> {
 
 impl<K, T> Length for BTreeMap<K, Option<T>> {
     fn count_some(&self) -> usize {
-        self.iter().filter(|(_, v)| v.is_some()).count()
+        self.values().filter(|v| v.is_some()).count()
     }
 }
 

@@ -12,9 +12,9 @@ use crate::{
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetContestedResourceVoteStateRequest, GetDataContractsRequest, GetDocumentsResponse,
-    GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeVoteStatusRequest,
+    GetContestedResourceVoteStateRequest, GetContestedResourcesRequest, GetDataContractsRequest,
+    GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::block::epoch::EpochIndex;
@@ -26,7 +26,7 @@ use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
 use drive::query::vote_poll_vote_state_query::Contender;
-use drive_proof_verifier::types::{MasternodeProtocolVote, RetrievedObjects};
+use drive_proof_verifier::types::{ContestedResource, MasternodeProtocolVote, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
@@ -312,6 +312,11 @@ impl FetchMany<ProTxHash> for MasternodeProtocolVote {
 /// Returns [DataContracts](drive_proof_verifier::types::DataContracts) indexed by [Identifier](dpp::prelude::Identifier).
 impl FetchMany<Identifier> for DataContract {
     type Request = GetDataContractsRequest;
+}
+
+/// Fetch multiple [ContestedResource], indexed by Identifier.
+impl FetchMany<Identifier> for ContestedResource {
+    type Request = GetContestedResourcesRequest;
 }
 
 /// Fetch multiple contenders for a contested document resource vote poll.

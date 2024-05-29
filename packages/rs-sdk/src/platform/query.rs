@@ -4,6 +4,9 @@
 use std::fmt::Debug;
 
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo;
+use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0;
+use dapi_grpc::platform::v0::GetContestedResourcesRequest;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
     AllKeys, GetContestedResourceVoteStateRequest, GetEpochsInfoRequest, GetIdentityKeysRequest,
@@ -12,6 +15,8 @@ use dapi_grpc::platform::v0::{
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
+use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
+use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::DriveQuery;
 use rs_dapi_client::transport::TransportRequest;
 
@@ -272,6 +277,7 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<Option<Pro
     }
 }
 
+/// Convenience method that allows direct use of a ProTxHash
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         LimitQuery::from(self).query(prove)
@@ -297,4 +303,72 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash>
     }
 }
 
-impl Query<GetContestedResourceVoteStateRequest> for LimitQuery {}
+impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
+    fn query(self, prove: bool) -> Result<GetContestedResourcesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(
+            proto::get_contested_resources_request::GetContestedResourcesRequestV0 {
+                prove,
+                document_type_name: self.document_type_name,
+                index_name: self.index_name,
+                contract_id: self.contract_id.to_vec(),
+                start_index_values: self
+                    .start_index_values
+                    .iter()
+                    .map(|v| v.to_bytes())
+                    .collect::<Result<Vec<Vec<u8>>, _>>()
+                    .map_err(|e| Error::Protocol(e.into()))?,
+                end_index_values: self
+                    .end_index_values
+                    .into_iter()
+                    .map(|v| v.to_bytes().map_err(|e| Error::Protocol(e.into())))
+                    .collect::<Result<Vec<_>, _>>()?,
+                start_at_value_info: self.start_at_value.map(|(id, included)| {
+                    get_contested_resources_request_v0::StartAtValueInfo {
+                        start_value: id,
+                        start_value_included: included,
+                    }
+                }),
+
+                order_ascending: self.order_ascending,
+                count: self.limit.map(|v| v as u32),
+            }
+            .into(),
+        )
+    }
+}
+
+impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDriveQuery {
+    fn query(self, prove: bool) -> Result<GetContestedResourceVoteStateRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let start_at_identifier_info = self.start_at.map(|v| StartAtIdentifierInfo {
+            start_identifier: v.0.to_vec(),
+            start_identifier_included: v.1,
+        });
+
+        use proto::get_contested_resource_vote_state_request:: get_contested_resource_vote_state_request_v0::ResultType as GrpcResultType;
+        Ok(proto::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0 {
+            prove,
+            contract_id:self.vote_poll.contract_id.to_vec(),
+            count: self.limit.map(|v| v as u32),
+            document_type_name: self.vote_poll.document_type_name.clone(),
+            index_name: self.vote_poll.index_name,
+            index_values: self.vote_poll.index_values.iter().map(|v|v.to_bytes()).collect::<Result<Vec<Vec<u8>>,_>>().map_err(|e|Error::Protocol(e.into()))?,
+            order_ascending: self.order_ascending,
+            result_type:match  self.result_type {
+                drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::Documents => GrpcResultType::Documents.into(),
+                drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => GrpcResultType::DocumentsAndVoteTally.into(),
+                drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::VoteTally => GrpcResultType::VoteTally.into(),
+                drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly => GrpcResultType::IdentityIdsOnly.into(),
+            },
+            start_at_identifier_info,
+        }
+        .into())
+    }
+}

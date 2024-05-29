@@ -103,16 +103,18 @@ impl<S: Signer> PutVote<S> for Vote {
             //todo make this more reliable
             Err(e) => {
                 if e.to_string().contains("already exists") {
-                    let vote = Vote::fetch(sdk, voter_pro_tx_hash).await?;
-                    return vote.ok_or(Error::DapiClientError(
-                        "vote was proved to not exist but was said to exist".to_string(),
-                    ));
+                    todo!("fetch the vote and return it");
+                    // let vote = Vote::fetch(sdk, voter_pro_tx_hash).await?;
+                    // return vote.ok_or(Error::DapiClientError(
+                    //     "vote was proved to not exist but was said to exist".to_string(),
+                    // ));
+                } else {
+                    return Err(e.into());
                 }
             }
         }
 
         let request = masternode_vote_transition.wait_for_state_transition_result_request()?;
-
         let response = request.execute(sdk, settings.request_settings).await?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;

@@ -18,9 +18,11 @@ dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
-dpp = { path = "../rs-dpp", features = ["bls-signatures"], default-features = false }
+dpp = { path = "../rs-dpp", features = [
+  "bls-signatures",
+], default-features = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.12", features = [
-  "crypto"
+  "crypto",
 ], default-features = false }
 tracing = { version = "0.1.37" }
 serde = { version = "1.0.197", default-features = false, optional = true }
@@ -28,3 +30,4 @@ serde_json = { version = "1.0.103", features = [
   "preserve_order",
 ], optional = true }
 hex = { version = "0.4.3" }
+derive_more = { version = "0.99.11" }

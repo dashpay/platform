@@ -27,8 +27,6 @@ use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, TransactionArg};
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "verify")]
-use std::sync::Arc;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
@@ -202,6 +200,7 @@ impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializ
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Contender {
     /// The identity ID of the contender.
     pub identity_id: Identifier,
@@ -209,6 +208,26 @@ pub struct Contender {
     pub document: Option<Document>,
     /// The vote tally for the contender.
     pub vote_tally: Option<u32>,
+}
+
+impl Contender {
+    /// Convert [ContenderWithSerializedDocument]  to [Contender]
+    pub fn try_from_contender_with_serialized_document(
+        value: ContenderWithSerializedDocument,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
+        let serialized_document = value
+            .serialized_document
+            .map(|ref doc| Document::from_bytes(doc, document_type, platform_version))
+            .transpose()?;
+
+        Ok(Contender {
+            identity_id: value.identity_id,
+            serialized_document,
+            vote_tally: value.vote_tally,
+        })
+    }
 }
 
 /// Represents the result of executing a contested document vote poll drive query.

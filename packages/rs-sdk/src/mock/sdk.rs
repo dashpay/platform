@@ -156,6 +156,10 @@ impl MockDashPlatformSdk {
                     )
                     .await?
                 }
+                "GetContestedResourcesRequest" => {
+                    self.load_expectation::<proto::GetContestedResourcesRequest>(filename)
+                        .await?
+                }
                 "GetContestedResourceVoteStateRequest" => {
                     self.load_expectation::<proto::GetContestedResourceVoteStateRequest>(filename)
                         .await?

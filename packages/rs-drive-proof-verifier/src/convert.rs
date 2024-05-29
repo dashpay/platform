@@ -1,10 +1,12 @@
 //! [TryFromVersioned] trait to convert data between different formats, like gRPC and Drive objects.
 
 use dapi_grpc::platform::v0::{
+    self as grpc,
     get_contested_resource_vote_state_request::{
         self, get_contested_resource_vote_state_request_v0,
     },
-    GetContestedResourceVoteStateRequest,
+    GetContestedResourceVoteStateRequest, GetContestedResourcesRequest,
+    GetVotePollsByEndDateRequest,
 };
 use dpp::{
     identifier::Identifier,
@@ -12,8 +14,12 @@ use dpp::{
     version::{PlatformVersion, TryFromPlatformVersioned},
     voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
-use drive::query::vote_poll_vote_state_query::{
-    ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
+use drive::query::{
+    vote_poll_vote_state_query::{
+        ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
+    },
+    vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery,
+    VotePollsByEndDateDriveQuery,
 };
 
 use crate::Error;
@@ -26,6 +32,7 @@ pub trait TryFromVersioned<T>
 where
     Self: Sized,
 {
+    /// Convert the value from T, applying version.
     fn try_from_versioned(value: T, version: &PlatformVersion) -> Result<Self, Error>;
 }
 
@@ -112,7 +119,66 @@ impl TryFromVersioned<get_contested_resource_vote_state_request_v0::ResultType>
     }
 }
 
+impl TryFromVersioned<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
+    fn try_from_versioned(
+        value: GetVotePollsByEndDateRequest,
+        _version: &PlatformVersion,
+    ) -> Result<Self, Error> {
+        let result = match value.version.ok_or(Error::EmptyVersion)? {
+            grpc::get_vote_polls_by_end_date_request::Version::V0(v) => {
+                VotePollsByEndDateDriveQuery {
+                    start_time: v
+                        .start_time_info
+                        .map(|v| (v.start_time_ms, v.start_time_included)),
+                    end_time: v
+                        .end_time_info
+                        .map(|v| (v.end_time_ms, v.end_time_included)),
+                    limit: v.limit.map(|v| v as u16),
+                    offset: v.offset.map(|v| v as u16),
+                    order_ascending: v.ascending,
+                }
+            }
+        };
+        Ok(result)
+    }
+}
+
+impl TryFromVersioned<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
+    fn try_from_versioned(
+        value: GetContestedResourcesRequest,
+        _version: &PlatformVersion,
+    ) -> Result<Self, Error> {
+        let result = match value.version.ok_or(Error::EmptyVersion)? {
+            grpc::get_contested_resources_request::Version::V0(req) => {
+                VotePollsByDocumentTypeQuery {
+                    contract_id: Identifier::from_bytes(&req.contract_id).map_err(|e| {
+                        Error::RequestDecodeError {
+                            error: e.to_string(),
+                        }
+                    })?,
+                    document_type_name: req.document_type_name.clone(),
+                    index_name: req.index_name.clone(),
+                    start_at_value: req
+                        .start_at_value_info
+                        .map(|i| (i.start_value, i.start_value_included)),
+                    start_index_values: req
+                        .start_index_values
+                        .into_iter()
+                        .map(Value::from)
+                        .collect(),
+                    end_index_values: req.end_index_values.into_iter().map(Value::from).collect(),
+                    limit: req.count.map(|v| v as u16),
+                    order_ascending: req.order_ascending,
+                }
+            }
+        };
+        Ok(result)
+    }
+}
+
+/// TryIntoVersioned is an equivalent of [TryInto] trait for converting data between different formats.
 pub trait TryIntoVersioned<T> {
+    /// Convert the value to T, applying version.
     fn try_into_versioned(self, version: &PlatformVersion) -> Result<T, Error>;
 }
 

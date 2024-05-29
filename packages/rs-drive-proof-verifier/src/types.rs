@@ -5,9 +5,7 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
-use std::collections::BTreeMap;
-
-use dapi_grpc::platform::v0::get_contested_resources_response::get_contested_resources_response_v0::ContestedResource;
+use crate::proof::Length;
 use dpp::prelude::IdentityNonce;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -22,6 +20,7 @@ use dpp::{
 };
 use drive::grovedb::Element;
 use drive::query::vote_poll_vote_state_query::Contender;
+use std::collections::BTreeMap;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -66,11 +65,55 @@ pub type IdentityBalance = u64;
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
+/// Contested resource values.
+/// At this point, only Documents are supported
+#[derive(derive_more::From)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub enum ContestedResource {
+    /// Contested document
+    Document(Document),
+}
+
 /// Contested resources
 pub type ContestedResources = RetrievedObjects<Identifier, ContestedResource>;
 
 /// A contested vote for querying
 pub type ContestedVote = (ContestedDocumentResourceVotePoll, ResourceVoteChoice);
+
+/// Contested document resource vote polls grouped by timestamp.
+#[derive(Clone, Debug)]
+pub struct ContestedDocumentResourceVotePollsGroupedByTimestamp(
+    pub BTreeMap<u64, Vec<ContestedDocumentResourceVotePoll>>,
+);
+
+/// Create iterator for `ContestedDocumentResourceVotePollsGroupedByTimestamp`.
+///
+/// This implementation flattens the `BTreeMap` into a vector of tuples `(u64, ContestedDocumentResourceVotePoll)`
+/// and then creates an iterator from the vector.
+///
+/// It means it copies all values from the `BTreeMap`.
+impl IntoIterator for ContestedDocumentResourceVotePollsGroupedByTimestamp {
+    type Item = (u64, ContestedDocumentResourceVotePoll);
+    type IntoIter = std::vec::IntoIter<(u64, ContestedDocumentResourceVotePoll)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let v: Vec<(u64, ContestedDocumentResourceVotePoll)> =
+            self.0.iter().fold(Vec::new(), |mut acc, (k, v)| {
+                v.iter().for_each(|poll| {
+                    acc.push((*k, poll.clone()));
+                });
+                acc
+            });
+
+        v.into_iter()
+    }
+}
+
+impl Length for ContestedDocumentResourceVotePollsGroupedByTimestamp {
+    fn count_some(&self) -> usize {
+        self.0.values().map(|v| v.len()).sum()
+    }
+}
 
 /// An identity nonce
 #[derive(Debug)]

@@ -10,6 +10,7 @@ mod broadcast;
 mod common;
 mod config;
 mod contender;
+mod contested_resource;
 mod data_contract;
 mod document;
 mod epoch;

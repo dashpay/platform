@@ -97,7 +97,7 @@ pub enum ContextProviderError {
 
     /// Data contract is invalid or not found, or some error occurred during data contract retrieval
     #[error("cannot get data contract: {0}")]
-    InvalidDataContract(String),
+    DataContractFailure(String),
 
     /// Provided quorum is invalid
     #[error("invalid quorum: {0}")]
