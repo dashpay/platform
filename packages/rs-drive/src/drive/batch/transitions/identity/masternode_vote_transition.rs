@@ -15,7 +15,7 @@ impl DriveHighLevelOperationConverter for MasternodeVoteTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let pro_tx_hash = self.pro_tx_hash();
         let nonce = self.nonce();
@@ -35,7 +35,10 @@ impl DriveHighLevelOperationConverter for MasternodeVoteTransitionAction {
             PrefundedSpecializedBalanceOperation(
                 PrefundedSpecializedBalanceOperationType::DeductFromPrefundedBalance {
                     prefunded_specialized_balance_id,
-                    remove_balance: 0,
+                    remove_balance: platform_version
+                        .fee_version
+                        .vote_resolution_fund_fees
+                        .contested_document_single_vote_cost,
                 },
             ),
         ];

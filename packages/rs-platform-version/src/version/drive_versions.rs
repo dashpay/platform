@@ -116,6 +116,7 @@ pub struct DriveVerifyVoteMethodVersions {
     pub verify_vote_poll_vote_state_proof: FeatureVersion,
     pub verify_contests_proof: FeatureVersion,
     pub verify_vote_polls_by_end_date_proof: FeatureVersion,
+    pub verify_specialized_balance: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

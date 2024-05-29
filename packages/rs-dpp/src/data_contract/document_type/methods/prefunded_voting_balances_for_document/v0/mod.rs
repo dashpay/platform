@@ -35,7 +35,7 @@ impl DocumentTypeV0 {
                     platform_version
                         .fee_version
                         .vote_resolution_fund_fees
-                        .conflicting_vote_resolution_fund_required_amount,
+                        .contested_document_vote_resolution_fund_required_amount,
                 )
             })
     }

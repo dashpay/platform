@@ -101,7 +101,7 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
-    use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_vote_polls_by_end_date_request, get_vote_polls_by_end_date_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse};
+    use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_contested_resources_request, get_contested_resources_response, get_vote_polls_by_end_date_request, get_vote_polls_by_end_date_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetVotePollsByEndDateRequest, GetContestedResourcesRequest, GetVotePollsByEndDateResponse};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
@@ -119,52 +119,36 @@ mod tests {
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
     use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::identifier::Identifier;
+    use dpp::identity::{IdentityPublicKey, IdentityV0};
+    use dpp::prelude::{DataContract, Identity};
+    use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
+    use dpp::util::hash::hash_double;
+    use dpp::util::strings::convert_to_homograph_safe_chars;
+    use drive::query::vote_polls_by_document_type_query::ResolvedVotePollsByDocumentTypeQuery;
+    use simple_signer::signer::SimpleSigner;
+    use crate::platform_types::platform_state::PlatformState;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dpp::serialization::PlatformDeserializable;
+    use drive::query::VotePollsByEndDateDriveQuery;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+    use dpp::platform_value::IdentifierBytes32;
+    use dpp::platform_value::Value::Text;
+    use dapi_grpc::platform::v0::{get_prefunded_specialized_balance_request, GetPrefundedSpecializedBalanceRequest};
+    use dapi_grpc::platform::v0::get_prefunded_specialized_balance_request::GetPrefundedSpecializedBalanceRequestV0;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use arc_swap::Guard;
+    use rand::Rng;
+    use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
+    use dapi_grpc::platform::v0::get_contested_resources_response::{get_contested_resources_response_v0, GetContestedResourcesResponseV0};
 
     mod vote_tests {
-        use std::collections::BTreeMap;
-        use std::sync::Arc;
-        use arc_swap::Guard;
-        use rand::Rng;
-        use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, get_contested_resources_request, get_contested_resources_response, get_vote_polls_by_end_date_request, get_vote_polls_by_end_date_response, GetContestedResourcesRequest, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse};
-        use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
-        use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
-        use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
-        use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
-        use dapi_grpc::platform::v0::get_contested_resources_response::{get_contested_resources_response_v0, GetContestedResourcesResponseV0};
-        use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0;
-        use dapi_grpc::platform::v0::get_vote_polls_by_end_date_response::{get_vote_polls_by_end_date_response_v0, GetVotePollsByEndDateResponseV0};
-        use dapi_grpc::platform::v0::get_vote_polls_by_end_date_response::get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamp;
+
         use super::*;
-        use dpp::document::Document;
-        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-        use dpp::identifier::Identifier;
-        use dpp::identity::{IdentityPublicKey, IdentityV0};
-        use dpp::prelude::{DataContract, Identity};
-        use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-        use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
-        use dpp::util::hash::hash_double;
-        use dpp::util::strings::convert_to_homograph_safe_chars;
-        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
-        use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-        use dpp::voting::vote_polls::VotePoll;
-        use dpp::voting::votes::resource_vote::ResourceVote;
-        use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
-        use dpp::voting::votes::Vote;
-        use drive::drive::object_size_info::DataContractResolvedInfo;
-        use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
-        use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
-        use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
-        use drive::query::vote_polls_by_document_type_query::ResolvedVotePollsByDocumentTypeQuery;
-        use simple_signer::signer::SimpleSigner;
-        use crate::platform_types::platform_state::PlatformState;
-        use crate::rpc::core::MockCoreRPCLike;
-        use crate::test::helpers::setup::TempPlatform;
-        use dpp::serialization::PlatformDeserializable;
-        use drive::query::VotePollsByEndDateDriveQuery;
-        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-        use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
-        use dpp::platform_value::IdentifierBytes32;
-        use dpp::platform_value::Value::Text;
 
         fn setup_masternode_identity(
             platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -2797,6 +2781,334 @@ mod tests {
                         )
                     ])
                 );
+            }
+        }
+
+        mod prefunded_specialized_balance {
+            use super::*;
+            use dapi_grpc::platform::v0::get_prefunded_specialized_balance_response;
+            use dapi_grpc::platform::v0::get_prefunded_specialized_balance_response::{
+                get_prefunded_specialized_balance_response_v0,
+                GetPrefundedSpecializedBalanceResponseV0,
+            };
+            use dpp::fee::Credits;
+            use drive::drive::Drive;
+
+            fn get_specialized_balance(
+                platform: &TempPlatform<MockCoreRPCLike>,
+                platform_state: &PlatformState,
+                dpns_contract: &DataContract,
+                name: &str,
+                platform_version: &PlatformVersion,
+            ) -> Credits {
+                let vote_poll = ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                    contract: DataContractResolvedInfo::BorrowedDataContract(dpns_contract),
+                    document_type_name: "domain".to_string(),
+                    index_name: "parentNameAndLabel".to_string(),
+                    index_values: vec![
+                        Value::Text("dash".to_string()),
+                        Value::Text(convert_to_homograph_safe_chars(name)),
+                    ],
+                };
+
+                let specialized_balance_response = platform
+                    .query_prefunded_specialized_balance(
+                        GetPrefundedSpecializedBalanceRequest {
+                            version: Some(get_prefunded_specialized_balance_request::Version::V0(
+                                GetPrefundedSpecializedBalanceRequestV0 {
+                                    id: vote_poll
+                                        .specialized_balance_id()
+                                        .expect("expected a specialized balance id")
+                                        .to_vec(),
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to be able to query specialized balance")
+                    .into_data()
+                    .expect("expected that the query would execute successfully");
+
+                let get_prefunded_specialized_balance_response::Version::V0(
+                    GetPrefundedSpecializedBalanceResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = specialized_balance_response
+                    .version
+                    .expect("expected a version");
+
+                let Some(get_prefunded_specialized_balance_response_v0::Result::Balance(balance)) =
+                    result
+                else {
+                    panic!("expected balance")
+                };
+                balance
+            }
+
+            fn get_proved_specialized_balance(
+                platform: &TempPlatform<MockCoreRPCLike>,
+                platform_state: &PlatformState,
+                dpns_contract: &DataContract,
+                name: &str,
+                platform_version: &PlatformVersion,
+            ) -> Credits {
+                let vote_poll = ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                    contract: DataContractResolvedInfo::BorrowedDataContract(dpns_contract),
+                    document_type_name: "domain".to_string(),
+                    index_name: "parentNameAndLabel".to_string(),
+                    index_values: vec![
+                        Value::Text("dash".to_string()),
+                        Value::Text(convert_to_homograph_safe_chars(name)),
+                    ],
+                };
+
+                let balance_id = vote_poll
+                    .specialized_balance_id()
+                    .expect("expected a specialized balance id");
+
+                let specialized_balance_response = platform
+                    .query_prefunded_specialized_balance(
+                        GetPrefundedSpecializedBalanceRequest {
+                            version: Some(get_prefunded_specialized_balance_request::Version::V0(
+                                GetPrefundedSpecializedBalanceRequestV0 {
+                                    id: balance_id.to_vec(),
+                                    prove: true,
+                                },
+                            )),
+                        },
+                        platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to be able to query specialized balance")
+                    .into_data()
+                    .expect("expected that the query would execute successfully");
+
+                let get_prefunded_specialized_balance_response::Version::V0(
+                    GetPrefundedSpecializedBalanceResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = specialized_balance_response
+                    .version
+                    .expect("expected a version");
+
+                let Some(get_prefunded_specialized_balance_response_v0::Result::Proof(proof)) =
+                    result
+                else {
+                    panic!("expected balance")
+                };
+
+                Drive::verify_specialized_balance(
+                    proof.grovedb_proof.as_slice(),
+                    balance_id.to_buffer(),
+                    false,
+                    platform_version,
+                )
+                .expect("expected to verify balance")
+                .1
+                .expect("expected balance to exist")
+            }
+
+            #[test]
+            fn test_non_proved_prefunded_specialized_balance_request_after_many_votes() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let start_balance = get_specialized_balance(
+                    &platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    "quantum",
+                    platform_version,
+                );
+
+                assert_eq!(start_balance, dash_to_credits!(0.4));
+
+                let (contender_3, contender_4, _) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "quantum",
+                    platform_version,
+                );
+
+                let start_balance_after_more_contenders = get_specialized_balance(
+                    &platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    "quantum",
+                    platform_version,
+                );
+
+                assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
+
+                for i in 0..50 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_1.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                let balance_after_50_votes = get_specialized_balance(
+                    &platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    "quantum",
+                    platform_version,
+                );
+
+                assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
+
+                for i in 0..5 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_2.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                let balance_after_55_votes = get_specialized_balance(
+                    &platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    "quantum",
+                    platform_version,
+                );
+
+                assert_eq!(balance_after_55_votes, dash_to_credits!(0.7945));
+            }
+            #[test]
+            fn test_proved_prefunded_specialized_balance_request_after_many_votes() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let start_balance = get_proved_specialized_balance(
+                    &platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    "quantum",
+                    platform_version,
+                );
+
+                assert_eq!(start_balance, dash_to_credits!(0.4));
+
+                let (contender_3, contender_4, _) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "quantum",
+                    platform_version,
+                );
+
+                let start_balance_after_more_contenders = get_proved_specialized_balance(
+                    &platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    "quantum",
+                    platform_version,
+                );
+
+                assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
+
+                for i in 0..50 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_1.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                let balance_after_50_votes = get_proved_specialized_balance(
+                    &platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    "quantum",
+                    platform_version,
+                );
+
+                assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
+
+                for i in 0..5 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_2.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                let balance_after_55_votes = get_proved_specialized_balance(
+                    &platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    "quantum",
+                    platform_version,
+                );
+
+                assert_eq!(balance_after_55_votes, dash_to_credits!(0.7945));
             }
         }
     }
