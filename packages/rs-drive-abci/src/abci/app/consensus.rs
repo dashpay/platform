@@ -213,11 +213,8 @@ where
                                     Ok(_) => {
                                         let response = proto::ResponseOfferSnapshot::default();
 
-                                        let state_sync_info =
-                                            self.platform.drive.grove.start_syncing_session();
-
                                         match self.platform.drive.grove.start_snapshot_syncing(request_app_hash, CURRENT_STATE_SYNC_VERSION) {
-                                            Ok((_,mut state_sync_info)) => {
+                                            Ok((_, state_sync_info)) => {
                                                 session.snapshot = offered_snapshot;
                                                 session.app_hash = request.app_hash;
                                                 session.state_sync_info = state_sync_info;
@@ -259,6 +256,7 @@ where
         &self,
         request: proto::RequestApplySnapshotChunk,
     ) -> Result<proto::ResponseApplySnapshotChunk, proto::ResponseException> {
+        let mut is_state_sync_completed: bool = false;
         match self.snapshot_fetching_session().write() {
             Ok(mut session_write_guard) => {
                 match session_write_guard.as_mut() {
@@ -269,13 +267,20 @@ where
                             1u16,
                         ) {
                             Ok(next_chunk_ids) => {
-                                return Ok(proto::ResponseApplySnapshotChunk {
-                                    result: proto::response_apply_snapshot_chunk::Result::Accept
-                                        .into(),
-                                    refetch_chunks: vec![],
-                                    reject_senders: vec![],
-                                    next_chunks: next_chunk_ids,
-                                });
+                                if (next_chunk_ids.is_empty()) {
+                                    if (session.state_sync_info.is_sync_completed()) {
+                                        is_state_sync_completed = true;
+                                    }
+                                }
+                                if !is_state_sync_completed {
+                                    return Ok(proto::ResponseApplySnapshotChunk {
+                                        result: proto::response_apply_snapshot_chunk::Result::Accept
+                                            .into(),
+                                        refetch_chunks: vec![],
+                                        reject_senders: vec![],
+                                        next_chunks: next_chunk_ids,
+                                    });
+                                }
                             }
                             Err(e) => {
                                 return Err(Error::Abci(AbciError::BadRequest(format!(
@@ -292,6 +297,23 @@ where
                             "apply_snapshot_chunk unable to lock session".to_string(),
                         )))
                         .map_err(error_into_exception);
+                    }
+                }
+                // state_sync is completed (is_state_sync_completed is true) we need to commit the transaction
+                match session_write_guard.take() {
+                    None => Err(error_into_exception(Error::Abci(AbciError::BadRequest(
+                        "apply_snapshot_chunk unable to lock session (for commit)".to_string(),
+                    )))),
+                    Some(session) => {
+                        let state_sync_info = session.state_sync_info;
+                        self.platform.drive.grove.commit_session(state_sync_info);
+                        return Ok(proto::ResponseApplySnapshotChunk {
+                            result: proto::response_apply_snapshot_chunk::Result::Accept
+                                .into(),
+                            refetch_chunks: vec![],
+                            reject_senders: vec![],
+                            next_chunks: vec![],
+                        });
                     }
                 }
             }
