@@ -100,7 +100,18 @@ where
                         metadata: s.metadata,
                     }
                 };
-                response.snapshots = snapshots.into_iter().map(convert_snapshots).collect();
+                let checkpoint_exists = |s: &Snapshot| -> bool {
+                    match GroveDb::open(&s.path) {
+                        Ok(_) => true,
+                        Err(_) => false,
+                    }
+                };
+
+                response.snapshots = snapshots
+                    .into_iter()
+                    .filter(checkpoint_exists)
+                    .map(convert_snapshots)
+                    .collect();
                 Ok(tonic::Response::new(response))
             }
             Err(e) => Err(tonic::Status::internal(format!(
