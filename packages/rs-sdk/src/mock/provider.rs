@@ -1,12 +1,17 @@
 //! Example ContextProvider that uses the Core gRPC API to fetch data from the platform.
 
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::thread::sleep;
 
 use dpp::prelude::{DataContract, Identifier};
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
+use std::future::Future;
+use tokio::sync::oneshot::error::TryRecvError;
 
 use crate::core_client::CoreClient;
 use crate::platform::Fetch;
@@ -24,7 +29,7 @@ pub struct GrpcContextProvider {
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
     ///
     /// We use [Arc] as we have circular dependencies between Sdk and ContextProvider.
-    sdk: Option<Sdk>,
+    sdk: std::sync::RwLock<Option<Sdk>>,
 
     /// Data contracts cache.
     ///
@@ -65,7 +70,7 @@ impl GrpcContextProvider {
         let core_client = CoreClient::new(core_ip, core_port, core_user, core_password)?;
         Ok(Self {
             core: core_client,
-            sdk,
+            sdk: std::sync::RwLock::new(sdk),
             data_contracts_cache: Cache::new(data_contracts_cache_size),
             quorum_public_keys_cache: Cache::new(quorum_public_keys_cache_size),
             #[cfg(feature = "mocks")]
@@ -78,8 +83,10 @@ impl GrpcContextProvider {
     ///
     /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
-    pub fn set_sdk(&mut self, sdk: Option<Sdk>) {
-        self.sdk = sdk;
+    pub fn set_sdk(&self, sdk: Option<Sdk>) {
+        let mut guard = self.sdk.write().expect("lock poisoned");
+        let item = guard.deref_mut();
+        *item = sdk;
     }
     /// Set the directory where to store dumped data.
     ///
@@ -157,8 +164,8 @@ impl ContextProvider for GrpcContextProvider {
         if let Some(contract) = self.data_contracts_cache.get(data_contract_id) {
             return Ok(Some(contract));
         };
-
-        let sdk = match &self.sdk {
+        let sdk_guard = self.sdk.read().expect("lock poisoned");
+        let sdk = match &sdk_guard.deref() {
             Some(sdk) => sdk,
             None => {
                 tracing::warn!("data contract cache miss and no sdk provided, skipping fetch");
@@ -166,27 +173,81 @@ impl ContextProvider for GrpcContextProvider {
             }
         };
 
-        let handle = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => handle,
-            // not an error, we rely on the caller to provide a data contract using
-            Err(e) => {
-                tracing::warn!(
-                    error = e.to_string(),
-                    "data contract cache miss and no tokio runtime detected, skipping fetch"
-                );
-                return Ok(None);
-            }
-        };
+        let contract_id = *data_contract_id;
+        assert!(sdk.context_provider.is_some());
+        let sdk_cloned = sdk.clone();
 
-        let data_contract = handle
-            .block_on(DataContract::fetch(sdk, *data_contract_id))
-            .map_err(|e| ContextProviderError::InvalidDataContract(e.to_string()))?;
+        let data_contract: Option<DataContract> =
+            spawn_async::<Result<Option<DataContract>, crate::error::Error>, _, _>(
+                move || async move {
+                    assert!(sdk_cloned.context_provider.is_some());
+                    DataContract::fetch(&sdk_cloned, contract_id).await
+                },
+            )
+            .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?
+            .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
+
+        // let join_handle =
+        //     handle.spawn_blocking(move || DataContract::fetch(sdk, *data_contract_id));
+
+        // let data_contract = futures::executor::block_on(async { join_handle.await })
+        //     .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
+        // let data_contract = futures::join!(join_handle)
+        //     .0
+        //     .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
 
         if let Some(ref dc) = data_contract {
             self.data_contracts_cache.put(*data_contract_id, dc.clone());
         };
 
         Ok(data_contract.map(Arc::new))
+    }
+}
+
+// spawn_async is a workaorund to connect sync and async code, as block_on() panics when in async context
+fn spawn_async<R, F, Fut>(f: F) -> Result<R, Error>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = R> + Send + 'static,
+    R: Send + Sync + 'static + Debug,
+{
+    let tokio_rt = match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle,
+        // not an error, we rely on the caller to provide a data contract using
+        Err(e) => {
+            tracing::warn!(
+                error = e.to_string(),
+                "data contract cache miss and no tokio runtime detected, skipping fetch"
+            );
+            return Err(Error::ContextProviderError(ContextProviderError::Generic(
+                e.to_string(),
+            )));
+        }
+    };
+
+    let (send, mut recv) = tokio::sync::oneshot::channel();
+
+    let _join_handle = tokio_rt.spawn(async move {
+        let result = f().await;
+        send.send(result).expect("send result");
+    });
+
+    loop {
+        match recv.try_recv() {
+            Ok(result) => return Ok(result),
+            Err(TryRecvError::Empty) => {
+                tracing::trace!("waiting for data contract to be fetched");
+                // FIXME this is just a workaround to connect sync and async code
+                sleep(std::time::Duration::from_millis(10));
+
+                continue;
+            }
+            Err(e) => {
+                return Err(Error::ContextProviderError(
+                    ContextProviderError::DataContractFailure(e.to_string()),
+                ));
+            }
+        }
     }
 }
 

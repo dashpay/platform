@@ -707,15 +707,18 @@ impl SdkBuilder {
                         tracing::warn!("ContextProvider not set; mocking with Dash Core. \
                         Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
 
-                        let mut context_provider = GrpcContextProvider::new(Some(sdk.clone()),
-                        &self.core_ip, self.core_port, &self.core_user, &self.core_password,
-                        self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
+                        let mut context_provider = GrpcContextProvider::new(None,
+                            &self.core_ip, self.core_port, &self.core_user, &self.core_password,
+                            self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
                         #[cfg(feature = "mocks")]
                         if sdk.dump_dir.is_some() {
                             context_provider.set_dump_dir(sdk.dump_dir.clone());
                         }
-
-                        sdk.context_provider.replace(Arc::new(Box::new(context_provider)));
+                        // We have cyclical dependency Sdk <-> GrpcContextProvider, so we just do some
+                        // workaround using additional Arc.
+                        let  context_provider=Arc::new(context_provider);
+                        sdk.context_provider.replace(Arc::new(Box::new(context_provider.clone())));
+                        context_provider.set_sdk(Some(sdk.clone()));
                     } else{
                         tracing::warn!(
                             "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail");
