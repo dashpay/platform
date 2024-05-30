@@ -83,7 +83,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       seeds: getDAPISeeds(),
     });
 
-    ({ chain: { blocksCount: bestBlockHeight } } = await dapiClient.core.getBlockchainStatus());
+    bestBlockHeight = await dapiClient.core.getBestBlockHeight();
   });
 
   after(async () => {

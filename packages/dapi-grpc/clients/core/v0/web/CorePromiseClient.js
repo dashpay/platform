@@ -94,6 +94,20 @@ class CorePromiseClient {
   }
 
   /**
+   * @param {!GetBestBlockHeightRequest} getBestBlockHeightRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetBestBlockHeightResponse>}
+   */
+  getBestBlockHeight(getBestBlockHeightRequest, metadata = {}) {
+    return promisify(
+      this.client.getBestBlockHeight.bind(this.client),
+    )(
+      getBestBlockHeightRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {!BroadcastTransactionRequest} broadcastTransactionRequest
    * @param {?Object<string, string>} metadata
    * @return {Promise<!BroadcastTransactionResponse>}
