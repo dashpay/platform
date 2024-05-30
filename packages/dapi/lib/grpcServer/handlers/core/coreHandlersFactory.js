@@ -76,7 +76,10 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment, coreZmqClie
   // );
 
   // getBlockchainStatus
-  const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(coreRPCClient);
+  const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(
+    coreRPCClient,
+    coreZmqClient,
+  );
   const wrappedGetBlockchainStatus = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       GetBlockchainStatusRequest,
