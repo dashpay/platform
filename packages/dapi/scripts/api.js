@@ -136,6 +136,7 @@ async function main() {
   const coreHandlers = coreHandlersFactory(
     dashCoreRpcClient,
     isProductionEnvironment,
+    coreZmqClient,
   );
   const platformHandlers = platformHandlersFactory(
     rpcClient,

@@ -56,9 +56,10 @@ const broadcastTransactionHandlerFactory = require(
 /**
  * @param {CoreRpcClient} coreRPCClient
  * @param {boolean} isProductionEnvironment
+ * @param {ZmqClient} coreZmqClient
  * @returns {Object<string, function>}
  */
-function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
+function coreHandlersFactory(coreRPCClient, isProductionEnvironment, coreZmqClient) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
   // getBlock
@@ -75,7 +76,10 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
   // );
 
   // getBlockchainStatus
-  const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(coreRPCClient);
+  const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(
+    coreRPCClient,
+    coreZmqClient,
+  );
   const wrappedGetBlockchainStatus = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       GetBlockchainStatusRequest,
