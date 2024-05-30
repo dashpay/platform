@@ -35,7 +35,7 @@ type CoregetBestBlockHeight = {
   readonly methodName: string;
   readonly service: typeof Core;
   readonly requestStream: false;
-  readonly responseStream: true;
+  readonly responseStream: false;
   readonly requestType: typeof core_pb.GetBestBlockHeightRequest;
   readonly responseType: typeof core_pb.GetBestBlockHeightResponse;
 };
@@ -157,7 +157,15 @@ export class CoreClient {
     requestMessage: core_pb.GetBlockRequest,
     callback: (error: ServiceError|null, responseMessage: core_pb.GetBlockResponse|null) => void
   ): UnaryResponse;
-  getBestBlockHeight(requestMessage: core_pb.GetBestBlockHeightRequest, metadata?: grpc.Metadata): ResponseStream<core_pb.GetBestBlockHeightResponse>;
+  getBestBlockHeight(
+    requestMessage: core_pb.GetBestBlockHeightRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetBestBlockHeightResponse|null) => void
+  ): UnaryResponse;
+  getBestBlockHeight(
+    requestMessage: core_pb.GetBestBlockHeightRequest,
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetBestBlockHeightResponse|null) => void
+  ): UnaryResponse;
   broadcastTransaction(
     requestMessage: core_pb.BroadcastTransactionRequest,
     metadata: grpc.Metadata,

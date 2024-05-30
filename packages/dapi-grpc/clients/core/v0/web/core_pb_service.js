@@ -41,7 +41,7 @@ Core.getBestBlockHeight = {
   methodName: "getBestBlockHeight",
   service: Core,
   requestStream: false,
-  responseStream: true,
+  responseStream: false,
   requestType: core_pb.GetBestBlockHeightRequest,
   responseType: core_pb.GetBestBlockHeightResponse
 };
@@ -191,40 +191,32 @@ CoreClient.prototype.getBlock = function getBlock(requestMessage, metadata, call
   };
 };
 
-CoreClient.prototype.getBestBlockHeight = function getBestBlockHeight(requestMessage, metadata) {
-  var listeners = {
-    data: [],
-    end: [],
-    status: []
-  };
-  var client = grpc.invoke(Core.getBestBlockHeight, {
+CoreClient.prototype.getBestBlockHeight = function getBestBlockHeight(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Core.getBestBlockHeight, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
     transport: this.options.transport,
     debug: this.options.debug,
-    onMessage: function (responseMessage) {
-      listeners.data.forEach(function (handler) {
-        handler(responseMessage);
-      });
-    },
-    onEnd: function (status, statusMessage, trailers) {
-      listeners.status.forEach(function (handler) {
-        handler({ code: status, details: statusMessage, metadata: trailers });
-      });
-      listeners.end.forEach(function (handler) {
-        handler({ code: status, details: statusMessage, metadata: trailers });
-      });
-      listeners = null;
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
     }
   });
   return {
-    on: function (type, handler) {
-      listeners[type].push(handler);
-      return this;
-    },
     cancel: function () {
-      listeners = null;
+      callback = null;
       client.close();
     }
   };
