@@ -61,9 +61,13 @@ impl<'p, C> SnapshotManagerApplication for ConsensusAbciApplication<'p, C> {
     }
 }
 
-impl<'p, C> StateSyncApplication<'p> for ConsensusAbciApplication<'p, C> {
+impl<'p, C> StateSyncApplication<'p, C> for ConsensusAbciApplication<'p, C> {
     fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'p>>> {
         &self.snapshot_fetching_session
+    }
+
+    fn platform(&self) -> &'p Platform<C> {
+        self.platform
     }
 }
 
@@ -111,7 +115,6 @@ impl<'p, C> Debug for ConsensusAbciApplication<'p, C> {
 impl<'p, C> tenderdash_abci::Application for ConsensusAbciApplication<'p, C>
 where
     C: CoreRPCLike,
-    Self: 'p,
 {
     fn info(
         &self,

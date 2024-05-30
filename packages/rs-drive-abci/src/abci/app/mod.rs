@@ -50,7 +50,10 @@ pub trait BlockExecutionApplication {
 }
 
 /// Application that can maintain state sync
-pub trait StateSyncApplication<'p> {
+pub trait StateSyncApplication<'p, C> {
     /// Returns the current snapshot fetching session
     fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'p>>>;
+
+    /// Returns platform reference
+    fn platform(&self) -> &'p Platform<C>;
 }

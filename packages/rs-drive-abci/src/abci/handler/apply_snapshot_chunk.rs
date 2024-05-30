@@ -1,28 +1,15 @@
-use std::pin::Pin;
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication, StateSyncApplication, TransactionalApplication};
-use crate::error::execution::ExecutionError;
-use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
-use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::rpc::core::CoreRPCLike;
-use std::sync::atomic::Ordering;
-use std::sync::LockResult;
 use tenderdash_abci::proto::abci as proto;
-use tenderdash_abci::proto::abci::{ResponseApplySnapshotChunk, ResponseOfferSnapshot};
-use drive::grovedb::replication::{CURRENT_STATE_SYNC_VERSION, MultiStateSyncSession};
-use crate::abci::AbciError;
-use crate::abci::handler::error::error_into_exception;
 
-pub fn apply_snapshot_chunk<'a, A, C>(
-    app: &A,
+use crate::abci::app::{SnapshotManagerApplication, StateSyncApplication};
+use crate::abci::AbciError;
+use crate::error::Error;
+
+pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db>(
+    app: &'a A,
     request: proto::RequestApplySnapshotChunk,
 ) -> Result<proto::ResponseApplySnapshotChunk, Error>
-    where
-        A: PlatformApplication<C>
-        + SnapshotManagerApplication
-        + StateSyncApplication<'a>,
-        C: CoreRPCLike,
+where
+    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
 {
     let mut is_state_sync_completed: bool = false;
     match app.snapshot_fetching_session().write() {
@@ -35,15 +22,14 @@ pub fn apply_snapshot_chunk<'a, A, C>(
                         1u16,
                     ) {
                         Ok(next_chunk_ids) => {
-                            if (next_chunk_ids.is_empty()) {
-                                if (session.state_sync_info.is_sync_completed()) {
+                            if next_chunk_ids.is_empty() {
+                                if session.state_sync_info.is_sync_completed() {
                                     is_state_sync_completed = true;
                                 }
                             }
                             if !is_state_sync_completed {
                                 return Ok(proto::ResponseApplySnapshotChunk {
-                                    result:
-                                    proto::response_apply_snapshot_chunk::Result::Accept
+                                    result: proto::response_apply_snapshot_chunk::Result::Accept
                                         .into(),
                                     refetch_chunks: vec![],
                                     reject_senders: vec![],
@@ -63,7 +49,7 @@ pub fn apply_snapshot_chunk<'a, A, C>(
                     // Handle the case where there is no transaction
                     return Err(Error::Abci(AbciError::BadRequest(
                         "apply_snapshot_chunk unable to lock session".to_string(),
-                    )))
+                    )));
                 }
             }
             // state_sync is completed (is_state_sync_completed is true) we need to commit the transaction

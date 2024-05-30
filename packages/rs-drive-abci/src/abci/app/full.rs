@@ -1,6 +1,9 @@
-use crate::abci::app::{BlockExecutionApplication, ConsensusAbciApplication, PlatformApplication, SnapshotManagerApplication, StateSyncApplication, TransactionalApplication};
-use crate::abci::{AbciError, handler};
+use crate::abci::app::{
+    BlockExecutionApplication, ConsensusAbciApplication, PlatformApplication,
+    SnapshotManagerApplication, StateSyncApplication, TransactionalApplication,
+};
 use crate::abci::handler::error::error_into_exception;
+use crate::abci::{handler, AbciError};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
@@ -8,11 +11,11 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
+use drive::grovedb::replication::CURRENT_STATE_SYNC_VERSION;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
-use drive::grovedb::replication::CURRENT_STATE_SYNC_VERSION;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -56,9 +59,13 @@ impl<'a, C> SnapshotManagerApplication for FullAbciApplication<'a, C> {
     }
 }
 
-impl<'a, C> StateSyncApplication<'a> for FullAbciApplication<'a, C> {
+impl<'a, C> StateSyncApplication<'a, C> for FullAbciApplication<'a, C> {
     fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'a>>> {
         &self.snapshot_fetching_session
+    }
+
+    fn platform(&self) -> &'a Platform<C> {
+        self.platform
     }
 }
 
