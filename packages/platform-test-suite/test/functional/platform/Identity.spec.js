@@ -684,13 +684,13 @@ describe('Platform', () => {
             const diffBuffer = Buffer.from(diffBytes);
             const diff = new SimplifiedMNListDiff(diffBuffer, process.env.NETWORK);
 
-            stream.cancel();
+            stream.end();
             stream = null;
             resolve(diff);
           });
 
           stream.on('error', (error) => {
-            stream.cancel();
+            stream.end();
             stream = null;
             reject(error);
           });
