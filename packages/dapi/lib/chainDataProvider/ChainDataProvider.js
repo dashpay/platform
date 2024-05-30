@@ -11,9 +11,9 @@ const REORG_SAFE_DEPTH = 6;
 class ChainDataProvider extends EventEmitter {
   /**
    *
-   * @param coreRpcClient {CoreRpcClient}
-   * @param zmqClient {ZmqClient}
-   * @param blockHeadersCache {BlockHeadersCache}
+   * @param {CoreRpcClient} coreRpcClient
+   * @param {ZmqClient} zmqClient
+   * @param {BlockHeadersCache} blockHeadersCache
    */
   constructor(coreRpcClient, zmqClient, blockHeadersCache) {
     super();
@@ -23,7 +23,7 @@ class ChainDataProvider extends EventEmitter {
     this.blockHeadersCache = blockHeadersCache;
 
     this.chainLock = null;
-    this.chainHeight = -1;
+    this.chainHeight = 0;
   }
 
   /**
@@ -52,7 +52,7 @@ class ChainDataProvider extends EventEmitter {
   }
 
   /**
-   *
+   * @private
    * @param {Buffer} rawChainLockSigBuffer
    */
   rawChainLockSigHandler(rawChainLockSigBuffer) {
@@ -215,6 +215,15 @@ class ChainDataProvider extends EventEmitter {
    */
   getBestChainLock() {
     return this.chainLock;
+  }
+
+  /**
+   * Return chain height
+   *
+   * @return {number}
+   */
+  getChainHeight() {
+    return this.chainHeight;
   }
 }
 

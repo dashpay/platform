@@ -55,17 +55,17 @@ async function main() {
   const isProductionEnvironment = process.env.NODE_ENV === 'production';
 
   // Subscribe to events from Dash Core
-  const dashCoreZmqClient = new ZmqClient(config.dashcore.zmq.host, config.dashcore.zmq.port);
+  const coreZmqClient = new ZmqClient(config.dashcore.zmq.host, config.dashcore.zmq.port);
 
   // Bind logs on ZMQ connection events
-  dashCoreZmqClient.on(ZmqClient.events.DISCONNECTED, logger.warn.bind(logger));
-  dashCoreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, logger.warn.bind(logger));
-  dashCoreZmqClient.on(ZmqClient.events.MONITOR_ERROR, logger.warn.bind(logger));
+  coreZmqClient.on(ZmqClient.events.DISCONNECTED, logger.warn.bind(logger));
+  coreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, logger.warn.bind(logger));
+  coreZmqClient.on(ZmqClient.events.MONITOR_ERROR, logger.warn.bind(logger));
 
   // Wait until zmq connection is established
-  logger.info(`Connecting to Core ZMQ on ${dashCoreZmqClient.connectionString}`);
+  logger.info(`Connecting to Core ZMQ on ${coreZmqClient.connectionString}`);
 
-  await dashCoreZmqClient.start();
+  await coreZmqClient.start();
 
   logger.info('Connection to ZMQ established.');
 
@@ -124,6 +124,7 @@ async function main() {
     port: config.rpcServer.port,
     dashcoreAPI: dashCoreRpcClient,
     logger,
+    coreZmqClient,
   });
   logger.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);
 
@@ -135,7 +136,7 @@ async function main() {
   const coreHandlers = coreHandlersFactory(
     dashCoreRpcClient,
     isProductionEnvironment,
-    dashCoreZmqClient,
+    coreZmqClient,
   );
   const platformHandlers = platformHandlersFactory(
     rpcClient,

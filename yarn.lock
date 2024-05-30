@@ -1550,7 +1550,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.21.1"
-    "@dashevo/dashd-rpc": "npm:^18.2.0"
+    "@dashevo/dashd-rpc": "npm:^18.3.0"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
@@ -1642,13 +1642,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashd-rpc@npm:^18.2.0":
-  version: 18.2.0
-  resolution: "@dashevo/dashd-rpc@npm:18.2.0"
+"@dashevo/dashd-rpc@npm:^18.3.0":
+  version: 18.3.0
+  resolution: "@dashevo/dashd-rpc@npm:18.3.0"
   dependencies:
     async: "npm:^3.2.4"
     bluebird: "npm:^3.7.2"
-  checksum: 38341b8d5a82f75f6d71cb691d7f908dee7dc619fc1f468d859b373805249622972c04233928310325937867e4ac133c687a3094a521e9f5291134b8cde86e50
+  checksum: b83fbdb14940e18a6759dfb10313f8b6eaa1d11f584a6fd378c5d6bd1ae2f9519e59f6114b692e24b77d81c0b8b275f2c408fe3500144f1aadf5e6b270a76ff7
   languageName: node
   linkType: hard
 
@@ -6316,7 +6316,7 @@ __metadata:
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.21.1"
-    "@dashevo/dashd-rpc": "npm:^18.2.0"
+    "@dashevo/dashd-rpc": "npm:^18.3.0"
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/docker-compose": "npm:^0.24.4"
     "@dashevo/dpns-contract": "workspace:*"
