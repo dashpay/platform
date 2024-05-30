@@ -14,9 +14,9 @@ function chainLockToBlockHashHex(chainLock) {
 
 class MasternodeListSync extends EventEmitter {
   /**
-   * @type {SimplifiedMNListDiff}
+   * @type {Buffer}
    */
-  fullDiff;
+  fullDiffBuffer;
 
   /**
    * @type {number}
@@ -77,7 +77,9 @@ class MasternodeListSync extends EventEmitter {
     const previousBlockHash = this.blockHash;
     const previousBlockHeight = this.blockHeight;
 
-    this.fullDiff = new SimplifiedMNListDiff(fullDiffObject, this.network);
+    const fullDiff = new SimplifiedMNListDiff(fullDiffObject, this.network);
+
+    this.fullDiffBuffer = fullDiff.toBuffer();
     this.blockHeight = blockHeight;
     this.blockHash = blockHash;
 
@@ -99,6 +101,7 @@ class MasternodeListSync extends EventEmitter {
       diffObject.nVersion = 2;
 
       const diff = new SimplifiedMNListDiff(diffObject, this.network);
+      const diffBuffer = diff.toBuffer();
 
       this.logger.debug({
         previousBlockHash,
@@ -108,7 +111,7 @@ class MasternodeListSync extends EventEmitter {
         network: this.network,
       }, `New diff from block ${previousBlockHeight} to ${blockHeight} received`);
 
-      this.emit(MasternodeListSync.EVENT_DIFF, diff, blockHeight, blockHash);
+      this.emit(MasternodeListSync.EVENT_DIFF, diffBuffer, blockHeight, blockHash);
     }
 
     this.blockHash = blockHash;
@@ -167,10 +170,10 @@ class MasternodeListSync extends EventEmitter {
   }
 
   /**
-   * @return {SimplifiedMNListDiff}
+   * @return {Buffer}
    */
-  getFullDiff() {
-    return this.fullDiff;
+  getFullDiffBuffer() {
+    return this.fullDiffBuffer;
   }
 
   /**

@@ -25,9 +25,7 @@ function subscribeToMasternodeListHandlerFactory(masternodeListSync) {
 
     // We create a closure here to have an independent listener for each call,
     // so we can easily remove it when the call ends
-    const sendDiff = (diff, blockHeight, blockHash, full) => {
-      const diffBuffer = diff.toBuffer();
-
+    const sendDiff = (diffBuffer, blockHeight, blockHash, full) => {
       const response = new MasternodeListResponse();
 
       response.setMasternodeListDiff(diffBuffer);
@@ -60,7 +58,7 @@ function subscribeToMasternodeListHandlerFactory(masternodeListSync) {
 
     // Send full masternode list on subscribe
     sendDiff(
-      masternodeListSync.getFullDiff(),
+      masternodeListSync.getFullDiffBuffer(),
       masternodeListSync.getBlockHeight(),
       masternodeListSync.getBlockHash(),
       true,
