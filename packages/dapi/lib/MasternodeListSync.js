@@ -120,6 +120,9 @@ class MasternodeListSync extends EventEmitter {
   async init() {
     // Init makes sure, that we have full diff, so we need to use the existing best chain lock
     // or wait for the first one
+
+    let resolved = false;
+
     return new Promise((resolve, reject) => {
       const bestChainLock = this.chainDataProvider.getBestChainLock();
 
@@ -128,10 +131,18 @@ class MasternodeListSync extends EventEmitter {
 
         this.sync(blockHash, chainLock.height).then(() => {
           // Resolve the promise when chain lock is arrive we don't have any yet
-          if (!bestChainLock) {
+          if (!bestChainLock && !resolved) {
             resolve();
+            resolved = true;
           }
-        }).catch(reject);
+        }).catch((error) => {
+          this.logger.error({ err: error }, `Failed to sync masternode list: ${error.message}`);
+
+          if (!resolved) {
+            reject(error);
+            resolved = true;
+          }
+        });
       });
 
       if (bestChainLock) {
