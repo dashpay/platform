@@ -1,10 +1,8 @@
 use tenderdash_abci::proto::abci as proto;
-use tenderdash_abci::proto::abci::ResponseOfferSnapshot;
 use drive::grovedb::replication::CURRENT_STATE_SYNC_VERSION;
 
 use crate::abci::app::{SnapshotManagerApplication, StateSyncApplication};
 use crate::abci::AbciError;
-use crate::abci::handler::error::error_into_exception;
 use crate::error::Error;
 
 pub fn offer_snapshot<'a, 'db: 'a, A, C: 'db>(

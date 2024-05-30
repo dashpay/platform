@@ -11,11 +11,9 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
-use drive::grovedb::replication::{MultiStateSyncSession, CURRENT_STATE_SYNC_VERSION};
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
-use std::pin::Pin;
-use std::sync::{LockResult, RwLock};
+use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
