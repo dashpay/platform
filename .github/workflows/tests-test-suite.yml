@@ -23,8 +23,7 @@ jobs:
   test-suite:
     name: Run ${{ inputs.name }}
     runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
-# TODO: Enable
-#    timeout-minutes: 15
+    timeout-minutes: 15
     env:
       CHROME_BIN: /usr/bin/brave-browser
       ECR_HOST: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
@@ -47,12 +46,6 @@ jobs:
 
       - name: Login to ECR
         run: aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_HOST }}
-
-# TODO: Remove
-#      - name: Setup tmate session
-#        uses: mxschmitt/action-tmate@v3
-#        with:
-#          detached: true
 
       - name: Start local network
         uses: ./.github/actions/local-network
