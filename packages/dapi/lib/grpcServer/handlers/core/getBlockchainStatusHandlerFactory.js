@@ -12,7 +12,7 @@ const {
 function getBlockchainStatusHandlerFactory(coreRPCClient, coreZmqClient) {
   let response = null;
 
-  // Reset height on a new block, so it will be obtain again on a user request
+  // Reset height on a new block, so it will be obtained again on a user request
   coreZmqClient.on(
     coreZmqClient.topics.hashblock,
     () => {
