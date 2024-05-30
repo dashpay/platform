@@ -64,15 +64,6 @@ class SimplifiedMasternodeListProvider {
       const errorHandler = (error) => {
         this.stream = null;
 
-        if (error.code === GrpcErrorCodes.CANCELLED) {
-          if (!resolved) {
-            resolve();
-            resolved = true;
-          }
-
-          return;
-        }
-
         this.logger.error(
           `Masternode list sync failed: ${error.message}`,
           { error, diffCount },
