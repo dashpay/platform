@@ -82,8 +82,8 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment, coreZmqClie
   // );
 
   // getBestBlockHeight
-  const getBestBlockHeight = getBestBlockHeightHandlerFactory(coreRPCClient, coreZmqClient);
-  const wrappedGetBestBlockHeight = jsonToProtobufHandlerWrapper(
+  const getBestBlockHeightHandler = getBestBlockHeightHandlerFactory(coreRPCClient, coreZmqClient);
+  const wrappedGetBestBlockHeightHandler = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       GetBestBlockHeightRequest,
       PBJSGetBestBlockHeightRequest,
@@ -91,7 +91,7 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment, coreZmqClie
     protobufToJsonFactory(
       PBJSGetBestBlockHeightResponse,
     ),
-    wrapInErrorHandler(getBestBlockHeight),
+    wrapInErrorHandler(getBestBlockHeightHandler),
   );
 
   // getBlockchainStatus
@@ -149,7 +149,7 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment, coreZmqClie
   return {
     // TODO: Enable when an attack resistance is proved
     // getBlock: wrappedGetBlock,
-    getBestBlockHeight: wrappedGetBestBlockHeight,
+    getBestBlockHeight: wrappedGetBestBlockHeightHandler,
     getBlockchainStatus: wrappedGetBlockchainStatus,
     // getMasternodeStatus: wrappedGetMasternodeStatus,
     getTransaction: wrappedGetTransaction,

@@ -18,12 +18,10 @@ function getBestBlockHeightFactory(grpcTransport) {
    * @returns {Promise<string>}
    */
   async function getBestBlockHeight(options = {}) {
-    const getBestBlockHeightRequest = new GetBestBlockHeightRequest();
-
     const response = await grpcTransport.request(
       CorePromiseClient,
       'getBestBlockHeight',
-      getBestBlockHeightRequest,
+      new GetBestBlockHeightRequest(),
       options,
     );
 
