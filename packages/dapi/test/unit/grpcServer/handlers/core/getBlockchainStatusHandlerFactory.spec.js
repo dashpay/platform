@@ -16,6 +16,7 @@ describe('getBlockchainStatusHandlerFactory', () => {
 
   let blockchainInfo;
   let networkInfo;
+  let coreZmqClientMock;
 
   beforeEach(function beforeEach() {
     blockchainInfo = {
@@ -53,10 +54,15 @@ describe('getBlockchainStatusHandlerFactory', () => {
       getNetworkInfo: this.sinon.stub().resolves(networkInfo),
     };
 
+    coreZmqClientMock = { on: this.sinon.stub(), topics: { hashblock: 'fake' } };
+
     now = new Date();
     this.sinon.useFakeTimers(now.getTime());
 
-    getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(coreRPCClientMock);
+    getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(
+      coreRPCClientMock,
+      coreZmqClientMock,
+    );
   });
 
   it('should return valid result', async () => {
