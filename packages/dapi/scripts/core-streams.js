@@ -152,6 +152,7 @@ async function main() {
     testTransactionsAgainstFilter,
     dashCoreRpcClient,
     getMemPoolTransactions,
+    chainDataProvider,
   );
 
   const wrappedSubscribeToTransactionsWithProofs = jsonToProtobufHandlerWrapper(
