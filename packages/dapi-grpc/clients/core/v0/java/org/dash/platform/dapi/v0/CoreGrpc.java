@@ -108,6 +108,37 @@ public final class CoreGrpc {
     return getGetBlockMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> getGetBestBlockHeightMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getBestBlockHeight",
+      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest.class,
+      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> getGetBestBlockHeightMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> getGetBestBlockHeightMethod;
+    if ((getGetBestBlockHeightMethod = CoreGrpc.getGetBestBlockHeightMethod) == null) {
+      synchronized (CoreGrpc.class) {
+        if ((getGetBestBlockHeightMethod = CoreGrpc.getGetBestBlockHeightMethod) == null) {
+          CoreGrpc.getGetBestBlockHeightMethod = getGetBestBlockHeightMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getBestBlockHeight"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getBestBlockHeight"))
+              .build();
+        }
+      }
+    }
+    return getGetBestBlockHeightMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionRequest,
       org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionResponse> getBroadcastTransactionMethod;
 
@@ -365,6 +396,13 @@ public final class CoreGrpc {
 
     /**
      */
+    public void getBestBlockHeight(org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetBestBlockHeightMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void broadcastTransaction(org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getBroadcastTransactionMethod(), responseObserver);
@@ -428,6 +466,13 @@ public final class CoreGrpc {
                 org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest,
                 org.dash.platform.dapi.v0.CoreOuterClass.GetBlockResponse>(
                   this, METHODID_GET_BLOCK)))
+          .addMethod(
+            getGetBestBlockHeightMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest,
+                org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse>(
+                  this, METHODID_GET_BEST_BLOCK_HEIGHT)))
           .addMethod(
             getBroadcastTransactionMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -510,6 +555,14 @@ public final class CoreGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetBlockMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getBestBlockHeight(org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetBestBlockHeightMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -598,6 +651,13 @@ public final class CoreGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse getBestBlockHeight(org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetBestBlockHeightMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionResponse broadcastTransaction(org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getBroadcastTransactionMethod(), getCallOptions(), request);
@@ -682,6 +742,14 @@ public final class CoreGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> getBestBlockHeight(
+        org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetBestBlockHeightMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionResponse> broadcastTransaction(
         org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -708,12 +776,13 @@ public final class CoreGrpc {
   private static final int METHODID_GET_BLOCKCHAIN_STATUS = 0;
   private static final int METHODID_GET_MASTERNODE_STATUS = 1;
   private static final int METHODID_GET_BLOCK = 2;
-  private static final int METHODID_BROADCAST_TRANSACTION = 3;
-  private static final int METHODID_GET_TRANSACTION = 4;
-  private static final int METHODID_GET_ESTIMATED_TRANSACTION_FEE = 5;
-  private static final int METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS = 6;
-  private static final int METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS = 7;
-  private static final int METHODID_SUBSCRIBE_TO_MASTERNODE_LIST = 8;
+  private static final int METHODID_GET_BEST_BLOCK_HEIGHT = 3;
+  private static final int METHODID_BROADCAST_TRANSACTION = 4;
+  private static final int METHODID_GET_TRANSACTION = 5;
+  private static final int METHODID_GET_ESTIMATED_TRANSACTION_FEE = 6;
+  private static final int METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS = 7;
+  private static final int METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS = 8;
+  private static final int METHODID_SUBSCRIBE_TO_MASTERNODE_LIST = 9;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -743,6 +812,10 @@ public final class CoreGrpc {
         case METHODID_GET_BLOCK:
           serviceImpl.getBlock((org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockResponse>) responseObserver);
+          break;
+        case METHODID_GET_BEST_BLOCK_HEIGHT:
+          serviceImpl.getBestBlockHeight((org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse>) responseObserver);
           break;
         case METHODID_BROADCAST_TRANSACTION:
           serviceImpl.broadcastTransaction((org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionRequest) request,
@@ -832,6 +905,7 @@ public final class CoreGrpc {
               .addMethod(getGetBlockchainStatusMethod())
               .addMethod(getGetMasternodeStatusMethod())
               .addMethod(getGetBlockMethod())
+              .addMethod(getGetBestBlockHeightMethod())
               .addMethod(getBroadcastTransactionMethod())
               .addMethod(getGetTransactionMethod())
               .addMethod(getGetEstimatedTransactionFeeMethod())
