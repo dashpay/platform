@@ -259,7 +259,7 @@ impl<'a> ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let mut path = self
+        let path = self
             .vote_poll
             .contender_voting_path(TowardsIdentity(self.contestant_id), platform_version)?;
 

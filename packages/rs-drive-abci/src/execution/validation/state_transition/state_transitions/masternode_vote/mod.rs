@@ -741,7 +741,7 @@ mod tests {
         mod contests_requests {
             use super::*;
             #[test]
-            fn test_contests_request() {
+            fn test_not_proved_contests_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .build_with_mock_rpc()
@@ -839,6 +839,45 @@ mod tests {
                 };
 
                 assert_eq!(contested_resource_values.len(), 2);
+            }
+
+            #[test]
+            fn test_proved_contests_request() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity_1, identity_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (identity_3, identity_4, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    8,
+                    "cooldog",
+                    platform_version,
+                );
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                    .expect("expected to encode value");
 
                 let query_validation_result = platform
                     .query_contested_resources(
@@ -1512,6 +1551,329 @@ mod tests {
                 assert_eq!(first_contender.vote_tally, Some(50));
 
                 assert_eq!(second_contender.vote_tally, Some(5));
+            }
+        }
+
+        mod contestant_votes_query {
+            use super::*;
+            use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
+            use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_response::{
+                get_contested_resource_voters_for_identity_response_v0,
+                GetContestedResourceVotersForIdentityResponseV0,
+            };
+            use dapi_grpc::platform::v0::{
+                get_contested_resource_voters_for_identity_request,
+                get_contested_resource_voters_for_identity_response,
+                GetContestedResourceVotersForIdentityRequest,
+            };
+            use drive::query::vote_poll_contestant_votes_query::ResolvedContestedDocumentVotePollVotesDriveQuery;
+            #[test]
+            fn test_non_proved_contestant_votes_query_request() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (contender_3, _, _) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "quantum",
+                    platform_version,
+                );
+
+                for i in 0..50 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_1.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                for i in 0..5 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_2.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                for i in 0..8 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 200 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_3.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                    .expect("expected to encode the word dash");
+
+                let quantum_encoded =
+                    bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                        .expect("expected to encode the word quantum");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let query_validation_result = platform
+                    .query_contested_resource_voters_for_identity(
+                        GetContestedResourceVotersForIdentityRequest {
+                            version: Some(
+                                get_contested_resource_voters_for_identity_request::Version::V0(
+                                    GetContestedResourceVotersForIdentityRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        index_values: vec![
+                                            dash_encoded.clone(),
+                                            quantum_encoded.clone(),
+                                        ],
+                                        contestant_id: contender_1.id().to_vec(),
+                                        start_at_identifier_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: false,
+                                    },
+                                ),
+                            ),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resource_voters_for_identity_response::Version::V0(
+                    GetContestedResourceVotersForIdentityResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = query_validation_result.version.expect("expected a version");
+
+                let Some(
+                    get_contested_resource_voters_for_identity_response_v0::Result::ContestedResourceVoters(
+                        get_contested_resource_voters_for_identity_response_v0::ContestedResourceVoters {
+                            voters,
+                            finished_results,
+                        },
+                    ),
+                ) = result
+                    else {
+                        panic!("expected contenders")
+                    };
+
+                assert!(finished_results);
+
+                assert_eq!(voters.len(), 50);
+            }
+
+            #[test]
+            fn test_proved_contestant_votes_query_request() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (contender_3, _, _) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "quantum",
+                    platform_version,
+                );
+
+                for i in 0..50 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_1.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                for i in 0..5 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_2.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                for i in 0..8 {
+                    let (masternode, signer, voting_key) =
+                        setup_masternode_identity(&mut platform, 200 + i, platform_version);
+
+                    perform_vote(
+                        &mut platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_3.id(),
+                        "quantum",
+                        &signer,
+                        masternode.id(),
+                        &voting_key,
+                        platform_version,
+                    );
+                }
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                    .expect("expected to encode the word dash");
+
+                let quantum_encoded =
+                    bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                        .expect("expected to encode the word quantum");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let query_validation_result = platform
+                    .query_contested_resource_voters_for_identity(
+                        GetContestedResourceVotersForIdentityRequest {
+                            version: Some(
+                                get_contested_resource_voters_for_identity_request::Version::V0(
+                                    GetContestedResourceVotersForIdentityRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        index_values: vec![
+                                            dash_encoded.clone(),
+                                            quantum_encoded.clone(),
+                                        ],
+                                        contestant_id: contender_1.id().to_vec(),
+                                        start_at_identifier_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: true,
+                                    },
+                                ),
+                            ),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resource_voters_for_identity_response::Version::V0(
+                    GetContestedResourceVotersForIdentityResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = query_validation_result.version.expect("expected a version");
+
+                let Some(get_contested_resource_voters_for_identity_response_v0::Result::Proof(
+                    proof,
+                )) = result
+                else {
+                    panic!("expected contenders")
+                };
+
+                let resolved_contested_document_vote_poll_drive_query =
+                    ResolvedContestedDocumentVotePollVotesDriveQuery {
+                        vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                            contract: DataContractResolvedInfo::BorrowedDataContract(
+                                &dpns_contract,
+                            ),
+                            document_type_name: domain.name().clone(),
+                            index_name: index_name.clone(),
+                            index_values: vec![
+                                Value::Text("dash".to_string()),
+                                Value::Text("quantum".to_string()),
+                            ],
+                        },
+                        contestant_id: contender_1.id(),
+                        offset: None,
+                        limit: None,
+                        start_at: None,
+                        order_ascending: true,
+                    };
+
+                let (_, voters) = resolved_contested_document_vote_poll_drive_query
+                    .verify_vote_poll_votes_proof(proof.grovedb_proof.as_ref(), platform_version)
+                    .expect("expected to verify proof");
+
+                assert_eq!(voters.len(), 50);
             }
         }
 
