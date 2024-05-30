@@ -83,6 +83,7 @@ async function sendInstantLockResponse(call, instantLock) {
  * @param {testFunction} testTransactionAgainstFilter
  * @param {CoreRpcClient} coreAPI
  * @param {getMemPoolTransactions} getMemPoolTransactions
+ * @param {ChainDataProvider} chainDataProvider
  * @return {subscribeToTransactionsWithProofsHandler}
  */
 function subscribeToTransactionsWithProofsHandlerFactory(
@@ -92,6 +93,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
   testTransactionAgainstFilter,
   coreAPI,
   getMemPoolTransactions,
+  chainDataProvider,
 ) {
   /**
    * @typedef subscribeToTransactionsWithProofsHandler
@@ -208,7 +210,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       throw e;
     }
 
-    const bestBlockHeight = await coreAPI.getBestBlockHeight();
+    const bestBlockHeight = chainDataProvider.getChainHeight();
 
     let historicalCount = count;
 

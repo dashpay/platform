@@ -7,8 +7,8 @@ const getBlockHash = require('./commands/getBlockHash');
 // Following commands are not implemented yet:
 // const getVersion = require('./commands/getVersion');
 
-const createCommands = (dashcoreAPI) => ({
-  getBestBlockHash: getBestBlockHash(dashcoreAPI),
+const createCommands = (dashcoreAPI, coreZmqClient) => ({
+  getBestBlockHash: getBestBlockHash(dashcoreAPI, coreZmqClient),
   getBlockHash: getBlockHash(dashcoreAPI),
 });
 
@@ -16,20 +16,19 @@ const createCommands = (dashcoreAPI) => ({
   * Starts RPC server
  *  @param options
   * @param {number} options.port - port to listen for incoming RPC connections
-  * @param {string} options.networkType
   * @param {object} options.dashcoreAPI
-  * @param {AbstractDriveAdapter} options.driveAPI - Drive api adapter
-  * @param {object} options.tendermintRpcClient
-  * @param {DashPlatformProtocol} options.dpp
-  * @param {object} options.log
+  * @param {Logger} options.logger
+  * @param {ZmqClient} options.coreZmqClient
  */
 const start = ({
   port,
   dashcoreAPI,
   logger,
+  coreZmqClient,
 }) => {
   const commands = createCommands(
     dashcoreAPI,
+    coreZmqClient,
   );
   /*
   Decorate all commands with decorator that will intercept errors and format

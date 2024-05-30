@@ -26,6 +26,20 @@ Returns best block hash (hash of the chaintip)
 
 ---
 
+### getBestBlockHeight
+
+Returns best block height (height of the chaintip)
+
+*takes no arguments*
+
+##### Response
+
+| name   | type             | description        |
+|--------|------------------|--------------------|
+| height | promise (string) | height of chaintip |
+
+---
+
 ### getBlockHash
 
 Returns block hash for a given height.

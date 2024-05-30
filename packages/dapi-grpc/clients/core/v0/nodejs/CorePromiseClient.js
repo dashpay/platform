@@ -30,6 +30,8 @@ const {
             GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
             GetBlockRequest: PBJSGetBlockRequest,
             GetBlockResponse: PBJSGetBlockResponse,
+            GetBestBlockHeightRequest: PBJSGetBestBlockHeightRequest,
+            GetBestBlockHeightResponse: PBJSGetBestBlockHeightResponse,
             BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
             BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
             GetTransactionRequest: PBJSGetTransactionRequest,
@@ -53,6 +55,7 @@ const {
   GetBlockchainStatusResponse: ProtocGetBlockchainStatusResponse,
   GetMasternodeStatusResponse: ProtocGetMasternodeStatusResponse,
   GetBlockResponse: ProtocGetBlockResponse,
+  GetBestBlockHeightResponse: ProtocGetBestBlockHeightResponse,
   BroadcastTransactionResponse: ProtocBroadcastTransactionResponse,
   GetTransactionResponse: ProtocGetTransactionResponse,
   BlockHeadersWithChainLocksResponse: ProtocBlockHeadersWithChainLocksResponse,
@@ -95,6 +98,10 @@ class CorePromiseClient {
 
     this.client.getBlock = promisify(
       this.client.getBlock.bind(this.client),
+    );
+
+    this.client.getBestBlockHeight = promisify(
+      this.client.getBestBlockHeight.bind(this.client),
     );
 
     this.client.broadcastTransaction = promisify(
@@ -164,6 +171,37 @@ class CorePromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetBlockRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetBestBlockHeightRequest} getBestBlockHeightRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetBestBlockHeightResponse>}
+   */
+  getBestBlockHeight(getBestBlockHeightRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getBestBlockHeight(
+      getBestBlockHeightRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetBestBlockHeightResponse,
+              PBJSGetBestBlockHeightResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetBestBlockHeightRequest,
             ),
           ),
         ],

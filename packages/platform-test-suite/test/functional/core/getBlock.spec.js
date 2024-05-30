@@ -29,8 +29,7 @@ describe.skip('Core', () => {
     });
 
     it('should get block by height', async () => {
-      const { chain: { blocksCount: bestBlockHeight } } = await client
-        .getDAPIClient().core.getBlockchainStatus();
+      const bestBlockHeight = await client.getDAPIClient().core.getBestBlockHeight();
 
       const blockBinary = await client.getDAPIClient().core.getBlockByHeight(bestBlockHeight);
 
