@@ -149,7 +149,19 @@ class MasternodeListSync extends EventEmitter {
         const bestBlockHash = chainLockToBlockHashHex(bestChainLock);
 
         // Resolve promise when we have the best chain lock
-        this.sync(bestBlockHash, bestChainLock.height).then(resolve).catch(reject);
+        this.sync(bestBlockHash, bestChainLock.height).then(() => {
+          if (!resolved) {
+            resolve();
+            resolved = true;
+          }
+        }).catch((error) => {
+          this.logger.error({ err: error }, `Failed to sync masternode list: ${error.message}`);
+
+          if (!resolved) {
+            reject(error);
+            resolved = true;
+          }
+        });
       }
     });
   }
