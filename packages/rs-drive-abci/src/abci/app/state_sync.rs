@@ -86,95 +86,58 @@ where
         &self,
         _: tonic::Request<proto::RequestListSnapshots>,
     ) -> Result<tonic::Response<proto::ResponseListSnapshots>, tonic::Status> {
-        match self
-            .snapshot_manager
-            .get_snapshots(&self.platform.drive.grove)
-        {
-            Ok(snapshots) => {
-                let mut response: proto::ResponseListSnapshots = Default::default();
-                let convert_snapshots = |s: Snapshot| -> proto::Snapshot {
-                    proto::Snapshot {
-                        height: s.height as u64,
-                        version: s.version as u32,
-                        hash: s.hash.to_vec(),
-                        metadata: s.metadata,
-                    }
-                };
-                let checkpoint_exists = |s: &Snapshot| -> bool {
-                    match GroveDb::open(&s.path) {
-                        Ok(_) => true,
-                        Err(_) => false,
-                    }
-                };
-
-                response.snapshots = snapshots
-                    .into_iter()
-                    .filter(checkpoint_exists)
-                    .map(convert_snapshots)
-                    .collect();
-                Ok(tonic::Response::new(response))
+        let snapshots = self.snapshot_manager.get_snapshots(&self.platform.drive.grove).map_err(|e| {
+            tonic::Status::internal(format!("list_snapshots failed: {}", e))
+        })?;
+        let mut response: proto::ResponseListSnapshots = Default::default();
+        let convert_snapshots = |s: Snapshot| -> proto::Snapshot {
+            proto::Snapshot {
+                height: s.height as u64,
+                version: s.version as u32,
+                hash: s.hash.to_vec(),
+                metadata: s.metadata,
             }
-            Err(e) => Err(tonic::Status::internal(format!(
-                "list_snapshots failed:{}",
-                e
-            ))),
-        }
+        };
+        let checkpoint_exists = |s: &Snapshot| -> bool {
+            match GroveDb::open(&s.path) {
+                Ok(_) => true,
+                Err(_) => false,
+            }
+        };
+
+        response.snapshots = snapshots
+            .into_iter()
+            .filter(checkpoint_exists)
+            .map(convert_snapshots)
+            .collect();
+        Ok(tonic::Response::new(response))
     }
 
     async fn load_snapshot_chunk(
         &self,
         request: tonic::Request<proto::RequestLoadSnapshotChunk>,
     ) -> Result<tonic::Response<proto::ResponseLoadSnapshotChunk>, tonic::Status> {
-        match self
-            .snapshot_manager
-            .get_snapshots(&self.platform.drive.grove)
-        {
-            Ok(snapshots) => {
-                let request_snapshot_chunk = request.into_inner();
-                let matched_snapshot_opt = snapshots
-                    .iter()
-                    .find(|&snapshot| snapshot.height == request_snapshot_chunk.height as i64);
-
-                match matched_snapshot_opt {
-                    Some(matched_snapshot) => match GroveDb::open(&matched_snapshot.path) {
-                        Ok(db) => {
-                            match db.fetch_chunk(
-                                &request_snapshot_chunk.chunk_id,
-                                None,
-                                request_snapshot_chunk.version as u16,
-                            ) {
-                                Ok(chunk) => {
-                                    let mut response = proto::ResponseLoadSnapshotChunk::default();
-                                    response.chunk = chunk;
-                                    Ok(tonic::Response::new(response))
-                                }
-                                Err(e) => {
-                                    return Err(tonic::Status::internal(format!(
-                                        "load_snapshot_chunk failed:{}",
-                                        e
-                                    )))
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            return Err(tonic::Status::internal(format!(
-                                "load_snapshot_chunk failed:{}",
-                                e
-                            )))
-                        }
-                    },
-                    None => {
-                        return Err(tonic::Status::internal(
-                            "load_snapshot_chunk failed".to_string(),
-                        ))
-                    }
-                }
-            }
-            _ => {
-                return Err(tonic::Status::internal(
-                    "load_snapshot_chunk failed:".to_string(),
-                ))
-            }
-        }
+        let snapshots = self.snapshot_manager.get_snapshots(&self.platform.drive.grove).map_err(|e| {
+            tonic::Status::internal(format!("load_snapshot_chunk failed: {}", e))
+        })?;
+        let request_snapshot_chunk = request.into_inner();
+        let matched_snapshot = snapshots
+            .iter()
+            .find(|&snapshot| snapshot.height == request_snapshot_chunk.height as i64)
+            .ok_or(tonic::Status::internal("load_snapshot_chunk failed"))?;
+        let db = GroveDb::open(&matched_snapshot.path)
+            .map_err(|e| {
+                tonic::Status::internal(format!("load_snapshot_chunk failed: {}", e))
+            })?;
+        let chunk = db.fetch_chunk(
+            &request_snapshot_chunk.chunk_id,
+            None,
+            request_snapshot_chunk.version as u16,
+        ).map_err(|e| {
+            tonic::Status::internal(format!("load_snapshot_chunk failed: {}", e))
+        })?;
+        let mut response = proto::ResponseLoadSnapshotChunk::default();
+        response.chunk = chunk;
+        Ok(tonic::Response::new(response))
     }
 }
