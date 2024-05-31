@@ -204,8 +204,8 @@ impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializ
 pub struct Contender {
     /// The identity ID of the contender.
     pub identity_id: Identifier,
-    /// The serialized document associated with the contender.
-    pub serialized_document: Option<Document>,
+    /// The document associated with the contender.
+    pub document: Option<Document>,
     /// The vote tally for the contender.
     pub vote_tally: Option<u32>,
 }
