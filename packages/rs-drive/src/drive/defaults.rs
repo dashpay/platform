@@ -50,6 +50,9 @@ pub const BASE_CONTRACT_DOCUMENTS_PATH: u32 = 34;
 pub const BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH: u32 = 35;
 /// Default hash size
 pub const DEFAULT_HASH_SIZE: u32 = 32;
+
+/// Default hash size
+pub const DEFAULT_HASH_SIZE_USIZE: usize = 32;
 /// Default hash 160 size as u8
 pub const DEFAULT_HASH_160_SIZE_U8: u8 = 20;
 /// Default hash size as u8

@@ -70,7 +70,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourcesRequest",
         "GetContestedResourceVoteStateRequest",
         "GetContestedResourceVotersForIdentityRequest",
-        "GetContestedResourceIdentityVoteStatusRequest",
+        "GetContestedResourceIdentityVotesRequest",
         "GetVotePollsByEndDateRequest",
     ];
 
@@ -100,7 +100,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourcesResponse",
         "GetContestedResourceVoteStateResponse",
         "GetContestedResourceVotersForIdentityResponse",
-        "GetContestedResourceIdentityVoteStatusResponse",
+        "GetContestedResourceIdentityVotesResponse",
         "GetVotePollsByEndDateResponse",
     ];
 

@@ -41,7 +41,7 @@ service Platform {
   // Who voted for a contested resource to go to a specific identity?
   rpc getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse);
   // How did an identity vote?
-  rpc getContestedResourceIdentityVoteStatus(GetContestedResourceIdentityVoteStatusRequest) returns (GetContestedResourceIdentityVoteStatusResponse);
+  rpc getContestedResourceIdentityVotes(GetContestedResourceIdentityVotesRequest) returns (GetContestedResourceIdentityVotesResponse);
   // What vote polls will end soon?
   rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
   rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
@@ -822,41 +822,46 @@ message GetContestedResourceVotersForIdentityResponse {
 }
 
 // How did an identity vote?
-message GetContestedResourceIdentityVoteStatusRequest {
-  message GetContestedResourceIdentityVoteStatusRequestV0 {
-    bool prove = 1;
-    repeated bytes resource_path = 2;
-    bytes resource_identifier = 3;
-    optional bytes voter_identifier = 4;
-    optional uint32 count = 5;
-    optional bool ascending = 6;
+message GetContestedResourceIdentityVotesRequest {
+  message GetContestedResourceIdentityVotesRequestV0 {
+    message StartAtVotePollIdInfo {
+      bytes start_at_poll_identifier = 1;
+      bool start_poll_identifier_included = 2;
+    }
+    bytes identity_id = 1;
+    google.protobuf.UInt32Value limit = 2;
+    google.protobuf.UInt32Value offset = 3;
+    bool order_ascending = 4;
+    optional StartAtVotePollIdInfo start_at_vote_poll_id_info = 5;
+    bool prove = 6;
   }
 
   oneof version {
-    GetContestedResourceIdentityVoteStatusRequestV0 v0 = 1;
+    GetContestedResourceIdentityVotesRequestV0 v0 = 1;
   }
 }
 
-message GetContestedResourceIdentityVoteStatusResponse {
-  message GetContestedResourceIdentityVoteStatusResponseV0 {
-    message ContestedResourceVoters {
-      repeated Voter voters = 1;
+message GetContestedResourceIdentityVotesResponse {
+  message GetContestedResourceIdentityVotesResponseV0 {
+    message Votes {
+      repeated Vote votes = 1;
       bool finished_results = 2;
     }
 
-    message Voter {
-      bytes identifier = 1;
+    message Vote {
+      // We return a serialized vote
+      bytes contested_resource_serialized_vote = 1;
     }
 
     oneof result {
-      ContestedResourceVoters contested_resource_voters = 1;
+      Votes votes = 1;
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
   }
 
   oneof version {
-    GetContestedResourceIdentityVoteStatusResponseV0 v0 = 1;
+    GetContestedResourceIdentityVotesResponseV0 v0 = 1;
   }
 }
 

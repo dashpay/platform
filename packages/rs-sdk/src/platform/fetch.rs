@@ -230,5 +230,5 @@ impl Fetch for ExtendedEpochInfo {
 }
 
 impl Fetch for ContestedVote {
-    type Request = platform_proto::GetContestedResourceIdentityVoteStatusRequest;
+    type Request = platform_proto::GetContestedResourceIdentityVotesRequest;
 }

@@ -95,6 +95,10 @@ pub mod vote_polls_by_end_date_query;
 pub mod vote_polls_by_document_type_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
+/// A query to get the votes given out by an identity
+pub mod contested_resource_votes_given_by_identity_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {

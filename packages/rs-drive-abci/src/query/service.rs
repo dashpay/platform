@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
-    GetConsensusParamsResponse, GetContestedResourceIdentityVoteStatusRequest,
-    GetContestedResourceIdentityVoteStatusResponse, GetContestedResourceVoteStateRequest,
+    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
+    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
     GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
     GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
     GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
@@ -497,14 +497,14 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_contested_resource_identity_vote_status(
+    async fn get_contested_resource_identity_votes(
         &self,
-        request: Request<GetContestedResourceIdentityVoteStatusRequest>,
-    ) -> Result<Response<GetContestedResourceIdentityVoteStatusResponse>, Status> {
+        request: Request<GetContestedResourceIdentityVotesRequest>,
+    ) -> Result<Response<GetContestedResourceIdentityVotesResponse>, Status> {
         self.handle_blocking_query(
             request,
-            Platform::<DefaultCoreRPC>::query_contested_resource_identity_vote_status,
-            "get_contested_resource_identity_vote_status",
+            Platform::<DefaultCoreRPC>::query_contested_resource_identity_votes,
+            "get_contested_resource_identity_votes",
         )
         .await
     }

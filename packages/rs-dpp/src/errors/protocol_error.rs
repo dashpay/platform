@@ -137,6 +137,9 @@ pub enum ProtocolError {
     #[error("Generic Error: {0}")]
     Generic(String),
 
+    #[error("Not supported Error: {0}")]
+    NotSupported(String),
+
     #[cfg(feature = "message-signing")]
     #[error("Invalid signing type error: {0}")]
     InvalidSigningKeyTypeError(String),

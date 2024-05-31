@@ -199,6 +199,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     add_contested_document_to_primary_storage: 0,
                     add_contested_indices_for_contract_operations: 0,
                     add_contested_reference_and_vote_subtree_to_document_operations: 0,
+                    add_contested_vote_subtree_for_non_identities_operations: 0,
                 },
                 update: DriveDocumentUpdateMethodVersions {
                     add_update_multiple_documents_operations: 0,

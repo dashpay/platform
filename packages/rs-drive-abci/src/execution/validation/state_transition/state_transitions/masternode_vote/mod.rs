@@ -156,10 +156,13 @@ mod tests {
         GetContestedResourceVotersForIdentityRequest,
     };
     use drive::query::vote_poll_contestant_votes_query::ResolvedContestedDocumentVotePollVotesDriveQuery;
+    use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::get_contested_resource_voters_for_identity_request_v0;
+    use dpp::platform_value;
 
     mod vote_tests {
-
         use super::*;
+        use dpp::prelude::IdentityNonce;
+        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 
         fn setup_masternode_identity(
             platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -687,11 +690,12 @@ mod tests {
             platform: &mut TempPlatform<MockCoreRPCLike>,
             platform_state: &Guard<Arc<PlatformState>>,
             dpns_contract: &DataContract,
-            towards_identity_id: Identifier,
+            resource_vote_choice: ResourceVoteChoice,
             name: &str,
             signer: &SimpleSigner,
             masternode_id: Identifier,
             voting_key: &IdentityPublicKey,
+            nonce: IdentityNonce,
             platform_version: &PlatformVersion,
         ) {
             // Let's vote for contender 1
@@ -708,7 +712,7 @@ mod tests {
                         ],
                     },
                 ),
-                resource_vote_choice: TowardsIdentity(towards_identity_id),
+                resource_vote_choice,
             }));
 
             let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
@@ -716,7 +720,7 @@ mod tests {
                 signer,
                 masternode_id,
                 voting_key,
-                1,
+                nonce,
                 platform_version,
                 None,
             )
@@ -973,11 +977,12 @@ mod tests {
                     &mut platform,
                     &platform_state,
                     dpns_contract.as_ref(),
-                    contender_1.id(),
+                    TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer_1,
                     masternode_1.id(),
                     &voting_key_1,
+                    1,
                     platform_version,
                 );
 
@@ -1108,11 +1113,12 @@ mod tests {
                     &mut platform,
                     &platform_state,
                     dpns_contract.as_ref(),
-                    contender_1.id(),
+                    TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer_1,
                     masternode_1.id(),
                     &voting_key_1,
+                    1,
                     platform_version,
                 );
 
@@ -1263,11 +1269,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_1.id(),
+                        TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -1280,11 +1287,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_2.id(),
+                        TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -1417,11 +1425,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_1.id(),
+                        TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -1434,11 +1443,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_2.id(),
+                        TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -1565,11 +1575,9 @@ mod tests {
             }
         }
 
-        mod contestant_votes_query {
-            use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::get_contested_resource_voters_for_identity_request_v0;
-            use dpp::platform_value;
+        mod contestant_received_votes_query {
             use super::*;
-            
+
             fn get_contestant_votes(
                 platform: &TempPlatform<MockCoreRPCLike>,
                 platform_state: &PlatformState,
@@ -1584,7 +1592,6 @@ mod tests {
                 should_be_finished: bool,
                 platform_version: &PlatformVersion,
             ) -> Vec<Identifier> {
-
                 let domain = dpns_contract
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
@@ -1596,12 +1603,14 @@ mod tests {
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode the word dash");
 
-                let quantum_encoded =
-                    bincode::encode_to_vec(Value::Text(convert_to_homograph_safe_chars(name)), config)
-                        .expect("expected to encode the word quantum");
+                let quantum_encoded = bincode::encode_to_vec(
+                    Value::Text(convert_to_homograph_safe_chars(name)),
+                    config,
+                )
+                .expect("expected to encode the word quantum");
 
                 let index_name = "parentNameAndLabel".to_string();
-                
+
                 let query_validation_result = platform
                     .query_contested_resource_voters_for_identity(
                         GetContestedResourceVotersForIdentityRequest {
@@ -1652,8 +1661,12 @@ mod tests {
                 if should_be_finished {
                     assert!(finished_results);
                 }
-                
-                voters.into_iter().map(Identifier::from_vec).collect::<Result<Vec<Identifier>, platform_value::Error>>().expect("expected all voters to be identifiers")
+
+                voters
+                    .into_iter()
+                    .map(Identifier::from_vec)
+                    .collect::<Result<Vec<Identifier>, platform_value::Error>>()
+                    .expect("expected all voters to be identifiers")
             }
 
             fn get_proved_contestant_votes(
@@ -1669,7 +1682,6 @@ mod tests {
                 >,
                 platform_version: &PlatformVersion,
             ) -> Vec<Identifier> {
-
                 let domain = dpns_contract
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
@@ -1681,9 +1693,11 @@ mod tests {
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode the word dash");
 
-                let quantum_encoded =
-                    bincode::encode_to_vec(Value::Text(convert_to_homograph_safe_chars(name)), config)
-                        .expect("expected to encode the word quantum");
+                let quantum_encoded = bincode::encode_to_vec(
+                    Value::Text(convert_to_homograph_safe_chars(name)),
+                    config,
+                )
+                .expect("expected to encode the word quantum");
 
                 let index_name = "parentNameAndLabel".to_string();
 
@@ -1724,11 +1738,11 @@ mod tests {
                 ) = query_validation_result.version.expect("expected a version");
 
                 let Some(get_contested_resource_voters_for_identity_response_v0::Result::Proof(
-                             proof,
-                         )) = result
-                    else {
-                        panic!("expected contenders")
-                    };
+                    proof,
+                )) = result
+                else {
+                    panic!("expected contenders")
+                };
 
                 let resolved_contested_document_vote_poll_drive_query =
                     ResolvedContestedDocumentVotePollVotesDriveQuery {
@@ -1756,8 +1770,6 @@ mod tests {
 
                 voters
             }
-
-
 
             #[test]
             fn test_non_proved_contestant_votes_query_request() {
@@ -1792,11 +1804,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_1.id(),
+                        TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -1809,11 +1822,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_2.id(),
+                        TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -1826,11 +1840,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_3.id(),
+                        TowardsIdentity(contender_3.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -1904,11 +1919,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_1.id(),
+                        TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -1936,11 +1952,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_1.id(),
+                        TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -1958,6 +1975,28 @@ mod tests {
                     platform_version,
                 );
                 assert_eq!(voters.len(), 100);
+
+                let voters_reversed_30 = get_contestant_votes(
+                    &platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    contender_1.id(),
+                    "quantum",
+                    Some(30),
+                    false,
+                    Some(get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo {
+                        start_identifier: voters.last().expect("expected a last voter").to_vec(),
+                        start_identifier_included: true,
+                    }),
+                    false,
+                    platform_version,
+                );
+                assert_eq!(voters_reversed_30.len(), 30);
+
+                let reversed_last_30_from_100_query: Vec<_> =
+                    voters.split_at(70).1.iter().rev().cloned().collect();
+
+                assert_eq!(voters_reversed_30, reversed_last_30_from_100_query);
             }
 
             #[test]
@@ -1993,11 +2032,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_1.id(),
+                        TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -2010,11 +2050,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_2.id(),
+                        TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -2027,11 +2068,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_3.id(),
+                        TowardsIdentity(contender_3.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -2089,10 +2131,188 @@ mod tests {
                 );
 
                 voters_3_desc.reverse();
-                
+
                 assert_eq!(voters_3, voters_3_desc);
 
                 assert_eq!(voters_3.len(), 8);
+            }
+        }
+
+        mod identity_given_votes_query {
+            use super::*;
+            use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::{
+                get_contested_resource_identity_votes_request_v0,
+                GetContestedResourceIdentityVotesRequestV0,
+            };
+            use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::{
+                get_contested_resource_identity_votes_response_v0,
+                GetContestedResourceIdentityVotesResponseV0,
+            };
+            use dapi_grpc::platform::v0::{
+                get_contested_resource_identity_votes_request,
+                get_contested_resource_identity_votes_response,
+                GetContestedResourceIdentityVotesRequest,
+            };
+            use dpp::ProtocolError;
+
+            fn get_identity_given_votes(
+                platform: &TempPlatform<MockCoreRPCLike>,
+                platform_state: &PlatformState,
+                identity_id: Identifier,
+                count: Option<u32>,
+                order_ascending: bool,
+                start_at_vote_poll_id_info: Option<
+                    get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo,
+                >,
+                should_be_finished: bool,
+                platform_version: &PlatformVersion,
+            ) -> Vec<ResourceVote> {
+                let query_validation_result = platform
+                    .query_contested_resource_identity_votes(
+                        GetContestedResourceIdentityVotesRequest {
+                            version: Some(
+                                get_contested_resource_identity_votes_request::Version::V0(
+                                    GetContestedResourceIdentityVotesRequestV0 {
+                                        identity_id: identity_id.to_vec(),
+                                        limit: count,
+                                        offset: None,
+                                        order_ascending,
+                                        start_at_vote_poll_id_info,
+                                        prove: false,
+                                    },
+                                ),
+                            ),
+                        },
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resource_identity_votes_response::Version::V0(
+                    GetContestedResourceIdentityVotesResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = query_validation_result.version.expect("expected a version");
+
+                let Some(get_contested_resource_identity_votes_response_v0::Result::Votes(
+                    get_contested_resource_identity_votes_response_v0::Votes {
+                        votes,
+                        finished_results,
+                    },
+                )) = result
+                else {
+                    panic!("expected contenders")
+                };
+                if should_be_finished {
+                    assert!(finished_results);
+                }
+
+                votes
+                    .iter()
+                    .map(|vote| {
+                        ResourceVote::deserialize_from_bytes(
+                            vote.contested_resource_serialized_vote.as_slice(),
+                        )
+                    })
+                    .collect::<Result<Vec<ResourceVote>, ProtocolError>>()
+                    .expect("expected all voters to be identifiers")
+            }
+
+            #[test]
+            fn test_not_proved_identity_given_votes_query_request() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1_quantum, contender_2_quantum, dpns_contract) =
+                    create_dpns_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        7,
+                        "quantum",
+                        platform_version,
+                    );
+
+                let (contender_1_cooldog, contender_2_cooldog, dpns_contract) =
+                    create_dpns_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        8,
+                        "cooldog",
+                        platform_version,
+                    );
+
+                let (contender_1_superman, contender_2_superman, dpns_contract) =
+                    create_dpns_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "superman",
+                        platform_version,
+                    );
+
+                let (masternode, signer, voting_key) =
+                    setup_masternode_identity(&mut platform, 10, platform_version);
+
+                // Now let's perform a few votes
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1_quantum.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    1,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2_cooldog.id()),
+                    "cooldog",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    2,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    ResourceVoteChoice::Lock,
+                    "superman",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    3,
+                    platform_version,
+                );
+
+                let votes = get_identity_given_votes(
+                    &platform,
+                    &platform_state,
+                    masternode.id(),
+                    None,
+                    true,
+                    None,
+                    true,
+                    platform_version,
+                );
+
+                assert_eq!(votes.len(), 3)
             }
         }
 
@@ -3546,11 +3766,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_1.id(),
+                        TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -3573,11 +3794,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_2.id(),
+                        TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -3645,11 +3867,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_1.id(),
+                        TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }
@@ -3672,11 +3895,12 @@ mod tests {
                         &mut platform,
                         &platform_state,
                         dpns_contract.as_ref(),
-                        contender_2.id(),
+                        TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
                         masternode.id(),
                         &voting_key,
+                        1,
                         platform_version,
                     );
                 }

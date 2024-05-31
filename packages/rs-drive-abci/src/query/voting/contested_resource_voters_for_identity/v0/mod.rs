@@ -116,8 +116,7 @@ impl<C> Platform<C> {
             document_type_name,
             index_name,
             index_values,
-        }
-        .into();
+        };
 
         let limit = count
             .map_or(Some(config.default_query_limit), |limit_value| {

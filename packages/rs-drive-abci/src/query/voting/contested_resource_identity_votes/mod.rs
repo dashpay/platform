@@ -3,10 +3,10 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_contested_resource_identity_vote_status_request::Version as RequestVersion;
-use dapi_grpc::platform::v0::get_contested_resource_identity_vote_status_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{
-    GetContestedResourceIdentityVoteStatusRequest, GetContestedResourceIdentityVoteStatusResponse,
+    GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
 };
 use dpp::version::PlatformVersion;
 
@@ -14,12 +14,12 @@ mod v0;
 
 impl<C> Platform<C> {
     /// Querying of a how an identity voted for a specific contested resource
-    pub fn query_contested_resource_identity_vote_status(
+    pub fn query_contested_resource_identity_votes(
         &self,
-        GetContestedResourceIdentityVoteStatusRequest { version }: GetContestedResourceIdentityVoteStatusRequest,
+        GetContestedResourceIdentityVotesRequest { version }: GetContestedResourceIdentityVotesRequest,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetContestedResourceIdentityVoteStatusResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetContestedResourceIdentityVotesResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError(
@@ -40,7 +40,7 @@ impl<C> Platform<C> {
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::UnsupportedQueryVersion(
-                    "query_contested_resource_identity_vote_status".to_string(),
+                    "query_contested_resource_identity_votes".to_string(),
                     feature_version_bounds.min_version,
                     feature_version_bounds.max_version,
                     platform_version.protocol_version,
@@ -50,17 +50,17 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result = self.query_contested_resource_identity_vote_status_v0(
+                let result = self.query_contested_resource_identity_votes_v0(
                     request_v0,
                     platform_state,
                     platform_version,
                 )?;
 
-                Ok(result.map(
-                    |response_v0| GetContestedResourceIdentityVoteStatusResponse {
+                Ok(
+                    result.map(|response_v0| GetContestedResourceIdentityVotesResponse {
                         version: Some(ResponseVersion::V0(response_v0)),
-                    },
-                ))
+                    }),
+                )
             }
         }
     }

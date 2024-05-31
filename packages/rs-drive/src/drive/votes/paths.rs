@@ -3,6 +3,7 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
     ContestedDocumentResourceVotePollWithContractInfo,
     ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,
 };
+use crate::drive::votes::ResourceVoteChoiceToKeyTrait;
 use crate::drive::RootTree;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -39,6 +40,12 @@ pub const ACTIVE_POLLS_TREE_KEY: char = 'p';
 
 /// A subtree made for being able to query votes that an identity has made
 pub const IDENTITY_VOTES_TREE_KEY: char = 'i';
+
+/// In the active vote poll this will contain votes for locking the contested resource
+pub const RESOURCE_LOCK_VOTE_TREE_KEY: char = 'l';
+
+/// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
+pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY: char = 'a';
 
 /// Convenience methods to be easily able to get a path when we know the vote poll
 pub trait VotePollPaths {

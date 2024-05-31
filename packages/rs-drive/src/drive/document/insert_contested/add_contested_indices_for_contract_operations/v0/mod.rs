@@ -12,7 +12,10 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
+use crate::drive::votes::paths::{
+    vote_contested_resource_active_polls_contract_document_tree_path_vec,
+    RESOURCE_ABSTAIN_VOTE_TREE_KEY, RESOURCE_LOCK_VOTE_TREE_KEY,
+};
 use crate::error::drive::DriveError;
 use dpp::data_contract::document_type::IndexProperty;
 use dpp::version::PlatformVersion;
@@ -206,7 +209,32 @@ impl Drive {
             drive_version,
         )?;
 
-        index_path_info.push(DriveKeyInfo::Key(owner_id.to_vec()))?;
+        let inserted_abstain = self.batch_insert_empty_tree_if_not_exists(
+            DriveKeyInfo::Key(vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY as u8])
+                .add_path_info(index_path_info.clone()),
+            false,
+            storage_flags,
+            apply_type,
+            transaction,
+            previous_batch_operations,
+            batch_operations,
+            drive_version,
+        )?;
+
+        let inserted_lock = self.batch_insert_empty_tree_if_not_exists(
+            DriveKeyInfo::Key(vec![RESOURCE_LOCK_VOTE_TREE_KEY as u8])
+                .add_path_info(index_path_info.clone()),
+            false,
+            storage_flags,
+            apply_type,
+            transaction,
+            previous_batch_operations,
+            batch_operations,
+            drive_version,
+        )?;
+
+        let mut towards_identity_index_path_info = index_path_info.clone();
+        towards_identity_index_path_info.push(DriveKeyInfo::Key(owner_id.to_vec()))?;
 
         //                Inter-wizard championship (event type)
         //                             |
@@ -219,13 +247,44 @@ impl Drive {
 
         self.add_contested_reference_and_vote_subtree_to_document_operations(
             document_and_contract_info,
-            index_path_info,
+            towards_identity_index_path_info,
             storage_flags,
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
             drive_version,
         )?;
+
+        if inserted_abstain {
+            let mut towards_abstain_index_path_info = index_path_info.clone();
+            towards_abstain_index_path_info.push(DriveKeyInfo::Key(vec![
+                RESOURCE_ABSTAIN_VOTE_TREE_KEY as u8,
+            ]))?;
+
+            self.add_contested_vote_subtree_operations(
+                towards_abstain_index_path_info,
+                storage_flags,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                drive_version,
+            )?;
+        }
+
+        if inserted_lock {
+            let mut towards_lock_index_path_info = index_path_info;
+            towards_lock_index_path_info
+                .push(DriveKeyInfo::Key(vec![RESOURCE_LOCK_VOTE_TREE_KEY as u8]))?;
+
+            self.add_contested_vote_subtree_operations(
+                towards_lock_index_path_info,
+                storage_flags,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                drive_version,
+            )?;
+        }
 
         Ok(contest_already_existed)
     }
