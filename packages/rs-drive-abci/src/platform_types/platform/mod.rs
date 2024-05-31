@@ -41,7 +41,6 @@ pub struct Platform<C> {
     pub config: PlatformConfig,
     /// Core RPC Client
     pub core_rpc: C,
-    //add here SnapshotManager (maybe) ArcSwap
 }
 
 // @append_only
