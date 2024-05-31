@@ -12,6 +12,7 @@ impl MasternodeVoteTransitionAction {
     /// # Parameters
     ///
     /// - `value`: The owned `MasternodeVoteTransition` to transform.
+    /// - `masternode_strength`: The strength of the masternode, normal ones have 1, evonodes have 4
     /// - `drive`: A reference to the `Drive` instance.
     /// - `transaction`: The transaction argument.
     /// - `platform_version`: A reference to the platform version.
@@ -21,6 +22,7 @@ impl MasternodeVoteTransitionAction {
     /// A `Result` containing the transformed `MasternodeVoteTransitionAction`, or an `Error` if the transformation fails.
     pub fn transform_from_owned_transition(
         value: MasternodeVoteTransition,
+        masternode_strength: u8,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -29,6 +31,7 @@ impl MasternodeVoteTransitionAction {
             MasternodeVoteTransition::V0(v0) => Ok(
                 MasternodeVoteTransitionActionV0::transform_from_owned_transition(
                     v0,
+                    masternode_strength,
                     drive,
                     transaction,
                     platform_version,
@@ -43,6 +46,7 @@ impl MasternodeVoteTransitionAction {
     /// # Parameters
     ///
     /// - `value`: A reference to the `MasternodeVoteTransition` to transform.
+    /// - `masternode_strength`: The strength of the masternode, normal ones have 1, evonodes have 4
     /// - `drive`: A reference to the `Drive` instance.
     /// - `transaction`: The transaction argument.
     /// - `platform_version`: A reference to the platform version.
@@ -52,6 +56,7 @@ impl MasternodeVoteTransitionAction {
     /// A `Result` containing the transformed `MasternodeVoteTransitionAction`, or an `Error` if the transformation fails.
     pub fn transform_from_transition(
         value: &MasternodeVoteTransition,
+        masternode_strength: u8,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -60,6 +65,7 @@ impl MasternodeVoteTransitionAction {
             MasternodeVoteTransition::V0(v0) => {
                 Ok(MasternodeVoteTransitionActionV0::transform_from_transition(
                     v0,
+                    masternode_strength,
                     drive,
                     transaction,
                     platform_version,

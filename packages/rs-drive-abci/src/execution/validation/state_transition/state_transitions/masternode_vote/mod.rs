@@ -161,8 +161,13 @@ mod tests {
 
     mod vote_tests {
         use super::*;
+        use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
+        use dpp::dashcore::hashes::Hash;
+        use dpp::dashcore::{ProTxHash, Txid};
         use dpp::prelude::IdentityNonce;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+        use std::ops::Deref;
 
         fn setup_masternode_identity(
             platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -200,6 +205,46 @@ mod tests {
                     platform_version,
                 )
                 .expect("expected to add a new identity");
+
+            let mut platform_state = platform.state.load().clone().deref().clone();
+
+            let pro_tx_hash = ProTxHash::from_byte_array(identity.id().to_buffer());
+
+            let random_ip = Ipv4Addr::new(
+                rng.gen_range(0..255),
+                rng.gen_range(0..255),
+                rng.gen_range(0..255),
+                rng.gen_range(0..255),
+            );
+
+            platform_state.full_masternode_list_mut().insert(
+                pro_tx_hash,
+                MasternodeListItem {
+                    node_type: MasternodeType::Regular,
+                    pro_tx_hash,
+                    collateral_hash: Txid::from_byte_array(rng.gen()),
+                    collateral_index: 0,
+                    collateral_address: rng.gen(),
+                    operator_reward: 0.0,
+                    state: DMNState {
+                        service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
+                        registered_height: 0,
+                        pose_revived_height: None,
+                        pose_ban_height: None,
+                        revocation_reason: 0,
+                        owner_address: rng.gen(),
+                        voting_address: rng.gen(),
+                        payout_address: rng.gen(),
+                        pub_key_operator: vec![],
+                        operator_payout_address: None,
+                        platform_node_id: None,
+                        platform_p2p_port: None,
+                        platform_http_port: None,
+                    },
+                },
+            );
+
+            platform.state.store(Arc::new(platform_state));
 
             (identity, signer, voting_key)
         }
@@ -973,6 +1018,8 @@ mod tests {
                 let (masternode_1, signer_1, voting_key_1) =
                     setup_masternode_identity(&mut platform, 29, platform_version);
 
+                let platform_state = platform.state.load();
+
                 perform_vote(
                     &mut platform,
                     &platform_state,
@@ -1108,6 +1155,8 @@ mod tests {
 
                 let (masternode_1, signer_1, voting_key_1) =
                     setup_masternode_identity(&mut platform, 29, platform_version);
+
+                let platform_state = platform.state.load();
 
                 perform_vote(
                     &mut platform,
@@ -1265,6 +1314,8 @@ mod tests {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
+                    let platform_state = platform.state.load();
+
                     perform_vote(
                         &mut platform,
                         &platform_state,
@@ -1282,6 +1333,8 @@ mod tests {
                 for i in 0..5 {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    let platform_state = platform.state.load();
 
                     perform_vote(
                         &mut platform,
@@ -1421,6 +1474,8 @@ mod tests {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
+                    let platform_state = platform.state.load();
+
                     perform_vote(
                         &mut platform,
                         &platform_state,
@@ -1438,6 +1493,8 @@ mod tests {
                 for i in 0..5 {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    let platform_state = platform.state.load();
 
                     perform_vote(
                         &mut platform,
@@ -1800,6 +1857,8 @@ mod tests {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
+                    let platform_state = platform.state.load();
+
                     perform_vote(
                         &mut platform,
                         &platform_state,
@@ -1818,6 +1877,8 @@ mod tests {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
+                    let platform_state = platform.state.load();
+
                     perform_vote(
                         &mut platform,
                         &platform_state,
@@ -1835,6 +1896,8 @@ mod tests {
                 for i in 0..8 {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 200 + i, platform_version);
+
+                    let platform_state = platform.state.load();
 
                     perform_vote(
                         &mut platform,
@@ -1915,6 +1978,8 @@ mod tests {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 400 + i, platform_version);
 
+                    let platform_state = platform.state.load();
+
                     perform_vote(
                         &mut platform,
                         &platform_state,
@@ -1947,6 +2012,8 @@ mod tests {
                 for i in 0..1 {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 500 + i, platform_version);
+
+                    let platform_state = platform.state.load();
 
                     perform_vote(
                         &mut platform,
@@ -2028,6 +2095,8 @@ mod tests {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
+                    let platform_state = platform.state.load();
+
                     perform_vote(
                         &mut platform,
                         &platform_state,
@@ -2046,6 +2115,8 @@ mod tests {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
+                    let platform_state = platform.state.load();
+
                     perform_vote(
                         &mut platform,
                         &platform_state,
@@ -2063,6 +2134,8 @@ mod tests {
                 for i in 0..8 {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 200 + i, platform_version);
+
+                    let platform_state = platform.state.load();
 
                     perform_vote(
                         &mut platform,
@@ -2183,7 +2256,7 @@ mod tests {
                                 ),
                             ),
                         },
-                        &platform_state,
+                        platform_state,
                         platform_version,
                     )
                     .expect("expected to execute query")
@@ -2262,6 +2335,8 @@ mod tests {
 
                 // Now let's perform a few votes
 
+                let platform_state = platform.state.load();
+
                 perform_vote(
                     &mut platform,
                     &platform_state,
@@ -2275,6 +2350,8 @@ mod tests {
                     platform_version,
                 );
 
+                let platform_state = platform.state.load();
+
                 perform_vote(
                     &mut platform,
                     &platform_state,
@@ -2287,6 +2364,8 @@ mod tests {
                     2,
                     platform_version,
                 );
+
+                let platform_state = platform.state.load();
 
                 perform_vote(
                     &mut platform,
@@ -3762,6 +3841,8 @@ mod tests {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
+                    let platform_state = platform.state.load();
+
                     perform_vote(
                         &mut platform,
                         &platform_state,
@@ -3789,6 +3870,8 @@ mod tests {
                 for i in 0..5 {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    let platform_state = platform.state.load();
 
                     perform_vote(
                         &mut platform,
@@ -3863,6 +3946,8 @@ mod tests {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
+                    let platform_state = platform.state.load();
+
                     perform_vote(
                         &mut platform,
                         &platform_state,
@@ -3890,6 +3975,8 @@ mod tests {
                 for i in 0..5 {
                     let (masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
+
+                    let platform_state = platform.state.load();
 
                     perform_vote(
                         &mut platform,

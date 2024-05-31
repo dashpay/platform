@@ -9,6 +9,8 @@ use dpp::prelude::IdentityNonce;
 pub struct MasternodeVoteTransitionActionV0 {
     /// the pro tx hash identifier of the masternode
     pub pro_tx_hash: Identifier,
+    /// masternode type vote strength, masternodes have 1, evonodes have 4
+    pub vote_strength: u8,
     /// the resource votes
     pub vote: ResolvedVote,
     /// nonce

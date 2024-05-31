@@ -15,6 +15,7 @@ impl Drive {
     pub(super) fn register_identity_vote_v0(
         &self,
         voter_pro_tx_hash: [u8; 32],
+        strength: u8,
         vote: ResolvedVote,
         block_info: &BlockInfo,
         apply: bool,
@@ -29,6 +30,7 @@ impl Drive {
                         contested_document_resource_vote_poll,
                     ) => self.register_contested_resource_identity_vote(
                         voter_pro_tx_hash,
+                        strength,
                         contested_document_resource_vote_poll,
                         vote_choice,
                         block_info,
@@ -44,6 +46,7 @@ impl Drive {
     pub(super) fn register_identity_vote_operations_v0(
         &self,
         voter_pro_tx_hash: [u8; 32],
+        strength: u8,
         vote: ResolvedVote,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -60,6 +63,7 @@ impl Drive {
                         contested_document_resource_vote_poll,
                     ) => self.register_contested_resource_identity_vote_operations(
                         voter_pro_tx_hash,
+                        strength,
                         contested_document_resource_vote_poll,
                         vote_choice,
                         block_info,

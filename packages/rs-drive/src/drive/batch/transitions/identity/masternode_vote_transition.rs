@@ -19,6 +19,7 @@ impl DriveHighLevelOperationConverter for MasternodeVoteTransitionAction {
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let pro_tx_hash = self.pro_tx_hash();
         let nonce = self.nonce();
+        let strength = self.vote_strength();
         let vote = self.vote_owned();
         let prefunded_specialized_balance_id = vote.specialized_balance_id()?.ok_or(Error::Protocol(ProtocolError::VoteError("vote does not have a specialized balance from where it can use to pay for processing (this should have been caught during validation)".to_string())))?;
 
@@ -29,6 +30,7 @@ impl DriveHighLevelOperationConverter for MasternodeVoteTransitionAction {
             }),
             IdentityOperation(IdentityOperationType::MasternodeCastVote {
                 voter_pro_tx_hash: pro_tx_hash.to_buffer(),
+                strength,
                 vote,
             }),
             // Casting a vote has a fixed cost

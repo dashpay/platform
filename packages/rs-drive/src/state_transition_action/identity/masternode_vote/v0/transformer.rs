@@ -9,6 +9,7 @@ use platform_version::version::PlatformVersion;
 impl MasternodeVoteTransitionActionV0 {
     pub(crate) fn transform_from_owned_transition(
         value: MasternodeVoteTransitionV0,
+        masternode_strength: u8,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -22,6 +23,7 @@ impl MasternodeVoteTransitionActionV0 {
         let resolved_vote = vote.resolve_owned(drive, transaction, platform_version)?;
         Ok(MasternodeVoteTransitionActionV0 {
             pro_tx_hash,
+            vote_strength: masternode_strength,
             vote: resolved_vote,
             nonce,
         })
@@ -29,6 +31,7 @@ impl MasternodeVoteTransitionActionV0 {
 
     pub(crate) fn transform_from_transition(
         value: &MasternodeVoteTransitionV0,
+        masternode_strength: u8,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -42,6 +45,7 @@ impl MasternodeVoteTransitionActionV0 {
         let resolved_vote = vote.resolve(drive, transaction, platform_version)?;
         Ok(MasternodeVoteTransitionActionV0 {
             pro_tx_hash: *pro_tx_hash,
+            vote_strength: masternode_strength,
             vote: resolved_vote,
             nonce: *nonce,
         })

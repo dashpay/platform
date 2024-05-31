@@ -141,7 +141,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(BTreeMap::new()),
             Err(e) => Err(e),
-            Ok((query_result_elements, skipped)) => {
+            Ok((query_result_elements, _)) => {
                 let voters = query_result_elements
                     .to_path_key_elements()
                     .into_iter()

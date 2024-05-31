@@ -35,6 +35,7 @@ use crate::consensus::state::identity::identity_public_key_already_exists_for_un
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -139,6 +140,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DataContractUpdatePermissionError(DataContractUpdatePermissionError),
+
+    #[error(transparent)]
+    MasternodeNotFoundError(MasternodeNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {

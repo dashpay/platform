@@ -16,6 +16,7 @@ impl Drive {
     pub(super) fn register_contested_resource_identity_vote_v0(
         &self,
         voter_pro_tx_hash: [u8; 32],
+        strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
         block_info: &BlockInfo,
@@ -31,6 +32,7 @@ impl Drive {
 
         let batch_operations = self.register_contested_resource_identity_vote_operations_v0(
             voter_pro_tx_hash,
+            strength,
             vote_poll,
             vote_choice,
             block_info,
@@ -61,6 +63,7 @@ impl Drive {
     pub(super) fn register_contested_resource_identity_vote_operations_v0(
         &self,
         voter_pro_tx_hash: [u8; 32],
+        strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
         block_info: &BlockInfo,
@@ -74,6 +77,8 @@ impl Drive {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         // The vote at this point will have been verified as valid by rs-drive-abci
+
+        // We start by inserting the main vote as a value of 1
 
         let voting_path = vote_poll.contender_voting_path(vote_choice, platform_version)?;
 

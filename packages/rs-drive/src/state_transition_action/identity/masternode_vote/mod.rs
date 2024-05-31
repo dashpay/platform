@@ -44,4 +44,11 @@ impl MasternodeVoteTransitionAction {
             MasternodeVoteTransitionAction::V0(transition) => transition.nonce,
         }
     }
+
+    /// Vote strength
+    pub fn vote_strength(&self) -> u8 {
+        match self {
+            MasternodeVoteTransitionAction::V0(transition) => transition.vote_strength,
+        }
+    }
 }

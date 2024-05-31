@@ -22,6 +22,7 @@ impl Drive {
     /// # Parameters
     ///
     /// - `voter_pro_tx_hash`: A 32-byte array representing the ProRegTx hash of the voter.
+    /// - `strength`: the strength of the vote, masternodes have 1, evonodes have 4
     /// - `vote`: The vote to be registered, encapsulating the decision made by the voter.
     /// - `block_info`: Reference to the block information at the time of the vote.
     /// - `apply`: A boolean flag indicating whether the vote should be immediately applied to the state.
@@ -42,6 +43,7 @@ impl Drive {
     pub fn register_identity_vote(
         &self,
         voter_pro_tx_hash: [u8; 32],
+        strength: u8,
         vote: ResolvedVote,
         block_info: &BlockInfo,
         apply: bool,
@@ -57,6 +59,7 @@ impl Drive {
         {
             0 => self.register_identity_vote_v0(
                 voter_pro_tx_hash,
+                strength,
                 vote,
                 block_info,
                 apply,
@@ -99,6 +102,7 @@ impl Drive {
     pub fn register_identity_vote_operations(
         &self,
         voter_pro_tx_hash: [u8; 32],
+        strength: u8,
         vote: ResolvedVote,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -116,6 +120,7 @@ impl Drive {
         {
             0 => self.register_identity_vote_operations_v0(
                 voter_pro_tx_hash,
+                strength,
                 vote,
                 block_info,
                 estimated_costs_only_with_layer_info,

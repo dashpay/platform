@@ -118,8 +118,7 @@ impl<C> Platform<C> {
                 let start_at = if order_ascending {
                     votes
                         .iter()
-                        .rev()
-                        .next()
+                        .next_back()
                         .map(|(id, _)| (id.to_buffer(), false))
                 } else {
                     votes.iter().next().map(|(id, _)| (id.to_buffer(), false))

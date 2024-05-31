@@ -223,6 +223,9 @@ impl ErrorWithCode for StateError {
             Self::DocumentTypeUpdateError(_) => 40212,
             Self::DataContractUpdatePermissionError(_) => 40213,
 
+            // Voting Errors: 40300-40399
+            Self::MasternodeNotFoundError(_) => 40300,
+
             // Prefunded specialized balances Errors: 40400-40499
             Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,
             Self::PrefundedSpecializedBalanceNotFoundError(_) => 40401,

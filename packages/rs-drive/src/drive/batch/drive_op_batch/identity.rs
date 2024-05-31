@@ -79,6 +79,8 @@ pub enum IdentityOperationType {
     MasternodeCastVote {
         /// The pro tx hash of the masternode doing the voting
         voter_pro_tx_hash: [u8; 32],
+        /// The strength of the vote, masternodes have 1, evonodes have 4,
+        strength: u8,
         /// Contested Vote type
         vote: ResolvedVote,
     },
@@ -191,9 +193,11 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
             )?]),
             IdentityOperationType::MasternodeCastVote {
                 voter_pro_tx_hash,
+                strength,
                 vote,
             } => drive.register_identity_vote_operations(
                 voter_pro_tx_hash,
+                strength,
                 vote,
                 block_info,
                 estimated_costs_only_with_layer_info,

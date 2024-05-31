@@ -46,6 +46,7 @@ impl Drive {
     pub fn register_contested_resource_identity_vote(
         &self,
         voter_pro_tx_hash: [u8; 32],
+        strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
         block_info: &BlockInfo,
@@ -62,6 +63,7 @@ impl Drive {
         {
             0 => self.register_contested_resource_identity_vote_v0(
                 voter_pro_tx_hash,
+                strength,
                 vote_poll,
                 vote_choice,
                 block_info,
@@ -106,6 +108,7 @@ impl Drive {
     pub fn register_contested_resource_identity_vote_operations(
         &self,
         voter_pro_tx_hash: [u8; 32],
+        strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
         block_info: &BlockInfo,
@@ -124,6 +127,7 @@ impl Drive {
         {
             0 => self.register_contested_resource_identity_vote_operations_v0(
                 voter_pro_tx_hash,
+                strength,
                 vote_poll,
                 vote_choice,
                 block_info,
