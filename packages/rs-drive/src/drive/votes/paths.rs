@@ -47,6 +47,12 @@ pub const RESOURCE_LOCK_VOTE_TREE_KEY: char = 'l';
 /// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
 pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY: char = 'a';
 
+/// In the active vote poll this will contain votes for locking the contested resource
+pub const RESOURCE_LOCK_VOTE_TREE_KEY_U8: u8 = 'l' as u8;
+
+/// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
+pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = 'a' as u8;
+
 /// Convenience methods to be easily able to get a path when we know the vote poll
 pub trait VotePollPaths {
     /// The root path, under this there should be the documents area and the contract itself

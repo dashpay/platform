@@ -42,11 +42,12 @@ where
                     vote_poll.resolve(&self.drive, transaction, platform_version)?;
                 let document_type = resolved_vote_poll.document_type()?;
                 // let's see who actually won
-                let contenders = self.tally_votes_for_contested_document_resource_vote_poll(
+                let result = self.tally_votes_for_contested_document_resource_vote_poll(
                     vote_poll,
                     transaction,
                     platform_version,
                 )?;
+                let contenders = result.contenders;
                 let max_vote_tally = contenders.iter().map(|c| c.final_vote_tally).max();
 
                 if let Some(max_tally) = max_vote_tally {

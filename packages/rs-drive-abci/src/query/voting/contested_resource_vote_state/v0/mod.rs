@@ -28,6 +28,7 @@ impl<C> Platform<C> {
             index_name,
             index_values,
             result_type,
+            allow_include_locked_and_abstaining_vote_tally,
             start_at_identifier_info,
             count,
             order_ascending,
@@ -142,6 +143,7 @@ impl<C> Platform<C> {
                 })
                 .transpose()?,
             order_ascending,
+            allow_include_locked_and_abstaining_vote_tally,
         };
 
         let response = if prove {

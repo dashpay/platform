@@ -564,6 +564,7 @@ mod tests {
                                 index_name: index_name.clone(),
                                 index_values: vec![dash_encoded.clone(), quantum_encoded.clone()],
                                 result_type: ResultType::DocumentsAndVoteTally as i32,
+                                allow_include_locked_and_abstaining_vote_tally: true,
                                 start_at_identifier_info: None,
                                 count: None,
                                 order_ascending: true,
@@ -644,6 +645,7 @@ mod tests {
                                 index_name: "parentNameAndLabel".to_string(),
                                 index_values: vec![dash_encoded, quantum_encoded],
                                 result_type: ResultType::DocumentsAndVoteTally as i32,
+                                allow_include_locked_and_abstaining_vote_tally: true,
                                 start_at_identifier_info: None,
                                 count: None,
                                 order_ascending: true,
@@ -686,6 +688,7 @@ mod tests {
                     limit: None,
                     start_at: None,
                     order_ascending: true,
+                    allow_include_locked_and_abstaining_vote_tally: true,
                 };
 
             let (_, contenders) = resolved_contested_document_vote_poll_drive_query
@@ -1065,6 +1068,7 @@ mod tests {
                                         quantum_encoded.clone(),
                                     ],
                                     result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    allow_include_locked_and_abstaining_vote_tally: true,
                                     start_at_identifier_info: None,
                                     count: None,
                                     order_ascending: true,
@@ -1200,6 +1204,7 @@ mod tests {
                                     index_name: "parentNameAndLabel".to_string(),
                                     index_values: vec![dash_encoded, quantum_encoded],
                                     result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    allow_include_locked_and_abstaining_vote_tally: true,
                                     start_at_identifier_info: None,
                                     count: None,
                                     order_ascending: true,
@@ -1245,6 +1250,7 @@ mod tests {
                         limit: None,
                         start_at: None,
                         order_ascending: true,
+                        allow_include_locked_and_abstaining_vote_tally: true,
                     };
 
                 let (_, contenders) = resolved_contested_document_vote_poll_drive_query
@@ -1382,6 +1388,7 @@ mod tests {
                                         quantum_encoded.clone(),
                                     ],
                                     result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    allow_include_locked_and_abstaining_vote_tally: true,
                                     start_at_identifier_info: None,
                                     count: None,
                                     order_ascending: true,
@@ -1538,6 +1545,7 @@ mod tests {
                                     index_name: "parentNameAndLabel".to_string(),
                                     index_values: vec![dash_encoded, quantum_encoded],
                                     result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    allow_include_locked_and_abstaining_vote_tally: true,
                                     start_at_identifier_info: None,
                                     count: None,
                                     order_ascending: true,
@@ -1583,6 +1591,7 @@ mod tests {
                         limit: None,
                         start_at: None,
                         order_ascending: true,
+                        allow_include_locked_and_abstaining_vote_tally: true,
                     };
 
                 let (_, contenders) = resolved_contested_document_vote_poll_drive_query

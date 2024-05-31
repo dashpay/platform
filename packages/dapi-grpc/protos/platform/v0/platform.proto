@@ -744,10 +744,11 @@ message GetContestedResourceVoteStateRequest {
     string index_name = 3;
     repeated bytes index_values = 4;
     ResultType result_type = 5;
-    optional StartAtIdentifierInfo start_at_identifier_info = 6;
-    optional uint32 count = 7;
-    bool order_ascending = 8;
-    bool prove = 9;
+    bool allow_include_locked_and_abstaining_vote_tally = 6;
+    optional StartAtIdentifierInfo start_at_identifier_info = 7;
+    optional uint32 count = 8;
+    bool order_ascending = 9;
+    bool prove = 10;
   }
 
   oneof version {

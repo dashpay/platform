@@ -809,9 +809,9 @@ dependencies = [
 
 [[package]]
 name = "clang-sys"
-version = "1.8.2"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f803f94ecf597339c7a34eed2036ef83f86aaba937f001f7c5b5e251f043f1f9"
+checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
 dependencies = [
  "glob",
  "libc",
@@ -2189,7 +2189,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#17e9193b20d4c319b00beea1ae860b2a0c587faa"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bitvec",
@@ -2212,7 +2212,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#17e9193b20d4c319b00beea1ae860b2a0c587faa"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2222,7 +2222,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#17e9193b20d4c319b00beea1ae860b2a0c587faa"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2245,12 +2245,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#17e9193b20d4c319b00beea1ae860b2a0c587faa"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#17e9193b20d4c319b00beea1ae860b2a0c587faa"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2269,7 +2269,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#17e9193b20d4c319b00beea1ae860b2a0c587faa"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
 dependencies = [
  "hex",
  "itertools 0.12.1",

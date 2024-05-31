@@ -5,7 +5,10 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::grovedb::TransactionArg;
-use drive::query::vote_poll_vote_state_query::FinalizedContenderWithSerializedDocument;
+use drive::query::vote_poll_vote_state_query::{
+    FinalizedContenderWithSerializedDocument,
+    FinalizedContestedDocumentVotePollDriveQueryExecutionResult,
+};
 
 mod v0;
 
@@ -19,7 +22,7 @@ where
         contested_document_resource_vote_poll: &ContestedDocumentResourceVotePoll,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<FinalizedContenderWithSerializedDocument>, Error> {
+    ) -> Result<FinalizedContestedDocumentVotePollDriveQueryExecutionResult, Error> {
         match platform_version
             .drive_abci
             .methods

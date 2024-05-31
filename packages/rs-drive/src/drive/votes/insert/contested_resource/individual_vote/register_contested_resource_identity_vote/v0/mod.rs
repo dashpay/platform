@@ -1,5 +1,13 @@
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
-use crate::drive::votes::paths::VotePollPaths;
+use crate::drive::grove_operations::BatchInsertTreeApplyType;
+use crate::drive::object_size_info::PathKeyElementInfo::{
+    PathFixedSizeKeyRefElement, PathKeyElement,
+};
+use crate::drive::object_size_info::PathKeyInfo;
+use crate::drive::votes::paths::{
+    vote_contested_resource_identity_votes_tree_path,
+    vote_contested_resource_identity_votes_tree_path_for_identity_vec,
+    vote_contested_resource_identity_votes_tree_path_vec, VotePollPaths,
+};
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -8,6 +16,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::batch::KeyInfoPath;
+use grovedb::reference_path::ReferencePathType;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
@@ -73,20 +82,54 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        //todo estimated costs
         // let's start by creating a batch of operations
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         // The vote at this point will have been verified as valid by rs-drive-abci
 
-        // We start by inserting the main vote as a value of 1
+        // We start by inserting the main vote as a value of 1 or 4 depending on the strength
 
-        let voting_path = vote_poll.contender_voting_path(vote_choice, platform_version)?;
+        let mut voting_path = vote_poll.contender_voting_path(vote_choice, platform_version)?;
 
         self.batch_insert::<0>(
             PathKeyElement((
-                voting_path,
+                voting_path.clone(),
                 voter_pro_tx_hash.to_vec(),
-                Element::new_sum_item(1),
+                Element::new_sum_item(strength as i64),
+            )),
+            &mut drive_operations,
+            &platform_version.drive,
+        )?;
+
+        let votes_identities_path = vote_contested_resource_identity_votes_tree_path_vec();
+
+        self.batch_insert_empty_tree_if_not_exists(
+            PathKeyInfo::PathKey::<0>((votes_identities_path, voter_pro_tx_hash.to_vec())),
+            false,
+            None,
+            BatchInsertTreeApplyType::StatefulBatchInsertTree, //todo this shouldn't always be stateful
+            transaction,
+            &mut None, //we shouldn't have more than one document here
+            &mut drive_operations,
+            &platform_version.drive,
+        )?;
+
+        // Now we create the vote reference
+
+        let path =
+            vote_contested_resource_identity_votes_tree_path_for_identity_vec(&voter_pro_tx_hash);
+
+        voting_path.remove(0); // we remove the top (root tree vote key)
+        voting_path.remove(0); // contested resource
+
+        let reference =
+            ReferencePathType::UpstreamRootHeightWithParentPathAdditionReference(2, voting_path);
+        self.batch_insert::<0>(
+            PathKeyElement((
+                path,
+                vote_poll.unique_id()?.to_vec(),
+                Element::new_reference_with_hops(reference, Some(1)),
             )),
             &mut drive_operations,
             &platform_version.drive,

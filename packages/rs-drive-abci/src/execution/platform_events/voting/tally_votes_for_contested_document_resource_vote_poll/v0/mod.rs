@@ -7,6 +7,7 @@ use drive::grovedb::TransactionArg;
 use drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
     FinalizedContenderWithSerializedDocument,
+    FinalizedContestedDocumentVotePollDriveQueryExecutionResult,
 };
 
 impl<C> Platform<C>
@@ -19,7 +20,7 @@ where
         contested_document_resource_vote_poll: &ContestedDocumentResourceVotePoll,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<FinalizedContenderWithSerializedDocument>, Error> {
+    ) -> Result<FinalizedContestedDocumentVotePollDriveQueryExecutionResult, Error> {
         //todo: try to figure out how to do this without a clone
         //we start by only requesting the vote tally because we don't want to load all the documents
         let query = ContestedDocumentVotePollDriveQuery {
@@ -35,16 +36,12 @@ where
             ),
             start_at: None,
             order_ascending: true,
+            allow_include_locked_and_abstaining_vote_tally: true,
         };
 
-        query
-            .execute_no_proof(&self.drive, transaction, &mut vec![], platform_version)?
-            .contenders
-            .into_iter()
-            .map(|contender| {
-                let finalized: FinalizedContenderWithSerializedDocument = contender.try_into()?;
-                Ok(finalized)
-            })
-            .collect::<Result<Vec<_>, Error>>()
+        let query_result =
+            query.execute_no_proof(&self.drive, transaction, &mut vec![], platform_version)?;
+
+        Ok(query_result.try_into()?)
     }
 }

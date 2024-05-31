@@ -133,7 +133,7 @@ impl TreePath for ResourceVote {
         let key_2 = path.get(2).unwrap(); // active_vote_polls
         let key_contract_id = path.get(3).unwrap(); // contract_id
         let key_document_type_name = path.get(4).unwrap(); // document_type_name
-        let key_vote_choice = path.get(path.len() - 2).unwrap(); // this is the vote choice
+        let key_vote_choice = path.get(path.len() - 3).unwrap(); // this is the vote choice
 
         let Some(key_2_byte) = key_2.get(0) else {
             return Err(ProtocolError::VoteError(format!(
@@ -175,10 +175,10 @@ impl TreePath for ResourceVote {
             match char {
                 RESOURCE_ABSTAIN_VOTE_TREE_KEY => ResourceVoteChoice::Abstain,
                 RESOURCE_LOCK_VOTE_TREE_KEY => ResourceVoteChoice::Lock,
-                _ => return Err(ProtocolError::VoteError(format!("path {} before last element must be an identifier or RESOURCE_ABSTAIN_VOTE_TREE_KEY/RESOURCE_LOCK_VOTE_TREE_KEY", path.into_iter().map(hex::encode).collect::<Vec<_>>().join("/")))),
+                _ => return Err(ProtocolError::VoteError(format!("path {} 2 before last element must be an identifier or RESOURCE_ABSTAIN_VOTE_TREE_KEY/RESOURCE_LOCK_VOTE_TREE_KEY", path.into_iter().map(hex::encode).collect::<Vec<_>>().join("/")))),
             }
         } else {
-            return Err(ProtocolError::VoteError(format!("path {} before last element must be an identifier or RESOURCE_ABSTAIN_VOTE_TREE_KEY/RESOURCE_LOCK_VOTE_TREE_KEY", path.into_iter().map(hex::encode).collect::<Vec<_>>().join("/"))));
+            return Err(ProtocolError::VoteError(format!("path {} 2 before last element must be an identifier or RESOURCE_ABSTAIN_VOTE_TREE_KEY/RESOURCE_LOCK_VOTE_TREE_KEY", path.into_iter().map(hex::encode).collect::<Vec<_>>().join("/"))));
         };
 
         let vote_poll =
