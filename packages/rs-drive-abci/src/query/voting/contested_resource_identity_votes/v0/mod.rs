@@ -7,21 +7,16 @@ use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetC
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::{
     get_contested_resource_identity_votes_response_v0, GetContestedResourceIdentityVotesResponseV0,
 };
-use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_response::{
-    get_contested_resource_voters_for_identity_response_v0,
-    GetContestedResourceVotersForIdentityResponseV0,
-};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::{check_validation_result_with_data, platform_value, ProtocolError};
+use drive::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
 use drive::error::query::QuerySyntaxError;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
-use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 
 impl<C> Platform<C> {
     pub(super) fn query_contested_resource_identity_votes_v0(
@@ -149,24 +144,49 @@ impl<C> Platform<C> {
                 true
             };
 
-            let votes = votes
+            let contested_resource_identity_votes = votes
                 .into_values()
                 .map(|resource_vote| {
-                    Ok(get_contested_resource_identity_votes_response_v0::Vote {
-                        contested_resource_serialized_vote: resource_vote
-                            .serialize_consume_to_bytes()?,
+                    let ContestedDocumentResourceVoteStorageForm {
+                        contract_id, document_type_name, index_values, resource_vote_choice
+                    } = resource_vote;
+                    let vote_choice = match resource_vote_choice {
+                        ResourceVoteChoice::TowardsIdentity(towards_identity) => {
+                            get_contested_resource_identity_votes_response_v0::ResourceVoteChoice {
+                                vote_choice_type: 0,
+                                identity_id: Some(towards_identity.to_vec()),
+                            }
+                        }
+                        ResourceVoteChoice::Abstain => {
+                            get_contested_resource_identity_votes_response_v0::ResourceVoteChoice {
+                                vote_choice_type: 1,
+                                identity_id: None,
+                            }
+                        }
+                        ResourceVoteChoice::Lock => {
+                            get_contested_resource_identity_votes_response_v0::ResourceVoteChoice {
+                                vote_choice_type: 2,
+                                identity_id: None,
+                            }
+                        }
+                    };
+                    Ok(get_contested_resource_identity_votes_response_v0::ContestedResourceIdentityVote {
+                        contract_id: contract_id.to_vec(),
+                        document_type_name,
+                        serialized_index_storage_values: index_values,
+                        vote_choice: Some(vote_choice),
                     })
                 })
                 .collect::<Result<
-                    Vec<get_contested_resource_identity_votes_response_v0::Vote>,
+                    Vec<get_contested_resource_identity_votes_response_v0::ContestedResourceIdentityVote>,
                     ProtocolError,
                 >>()?;
 
             GetContestedResourceIdentityVotesResponseV0 {
                 result: Some(
                     get_contested_resource_identity_votes_response_v0::Result::Votes(
-                        get_contested_resource_identity_votes_response_v0::Votes {
-                            votes,
+                        get_contested_resource_identity_votes_response_v0::ContestedResourceIdentityVotes {
+                            contested_resource_identity_votes,
                             finished_results,
                         },
                     ),

@@ -268,6 +268,12 @@ pub struct DriveVoteMethodVersions {
     pub contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions,
     pub cleanup: DriveVoteCleanupMethodVersions,
     pub setup: DriveVoteSetupMethodVersions,
+    pub storage_form: DriveVoteStorageFormMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteStorageFormMethodVersions {
+    pub resolve_with_contract: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -158,16 +158,32 @@ mod tests {
     use drive::query::vote_poll_contestant_votes_query::ResolvedContestedDocumentVotePollVotesDriveQuery;
     use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::get_contested_resource_voters_for_identity_request_v0;
     use dpp::platform_value;
+    use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::{
+        get_contested_resource_identity_votes_request_v0,
+        GetContestedResourceIdentityVotesRequestV0,
+    };
+    use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::{
+        get_contested_resource_identity_votes_response_v0,
+        GetContestedResourceIdentityVotesResponseV0,
+    };
+    use dapi_grpc::platform::v0::{
+        get_contested_resource_identity_votes_request,
+        get_contested_resource_identity_votes_response,
+        GetContestedResourceIdentityVotesRequest,
+    };
+    use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::Lock;
+    use drive::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
+    use crate::error::Error;
+    use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{ProTxHash, Txid};
+    use dpp::prelude::IdentityNonce;
+    use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::ops::Deref;
 
     mod vote_tests {
         use super::*;
-        use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
-        use dpp::dashcore::hashes::Hash;
-        use dpp::dashcore::{ProTxHash, Txid};
-        use dpp::prelude::IdentityNonce;
-        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-        use std::ops::Deref;
 
         fn setup_masternode_identity(
             platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -2228,24 +2244,11 @@ mod tests {
 
         mod identity_given_votes_query {
             use super::*;
-            use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::{
-                get_contested_resource_identity_votes_request_v0,
-                GetContestedResourceIdentityVotesRequestV0,
-            };
-            use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::{
-                get_contested_resource_identity_votes_response_v0,
-                GetContestedResourceIdentityVotesResponseV0,
-            };
-            use dapi_grpc::platform::v0::{
-                get_contested_resource_identity_votes_request,
-                get_contested_resource_identity_votes_response,
-                GetContestedResourceIdentityVotesRequest,
-            };
-            use dpp::ProtocolError;
 
             fn get_identity_given_votes(
                 platform: &TempPlatform<MockCoreRPCLike>,
                 platform_state: &PlatformState,
+                contract: &DataContract,
                 identity_id: Identifier,
                 count: Option<u32>,
                 order_ascending: bool,
@@ -2286,9 +2289,8 @@ mod tests {
                 ) = query_validation_result.version.expect("expected a version");
 
                 let Some(get_contested_resource_identity_votes_response_v0::Result::Votes(
-                    get_contested_resource_identity_votes_response_v0::Votes {
-                        votes,
-                        finished_results,
+                    get_contested_resource_identity_votes_response_v0::ContestedResourceIdentityVotes {
+                        contested_resource_identity_votes, finished_results,
                     },
                 )) = result
                 else {
@@ -2298,14 +2300,22 @@ mod tests {
                     assert!(finished_results);
                 }
 
-                votes
-                    .iter()
+                contested_resource_identity_votes
+                    .into_iter()
                     .map(|vote| {
-                        ResourceVote::deserialize_from_bytes(
-                            vote.contested_resource_serialized_vote.as_slice(),
-                        )
+                        let get_contested_resource_identity_votes_response_v0::ContestedResourceIdentityVote {
+                            contract_id, document_type_name, serialized_index_storage_values, vote_choice
+                        } = vote;
+                        let vote_choice = vote_choice.expect("expected a vote choice");
+                        let storage_form = ContestedDocumentResourceVoteStorageForm {
+                            contract_id: contract_id.try_into().expect("expected 32 bytes"),
+                            document_type_name,
+                            index_values: serialized_index_storage_values,
+                            resource_vote_choice: (vote_choice.vote_choice_type, vote_choice.identity_id).try_into()?,
+                        };
+                        Ok(storage_form.resolve_with_contract(contract, platform_version)?)
                     })
-                    .collect::<Result<Vec<ResourceVote>, ProtocolError>>()
+                    .collect::<Result<Vec<ResourceVote>, Error>>()
                     .expect("expected all voters to be identifiers")
             }
 
@@ -2395,9 +2405,10 @@ mod tests {
                     platform_version,
                 );
 
-                let votes = get_identity_given_votes(
+                let mut votes = get_identity_given_votes(
                     &platform,
                     &platform_state,
+                    &dpns_contract,
                     masternode.id(),
                     None,
                     true,
@@ -2406,7 +2417,65 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(votes.len(), 3)
+                assert_eq!(votes.len(), 3);
+
+                let vote_0 = votes.remove(0);
+                let vote_1 = votes.remove(0);
+                let vote_2 = votes.remove(0);
+
+                assert_eq!(
+                    vote_0,
+                    ResourceVote::V0(ResourceVoteV0 {
+                        vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                            ContestedDocumentResourceVotePoll {
+                                contract_id: dpns_contract.id(),
+                                document_type_name: "domain".to_string(),
+                                index_name: "parentNameAndLabel".to_string(),
+                                index_values: vec![
+                                    Text("dash".to_string()),
+                                    Text("c001d0g".to_string())
+                                ]
+                            }
+                        ),
+                        resource_vote_choice: TowardsIdentity(contender_2_cooldog.id())
+                    })
+                );
+
+                assert_eq!(
+                    vote_1,
+                    ResourceVote::V0(ResourceVoteV0 {
+                        vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                            ContestedDocumentResourceVotePoll {
+                                contract_id: dpns_contract.id(),
+                                document_type_name: "domain".to_string(),
+                                index_name: "parentNameAndLabel".to_string(),
+                                index_values: vec![
+                                    Text("dash".to_string()),
+                                    Text("superman".to_string())
+                                ]
+                            }
+                        ),
+                        resource_vote_choice: Lock
+                    })
+                );
+
+                assert_eq!(
+                    vote_2,
+                    ResourceVote::V0(ResourceVoteV0 {
+                        vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                            ContestedDocumentResourceVotePoll {
+                                contract_id: dpns_contract.id(),
+                                document_type_name: "domain".to_string(),
+                                index_name: "parentNameAndLabel".to_string(),
+                                index_values: vec![
+                                    Text("dash".to_string()),
+                                    Text("quantum".to_string())
+                                ]
+                            }
+                        ),
+                        resource_vote_choice: TowardsIdentity(contender_1_quantum.id())
+                    })
+                );
             }
         }
 

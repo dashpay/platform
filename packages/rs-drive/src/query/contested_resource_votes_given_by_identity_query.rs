@@ -1,11 +1,6 @@
-use crate::drive::votes::paths::{
-    vote_contested_resource_identity_votes_tree_path_for_identity,
-    vote_contested_resource_identity_votes_tree_path_for_identity_vec, VotePollPaths,
-};
-#[cfg(feature = "server")]
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
-use crate::drive::votes::TreePath;
+use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
+use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
+use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::Error;
@@ -17,7 +12,6 @@ use crate::query::Query;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
-use dpp::voting::votes::resource_vote::ResourceVote;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 #[cfg(feature = "server")]
@@ -82,7 +76,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let path_query = self.construct_path_query(platform_version)?;
+        let path_query = self.construct_path_query()?;
         drive.grove_get_proved_path_query(
             &path_query,
             false,
@@ -100,7 +94,13 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(BTreeMap<Identifier, ResourceVote>, u64), Error> {
+    ) -> Result<
+        (
+            BTreeMap<Identifier, ContestedDocumentResourceVoteStorageForm>,
+            u64,
+        ),
+        Error,
+    > {
         let mut drive_operations = vec![];
         let result =
             self.execute_no_proof(drive, transaction, &mut drive_operations, platform_version)?;
@@ -127,8 +127,8 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<Identifier, ResourceVote>, Error> {
-        let path_query = self.construct_path_query(platform_version)?;
+    ) -> Result<BTreeMap<Identifier, ContestedDocumentResourceVoteStorageForm>, Error> {
+        let path_query = self.construct_path_query()?;
         let query_result = drive.grove_get_raw_path_query(
             &path_query,
             transaction,
@@ -142,17 +142,26 @@ impl ContestedResourceVotesGivenByIdentityQuery {
             | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(BTreeMap::new()),
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
-                let voters = query_result_elements
-                    .to_path_key_elements()
-                    .into_iter()
-                    .map(|(path, key, element)| {
-                        let reference = element.into_reference_path_type()?;
-                        let absolute_path =
-                            reference.absolute_path(path.as_slice(), Some(key.as_slice()))?;
-                        let vote_id = Identifier::from_vec(key)?;
-                        Ok((vote_id, ResourceVote::try_from_tree_path(absolute_path)?))
-                    })
-                    .collect::<Result<BTreeMap<Identifier, ResourceVote>, Error>>()?;
+                let voters =
+                    query_result_elements
+                        .to_path_key_elements()
+                        .into_iter()
+                        .map(|(path, key, element)| {
+                            let reference = element.into_reference_path_type()?;
+                            let absolute_path =
+                                reference.absolute_path(path.as_slice(), Some(key.as_slice()))?;
+                            let vote_id = Identifier::from_vec(key)?;
+                            Ok((
+                                vote_id,
+                                ContestedDocumentResourceVoteStorageForm::try_from_tree_path(
+                                    absolute_path,
+                                )?,
+                            ))
+                        })
+                        .collect::<Result<
+                            BTreeMap<Identifier, ContestedDocumentResourceVoteStorageForm>,
+                            Error,
+                        >>()?;
 
                 Ok(voters)
             }
@@ -170,7 +179,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(QueryResultElements, u16), Error> {
-        let path_query = self.construct_path_query(platform_version)?;
+        let path_query = self.construct_path_query()?;
         let query_result = drive.grove_get_path_query(
             &path_query,
             transaction,
@@ -193,10 +202,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         }
     }
     /// Operations to construct a path query.
-    pub fn construct_path_query(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<PathQuery, Error> {
+    pub fn construct_path_query(&self) -> Result<PathQuery, Error> {
         let path = vote_contested_resource_identity_votes_tree_path_for_identity_vec(
             self.identity_id.as_bytes(),
         );

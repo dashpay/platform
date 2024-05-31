@@ -1,3 +1,7 @@
+use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::{
+    Abstain, Lock, TowardsIdentity,
+};
+use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 #[cfg(feature = "vote-serde-conversion")]
@@ -23,4 +27,17 @@ pub enum ResourceVoteChoice {
     #[default]
     Abstain,
     Lock,
+}
+
+impl TryFrom<(i32, Option<Vec<u8>>)> for ResourceVoteChoice {
+    type Error = ProtocolError;
+
+    fn try_from(value: (i32, Option<Vec<u8>>)) -> Result<Self, Self::Error> {
+        match value.0 {
+            0 => Ok(TowardsIdentity(value.1.ok_or(ProtocolError::DecodingError("identifier needed when trying to cast from an i32 to a resource vote choice".to_string()))?.try_into()?)),
+            1 => Ok(Abstain),
+            2 => Ok(Lock),
+            n => Err(ProtocolError::DecodingError(format!("identifier must be 0, 1, or 2, got {}", n)))
+        }
+    }
 }

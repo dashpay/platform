@@ -844,18 +844,30 @@ message GetContestedResourceIdentityVotesRequest {
 
 message GetContestedResourceIdentityVotesResponse {
   message GetContestedResourceIdentityVotesResponseV0 {
-    message Votes {
-      repeated Vote votes = 1;
+    message ContestedResourceIdentityVotes {
+      repeated ContestedResourceIdentityVote contested_resource_identity_votes = 1;
       bool finished_results = 2;
     }
 
-    message Vote {
-      // We return a serialized vote
-      bytes contested_resource_serialized_vote = 1;
+    message ResourceVoteChoice {
+      enum VoteChoiceType {
+        TOWARDS_IDENTITY = 0;
+        ABSTAIN = 1;
+        LOCK = 2;
+      }
+      VoteChoiceType vote_choice_type = 1;
+      optional bytes identity_id = 2; // Only used when vote_choice_type is TOWARDS_IDENTITY
+    }
+
+    message ContestedResourceIdentityVote {
+      bytes contract_id = 1;
+      string document_type_name = 2;
+      repeated bytes serialized_index_storage_values = 3;
+      ResourceVoteChoice vote_choice = 4;
     }
 
     oneof result {
-      Votes votes = 1;
+      ContestedResourceIdentityVotes votes = 1;
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;

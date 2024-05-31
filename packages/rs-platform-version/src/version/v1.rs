@@ -71,7 +71,7 @@ use crate::version::drive_versions::{
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions,
     DriveVerifyVoteMethodVersions, DriveVersion, DriveVoteCleanupMethodVersions,
     DriveVoteContestedResourceInsertMethodVersions, DriveVoteInsertMethodVersions,
-    DriveVoteMethodVersions, DriveVoteSetupMethodVersions,
+    DriveVoteMethodVersions, DriveVoteSetupMethodVersions, DriveVoteStorageFormMethodVersions,
 };
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
@@ -239,6 +239,9 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 setup: DriveVoteSetupMethodVersions {
                     add_initial_vote_tree_main_structure_operations: 0,
+                },
+                storage_form: DriveVoteStorageFormMethodVersions {
+                    resolve_with_contract: 0,
                 },
             },
             contract: DriveContractMethodVersions {
