@@ -15,6 +15,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::{bincode, ProtocolError};
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -125,11 +126,23 @@ impl Drive {
 
         let reference =
             ReferencePathType::UpstreamRootHeightWithParentPathAdditionReference(2, voting_path);
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let encoded_reference = bincode::encode_to_vec(reference, config).map_err(|e| {
+            Error::Protocol(ProtocolError::CorruptedSerialization(format!(
+                "can not encode reference: {}",
+                e
+            )))
+        })?;
         self.batch_insert::<0>(
             PathKeyElement((
                 path,
                 vote_poll.unique_id()?.to_vec(),
-                Element::new_reference_with_hops(reference, Some(1)),
+                // We store the encoded reference as an item on purpose as we want the advantages of a resolvable
+                // reference, but at the same time, we don't want the proof to have the value of the followed
+                // reference, because here there is no point, it being 1 or 4.
+                Element::new_item(encoded_reference),
             )),
             &mut drive_operations,
             &platform_version.drive,

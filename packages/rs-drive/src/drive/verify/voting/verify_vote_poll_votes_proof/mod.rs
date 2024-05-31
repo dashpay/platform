@@ -7,7 +7,6 @@ use dpp::identifier::Identifier;
 use crate::error::Error;
 
 use crate::query::vote_poll_contestant_votes_query::ResolvedContestedDocumentVotePollVotesDriveQuery;
-use crate::query::vote_poll_vote_state_query::ContenderWithSerializedDocument;
 use dpp::version::PlatformVersion;
 
 impl<'a> ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {

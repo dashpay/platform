@@ -3,17 +3,20 @@ use crate::drive::votes::storage_form::contested_document_resource_storage_form:
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+use dpp::bincode;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
+use grovedb::reference_path::ReferencePathType;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{PathQuery, SizedQuery};
@@ -147,7 +150,20 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                         .to_path_key_elements()
                         .into_iter()
                         .map(|(path, key, element)| {
-                            let reference = element.into_reference_path_type()?;
+                            let serialized_reference = element.into_item_bytes()?;
+                            let bincode_config = bincode::config::standard()
+                                .with_big_endian()
+                                .with_no_limit();
+                            let reference: ReferencePathType =
+                                bincode::decode_from_slice(&serialized_reference, bincode_config)
+                                    .map_err(|e| {
+                                        Error::Drive(DriveError::CorruptedSerialization(format!(
+                                            "serialization of reference {} is corrupted: {}",
+                                            hex::encode(serialized_reference),
+                                            e
+                                        )))
+                                    })?
+                                    .0;
                             let absolute_path =
                                 reference.absolute_path(path.as_slice(), Some(key.as_slice()))?;
                             let vote_id = Identifier::from_vec(key)?;

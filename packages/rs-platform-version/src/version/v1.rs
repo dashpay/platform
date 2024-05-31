@@ -318,6 +318,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     verify_masternode_vote: 0,
                     verify_start_at_contender_in_proof: 0,
                     verify_vote_poll_votes_proof: 0,
+                    verify_identity_votes_given_proof: 0,
                     verify_vote_poll_vote_state_proof: 0,
                     verify_contests_proof: 0,
                     verify_vote_polls_by_end_date_proof: 0,
