@@ -21,8 +21,8 @@ use dpp::ProtocolError;
 use indexmap::IndexMap;
 
 use crate::error::execution::ExecutionError;
+use crate::platform_types::signature_verification_quorums::SignatureVerificationQuorums;
 use dpp::block::block_info::BlockInfo;
-use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -316,7 +316,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums(&self) -> &BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorums {
         match self {
             PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
         }
@@ -382,38 +382,9 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_chain_lock_validating_quorums(
-        &mut self,
-        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    ) {
+    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorums) {
         match self {
             PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
-        }
-    }
-
-    fn replace_chain_lock_validating_quorums(
-        &mut self,
-        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    ) -> BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
-        match self {
-            PlatformState::V0(v0) => v0.replace_chain_lock_validating_quorums(quorums),
-        }
-    }
-
-    fn set_previous_chain_lock_validating_quorums(
-        &mut self,
-        previous_core_height: u32,
-        change_core_height: u32,
-        previous_quorums_change_height: Option<u32>,
-        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    ) {
-        match self {
-            PlatformState::V0(v0) => v0.set_previous_chain_lock_validating_quorums(
-                previous_core_height,
-                change_core_height,
-                previous_quorums_change_height,
-                quorums,
-            ),
         }
     }
 
@@ -471,37 +442,9 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums_mut(
-        &mut self,
-    ) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorums {
         match self {
             PlatformState::V0(v0) => v0.chain_lock_validating_quorums_mut(),
-        }
-    }
-
-    fn previous_height_chain_lock_validating_quorums(
-        &self,
-    ) -> Option<&(
-        u32,
-        u32,
-        Option<u32>,
-        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    )> {
-        match self {
-            PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums(),
-        }
-    }
-
-    fn previous_height_chain_lock_validating_quorums_mut(
-        &mut self,
-    ) -> &mut Option<(
-        u32,
-        u32,
-        Option<u32>,
-        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    )> {
-        match self {
-            PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums_mut(),
         }
     }
 
