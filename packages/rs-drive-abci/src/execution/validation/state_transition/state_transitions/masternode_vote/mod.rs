@@ -691,9 +691,11 @@ mod tests {
                     allow_include_locked_and_abstaining_vote_tally: true,
                 };
 
-            let (_, contenders) = resolved_contested_document_vote_poll_drive_query
+            let (_, result) = resolved_contested_document_vote_poll_drive_query
                 .verify_vote_poll_vote_state_proof(proof.grovedb_proof.as_ref(), platform_version)
                 .expect("expected to verify proof");
+
+            let contenders = result.contenders;
 
             assert_eq!(contenders.len(), 2);
 
@@ -1253,12 +1255,14 @@ mod tests {
                         allow_include_locked_and_abstaining_vote_tally: true,
                     };
 
-                let (_, contenders) = resolved_contested_document_vote_poll_drive_query
+                let (_, result) = resolved_contested_document_vote_poll_drive_query
                     .verify_vote_poll_vote_state_proof(
                         proof.grovedb_proof.as_ref(),
                         platform_version,
                     )
                     .expect("expected to verify proof");
+
+                let contenders = result.contenders;
 
                 assert_eq!(contenders.len(), 2);
 
@@ -1594,12 +1598,14 @@ mod tests {
                         allow_include_locked_and_abstaining_vote_tally: true,
                     };
 
-                let (_, contenders) = resolved_contested_document_vote_poll_drive_query
+                let (_, result) = resolved_contested_document_vote_poll_drive_query
                     .verify_vote_poll_vote_state_proof(
                         proof.grovedb_proof.as_ref(),
                         platform_version,
                     )
                     .expect("expected to verify proof");
+
+                let contenders = result.contenders;
 
                 assert_eq!(contenders.len(), 2);
 

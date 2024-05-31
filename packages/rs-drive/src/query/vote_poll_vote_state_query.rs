@@ -600,11 +600,10 @@ impl ContestedDocumentVotePollDriveQuery {
                                 Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
                                     locked_vote_tally = Some(sum_tree_value as u32);
                                 }
-                                Some(key) => {
-                                    if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 {
-                                        abstaining_vote_tally = Some(sum_tree_value as u32);
-                                    }
+                                Some(key) if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 => {
+                                    abstaining_vote_tally = Some(sum_tree_value as u32);
                                 }
+
                                 _ => {
                                     let identity_id = Identifier::try_from(key)?;
                                     contenders.push(ContenderWithSerializedDocument {
@@ -651,11 +650,10 @@ impl ContestedDocumentVotePollDriveQuery {
                                             Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
                                                 locked_vote_tally = Some(sum_tree_value as u32);
                                             }
-                                            Some(key) => {
-                                                if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 {
-                                                    abstaining_vote_tally =
-                                                        Some(sum_tree_value as u32);
-                                                }
+                                            Some(key)
+                                                if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 =>
+                                            {
+                                                abstaining_vote_tally = Some(sum_tree_value as u32);
                                             }
                                             _ => {
                                                 return Err(Error::Drive(
@@ -731,11 +729,10 @@ impl ContestedDocumentVotePollDriveQuery {
                                             Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
                                                 locked_vote_tally = Some(sum_tree_value as u32);
                                             }
-                                            Some(key) => {
-                                                if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 {
-                                                    abstaining_vote_tally =
-                                                        Some(sum_tree_value as u32);
-                                                }
+                                            Some(key)
+                                                if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 =>
+                                            {
+                                                abstaining_vote_tally = Some(sum_tree_value as u32);
                                             }
                                             _ => {
                                                 prev_element =

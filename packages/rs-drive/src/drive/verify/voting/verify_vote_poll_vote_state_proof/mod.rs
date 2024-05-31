@@ -6,7 +6,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::query::vote_poll_vote_state_query::{
-    ContenderWithSerializedDocument, ResolvedContestedDocumentVotePollDriveQuery,
+    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQueryExecutionResult,
+    ResolvedContestedDocumentVotePollDriveQuery,
 };
 use dpp::version::PlatformVersion;
 
@@ -36,7 +37,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<ContenderWithSerializedDocument>), Error> {
+    ) -> Result<(RootHash, ContestedDocumentVotePollDriveQueryExecutionResult), Error> {
         match platform_version
             .drive
             .methods
