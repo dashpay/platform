@@ -95,9 +95,12 @@ transport = "routed"
 #	{ "echo" = 2 },
 #	{ "info" = 2 },
 #]
-# TODO: We might want to limit concurrency for some of StateSync calls
 grpc-concurrency = [
   { "check_tx" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
+  { "list_snapshots" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
+  { "load_snapshot_chunk" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
+  { "offer_snapshot" = 1 },
+  { "apply_snapshot_chunk" = 1 },
 ]
 
 
@@ -410,13 +413,12 @@ ttl-num-blocks = 0
 ###         State Sync Configuration Options        ###
 #######################################################
 [statesync]
-# TODO: Enable and configure state sync
 # State sync rapidly bootstraps a new node by discovering, fetching, and restoring a state machine
 # snapshot from peers instead of fetching and replaying historical blocks. Requires some peers in
 # the network to take and serve state machine snapshots. State sync is not attempted if the node
 # has any local state (LastBlockHeight > 0). The node will have a truncated block history,
 # starting from the height of the snapshot.
-enable = false
+enable = true
 
 # State sync uses light client verification to verify state. This can be done either through the
 # P2P layer or RPC layer. Set this to true to use the P2P layer. If false (default), RPC layer
