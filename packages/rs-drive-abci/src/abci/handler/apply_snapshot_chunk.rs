@@ -1,6 +1,6 @@
 use tenderdash_abci::proto::abci as proto;
 
-use crate::abci::app::{SnapshotManagerApplication, StateSyncApplication};
+use crate::abci::app::{SnapshotManagerApplication, SnapshotFetchingApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
 
@@ -9,7 +9,7 @@ pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db>(
     request: proto::RequestApplySnapshotChunk,
 ) -> Result<proto::ResponseApplySnapshotChunk, Error>
 where
-    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
+    A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
 {
     let mut is_state_sync_completed: bool = false;
     // Lock first the RwLock

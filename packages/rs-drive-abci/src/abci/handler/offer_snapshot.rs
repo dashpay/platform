@@ -1,7 +1,7 @@
 use tenderdash_abci::proto::abci as proto;
 use drive::grovedb::replication::CURRENT_STATE_SYNC_VERSION;
 
-use crate::abci::app::{SnapshotManagerApplication, StateSyncApplication};
+use crate::abci::app::{SnapshotManagerApplication, SnapshotFetchingApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
 
@@ -10,7 +10,7 @@ pub fn offer_snapshot<'a, 'db: 'a, A, C: 'db>(
     request: proto::RequestOfferSnapshot,
 ) -> Result<proto::ResponseOfferSnapshot, Error>
 where
-    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
+    A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
 {
     let request_app_hash: [u8; 32] = request.app_hash.try_into()
         .map_err(|_| AbciError::InvalidState(

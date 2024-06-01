@@ -1,6 +1,6 @@
 use crate::abci::app::{
     BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
-    StateSyncApplication, TransactionalApplication,
+    SnapshotFetchingApplication, TransactionalApplication,
 };
 use crate::abci::handler::error::error_into_exception;
 use crate::abci::{handler, AbciError};
@@ -59,7 +59,7 @@ impl<'p, C> SnapshotManagerApplication for ConsensusAbciApplication<'p, C> {
     }
 }
 
-impl<'p, C> StateSyncApplication<'p, C> for ConsensusAbciApplication<'p, C> {
+impl<'p, C> SnapshotFetchingApplication<'p, C> for ConsensusAbciApplication<'p, C> {
     fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'p>>> {
         &self.snapshot_fetching_session
     }
