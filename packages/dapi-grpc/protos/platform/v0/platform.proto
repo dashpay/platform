@@ -760,6 +760,8 @@ message GetContestedResourceVoteStateResponse {
   message GetContestedResourceVoteStateResponseV0 {
     message ContestedResourceContenders {
       repeated Contender contenders = 1;
+      optional uint32 abstain_vote_tally = 2;
+      optional uint32 lock_vote_tally = 3;
     }
 
     message Contender {

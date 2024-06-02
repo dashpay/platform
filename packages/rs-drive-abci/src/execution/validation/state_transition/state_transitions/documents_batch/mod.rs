@@ -670,6 +670,8 @@ mod tests {
                 get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
                     get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
                         contenders,
+                        abstain_vote_tally,
+                        lock_vote_tally,
                     },
                 ),
             ) = result
