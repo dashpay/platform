@@ -34,9 +34,9 @@ use drive::drive::config::DriveConfig;
 use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
+use crate::abci::config::StateSyncAbciConfig;
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
-use crate::abci::config::StateSyncAbciConfig;
 
 /// Configuration for Dash Core RPC client
 #[derive(Clone, Debug, Serialize, Deserialize)]

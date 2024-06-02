@@ -1,8 +1,8 @@
 //! Configuration of ABCI Application server
 
-use std::path::PathBuf;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
+use std::path::PathBuf;
 
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::version::PlatformVersion;

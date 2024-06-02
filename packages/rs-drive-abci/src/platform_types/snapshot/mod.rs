@@ -4,13 +4,13 @@ use std::{
 };
 
 use bincode::{config, Decode, Encode};
+use dapi_grpc::tonic;
 use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::replication::MultiStateSyncSession;
 use drive::grovedb::GroveDb;
 use prost::Message;
 use tenderdash_abci::proto::abci;
-use dapi_grpc::tonic;
 
 use crate::error::Error;
 
@@ -85,11 +85,7 @@ impl Metrics {
 
 impl SnapshotManager {
     /// Create a new instance of snapshot manager
-    pub fn new(
-        checkpoints_path: String,
-        number_stored_snapshots: usize,
-        freq: i64,
-    ) -> Self {
+    pub fn new(checkpoints_path: String, number_stored_snapshots: usize, freq: i64) -> Self {
         Self {
             freq,
             number_stored_snapshots,
@@ -118,7 +114,11 @@ impl SnapshotManager {
     }
 
     /// Return the snapshot a requested height
-    pub fn get_snapshot_at_height(&self, grove: &GroveDb, height: i64) -> Result<Option<Snapshot>, Error> {
+    pub fn get_snapshot_at_height(
+        &self,
+        grove: &GroveDb,
+        height: i64,
+    ) -> Result<Option<Snapshot>, Error> {
         let snapshots = self.get_snapshots(&grove)?;
         let matched_snapshot = snapshots
             .iter()
@@ -190,36 +190,33 @@ mod tests {
     use super::*;
     use std::fs;
 
-   #[test]
-   fn test_create_snapshot() {
-       let test_cases = vec![
-           (1000, 1000, vec![1000]),
-           (1000, 1001, vec![1000, 1001]),
-           (1000, 1002, vec![1000, 1001, 1002]),
-           (1000, 1004, vec![1002, 1003, 1004]),
-           (1000, 1005, vec![1003, 1004, 1005]),
-       ];
-       for (start, end, want) in test_cases {
-           let grove_dir = tempfile::tempdir().unwrap();
-           let checkpoints_dir = tempfile::tempdir().unwrap();
-           let grove = GroveDb::open(grove_dir.path()).unwrap();
-           let manager = SnapshotManager::new(
-               checkpoints_dir.path().to_str().unwrap().to_string(),
-               3,
-               1,
-           );
-           for height in start..=end {
-               manager.create_snapshot(&grove, height).unwrap();
-           }
-           let snapshots = manager.get_snapshots(&grove).unwrap();
-           let res: Vec<i64> = snapshots.iter().map(|s| s.height).collect();
-           assert_eq!(want, res);
+    #[test]
+    fn test_create_snapshot() {
+        let test_cases = vec![
+            (1000, 1000, vec![1000]),
+            (1000, 1001, vec![1000, 1001]),
+            (1000, 1002, vec![1000, 1001, 1002]),
+            (1000, 1004, vec![1002, 1003, 1004]),
+            (1000, 1005, vec![1003, 1004, 1005]),
+        ];
+        for (start, end, want) in test_cases {
+            let grove_dir = tempfile::tempdir().unwrap();
+            let checkpoints_dir = tempfile::tempdir().unwrap();
+            let grove = GroveDb::open(grove_dir.path()).unwrap();
+            let manager =
+                SnapshotManager::new(checkpoints_dir.path().to_str().unwrap().to_string(), 3, 1);
+            for height in start..=end {
+                manager.create_snapshot(&grove, height).unwrap();
+            }
+            let snapshots = manager.get_snapshots(&grove).unwrap();
+            let res: Vec<i64> = snapshots.iter().map(|s| s.height).collect();
+            assert_eq!(want, res);
 
-           let paths: Vec<String> = snapshots.iter().map(|s| s.path.to_string()).collect();
-           for path in paths {
-               assert!(Path::new(&path).exists());
-           }
-           fs::remove_dir_all(grove_dir.path()).unwrap();
-       }
-   }
+            let paths: Vec<String> = snapshots.iter().map(|s| s.path.to_string()).collect();
+            for path in paths {
+                assert!(Path::new(&path).exists());
+            }
+            fs::remove_dir_all(grove_dir.path()).unwrap();
+        }
+    }
 }

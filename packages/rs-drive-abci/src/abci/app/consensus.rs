@@ -1,6 +1,6 @@
 use crate::abci::app::{
-    BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
-    SnapshotFetchingApplication, TransactionalApplication,
+    BlockExecutionApplication, PlatformApplication, SnapshotFetchingApplication,
+    SnapshotManagerApplication, TransactionalApplication,
 };
 use crate::abci::handler::error::error_into_exception;
 use crate::abci::{handler, AbciError};
