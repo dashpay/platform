@@ -36,6 +36,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
+use crate::abci::config::StateSyncAbciConfig;
 
 /// Configuration for Dash Core RPC client
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -202,11 +203,8 @@ pub struct PlatformConfig {
     /// Path to data storage
     pub db_path: PathBuf,
 
-    /// Path to checkpoints
-    pub checkpoints_path: PathBuf,
-
-    /// Enable snapshot
-    pub snapshots_enabled: bool,
+    /// State sync configuration
+    pub state_sync_config: StateSyncAbciConfig,
 
     /// Path to store rejected / invalid items (like transactions).
     /// Used mainly for debugging.
@@ -355,8 +353,7 @@ impl PlatformConfig {
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
-            checkpoints_path: PathBuf::from("/var/lib/dash-platform/checkpoints"),
-            snapshots_enabled: true,
+            state_sync_config: StateSyncAbciConfig::default_local(),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             tokio_console_enabled: false,
@@ -381,8 +378,7 @@ impl PlatformConfig {
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
-            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
-            snapshots_enabled: true,
+            state_sync_config: StateSyncAbciConfig::default_testnet(),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
@@ -407,8 +403,7 @@ impl PlatformConfig {
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
-            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
-            snapshots_enabled: true,
+            state_sync_config: StateSyncAbciConfig::default_mainnet(),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),

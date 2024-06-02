@@ -1,5 +1,6 @@
 //! Configuration of ABCI Application server
 
+use std::path::PathBuf;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
@@ -65,6 +66,58 @@ impl Default for AbciConfig {
             genesis_core_height: AbciConfig::default_genesis_core_height(),
             chain_id: "chain_id".to_string(),
             log: Default::default(),
+        }
+    }
+}
+
+/// Configuration for StateSync feature
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StateSyncAbciConfig {
+    /// Enable snapshot
+    pub snapshots_enabled: bool,
+
+    /// Path to checkpoints
+    pub checkpoints_path: PathBuf,
+
+    /// Frequency of snapshot creation (in blocks)
+    pub snapshots_frequency: i64,
+
+    /// Maximum number of snapshots to keep
+    pub max_num_snapshots: usize,
+}
+
+impl Default for StateSyncAbciConfig {
+    fn default() -> Self {
+        Self::default_mainnet()
+    }
+}
+
+#[allow(missing_docs)]
+impl StateSyncAbciConfig {
+    pub fn default_local() -> Self {
+        Self {
+            snapshots_enabled: true,
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/checkpoints"),
+            snapshots_frequency: 3,
+            max_num_snapshots: 10,
+        }
+    }
+
+    pub fn default_testnet() -> Self {
+        Self {
+            snapshots_enabled: true,
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
+            snapshots_frequency: 3,
+            max_num_snapshots: 10,
+        }
+    }
+
+    pub fn default_mainnet() -> Self {
+        Self {
+            snapshots_enabled: true,
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
+            snapshots_frequency: 3,
+            max_num_snapshots: 10,
         }
     }
 }

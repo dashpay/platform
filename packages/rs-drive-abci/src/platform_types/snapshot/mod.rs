@@ -15,10 +15,6 @@ use crate::error::Error;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 
-const DEFAULT_FREQ: i64 = 3;
-
-const DEFAULT_NUMBER_OF_SNAPSHOTS: usize = 10;
-
 const CHUNK_SIZE_16MB: usize = 16 * 1024 * 1024;
 
 const SNAPSHOT_VERSION: u16 = 1;
@@ -90,12 +86,12 @@ impl SnapshotManager {
     /// Create a new instance of snapshot manager
     pub fn new(
         checkpoints_path: String,
-        number_stored_snapshots: Option<usize>,
-        freq: Option<i64>,
+        number_stored_snapshots: usize,
+        freq: i64,
     ) -> Self {
         Self {
-            freq: freq.unwrap_or(DEFAULT_FREQ),
-            number_stored_snapshots: number_stored_snapshots.unwrap_or(DEFAULT_NUMBER_OF_SNAPSHOTS),
+            freq,
+            number_stored_snapshots,
             checkpoints_path,
         }
     }
@@ -198,8 +194,8 @@ mod tests {
            let grove = GroveDb::open(grove_dir.path()).unwrap();
            let manager = SnapshotManager::new(
                checkpoints_dir.path().to_str().unwrap().to_string(),
-               Some(3),
-               Some(1),
+               3,
+               1,
            );
            for height in start..=end {
                manager.create_snapshot(&grove, height).unwrap();
