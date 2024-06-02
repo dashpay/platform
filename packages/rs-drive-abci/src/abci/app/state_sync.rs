@@ -124,14 +124,10 @@ where
         &self,
         request: tonic::Request<proto::RequestLoadSnapshotChunk>,
     ) -> Result<tonic::Response<proto::ResponseLoadSnapshotChunk>, tonic::Status> {
-        let snapshots = self.snapshot_manager.get_snapshots(&self.platform.drive.grove).map_err(|e| {
-            tonic::Status::internal(format!("load_snapshot_chunk failed: {}", e))
-        })?;
         let request_snapshot_chunk = request.into_inner();
-        let matched_snapshot = snapshots
-            .iter()
-            .find(|&snapshot| snapshot.height == request_snapshot_chunk.height as i64)
-            .ok_or(tonic::Status::internal("load_snapshot_chunk failed"))?;
+        let matched_snapshot = self.snapshot_manager.get_snapshot_at_height(&self.platform.drive.grove, request_snapshot_chunk.height as i64)
+            .map_err(|_| tonic::Status::internal("load_snapshot_chunk failed".to_string()))?
+            .ok_or_else(|| tonic::Status::internal("load_snapshot_chunk failed"))?;
         let db = GroveDb::open(&matched_snapshot.path)
             .map_err(|e| {
                 tonic::Status::internal(format!("load_snapshot_chunk failed: {}", e))

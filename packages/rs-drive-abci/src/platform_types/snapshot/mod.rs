@@ -10,6 +10,7 @@ use drive::grovedb::replication::MultiStateSyncSession;
 use drive::grovedb::GroveDb;
 use prost::Message;
 use tenderdash_abci::proto::abci;
+use dapi_grpc::tonic;
 
 use crate::error::Error;
 
@@ -114,6 +115,16 @@ impl SnapshotManager {
             }
             None => Ok(vec![]),
         }
+    }
+
+    /// Return the snapshot a requested height
+    pub fn get_snapshot_at_height(&self, grove: &GroveDb, height: i64) -> Result<Option<Snapshot>, Error> {
+        let snapshots = self.get_snapshots(&grove)?;
+        let matched_snapshot = snapshots
+            .iter()
+            .find(|&snapshot| snapshot.height == height)
+            .cloned();
+        Ok(matched_snapshot)
     }
 
     /// Create a new snapshot for the given height, if a height is not a multiple of N,
