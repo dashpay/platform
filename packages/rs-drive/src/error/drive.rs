@@ -164,7 +164,7 @@ pub enum DriveError {
     #[error("invalid contract history fetch limit: {0}. The limit must be between 1 and {MAX_CONTRACT_HISTORY_FETCH_LIMIT}")]
     InvalidContractHistoryFetchLimit(u16),
 
-    /// Error
+    /// Error todo
     #[error("snapshot error")]
     Snapshot(String),
 }
