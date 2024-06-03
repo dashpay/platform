@@ -34,10 +34,10 @@ mod setup;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Resolve contested document resource vote poll module
 pub mod resolved;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Storage form
 pub mod storage_form;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Tree path storage form
 pub mod tree_path_storage_form;
 
