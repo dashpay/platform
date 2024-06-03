@@ -1,21 +1,19 @@
 //! Example ContextProvider that uses the Core gRPC API to fetch data from the platform.
 
-use std::fmt::Debug;
+use crate::core_client::CoreClient;
+use crate::platform::Fetch;
+use crate::{Error, Sdk};
+use dpp::prelude::{DataContract, Identifier};
+use drive_proof_verifier::error::ContextProviderError;
+use drive_proof_verifier::ContextProvider;
+use futures::task::ArcWake;
+use futures::FutureExt;
+use std::future::Future;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::thread::sleep;
-
-use dpp::prelude::{DataContract, Identifier};
-use drive_proof_verifier::error::ContextProviderError;
-use drive_proof_verifier::ContextProvider;
-use std::future::Future;
-use tokio::sync::oneshot::error::TryRecvError;
-
-use crate::core_client::CoreClient;
-use crate::platform::Fetch;
-use crate::{Error, Sdk};
+use std::task::{Context, Poll};
 
 /// Context provider that uses the Core gRPC API to fetch data from the platform.
 ///
@@ -177,20 +175,8 @@ impl ContextProvider for GrpcContextProvider {
         let sdk_cloned = sdk.clone();
 
         let data_contract: Option<DataContract> =
-            spawn_async::<Result<Option<DataContract>, crate::error::Error>, _, _>(
-                move || async move { DataContract::fetch(&sdk_cloned, contract_id).await },
-            )
-            .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?
-            .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
-
-        // let join_handle =
-        //     handle.spawn_blocking(move || DataContract::fetch(sdk, *data_contract_id));
-
-        // let data_contract = futures::executor::block_on(async { join_handle.await })
-        //     .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
-        // let data_contract = futures::join!(join_handle)
-        //     .0
-        //     .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
+            poll_future(DataContract::fetch(&sdk_cloned, contract_id))
+                .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
 
         if let Some(ref dc) = data_contract {
             self.data_contracts_cache.put(*data_contract_id, dc.clone());
@@ -200,49 +186,55 @@ impl ContextProvider for GrpcContextProvider {
     }
 }
 
-// spawn_async is a workaorund to connect sync and async code, as block_on() panics when in async context
-fn spawn_async<R, F, Fut>(f: F) -> Result<R, Error>
-where
-    F: FnOnce() -> Fut + Send + 'static,
-    Fut: Future<Output = R> + Send + 'static,
-    R: Send + Sync + 'static + Debug,
-{
-    let tokio_rt = match tokio::runtime::Handle::try_current() {
-        Ok(handle) => handle,
-        // not an error, we rely on the caller to provide a data contract using
-        Err(e) => {
-            tracing::warn!(
-                error = e.to_string(),
-                "data contract cache miss and no tokio runtime detected, skipping fetch"
-            );
-            return Err(Error::ContextProviderError(ContextProviderError::Generic(
-                e.to_string(),
-            )));
+struct MtxWaker {
+    mtx: std::sync::Mutex<bool>,
+    cvar: std::sync::Condvar,
+}
+
+impl MtxWaker {
+    fn new() -> Self {
+        Self {
+            mtx: std::sync::Mutex::new(false),
+            cvar: std::sync::Condvar::new(),
         }
-    };
+    }
 
-    let (send, mut recv) = tokio::sync::oneshot::channel();
+    fn wait(&self) {
+        let mut started = self.mtx.lock().expect("lock poisoned");
+        while !*started {
+            started = self.cvar.wait(started).expect("wait failed");
+        }
+    }
+}
 
-    let _join_handle = tokio_rt.spawn(async move {
-        let result = f().await;
-        send.send(result).expect("send result");
-    });
+impl ArcWake for MtxWaker {
+    fn wake_by_ref(arc_self: &Arc<Self>) {
+        let mut started = arc_self.mtx.lock().expect("lock poisoned");
+        *started = true;
+        arc_self.cvar.notify_one();
+    }
+}
+
+/// Execute an async function in a sync context, when block_on() is not available.
+///
+/// When async code runs some sync code inside a thread used to drive asynchronous tasks,
+/// that sync code cannot call block_on(). This function is a workaround for this that allows to run async code in a
+/// sync context.
+///
+/// Note it uses a busy loop to poll the future, so it's not efficient and should be used only for testing purposes.
+fn poll_future<F: Future>(future: F) -> F::Output {
+    let mtx_waker = Arc::new(MtxWaker::new());
+    let waker = futures::task::waker(mtx_waker.clone());
+    // let waker = futures::task::noop_waker();
+
+    let mut context = Context::from_waker(&waker);
+
+    let mut future = Box::pin(future).fuse();
 
     loop {
-        match recv.try_recv() {
-            Ok(result) => return Ok(result),
-            Err(TryRecvError::Empty) => {
-                tracing::trace!("waiting for data contract to be fetched");
-                // FIXME this is just a workaround to connect sync and async code
-                sleep(std::time::Duration::from_millis(10));
-
-                continue;
-            }
-            Err(e) => {
-                return Err(Error::ContextProviderError(
-                    ContextProviderError::DataContractFailure(e.to_string()),
-                ));
-            }
+        match Future::poll(std::pin::Pin::new(&mut future), &mut context) {
+            Poll::Ready(value) => return value,
+            Poll::Pending => mtx_waker.wait(),
         }
     }
 }
