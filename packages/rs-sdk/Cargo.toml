@@ -4,6 +4,7 @@ version = "1.0.0-dev.15"
 edition = "2021"
 
 [dependencies]
+arc-swap = { version = "1.7.1" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }

@@ -3,6 +3,7 @@
 use crate::core_client::CoreClient;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
+use arc_swap::ArcSwapAny;
 use dpp::prelude::{DataContract, Identifier};
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
@@ -11,7 +12,6 @@ use futures::FutureExt;
 use std::future::Future;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
@@ -27,7 +27,7 @@ pub struct GrpcContextProvider {
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
     ///
     /// We use [Arc] as we have circular dependencies between Sdk and ContextProvider.
-    sdk: std::sync::RwLock<Option<Sdk>>,
+    sdk: ArcSwapAny<Arc<Option<Sdk>>>,
 
     /// Data contracts cache.
     ///
@@ -68,7 +68,7 @@ impl GrpcContextProvider {
         let core_client = CoreClient::new(core_ip, core_port, core_user, core_password)?;
         Ok(Self {
             core: core_client,
-            sdk: std::sync::RwLock::new(sdk),
+            sdk: ArcSwapAny::new(Arc::new(sdk)),
             data_contracts_cache: Cache::new(data_contracts_cache_size),
             quorum_public_keys_cache: Cache::new(quorum_public_keys_cache_size),
             #[cfg(feature = "mocks")]
@@ -82,9 +82,7 @@ impl GrpcContextProvider {
     /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
     pub fn set_sdk(&self, sdk: Option<Sdk>) {
-        let mut guard = self.sdk.write().expect("lock poisoned");
-        let item = guard.deref_mut();
-        *item = sdk;
+        self.sdk.store(Arc::new(sdk));
     }
     /// Set the directory where to store dumped data.
     ///
@@ -162,8 +160,8 @@ impl ContextProvider for GrpcContextProvider {
         if let Some(contract) = self.data_contracts_cache.get(data_contract_id) {
             return Ok(Some(contract));
         };
-        let sdk_guard = self.sdk.read().expect("lock poisoned");
-        let sdk = match &sdk_guard.deref() {
+        let sdk_guard = self.sdk.load();
+        let sdk = match sdk_guard.as_ref() {
             Some(sdk) => sdk,
             None => {
                 tracing::warn!("data contract cache miss and no sdk provided, skipping fetch");
@@ -186,6 +184,9 @@ impl ContextProvider for GrpcContextProvider {
     }
 }
 
+/// Waker that uses a mutex and a condition variable to wake up a task.
+///
+/// See [Condvar] documentation for more details.
 struct MtxWaker {
     mtx: std::sync::Mutex<bool>,
     cvar: std::sync::Condvar,
@@ -199,6 +200,7 @@ impl MtxWaker {
         }
     }
 
+    /// Block until the task is woken up.
     fn wait(&self) {
         let mut started = self.mtx.lock().expect("lock poisoned");
         while !*started {
@@ -221,12 +223,10 @@ impl ArcWake for MtxWaker {
 /// that sync code cannot call block_on(). This function is a workaround for this that allows to run async code in a
 /// sync context.
 ///
-/// Note it uses a busy loop to poll the future, so it's not efficient and should be used only for testing purposes.
+/// Note it's not as efficient as calling `.await` on a future, and should be used only for testing purposes.
 fn poll_future<F: Future>(future: F) -> F::Output {
     let mtx_waker = Arc::new(MtxWaker::new());
     let waker = futures::task::waker(mtx_waker.clone());
-    // let waker = futures::task::noop_waker();
-
     let mut context = Context::from_waker(&waker);
 
     let mut future = Box::pin(future).fuse();

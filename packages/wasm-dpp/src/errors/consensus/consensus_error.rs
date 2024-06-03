@@ -152,7 +152,12 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
         DPPConsensusError::DefaultError => JsError::new("DefaultError").into(),
-        _ => todo!("quantum please implement"),
+        #[cfg(test)]
+        e => todo!(
+            "ConsensusError {} not implemented: {}",
+            std::any::type_name_of_val(e),
+            e
+        ),
     }
 }
 

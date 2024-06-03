@@ -18,6 +18,8 @@
 @class BlockHeadersWithChainLocksResponse;
 @class BroadcastTransactionRequest;
 @class BroadcastTransactionResponse;
+@class GetBestBlockHeightRequest;
+@class GetBestBlockHeightResponse;
 @class GetBlockRequest;
 @class GetBlockResponse;
 @class GetBlockchainStatusRequest;
@@ -56,6 +58,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getBlock(GetBlockRequest) returns (GetBlockResponse)
 
 - (GRPCUnaryProtoCall *)getBlockWithMessage:(GetBlockRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getBestBlockHeight(GetBestBlockHeightRequest) returns (GetBestBlockHeightResponse)
+
+- (GRPCUnaryProtoCall *)getBestBlockHeightWithMessage:(GetBestBlockHeightRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)
 
@@ -104,6 +110,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getBlockWithRequest:(GetBlockRequest *)request handler:(void(^)(GetBlockResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetBlockWithRequest:(GetBlockRequest *)request handler:(void(^)(GetBlockResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getBestBlockHeight(GetBestBlockHeightRequest) returns (GetBestBlockHeightResponse)
+
+- (void)getBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request handler:(void(^)(GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request handler:(void(^)(GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)
