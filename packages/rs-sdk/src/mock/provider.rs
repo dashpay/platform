@@ -186,6 +186,9 @@ impl ContextProvider for GrpcContextProvider {
     }
 }
 
+/// Waker that uses a mutex and a condition variable to wake up a task.
+///
+/// See [Condvar] documentation for more details.
 struct MtxWaker {
     mtx: std::sync::Mutex<bool>,
     cvar: std::sync::Condvar,
@@ -199,6 +202,7 @@ impl MtxWaker {
         }
     }
 
+    /// Block until the task is woken up.
     fn wait(&self) {
         let mut started = self.mtx.lock().expect("lock poisoned");
         while !*started {
@@ -221,12 +225,10 @@ impl ArcWake for MtxWaker {
 /// that sync code cannot call block_on(). This function is a workaround for this that allows to run async code in a
 /// sync context.
 ///
-/// Note it uses a busy loop to poll the future, so it's not efficient and should be used only for testing purposes.
+/// Note it's not as efficient as calling `.await` on a future, and should be used only for testing purposes.
 fn poll_future<F: Future>(future: F) -> F::Output {
     let mtx_waker = Arc::new(MtxWaker::new());
     let waker = futures::task::waker(mtx_waker.clone());
-    // let waker = futures::task::noop_waker();
-
     let mut context = Context::from_waker(&waker);
 
     let mut future = Box::pin(future).fuse();
