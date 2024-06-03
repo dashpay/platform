@@ -51,7 +51,6 @@ jobs:
 # TODO: Remove
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
-        if: inputs.command  == 'test:suite:browsers'
         with:
           detached: true
 
