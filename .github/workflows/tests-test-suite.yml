@@ -49,10 +49,11 @@ jobs:
         run: aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_HOST }}
 
 # TODO: Remove
-#      - name: Setup tmate session
-#        uses: mxschmitt/action-tmate@v3
-#        with:
-#          detached: true
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: inputs.command  == 'test:suite:browsers'
+        with:
+          detached: true
 
       - name: Start local network
         uses: ./.github/actions/local-network
