@@ -1307,6 +1307,7 @@ dependencies = [
 name = "dash-sdk"
 version = "1.0.0-dev.15"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "base64 0.22.0",
  "bincode 2.0.0-rc.3",
