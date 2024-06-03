@@ -13,6 +13,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
+use dpp::bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -132,6 +133,19 @@ pub struct FinalizedContenderWithSerializedDocument {
     pub serialized_document: Vec<u8>,
     /// The vote tally for the contender.
     pub final_vote_tally: u32,
+}
+
+/// Represents a finalized contender in the contested document vote poll.
+/// This is for keeping information about previous vote polls
+///
+/// This struct holds the identity ID of the contender, the serialized document,
+/// and the vote tally.
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
+pub struct FinalizedContenderWithVoterInfo {
+    /// The identity ID of the contender.
+    pub identity_id: Identifier,
+    /// The pro_tx_hashes of the voters for this contender.
+    pub voters: Vec<Identifier>,
 }
 
 /// Represents a finalized contender in the contested document vote poll.
@@ -258,6 +272,19 @@ pub struct FinalizedContestedDocumentVotePollDriveQueryExecutionResult {
     pub locked_vote_tally: u32,
     /// Abstaining tally
     pub abstaining_vote_tally: u32,
+}
+
+/// Represents the stored info after a contested document vote poll.
+///
+/// This struct holds the list of contenders, the abstaining vote tally.
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
+pub struct FinalizedContestedDocumentVotePollStoredInfo {
+    /// The list of contenders returned by the query.
+    pub contenders: Vec<FinalizedContenderWithVoterInfo>,
+    /// Locked tally
+    pub locking_voters: Vec<Identifier>,
+    /// Abstaining tally
+    pub abstaining_voters: Vec<Identifier>,
 }
 
 impl TryFrom<ContestedDocumentVotePollDriveQueryExecutionResult>

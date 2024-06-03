@@ -39,7 +39,9 @@ use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFo
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
-#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
+#[derive(
+    Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+)]
 pub enum StateError {
     /*
 

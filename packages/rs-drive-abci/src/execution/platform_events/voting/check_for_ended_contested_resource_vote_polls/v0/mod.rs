@@ -48,6 +48,9 @@ where
                     platform_version,
                 )?;
                 let contenders = result.contenders;
+                // For each contender if there vote_tally is 1 or more we need to get their votes
+                // We don't do this for contenders with 0 votes, as there is no point.
+
                 let max_vote_tally = contenders.iter().map(|c| c.final_vote_tally).max();
 
                 if let Some(max_tally) = max_vote_tally {
@@ -84,22 +87,33 @@ where
 
                     // We award the document to the top contender
                     if let Some(top_contender) = maybe_top_contender {
-                        // We want to keep a record of how everyone voted
-                        self.keep_record_of_vote_poll(
-                            block_info,
-                            &top_contender,
-                            &resolved_vote_poll,
-                            transaction,
-                            platform_version,
-                        )?;
-                        // We award the document to the winner of the vote poll
-                        self.award_document_to_winner(
-                            block_info,
-                            top_contender,
-                            resolved_vote_poll,
-                            transaction,
-                            platform_version,
-                        )?;
+                        // let's check to make sure the lock votes didn't win it
+                        // if the lock is tied with the top contender the top contender gets it
+                        if result.locked_vote_tally > top_contender.final_vote_tally {
+                            self.lock_contested_resource(
+                                block_info,
+                                &resolved_vote_poll,
+                                transaction,
+                                platform_version,
+                            )?;
+                        } else {
+                            // We want to keep a record of how everyone voted
+                            self.keep_record_of_vote_poll(
+                                block_info,
+                                &top_contender,
+                                &resolved_vote_poll,
+                                transaction,
+                                platform_version,
+                            )?;
+                            // We award the document to the winner of the vote poll
+                            self.award_document_to_winner(
+                                block_info,
+                                top_contender,
+                                resolved_vote_poll,
+                                transaction,
+                                platform_version,
+                            )?;
+                        }
                     }
                 }
             }
