@@ -2,6 +2,7 @@
 
 use crate::fetch::{common::setup_logs, config::Config};
 use dash_sdk::platform::FetchMany;
+use dpp::platform_value::Value;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive_proof_verifier::types::ContestedResource;
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -19,7 +20,7 @@ async fn test_contested_resources_not_found() {
         document_type_name: cfg.existing_document_type_name.clone(),
         index_name: index_name.to_string(),
         start_at_value: None,
-        start_index_values: vec![],
+        start_index_values: vec![Value::Text("dash".to_string())],
         end_index_values: vec![],
         limit: None,
         order_ascending: false,
