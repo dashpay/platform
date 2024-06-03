@@ -52,7 +52,11 @@ pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 ///
 /// Mapping between the contenders identity IDs and their info.
 /// If a contender is not found, it is represented as `None`.
-pub type Contenders = RetrievedObjects<Identifier, Contender>;
+pub struct Contenders {
+    pub contenders: RetrievedObjects<Identifier, Contender>,
+    pub abstain_vote_tally: Option<u32>,
+    pub lock_vote_tally: Option<u32>,
+}
 
 /// Multiple grovedb elements.
 ///

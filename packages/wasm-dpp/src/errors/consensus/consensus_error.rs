@@ -152,6 +152,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
         DPPConsensusError::DefaultError => JsError::new("DefaultError").into(),
+        _ => todo!("quantum please implement"),
     }
 }
 
@@ -248,6 +249,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DataContractUpdatePermissionError(e) => {
             DataContractUpdatePermissionErrorWasm::from(e).into()
+        }
+        StateError::MasternodeNotFoundError(e) => {
+            todo!("Quantum please fix")
         }
     }
 }

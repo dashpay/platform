@@ -1352,8 +1352,8 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let document_type = resolved_request.vote_poll.document_type()?;
-
         let contenders = contested_resource_vote_state
+            .contenders
             .into_iter()
             .map(|v| {
                 Contender::try_from_contender_with_serialized_document(
@@ -1363,9 +1363,14 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
                 )
                 .map(|c| (c.identity_id, Some(c)))
             })
-            .collect::<Result<Contenders, _>>()?;
+            .collect::<Result<_, _>>()?;
 
-        Ok((Some(contenders), mtd.clone()))
+        let response = Contenders {
+            contenders,
+            abstain_vote_tally: contested_resource_vote_state.abstaining_vote_tally,
+            lock_vote_tally: contested_resource_vote_state.locked_vote_tally,
+        };
+        Ok((Some(response), mtd.clone()))
     }
 }
 

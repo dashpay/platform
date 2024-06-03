@@ -309,11 +309,11 @@ impl_transport_request_grpc!(
 );
 // rpc getContestedResourceIdentityVoteStatus(GetContestedResourceIdentityVoteStatusRequest) returns (GetContestedResourceIdentityVoteStatusResponse);
 impl_transport_request_grpc!(
-    platform_proto::GetContestedResourceIdentityVoteStatusRequest,
-    platform_proto::GetContestedResourceIdentityVoteStatusResponse,
+    platform_proto::GetContestedResourceIdentityVotesRequest,
+    platform_proto::GetContestedResourceIdentityVotesResponse,
     PlatformGrpcClient,
     RequestSettings::default(),
-    get_contested_resource_identity_vote_status
+    get_contested_resource_identity_votes
 );
 // rpc GetVotePollsByEndDateRequest(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
 impl_transport_request_grpc!(

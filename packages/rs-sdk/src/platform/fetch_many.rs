@@ -319,9 +319,9 @@ impl FetchMany<Identifier> for ContestedResource {
     type Request = GetContestedResourcesRequest;
 }
 
-/// Fetch multiple contenders for a contested document resource vote poll.
-///
-/// Returns [Contender](drive_proof_verifier::types::Contenders) indexed by [Identifier](dpp::prelude::Identifier).
-impl FetchMany<Identifier> for Contender {
-    type Request = GetContestedResourceVoteStateRequest;
-}
+// / Fetch multiple contenders for a contested document resource vote poll.
+// /
+// / Returns [Contender](drive_proof_verifier::types::Contenders) indexed by [Identifier](dpp::prelude::Identifier).
+// impl FetchMany<Identifier> for Contender {
+//     type Request = GetContestedResourceVoteStateRequest;
+// }

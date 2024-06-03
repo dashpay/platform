@@ -12,8 +12,6 @@ async fn test_contested_resources_not_found() {
 
     let sdk = cfg.setup_api("test_contested_resources_not_found").await;
 
-    assert!(sdk.context_provider.is_some());
-
     let index_name = "parentNameAndLabel";
 
     let query = VotePollsByDocumentTypeQuery {

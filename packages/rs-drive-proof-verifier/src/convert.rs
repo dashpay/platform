@@ -92,6 +92,8 @@ impl TryFromVersioned<GetContestedResourceVoteStateRequest>
                             error: e.to_string(),
                         })?,
                     offset: None, // offset is not supported when we use proofs
+                    allow_include_locked_and_abstaining_vote_tally: v
+                        .allow_include_locked_and_abstaining_vote_tally,
                 }
             }
         };

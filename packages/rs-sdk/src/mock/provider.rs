@@ -174,15 +174,11 @@ impl ContextProvider for GrpcContextProvider {
         };
 
         let contract_id = *data_contract_id;
-        assert!(sdk.context_provider.is_some());
         let sdk_cloned = sdk.clone();
 
         let data_contract: Option<DataContract> =
             spawn_async::<Result<Option<DataContract>, crate::error::Error>, _, _>(
-                move || async move {
-                    assert!(sdk_cloned.context_provider.is_some());
-                    DataContract::fetch(&sdk_cloned, contract_id).await
-                },
+                move || async move { DataContract::fetch(&sdk_cloned, contract_id).await },
             )
             .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?
             .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;

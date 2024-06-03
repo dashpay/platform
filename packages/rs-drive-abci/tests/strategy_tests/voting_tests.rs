@@ -266,6 +266,8 @@ mod tests {
             get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
                 get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
                     contenders,
+                    abstain_vote_tally,
+                    lock_vote_tally,
                 },
             ),
         ) = result
@@ -273,6 +275,7 @@ mod tests {
             panic!("expected contenders")
         };
 
+        todo!("quantmum, please do sth with abstain_vote_tally and lock_vote_tally");
         assert_eq!(contenders.len(), 2);
 
         let first_contender = contenders.first().unwrap();

@@ -1694,6 +1694,7 @@ name = "drive-proof-verifier"
 version = "1.0.0-dev.15"
 dependencies = [
  "dapi-grpc",
+ "derive_more",
  "dpp",
  "drive",
  "hex",

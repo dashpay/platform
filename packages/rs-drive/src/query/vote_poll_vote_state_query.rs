@@ -1,8 +1,8 @@
+use super::ContractLookupFn;
 use crate::drive::votes::paths::{
     VotePollPaths, RESOURCE_ABSTAIN_VOTE_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8,
     RESOURCE_LOCK_VOTE_TREE_KEY, RESOURCE_LOCK_VOTE_TREE_KEY_U8,
 };
-use super::ContractLookupFn;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
 use crate::drive::Drive;
@@ -217,14 +217,14 @@ impl Contender {
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        let serialized_document = value
+        let document = value
             .serialized_document
             .map(|ref doc| Document::from_bytes(doc, document_type, platform_version))
             .transpose()?;
 
         Ok(Contender {
             identity_id: value.identity_id,
-            serialized_document,
+            document,
             vote_tally: value.vote_tally,
         })
     }
@@ -350,7 +350,7 @@ impl ContestedDocumentVotePollDriveQuery {
     /// Resolves with a known contract provider
     pub fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &'a super::ContractLookupFn<'a>,
+        known_contracts_provider_fn: &'a ContractLookupFn<'a>,
     ) -> Result<ResolvedContestedDocumentVotePollDriveQuery<'a>, Error> {
         let ContestedDocumentVotePollDriveQuery {
             vote_poll,

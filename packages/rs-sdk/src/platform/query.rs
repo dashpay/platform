@@ -368,6 +368,7 @@ impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDr
                 drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly => GrpcResultType::IdentityIdsOnly.into(),
             },
             start_at_identifier_info,
+            allow_include_locked_and_abstaining_vote_tally: self.allow_include_locked_and_abstaining_vote_tally,
         }
         .into())
     }
