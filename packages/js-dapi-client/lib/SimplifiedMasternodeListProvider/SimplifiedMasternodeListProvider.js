@@ -1,6 +1,5 @@
 const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
 const SimplifiedMNListDiff = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListDiff');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const logger = require('../logger');
 
@@ -63,15 +62,6 @@ class SimplifiedMasternodeListProvider {
     return new Promise((resolve, reject) => {
       const errorHandler = (error) => {
         this.stream = null;
-
-        if (error.code === GrpcErrorCodes.CANCELLED) {
-          if (!resolved) {
-            resolve();
-            resolved = true;
-          }
-
-          return;
-        }
 
         this.logger.error(
           `Masternode list sync failed: ${error.message}`,

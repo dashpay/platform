@@ -676,18 +676,32 @@ describe('Platform', () => {
       it('should receive masternode identities', async () => {
         await client.platform.initialize();
 
-        const stream = await dapiClient.core.subscribeToMasternodeList();
+        let stream = await dapiClient.core.subscribeToMasternodeList();
 
         const { mnList } = await new Promise((resolve, reject) => {
           stream.on('data', (data) => {
+            if (!stream) {
+              return;
+            }
+
             const diffBytes = data.getMasternodeListDiff();
             const diffBuffer = Buffer.from(diffBytes);
             const diff = new SimplifiedMNListDiff(diffBuffer, process.env.NETWORK);
 
+            stream.cancel();
+            stream = null;
             resolve(diff);
           });
 
-          stream.on('error', reject);
+          stream.on('error', (error) => {
+            if (!stream) {
+              return;
+            }
+
+            stream.cancel();
+            stream = null;
+            reject(error);
+          });
         });
 
         for (const masternodeEntry of mnList) {

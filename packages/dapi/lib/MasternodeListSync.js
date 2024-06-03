@@ -14,9 +14,9 @@ function chainLockToBlockHashHex(chainLock) {
 
 class MasternodeListSync extends EventEmitter {
   /**
-   * @type {SimplifiedMNListDiff}
+   * @type {Buffer}
    */
-  fullDiff;
+  fullDiffBuffer;
 
   /**
    * @type {number}
@@ -77,7 +77,9 @@ class MasternodeListSync extends EventEmitter {
     const previousBlockHash = this.blockHash;
     const previousBlockHeight = this.blockHeight;
 
-    this.fullDiff = new SimplifiedMNListDiff(fullDiffObject, this.network);
+    const fullDiff = new SimplifiedMNListDiff(fullDiffObject, this.network);
+
+    this.fullDiffBuffer = fullDiff.toBuffer();
     this.blockHeight = blockHeight;
     this.blockHash = blockHash;
 
@@ -99,6 +101,7 @@ class MasternodeListSync extends EventEmitter {
       diffObject.nVersion = 2;
 
       const diff = new SimplifiedMNListDiff(diffObject, this.network);
+      const diffBuffer = diff.toBuffer();
 
       this.logger.debug({
         previousBlockHash,
@@ -108,7 +111,7 @@ class MasternodeListSync extends EventEmitter {
         network: this.network,
       }, `New diff from block ${previousBlockHeight} to ${blockHeight} received`);
 
-      this.emit(MasternodeListSync.EVENT_DIFF, diff, blockHeight, blockHash);
+      this.emit(MasternodeListSync.EVENT_DIFF, diffBuffer, blockHeight, blockHash);
     }
 
     this.blockHash = blockHash;
@@ -120,6 +123,9 @@ class MasternodeListSync extends EventEmitter {
   async init() {
     // Init makes sure, that we have full diff, so we need to use the existing best chain lock
     // or wait for the first one
+
+    let resolved = false;
+
     return new Promise((resolve, reject) => {
       const bestChainLock = this.chainDataProvider.getBestChainLock();
 
@@ -128,26 +134,46 @@ class MasternodeListSync extends EventEmitter {
 
         this.sync(blockHash, chainLock.height).then(() => {
           // Resolve the promise when chain lock is arrive we don't have any yet
-          if (!bestChainLock) {
+          if (!bestChainLock && !resolved) {
             resolve();
+            resolved = true;
           }
-        }).catch(reject);
+        }).catch((error) => {
+          this.logger.error({ err: error }, `Failed to sync masternode list: ${error.message}`);
+
+          if (!resolved) {
+            reject(error);
+            resolved = true;
+          }
+        });
       });
 
       if (bestChainLock) {
         const bestBlockHash = chainLockToBlockHashHex(bestChainLock);
 
         // Resolve promise when we have the best chain lock
-        this.sync(bestBlockHash, bestChainLock.height).then(resolve).catch(reject);
+        this.sync(bestBlockHash, bestChainLock.height).then(() => {
+          if (!resolved) {
+            resolve();
+            resolved = true;
+          }
+        }).catch((error) => {
+          this.logger.error({ err: error }, `Failed to sync masternode list: ${error.message}`);
+
+          if (!resolved) {
+            reject(error);
+            resolved = true;
+          }
+        });
       }
     });
   }
 
   /**
-   * @return {SimplifiedMNListDiff}
+   * @return {Buffer}
    */
-  getFullDiff() {
-    return this.fullDiff;
+  getFullDiffBuffer() {
+    return this.fullDiffBuffer;
   }
 
   /**
