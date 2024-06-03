@@ -4,5 +4,5 @@ mod check_for_ended_vote_polls;
 mod clean_up_after_contested_resources_vote_polls_end;
 mod delay_vote_poll;
 mod keep_record_of_vote_poll;
-mod lock_vote_poll;
+mod lock_contested_resource;
 mod tally_votes_for_contested_document_resource_vote_poll;

@@ -235,6 +235,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     remove_contested_resource_vote_poll_end_date_query_operations: 0,
                 },
                 cleanup: DriveVoteCleanupMethodVersions {
+                    add_lock_for_contested_document_resource_vote_poll: 0,
                     remove_votes_for_identity: 0,
                 },
                 setup: DriveVoteSetupMethodVersions {
@@ -640,7 +641,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 check_for_ended_contested_resource_vote_polls: 0,
                 tally_votes_for_contested_document_resource_vote_poll: 0,
                 award_document_to_winner: 0,
-                lock_vote_poll: 0,
+                lock_contested_resource: 0,
                 delay_vote_poll: 0,
             },
             state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {

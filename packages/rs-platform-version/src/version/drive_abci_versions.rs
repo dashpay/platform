@@ -306,7 +306,7 @@ pub struct DriveAbciVotingMethodVersions {
     pub check_for_ended_contested_resource_vote_polls: FeatureVersion,
     pub tally_votes_for_contested_document_resource_vote_poll: FeatureVersion,
     pub award_document_to_winner: FeatureVersion,
-    pub lock_vote_poll: FeatureVersion,
+    pub lock_contested_resource: FeatureVersion,
     pub delay_vote_poll: FeatureVersion,
 }
 

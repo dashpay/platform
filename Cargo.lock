@@ -530,9 +530,9 @@ dependencies = [
 
 [[package]]
 name = "borsh"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbe5b10e214954177fb1dc9fbd20a1a2608fe99e6c832033bdc7cea287a20d77"
+checksum = "a6362ed55def622cddc70a4746a68554d7b687713770de539e59a739b249f8ed"
 dependencies = [
  "borsh-derive",
  "cfg_aliases",
@@ -540,9 +540,9 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7a8646f94ab393e43e8b35a2558b1624bed28b97ee09c5d15456e3c9463f46d"
+checksum = "c3ef8005764f53cd4dca619f5bf64cafd4664dada50ece25e4d81de54c80cc0b"
 dependencies = [
  "once_cell",
  "proc-macro-crate 3.1.0",
@@ -757,9 +757,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cfg_aliases"
-version = "0.1.1"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
+checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "check-features"
@@ -1603,6 +1603,7 @@ version = "1.0.0-dev.15"
 dependencies = [
  "arc-swap",
  "base64 0.22.1",
+ "bincode 2.0.0-rc.3",
  "bs58 0.5.1",
  "byteorder",
  "chrono",
@@ -2189,7 +2190,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#c3d78a3e0f99aff8735896e6a1e5c06a38468bb1"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bitvec",
@@ -2212,7 +2213,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#c3d78a3e0f99aff8735896e6a1e5c06a38468bb1"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2222,7 +2223,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#c3d78a3e0f99aff8735896e6a1e5c06a38468bb1"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2245,12 +2246,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#c3d78a3e0f99aff8735896e6a1e5c06a38468bb1"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#c3d78a3e0f99aff8735896e6a1e5c06a38468bb1"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2269,7 +2270,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#229b7f26b4195b145a9f2621defc58ddaca913ce"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#c3d78a3e0f99aff8735896e6a1e5c06a38468bb1"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -3800,9 +3801,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.84"
+version = "1.0.85"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec96c6a92621310b51366f1e28d05ef11489516e93be030060e5fc12024a49d6"
+checksum = "22244ce15aa966053a896d1accb3a6e68469b97c7f33f284b99f0d576879fc23"
 dependencies = [
  "unicode-ident",
 ]
@@ -4833,7 +4834,7 @@ version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d8cec3501a5194c432b2b7976db6b7d10ec95c253208b45f83f7136aa985e29"
 dependencies = [
- "strum_macros 0.26.2",
+ "strum_macros 0.26.3",
 ]
 
 [[package]]
@@ -4851,11 +4852,11 @@ dependencies = [
 
 [[package]]
 name = "strum_macros"
-version = "0.26.2"
+version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6cf59daf282c0a494ba14fd21610a0325f9f90ec9d1231dea26bcb1d696c946"
+checksum = "f7993a8e3a9e88a00351486baae9522c91b123a088f76469e5bd5cc17198ea87"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "rustversion",

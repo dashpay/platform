@@ -284,6 +284,7 @@ pub struct DriveVoteSetupMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteCleanupMethodVersions {
+    pub add_lock_for_contested_document_resource_vote_poll: FeatureVersion,
     pub remove_votes_for_identity: FeatureVersion,
 }
 

@@ -11,7 +11,9 @@ use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 use crate::ProtocolError;
 
 // @append_only
-#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
+#[derive(
+    Error, Debug, PartialEq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
+)]
 pub enum DataContractError {
     #[error(transparent)]
     DecodingContractError(DecodingError),
