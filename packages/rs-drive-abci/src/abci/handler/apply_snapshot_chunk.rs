@@ -28,7 +28,8 @@ where
             .state_sync_info
             .apply_chunk(
                 &app.platform().drive.grove,
-                (&request.chunk_id, request.chunk),
+                &request.chunk_id,
+                request.chunk,
                 1u16,
             )
             .map_err(|e| {

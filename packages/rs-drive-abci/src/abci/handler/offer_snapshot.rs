@@ -36,7 +36,7 @@ where
     app.platform().drive.grove.wipe().map_err(|e| {
         AbciError::StateSyncInternalError(format!("offer_snapshot unable to wipe grovedb:{}", e))
     })?;
-    let (_, state_sync_info) = app
+    let state_sync_info = app
         .platform()
         .drive
         .grove
