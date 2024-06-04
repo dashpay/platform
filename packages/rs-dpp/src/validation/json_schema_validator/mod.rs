@@ -9,7 +9,7 @@ use std::sync::RwLock;
 
 #[derive(Debug)]
 pub struct JsonSchemaValidator {
-    pub validator: RwLock<Option<JSONSchema>>,
+    validator: RwLock<Option<JSONSchema>>,
 }
 
 // TODO: Remove?
