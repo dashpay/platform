@@ -1,7 +1,7 @@
 const util = require('util');
 const winston = require('winston');
 
-const LOG_LEVEL = process.env.LOG_LEVEL || 'silly';
+const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 const LOG_TO_FILE = process.env.LOG_WALLET_TO_FILE || 'false';
 
 // Log levels:
