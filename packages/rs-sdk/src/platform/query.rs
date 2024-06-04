@@ -3,6 +3,7 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use std::fmt::Debug;
 
+use bincode::Encode;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo;
 use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0;
@@ -14,6 +15,7 @@ use dapi_grpc::platform::v0::{
     KeyRequestType,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
+use dpp::platform_serialization::platform_encode_to_vec;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
@@ -318,14 +320,19 @@ impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
                 start_index_values: self
                     .start_index_values
                     .iter()
-                    .map(|v| v.to_bytes())
+                    .map(|v| bincode::encode_to_vec(v, bincode::config::standard()))
                     .collect::<Result<Vec<Vec<u8>>, _>>()
-                    .map_err(|e| Error::Protocol(e.into()))?,
+                    .map_err(|e| {
+                        Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string()))
+                    })?,
                 end_index_values: self
                     .end_index_values
                     .into_iter()
-                    .map(|v| v.to_bytes().map_err(|e| Error::Protocol(e.into())))
-                    .collect::<Result<Vec<_>, _>>()?,
+                    .map(|v| bincode::encode_to_vec(v, bincode::config::standard()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| {
+                        Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string()))
+                    })?,
                 start_at_value_info: self.start_at_value.map(|(id, included)| {
                     get_contested_resources_request_v0::StartAtValueInfo {
                         start_value: id,
