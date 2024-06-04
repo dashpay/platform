@@ -59,6 +59,8 @@ jobs:
 
           SHA_TAG=sha-${{ github.sha }}
 
+          yarn dashmate config --config=local
+
           # Drive
           DRIVE_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.drive.abci.docker.image)
           docker pull $DOCKER_HUB_ORG/drive:$SHA_TAG
