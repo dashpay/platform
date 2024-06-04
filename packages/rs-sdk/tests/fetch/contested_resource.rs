@@ -20,7 +20,7 @@ async fn test_contested_resources_not_found() {
         document_type_name: cfg.existing_document_type_name.clone(),
         index_name: index_name.to_string(),
         start_at_value: None,
-        start_index_values: vec![Value::Text("Bob".into())],
+        start_index_values: vec![Value::Text("dash".into())],
         end_index_values: vec![],
         limit: None,
         order_ascending: false,

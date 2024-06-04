@@ -2,8 +2,6 @@
 //!
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use std::fmt::Debug;
-
-use bincode::Encode;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo;
 use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0;
@@ -15,7 +13,7 @@ use dapi_grpc::platform::v0::{
     KeyRequestType,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
-use dpp::platform_serialization::platform_encode_to_vec;
+use dpp::ProtocolError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
@@ -26,6 +24,7 @@ use crate::{error::Error, platform::document_query::DocumentQuery};
 
 use super::types::epoch::EpochQuery;
 
+static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 /// Default limit of epoch records returned by the platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
 /// Default limit of epoch records returned by the platform.
@@ -327,7 +326,7 @@ impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
                     })?,
                 end_index_values: self
                     .end_index_values
-                    .into_iter()
+                    .iter()
                     .map(|v| bincode::encode_to_vec(v, bincode::config::standard()))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|e| {
@@ -366,7 +365,8 @@ impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDr
             count: self.limit.map(|v| v as u32),
             document_type_name: self.vote_poll.document_type_name.clone(),
             index_name: self.vote_poll.index_name,
-            index_values: self.vote_poll.index_values.iter().map(|v|v.to_bytes()).collect::<Result<Vec<Vec<u8>>,_>>().map_err(|e|Error::Protocol(e.into()))?,
+            index_values: self.vote_poll.index_values.iter().map(|v|                
+                bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e| ProtocolError::EncodingError(e.to_string()))).collect::<Result<Vec<_>,_>>()?,
             order_ascending: self.order_ascending,
             result_type:match  self.result_type {
                 drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::Documents => GrpcResultType::Documents.into(),

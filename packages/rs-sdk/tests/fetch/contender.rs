@@ -1,20 +1,25 @@
-use std::sync::Arc;
-
-use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::Contender;
-use dpp::data_contract::DataContract;
-use drive::query::vote_poll_vote_state_query::{
-    ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
+//! Tests for SDK requests that return one or more [Contender] objects.
+use crate::fetch::{common::setup_logs, config::Config};
+use dash_sdk::platform::{DocumentQuery, Fetch, FetchMany};
+use dpp::document::Document;
+use dpp::{
+    data_contract::DataContract,
+    voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
-/*
-///! Tests for SDK requests that return one or more [Contender] objects.
+use drive::query::vote_poll_vote_state_query::{
+    Contender, ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
+};
+use std::sync::Arc;
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn contested_resource_vote_states_ok() {
+async fn contested_resource_vote_states_not_found() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api("contested_resource_vote_states_ok").await;
+    let sdk = cfg
+        .setup_api("contested_resource_vote_states_not_found")
+        .await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
@@ -37,29 +42,31 @@ async fn contested_resource_vote_states_ok() {
         .1
         .expect("document must exist");
 
+    tracing::info!("first_doc: {}", first_doc.to_string());
     // Now query for individual document
     let query = ContestedDocumentVotePollDriveQuery {
         limit: None,
         offset: None,
         order_ascending: true,
         start_at: None,
-        vote_poll,
+        vote_poll: ContestedDocumentResourceVotePoll {
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec!["dash".into()],
+            document_type_name: cfg.existing_document_type_name,
+            contract_id: data_contract_id,
+        },
+        allow_include_locked_and_abstaining_vote_tally: true,
         result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
     };
 
-    let first_contender = Contender::fetch_many(&sdk, query)
+    let _first_contender = Contender::fetch_many(&sdk, query)
         .await
         .expect("fetch many contenders")
+        .contenders
         .pop_first()
-        .expect("first item must exist")
+        .expect("first contender must exist")
         .1
         .expect("contender must exist");
 
-    let doc = Document::fetch(&sdk, query)
-        .await
-        .expect("fetch document")
-        .expect("document must be found");
-
-    assert_eq!(first_doc, doc);
+    // assert_eq!(first_doc, doc);
 }
-*/

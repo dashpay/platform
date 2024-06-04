@@ -8,6 +8,7 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceVoteStateRequest, GetContestedResourcesRequest,
     GetVotePollsByEndDateRequest,
 };
+use dpp::bincode::{config::Configuration, error::DecodeError};
 use dpp::{
     identifier::Identifier,
     platform_value::Value,
@@ -23,6 +24,8 @@ use drive::query::{
 };
 
 use crate::Error;
+
+static BINCODE_CONFIG: Configuration = dpp::bincode::config::standard();
 
 /// TryFromVersioned is an equivalent of [TryFrom] trait for converting data between different formats.
 ///
@@ -66,11 +69,11 @@ impl TryFromVersioned<GetContestedResourceVoteStateRequest>
                         })?,
                         document_type_name: v.document_type_name.clone(),
                         index_name: v.index_name.clone(),
-                        index_values: v
-                            .index_values
-                            .iter()
-                            .map(|iv| Value::from(iv.clone()))
-                            .collect::<Vec<Value>>(),
+                        index_values: bincode_decode_values(v.index_values.iter()).map_err(
+                            |e| Error::RequestDecodeError {
+                                error: e.to_string(),
+                            },
+                        )?,
                     },
                     order_ascending: v.order_ascending,
                     result_type: ContestedDocumentVotePollDriveQueryResultType::try_from_versioned(
@@ -163,12 +166,15 @@ impl TryFromVersioned<GetContestedResourcesRequest> for VotePollsByDocumentTypeQ
                     start_at_value: req
                         .start_at_value_info
                         .map(|i| (i.start_value, i.start_value_included)),
-                    start_index_values: req
-                        .start_index_values
-                        .into_iter()
-                        .map(Value::from)
-                        .collect(),
-                    end_index_values: req.end_index_values.into_iter().map(Value::from).collect(),
+                    start_index_values: bincode_decode_values(req.start_index_values.iter())
+                        .map_err(|e| Error::RequestDecodeError {
+                            error: e.to_string(),
+                        })?,
+                    end_index_values: bincode_decode_values(req.end_index_values.iter()).map_err(
+                        |e| Error::RequestDecodeError {
+                            error: e.to_string(),
+                        },
+                    )?,
                     limit: req.count.map(|v| v as u16),
                     order_ascending: req.order_ascending,
                 }
@@ -176,6 +182,17 @@ impl TryFromVersioned<GetContestedResourcesRequest> for VotePollsByDocumentTypeQ
         };
         Ok(result)
     }
+}
+
+/// Convert a sequence of byte vectors into a sequence of [values](platform_value::Value).
+///
+/// Small utility function to decode a sequence of byte vectors into a sequence of [values](platform_value::Value).
+pub fn bincode_decode_values<V: AsRef<[u8]>, T: Iterator<Item = V>>(
+    values: T,
+) -> Result<Vec<Value>, DecodeError> {
+    values
+        .map(|v| dpp::bincode::decode_from_slice(v.as_ref(), BINCODE_CONFIG).map(|(v, _)| v))
+        .collect()
 }
 
 /// TryIntoVersioned is an equivalent of [TryInto] trait for converting data between different formats.

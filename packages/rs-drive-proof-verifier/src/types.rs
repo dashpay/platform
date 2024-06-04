@@ -52,10 +52,25 @@ pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 ///
 /// Mapping between the contenders identity IDs and their info.
 /// If a contender is not found, it is represented as `None`.
+#[derive(Default)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct Contenders {
+    /// Contenders indexed by their identity IDs.
     pub contenders: RetrievedObjects<Identifier, Contender>,
+    /// Tally of abstain votes.
     pub abstain_vote_tally: Option<u32>,
+    ///
     pub lock_vote_tally: Option<u32>,
+}
+
+impl FromIterator<(Identifier, Option<Contender>)> for Contenders {
+    fn from_iter<T: IntoIterator<Item = (Identifier, Option<Contender>)>>(iter: T) -> Self {
+        Self {
+            contenders: BTreeMap::from_iter(iter),
+            abstain_vote_tally: None,
+            lock_vote_tally: None,
+        }
+    }
 }
 
 /// Multiple grovedb elements.
