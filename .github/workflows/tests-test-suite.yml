@@ -60,7 +60,7 @@ jobs:
           image_org: ${{ env.ECR_HOST }}
 
       - name: Run test suite
-        run: yarn workspace @dashevo/platform-test-suite ${{ inputs.command }}
+        run: LOG_LEVEL=silly yarn workspace @dashevo/platform-test-suite ${{ inputs.command }}
         env:
             BROWSER_TEST_BATCH_INDEX: ${{ inputs.batch_index }}
             BROWSER_TEST_BATCH_TOTAL: ${{ inputs.batch_total }}
