@@ -167,11 +167,10 @@ impl ContextProvider for GrpcContextProvider {
         };
 
         let contract_id = *data_contract_id;
-        let sdk_cloned = sdk.clone();
 
-        let data_contract: Option<DataContract> = DataContract::fetch(&sdk_cloned, contract_id)
+        let data_contract: Option<DataContract> = DataContract::fetch(sdk, contract_id)
             .block_on()
-            .map_err(|e| ContextProviderError::InvalidDataContract(e.to_string()))?;
+            .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
 
         if let Some(ref dc) = data_contract {
             self.data_contracts_cache.put(*data_contract_id, dc.clone());
