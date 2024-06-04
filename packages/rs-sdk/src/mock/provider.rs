@@ -7,13 +7,10 @@ use arc_swap::ArcSwapAny;
 use dpp::prelude::{DataContract, Identifier};
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
-use futures::task::ArcWake;
-use futures::FutureExt;
-use std::future::Future;
+use pollster::FutureExt;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 
 /// Context provider that uses the Core gRPC API to fetch data from the platform.
 ///
@@ -174,70 +171,15 @@ impl ContextProvider for GrpcContextProvider {
         let contract_id = *data_contract_id;
         let sdk_cloned = sdk.clone();
 
-        let data_contract: Option<DataContract> =
-            poll_future(DataContract::fetch(&sdk_cloned, contract_id))
-                .map_err(|e| ContextProviderError::InvalidDataContract(e.to_string()))?;
+        let data_contract: Option<DataContract> = DataContract::fetch(&sdk_cloned, contract_id)
+            .block_on()
+            .map_err(|e| ContextProviderError::InvalidDataContract(e.to_string()))?;
 
         if let Some(ref dc) = data_contract {
             self.data_contracts_cache.put(*data_contract_id, dc.clone());
         };
 
         Ok(data_contract.map(Arc::new))
-    }
-}
-
-/// Waker that uses a mutex and a condition variable to wake up a task.
-///
-/// See [Condvar] documentation for more details.
-struct MtxWaker {
-    mtx: std::sync::Mutex<bool>,
-    cvar: std::sync::Condvar,
-}
-
-impl MtxWaker {
-    fn new() -> Self {
-        Self {
-            mtx: std::sync::Mutex::new(false),
-            cvar: std::sync::Condvar::new(),
-        }
-    }
-
-    /// Block until the task is woken up.
-    fn wait(&self) {
-        let mut started = self.mtx.lock().expect("lock poisoned");
-        while !*started {
-            started = self.cvar.wait(started).expect("wait failed");
-        }
-    }
-}
-
-impl ArcWake for MtxWaker {
-    fn wake_by_ref(arc_self: &Arc<Self>) {
-        let mut started = arc_self.mtx.lock().expect("lock poisoned");
-        *started = true;
-        arc_self.cvar.notify_one();
-    }
-}
-
-/// Execute an async function in a sync context, when block_on() is not available.
-///
-/// When async code runs some sync code inside a thread used to drive asynchronous tasks,
-/// that sync code cannot call block_on(). This function is a workaround for this that allows to run async code in a
-/// sync context.
-///
-/// Note it's not as efficient as calling `.await` on a future, and should be used only for testing purposes.
-fn poll_future<F: Future>(future: F) -> F::Output {
-    let mtx_waker = Arc::new(MtxWaker::new());
-    let waker = futures::task::waker(mtx_waker.clone());
-    let mut context = Context::from_waker(&waker);
-
-    let mut future = Box::pin(future).fuse();
-
-    loop {
-        match Future::poll(std::pin::Pin::new(&mut future), &mut context) {
-            Poll::Ready(value) => return value,
-            Poll::Pending => mtx_waker.wait(),
-        }
     }
 }
 
