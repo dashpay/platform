@@ -61,6 +61,8 @@ class SimplifiedMasternodeListProvider {
     let resolved = false;
 
     const rejectDiff = (error) => {
+      this.logger.silly('Stream is cancelled due to error. Retrying...', { error });
+
       this.stream.cancel();
       this.stream.retryOnError(error);
     };
