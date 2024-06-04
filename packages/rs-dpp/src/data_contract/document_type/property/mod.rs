@@ -550,7 +550,7 @@ impl DocumentPropertyType {
                     r_vec.extend(vec);
                     Ok(r_vec)
                 } else {
-                    Err(get_field_type_matching_error().into())
+                    Err(get_field_type_matching_error(&value).into())
                 }
             }
             DocumentPropertyType::Date => {
@@ -604,7 +604,9 @@ impl DocumentPropertyType {
                 Ok(r_vec)
             }
             DocumentPropertyType::Boolean => {
-                let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
+                let value_as_boolean = value
+                    .as_bool()
+                    .ok_or_else(|| get_field_type_matching_error(&value))?;
                 // 0 means does not exist
                 if value_as_boolean {
                     Ok(vec![1]) // 1 is true
@@ -640,7 +642,7 @@ impl DocumentPropertyType {
                     len_prepended_vec.append(&mut r_vec);
                     Ok(len_prepended_vec)
                 } else {
-                    Err(get_field_type_matching_error().into())
+                    Err(get_field_type_matching_error(&value).into())
                 }
             }
             DocumentPropertyType::Array(array_field_type) => {
@@ -655,7 +657,7 @@ impl DocumentPropertyType {
                     })?;
                     Ok(r_vec)
                 } else {
-                    Err(get_field_type_matching_error().into())
+                    Err(get_field_type_matching_error(&value).into())
                 }
             }
             DocumentPropertyType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
@@ -676,7 +678,9 @@ impl DocumentPropertyType {
         }
         return match self {
             DocumentPropertyType::String(_, _) => {
-                let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
+                let value_as_text = value
+                    .as_text()
+                    .ok_or_else(|| get_field_type_matching_error(value))?;
                 let vec = value_as_text.as_bytes().to_vec();
                 let mut r_vec = vec.len().encode_var_vec();
                 r_vec.extend(vec);
@@ -716,7 +720,9 @@ impl DocumentPropertyType {
             },
             DocumentPropertyType::Identifier => Ok(value.to_identifier_bytes()?),
             DocumentPropertyType::Boolean => {
-                let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
+                let value_as_boolean = value
+                    .as_bool()
+                    .ok_or_else(|| get_field_type_matching_error(value))?;
                 // 0 means does not exist
                 if value_as_boolean {
                     Ok(vec![1]) // 1 is true
@@ -726,7 +732,7 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Object(inner_fields) => {
                 let Some(value_map) = value.as_map() else {
-                    return Err(get_field_type_matching_error().into());
+                    return Err(get_field_type_matching_error(value).into());
                 };
                 let value_map = Value::map_ref_into_btree_string_map(value_map)?;
                 let mut r_vec = vec![];
@@ -768,7 +774,7 @@ impl DocumentPropertyType {
                     })?;
                     Ok(r_vec)
                 } else {
-                    Err(get_field_type_matching_error().into())
+                    Err(get_field_type_matching_error(value).into())
                 }
             }
 
@@ -787,7 +793,9 @@ impl DocumentPropertyType {
         }
         match self {
             DocumentPropertyType::String(_, _) => {
-                let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
+                let value_as_text = value
+                    .as_text()
+                    .ok_or_else(|| get_field_type_matching_error(value))?;
                 let vec = value_as_text.as_bytes().to_vec();
                 if vec.is_empty() {
                     // we don't want to collide with the definition of an empty string
@@ -814,7 +822,9 @@ impl DocumentPropertyType {
                 .to_identifier_bytes()
                 .map_err(ProtocolError::ValueError),
             DocumentPropertyType::Boolean => {
-                let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
+                let value_as_boolean = value
+                    .as_bool()
+                    .ok_or_else(|| get_field_type_matching_error(value))?;
                 if value_as_boolean {
                     Ok(vec![1])
                 } else {
@@ -1034,8 +1044,9 @@ impl DocumentPropertyType {
     }
 }
 
-fn get_field_type_matching_error() -> DataContractError {
-    DataContractError::ValueWrongType(
-        "document field type doesn't match document value".to_string(),
-    )
+fn get_field_type_matching_error(value: &Value) -> DataContractError {
+    DataContractError::ValueWrongType(format!(
+        "document field type doesn't match \"{}\" document value",
+        value
+    ))
 }
