@@ -28,14 +28,26 @@ pub struct DocumentProperty {
     pub required: bool,
 }
 
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub struct StringPropertySizes {
+    pub min_length: Option<u16>,
+    pub max_length: Option<u16>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub struct ByteArrayPropertySizes {
+    pub min_size: Option<u16>,
+    pub max_size: Option<u16>,
+}
+
 // @append_only
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum DocumentPropertyType {
     ///Todo decompose integer
     Integer,
     Number,
-    String(Option<u16>, Option<u16>),    // TODO use structure
-    ByteArray(Option<u16>, Option<u16>), // TODO user structure
+    String(StringPropertySizes),
+    ByteArray(ByteArrayPropertySizes),
     Identifier,
     Boolean,
     Date,
@@ -62,8 +74,8 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => "integer".to_string(),
             DocumentPropertyType::Number => "number".to_string(),
-            DocumentPropertyType::String(_, _) => "string".to_string(),
-            DocumentPropertyType::ByteArray(_, _) => "byteArray".to_string(),
+            DocumentPropertyType::String(_) => "string".to_string(),
+            DocumentPropertyType::ByteArray(_) => "byteArray".to_string(),
             DocumentPropertyType::Identifier => "identifier".to_string(),
             DocumentPropertyType::Boolean => "boolean".to_string(),
             DocumentPropertyType::Date => "date".to_string(),
@@ -77,13 +89,13 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Some(8),
             DocumentPropertyType::Number => Some(8),
-            DocumentPropertyType::String(min_length, _) => match min_length {
+            DocumentPropertyType::String(sizes) => match sizes.min_length {
                 None => Some(0),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
-            DocumentPropertyType::ByteArray(min_size, _) => match min_size {
+            DocumentPropertyType::ByteArray(sizes) => match sizes.min_size {
                 None => Some(0),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
             DocumentPropertyType::Boolean => Some(1),
             DocumentPropertyType::Date => Some(8),
@@ -101,13 +113,13 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Some(8),
             DocumentPropertyType::Number => Some(8),
-            DocumentPropertyType::String(min_length, _) => match min_length {
+            DocumentPropertyType::String(sizes) => match sizes.min_length {
                 None => Some(0),
-                Some(size) => Some(*size * 4),
+                Some(size) => Some(size * 4),
             },
-            DocumentPropertyType::ByteArray(min_size, _) => match min_size {
+            DocumentPropertyType::ByteArray(sizes) => match sizes.min_size {
                 None => Some(0),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
             DocumentPropertyType::Boolean => Some(1),
             DocumentPropertyType::Date => Some(8),
@@ -125,13 +137,13 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Some(8),
             DocumentPropertyType::Number => Some(8),
-            DocumentPropertyType::String(_, max_length) => match max_length {
+            DocumentPropertyType::String(sizes) => match sizes.max_length {
                 None => Some(u16::MAX),
-                Some(size) => Some(*size * 4),
+                Some(size) => Some(size * 4),
             },
-            DocumentPropertyType::ByteArray(_, max_size) => match max_size {
+            DocumentPropertyType::ByteArray(sizes) => match sizes.max_size {
                 None => Some(u16::MAX),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
             DocumentPropertyType::Boolean => Some(1),
             DocumentPropertyType::Date => Some(8),
@@ -149,13 +161,13 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Some(8),
             DocumentPropertyType::Number => Some(8),
-            DocumentPropertyType::String(_, max_length) => match max_length {
+            DocumentPropertyType::String(sizes) => match sizes.max_length {
                 None => Some(16383),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
-            DocumentPropertyType::ByteArray(_, max_size) => match max_size {
+            DocumentPropertyType::ByteArray(sizes) => match sizes.max_size {
                 None => Some(u16::MAX),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
             DocumentPropertyType::Boolean => Some(1),
             DocumentPropertyType::Date => Some(8),
@@ -231,7 +243,7 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let size = self.random_size(rng);
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -240,7 +252,7 @@ impl DocumentPropertyType {
                         .collect(),
                 )
             }
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 let size = self.random_size(rng);
                 if self.min_size() == self.max_size() {
                     match size {
@@ -290,7 +302,7 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let size = self.min_size().unwrap();
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -299,7 +311,7 @@ impl DocumentPropertyType {
                         .collect(),
                 )
             }
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 let size = self.min_size().unwrap();
                 Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
             }
@@ -330,7 +342,7 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let size = self.max_size().unwrap();
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -339,7 +351,7 @@ impl DocumentPropertyType {
                         .collect(),
                 )
             }
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 let size = self.max_size().unwrap();
                 Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
             }
@@ -401,7 +413,7 @@ impl DocumentPropertyType {
             }
         }
         match self {
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let bytes = Self::read_varint_value(buf)?;
                 let string = String::from_utf8(bytes).map_err(|_| {
                     DataContractError::CorruptedSerialization(
@@ -437,11 +449,11 @@ impl DocumentPropertyType {
                     _ => Ok((Some(Value::Bool(true)), false)),
                 }
             }
-            DocumentPropertyType::ByteArray(min, max) => {
-                match (min, max) {
+            DocumentPropertyType::ByteArray(sizes) => {
+                match (sizes.min_size, sizes.max_size) {
                     (Some(min), Some(max)) if min == max => {
                         // if min == max, then we don't need a varint for the length
-                        let len = *min as usize;
+                        let len = min as usize;
                         let mut bytes = vec![0; len];
                         buf.read_exact(&mut bytes).map_err(|_| {
                             DataContractError::DecodingContractError(DecodingError::new(format!(
@@ -543,7 +555,7 @@ impl DocumentPropertyType {
             return Ok(vec![]);
         }
         match self {
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 if let Value::Text(value) = value {
                     let vec = value.into_bytes();
                     let mut r_vec = vec.len().encode_var_vec();
@@ -589,7 +601,7 @@ impl DocumentPropertyType {
                     Ok(r_vec)
                 }
             }
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 let mut bytes = value.into_binary_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
@@ -675,7 +687,7 @@ impl DocumentPropertyType {
             return Ok(vec![]);
         }
         return match self {
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
                 let vec = value_as_text.as_bytes().to_vec();
                 let mut r_vec = vec.len().encode_var_vec();
@@ -704,7 +716,7 @@ impl DocumentPropertyType {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_f64.to_be_bytes().to_vec())
             }
-            DocumentPropertyType::ByteArray(min, max) => match (min, max) {
+            DocumentPropertyType::ByteArray(sizes) => match (sizes.min_size, sizes.max_size) {
                 (Some(min), Some(max)) if min == max => Ok(value.to_binary_bytes()?),
                 _ => {
                     let mut bytes = value.to_binary_bytes()?;
@@ -786,7 +798,7 @@ impl DocumentPropertyType {
             return Ok(vec![]);
         }
         match self {
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
                 let vec = value_as_text.as_bytes().to_vec();
                 if vec.is_empty() {
@@ -807,7 +819,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Number => Ok(Self::encode_float(
                 value.to_float().map_err(ProtocolError::ValueError)?,
             )),
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
             DocumentPropertyType::Identifier => value
@@ -839,16 +851,16 @@ impl DocumentPropertyType {
     // Given a field type and a value this function chooses and executes the right encoding method
     pub fn value_from_string(&self, str: &str) -> Result<Value, DataContractError> {
         match self {
-            DocumentPropertyType::String(min, max) => {
-                if let Some(min) = min {
-                    if str.len() < *min as usize {
+            DocumentPropertyType::String(sizes) => {
+                if let Some(min) = sizes.min_length {
+                    if str.len() < min as usize {
                         return Err(DataContractError::FieldRequirementUnmet(
                             "string is too small".to_string(),
                         ));
                     }
                 }
-                if let Some(max) = max {
-                    if str.len() > *max as usize {
+                if let Some(max) = sizes.max_length {
+                    if str.len() > max as usize {
                         return Err(DataContractError::FieldRequirementUnmet(
                             "string is too big".to_string(),
                         ));
@@ -866,16 +878,16 @@ impl DocumentPropertyType {
                     )
                 })
             }
-            DocumentPropertyType::ByteArray(min, max) => {
-                if let Some(min) = min {
-                    if str.len() / 2 < *min as usize {
+            DocumentPropertyType::ByteArray(sizes) => {
+                if let Some(min) = sizes.min_size {
+                    if str.len() / 2 < min as usize {
                         return Err(DataContractError::FieldRequirementUnmet(
                             "byte array is too small".to_string(),
                         ));
                     }
                 }
-                if let Some(max) = max {
-                    if str.len() / 2 > *max as usize {
+                if let Some(max) = sizes.max_size {
+                    if str.len() / 2 > max as usize {
                         return Err(DataContractError::FieldRequirementUnmet(
                             "byte array is too big".to_string(),
                         ));
