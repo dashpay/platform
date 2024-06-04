@@ -22,7 +22,7 @@ class SimplifiedMasternodeListProvider {
      * @type {ReconnectableStream}
      */
     this.stream = undefined;
-    this.removeStreamListeners = () => {}
+    this.removeStreamListeners = () => {};
 
     /**
      * @type {SimplifiedMNList}
@@ -50,7 +50,7 @@ class SimplifiedMasternodeListProvider {
   async subscribeToMasternodeList() {
     if (this.stream) {
       this.logger.debug('Masternode list stream already started');
-      return;
+      return Promise.resolve();
     }
 
     this.logger.debug('Starting masternode list stream');
