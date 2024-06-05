@@ -718,12 +718,14 @@ impl PlatformConfig {
 }
 
 /// Configs that should only happen during testing
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct PlatformTestConfig {
     /// Block signing
     pub block_signing: bool,
     /// Block signature verification
     pub block_commit_signature_verification: bool,
+    /// Disable instant lock signature verification
+    pub disable_instant_lock_signature_verification: bool,
 }
 
 impl PlatformTestConfig {
@@ -732,6 +734,7 @@ impl PlatformTestConfig {
         Self {
             block_signing: false,
             block_commit_signature_verification: false,
+            disable_instant_lock_signature_verification: false,
         }
     }
 }
@@ -741,6 +744,7 @@ impl Default for PlatformTestConfig {
         Self {
             block_signing: true,
             block_commit_signature_verification: true,
+            disable_instant_lock_signature_verification: false,
         }
     }
 }

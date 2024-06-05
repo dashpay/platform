@@ -50,9 +50,11 @@ pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
     block_count: u64,
     strategy: NetworkStrategy,
-    config: PlatformConfig,
+    mut config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
+    // TODO: Do we want to sign instant locks or just disable verification?
+
     let validator_quorum_count = strategy.validator_quorum_count; // In most tests 24 quorums
     let chain_lock_quorum_count = strategy.chain_lock_quorum_count; // In most tests 4 quorums when not the same as validator
     let validator_set_quorum_size = config.validator_set.quorum_size;
@@ -329,11 +331,6 @@ pub(crate) fn run_chain_for_strategy(
                 }),
             }))
         });
-
-    platform
-        .core_rpc
-        .expect_verify_instant_lock()
-        .returning(|_, _| Ok(true));
 
     platform
         .core_rpc
