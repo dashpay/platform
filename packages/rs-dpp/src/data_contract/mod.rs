@@ -20,7 +20,7 @@ pub mod document_type;
 mod v0;
 
 #[cfg(feature = "factories")]
-mod factory;
+pub mod factory;
 #[cfg(feature = "factories")]
 pub use factory::*;
 pub mod conversion;
