@@ -165,7 +165,7 @@ where
             let quorum_public_key = last_committed_state
                 .current_validator_set()?
                 .threshold_public_key();
-            let quorum_type = self.config.validator_set_quorum_type();
+            let quorum_type = self.config.validator_set.quorum_type;
             // TODO: We already had commit in the function above, why do we need to create it again with clone?
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),

@@ -13,7 +13,9 @@ mod tests {
         ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease,
         MasternodeListChangesStrategy, NetworkStrategy, StrategyRandomness, UpgradingInfo,
     };
-    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig,
+    };
     use drive_abci::mimic::MimicExecuteBlockOptions;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
@@ -64,9 +66,8 @@ mod tests {
                 };
                 let twenty_minutes_in_ms = 1000 * 60 * 20;
                 let mut config = PlatformConfig {
-                    validator_set_quorum_size: 100,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig::default_100_67(),
+                    chain_lock: ChainLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 125,
@@ -307,9 +308,11 @@ mod tests {
                 let one_hour_in_s = 60 * 60;
                 let thirty_seconds_in_ms = 1000 * 30;
                 let config = PlatformConfig {
-                    validator_set_quorum_size: 30,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig {
+                        quorum_size: 30,
+                        ..Default::default()
+                    },
+                    chain_lock: ChainLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 30,
@@ -544,7 +547,10 @@ mod tests {
         let epoch_time_length_s = 60;
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 30,
+            validator_set: ValidatorSetConfig {
+                quorum_size: 30,
+                ..Default::default()
+            },
             execution: ExecutionConfig {
                 epoch_time_length_s,
                 ..Default::default()
@@ -701,9 +707,11 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
-                    validator_set_quorum_size: 40,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig {
+                        quorum_size: 40,
+                        ..Default::default()
+                    },
+                    chain_lock: ChainLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 80,
@@ -934,9 +942,11 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
-                    validator_set_quorum_size: 50,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig {
+                        quorum_size: 50,
+                        ..Default::default()
+                    },
+                    chain_lock: ChainLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 50,
@@ -1263,9 +1273,11 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
-                    validator_set_quorum_size: 50,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig {
+                        quorum_size: 50,
+                        ..Default::default()
+                    },
+                    chain_lock: ChainLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 30,

@@ -306,7 +306,9 @@ mod tests {
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 
     use dpp::version::PlatformVersion;
-    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig,
+    };
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
@@ -369,9 +371,8 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -467,9 +468,8 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -566,9 +566,8 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,

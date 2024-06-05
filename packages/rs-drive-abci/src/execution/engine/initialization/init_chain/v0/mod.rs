@@ -52,6 +52,7 @@ where
         let mut initial_platform_state = PlatformState::default_with_protocol_versions(
             request.initial_protocol_version,
             request.initial_protocol_version,
+            &self.config,
         );
 
         let genesis_block_info = BlockInfo {

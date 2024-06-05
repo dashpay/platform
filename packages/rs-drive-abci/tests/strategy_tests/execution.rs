@@ -55,8 +55,8 @@ pub(crate) fn run_chain_for_strategy(
 ) -> ChainExecutionOutcome {
     let validator_quorum_count = strategy.validator_quorum_count; // In most tests 24 quorums
     let chain_lock_quorum_count = strategy.chain_lock_quorum_count; // In most tests 4 quorums when not the same as validator
-    let validator_set_quorum_size = config.validator_set_quorum_size;
-    let chain_lock_quorum_size = config.chain_lock_quorum_size;
+    let validator_set_quorum_size = config.validator_set.quorum_size;
+    let chain_lock_quorum_size = config.chain_lock.quorum_size;
 
     let mut rng = StdRng::seed_from_u64(seed);
 
@@ -68,7 +68,7 @@ pub(crate) fn run_chain_for_strategy(
     let max_core_height =
         core_height_increase.max_core_height(block_count, strategy.initial_core_height);
 
-    let chain_lock_quorum_type = config.chain_lock_quorum_type();
+    let chain_lock_quorum_type = config.chain_lock.quorum_type;
 
     let sign_chain_locks = strategy.sign_chain_locks;
 
@@ -261,7 +261,7 @@ pub(crate) fn run_chain_for_strategy(
     quorums_details.shuffle(&mut rng);
 
     let (chain_lock_quorums, chain_lock_quorums_details) =
-        if config.validator_set_quorum_type != config.chain_lock_quorum_type {
+        if config.validator_set.quorum_type != config.chain_lock.quorum_type {
             let total_chain_lock_quorums = if strategy.rotate_quorums {
                 chain_lock_quorum_count * 10
             } else {
@@ -806,7 +806,7 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
-    let quorum_size = config.validator_set_quorum_size;
+    let quorum_size = config.validator_set.quorum_size;
     let first_block_time = start_time_ms;
     let mut current_identities = vec![];
     let mut signer = strategy.strategy.signer.clone().unwrap_or_default();
@@ -1013,7 +1013,7 @@ pub(crate) fn continue_chain_for_strategy(
             query_strategy.query_chain_for_strategy(
                 &ProofVerification {
                     quorum_hash: &current_quorum_with_test_info.quorum_hash.into(),
-                    quorum_type: config.validator_set_quorum_type(),
+                    quorum_type: config.validator_set.quorum_type,
                     app_version,
                     chain_id: drive_abci::mimic::CHAIN_ID.to_string(),
                     core_chain_locked_height: state_id.core_chain_locked_height,

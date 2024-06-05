@@ -4,7 +4,9 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use crate::strategy::{MasternodeListChangesStrategy, NetworkStrategy};
-    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig,
+    };
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use strategy_tests::frequency::Frequency;
@@ -58,12 +60,9 @@ mod tests {
             ..Default::default()
         };
 
-        let quorum_size = 100;
-
         let config = PlatformConfig {
-            validator_set_quorum_size: quorum_size,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_400_60".to_string(),
+            validator_set: ValidatorSetConfig::default(),
+            chain_lock: ChainLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,

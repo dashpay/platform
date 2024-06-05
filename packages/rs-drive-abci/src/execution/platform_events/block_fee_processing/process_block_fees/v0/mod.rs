@@ -283,6 +283,7 @@ mod tests {
             let block_platform_state = PlatformState::default_with_protocol_versions(
                 INITIAL_PROTOCOL_VERSION,
                 INITIAL_PROTOCOL_VERSION,
+                &platform.config,
             );
 
             let block_execution_context = BlockExecutionContextV0 {
