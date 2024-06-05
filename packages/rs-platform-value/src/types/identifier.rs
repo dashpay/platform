@@ -173,7 +173,7 @@ impl Identifier {
     pub fn from_bytes(bytes: &[u8]) -> Result<Identifier, Error> {
         if bytes.len() != 32 {
             return Err(Error::ByteLengthNot32BytesError(String::from(
-                "Identifier must be 32 bytes long",
+                "Identifier must be 32 bytes long from bytes",
             )));
         }
 
@@ -184,7 +184,7 @@ impl Identifier {
     pub fn from_vec(vec: Vec<u8>) -> Result<Identifier, Error> {
         if vec.len() != 32 {
             return Err(Error::ByteLengthNot32BytesError(String::from(
-                "Identifier must be 32 bytes long",
+                "Identifier must be 32 bytes long from vec",
             )));
         }
 

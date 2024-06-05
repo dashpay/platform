@@ -270,6 +270,7 @@ pub struct DriveVoteMethodVersions {
     pub cleanup: DriveVoteCleanupMethodVersions,
     pub setup: DriveVoteSetupMethodVersions,
     pub storage_form: DriveVoteStorageFormMethodVersions,
+    pub fetch_identities_voting_for_contenders: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

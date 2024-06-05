@@ -111,7 +111,19 @@ impl VotePollsByDocumentTypeQuery {
             limit,
             order_ascending,
         } = self;
-        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
+        let contract = drive
+            .fetch_contract(
+                contract_id.to_buffer(),
+                None,
+                None,
+                transaction,
+                platform_version,
+            )
+            .unwrap()?
+            .ok_or(Error::DataContract(DataContractError::MissingContract(
+                "data contract not found when resolving vote polls by document type query"
+                    .to_string(),
+            )))?;
 
         Ok(ResolvedVotePollsByDocumentTypeQuery {
             contract: DataContractResolvedInfo::ArcDataContractFetchInfo(contract),

@@ -16,7 +16,7 @@ impl Drive {
     /// any votes poll should be closed. This will remove them to recoup space
     pub fn remove_contested_resource_vote_poll_end_date_query_operations(
         &self,
-        vote_polls: &[ContestedDocumentResourceVotePoll],
+        vote_polls: &[&ContestedDocumentResourceVotePoll],
         end_date: TimestampMillis,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,

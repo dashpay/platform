@@ -6,6 +6,7 @@ use dpp::voting::vote_polls::VotePoll;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
+/// The vote poll resolver
 pub trait VotePollResolver {
     /// Resolves the contested document resource vote poll information.
     ///
@@ -34,6 +35,7 @@ pub trait VotePollResolver {
         platform_version: &PlatformVersion,
     ) -> Result<ResolvedVotePoll, Error>;
 
+    /// Resolve owned
     fn resolve_owned(
         self,
         drive: &Drive,

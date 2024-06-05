@@ -31,23 +31,6 @@ pub struct ContestedDocumentResourceVotePollWithContractInfo {
     pub index_values: Vec<Value>,
 }
 
-/// Represents information related to a contested document resource vote poll, along with
-/// associated contract details.
-///
-/// This structure holds a reference to the contract, the document type name,
-/// the index name, and the index values used for the poll.
-#[derive(Debug, PartialEq, Clone)]
-pub struct ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
-    /// The contract information associated with the document.
-    pub contract: DataContractResolvedInfo<'a>,
-    /// The name of the document type.
-    pub document_type_name: String,
-    /// The name of the index.
-    pub index_name: String,
-    /// The values used in the index for the poll.
-    pub index_values: Vec<Value>,
-}
-
 impl From<ContestedDocumentResourceVotePollWithContractInfo> for ContestedDocumentResourceVotePoll {
     fn from(value: ContestedDocumentResourceVotePollWithContractInfo) -> Self {
         let ContestedDocumentResourceVotePollWithContractInfo {
@@ -56,27 +39,6 @@ impl From<ContestedDocumentResourceVotePollWithContractInfo> for ContestedDocume
             index_name,
             index_values,
         } = value;
-
-        ContestedDocumentResourceVotePoll {
-            contract_id: contract.id(),
-            document_type_name,
-            index_name,
-            index_values,
-        }
-    }
-}
-
-impl<'a> From<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>>
-    for ContestedDocumentResourceVotePoll
-{
-    fn from(value: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed) -> Self {
-        let ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
-            contract,
-            document_type_name,
-            index_name,
-            index_values,
-        } = value;
-
         ContestedDocumentResourceVotePoll {
             contract_id: contract.id(),
             document_type_name,
@@ -96,12 +58,48 @@ impl From<&ContestedDocumentResourceVotePollWithContractInfo>
             index_name,
             index_values,
         } = value;
-
         ContestedDocumentResourceVotePoll {
             contract_id: contract.id(),
             document_type_name: document_type_name.clone(),
             index_name: index_name.clone(),
             index_values: index_values.clone(),
+        }
+    }
+}
+
+/// Represents information related to a contested document resource vote poll, along with
+/// associated contract details.
+///
+/// This structure holds a reference to the contract, the document type name,
+/// the index name, and the index values used for the poll.
+#[derive(Debug, PartialEq, Clone)]
+pub struct ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
+    /// The contract information associated with the document.
+    pub contract: DataContractResolvedInfo<'a>,
+    /// The name of the document type.
+    pub document_type_name: String,
+    /// The name of the index.
+    pub index_name: String,
+    /// The values used in the index for the poll.
+    pub index_values: Vec<Value>,
+}
+
+impl<'a> From<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>>
+    for ContestedDocumentResourceVotePoll
+{
+    fn from(value: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed) -> Self {
+        let ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+            contract,
+            document_type_name,
+            index_name,
+            index_values,
+        } = value;
+
+        ContestedDocumentResourceVotePoll {
+            contract_id: contract.id(),
+            document_type_name,
+            index_name,
+            index_values,
         }
     }
 }

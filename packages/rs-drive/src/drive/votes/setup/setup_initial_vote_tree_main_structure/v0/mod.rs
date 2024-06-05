@@ -19,10 +19,7 @@ impl Drive {
             vec![CONTESTED_RESOURCE_TREE_KEY as u8],
         );
 
-        batch.add_insert_empty_tree(
-            vote_contested_resource_tree_path_vec(),
-            vec![END_DATE_QUERIES_TREE_KEY as u8],
-        );
+        batch.add_insert_empty_tree(vote_root_path_vec(), vec![END_DATE_QUERIES_TREE_KEY as u8]);
 
         batch.add_insert_empty_tree(
             vote_contested_resource_tree_path_vec(),

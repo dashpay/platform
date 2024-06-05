@@ -1,19 +1,11 @@
-use crate::drive::defaults::{DEFAULT_HASH_SIZE, DEFAULT_HASH_SIZE_USIZE};
 use crate::drive::document::paths::contract_document_type_path;
-use crate::drive::votes::paths::{
-    ACTIVE_POLLS_TREE_KEY, CONTESTED_RESOURCE_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY,
-    RESOURCE_LOCK_VOTE_TREE_KEY, VOTE_DECISIONS_TREE_KEY,
-};
-use crate::drive::RootTree::Votes;
+use crate::drive::votes::paths::{RESOURCE_ABSTAIN_VOTE_TREE_KEY, RESOURCE_LOCK_VOTE_TREE_KEY};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
-use dpp::identifier::Identifier;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
-use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::Vote;
 use dpp::ProtocolError;
@@ -31,6 +23,7 @@ pub mod paths;
 #[cfg(feature = "server")]
 mod setup;
 
+mod fetch_identities_voting_for_contenders;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Resolve contested document resource vote poll module
 pub mod resolved;

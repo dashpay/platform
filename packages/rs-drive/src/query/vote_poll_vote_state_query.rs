@@ -590,9 +590,14 @@ impl ContestedDocumentVotePollDriveQuery {
                     ContestedDocumentVotePollDriveQueryResultType::Documents => {
                         // with documents only we don't need to work about lock and abstaining tree
                         let contenders = query_result_elements
-                            .to_key_elements()
+                            .to_path_key_elements()
                             .into_iter()
-                            .map(|(identity_id, document)| {
+                            .map(|(mut path, _, document)| {
+                                let identity_id = path.pop().ok_or(Error::Drive(
+                                    DriveError::CorruptedDriveState(
+                                        "the path must have a last element".to_string(),
+                                    ),
+                                ))?;
                                 Ok(ContenderWithSerializedDocument {
                                     identity_id: Identifier::try_from(identity_id)?,
                                     serialized_document: Some(document.into_item_bytes()?),
@@ -886,7 +891,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                 if allow_include_locked_and_abstaining_vote_tally {
                     query.insert_all()
                 } else {
-                    query.insert_range_after(vec![RESOURCE_LOCK_VOTE_TREE_KEY as u8]..)
+                    query.insert_range_after(vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..)
                 }
             }
             Some((starts_at_key_bytes, start_at_included)) => {
@@ -902,7 +907,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                                 query.insert_range_to_inclusive(..=starts_at_key)
                             } else {
                                 query.insert_range_after_to_inclusive(
-                                    vec![RESOURCE_LOCK_VOTE_TREE_KEY as u8]..=starts_at_key,
+                                    vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..=starts_at_key,
                                 )
                             }
                         }
@@ -911,7 +916,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                                 query.insert_range_to(..starts_at_key)
                             } else {
                                 query.insert_range_after_to(
-                                    vec![RESOURCE_LOCK_VOTE_TREE_KEY as u8]..starts_at_key,
+                                    vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..starts_at_key,
                                 )
                             }
                         }
@@ -936,12 +941,12 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
 
         if allow_include_locked_and_abstaining_vote_tally {
             query.add_conditional_subquery(
-                QueryItem::Key(vec![RESOURCE_LOCK_VOTE_TREE_KEY as u8]),
+                QueryItem::Key(vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]),
                 Some(vec![vec![1]]),
                 None,
             );
             query.add_conditional_subquery(
-                QueryItem::Key(vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY as u8]),
+                QueryItem::Key(vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8]),
                 Some(vec![vec![1]]),
                 None,
             );

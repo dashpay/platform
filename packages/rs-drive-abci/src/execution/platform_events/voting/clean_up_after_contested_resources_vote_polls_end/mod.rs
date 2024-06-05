@@ -17,7 +17,7 @@ where
     pub(in crate::execution) fn clean_up_after_contested_resources_vote_polls_end(
         &self,
         block_info: &BlockInfo,
-        vote_polls: &[ContestedDocumentResourceVotePoll],
+        vote_polls: &[&ContestedDocumentResourceVotePoll],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -25,7 +25,7 @@ where
             .drive_abci
             .methods
             .voting
-            .clean_up_after_vote_poll_end
+            .clean_up_after_contested_resources_vote_poll_end
         {
             0 => self.clean_up_after_contested_resources_vote_polls_end_v0(
                 block_info,

@@ -22,6 +22,6 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // We want to store information about the vote poll in an efficient way
-        todo!()
+        Ok(())
     }
 }

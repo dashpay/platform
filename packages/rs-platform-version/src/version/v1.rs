@@ -244,6 +244,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 storage_form: DriveVoteStorageFormMethodVersions {
                     resolve_with_contract: 0,
                 },
+                fetch_identities_voting_for_contenders: 0,
             },
             contract: DriveContractMethodVersions {
                 prove: DriveContractProveMethodVersions {
@@ -637,8 +638,8 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             voting: DriveAbciVotingMethodVersions {
                 keep_record_of_vote_poll: 0,
                 clean_up_after_vote_poll_end: 0,
+                clean_up_after_contested_resources_vote_poll_end: 0,
                 check_for_ended_vote_polls: 0,
-                check_for_ended_contested_resource_vote_polls: 0,
                 tally_votes_for_contested_document_resource_vote_poll: 0,
                 award_document_to_winner: 0,
                 lock_contested_resource: 0,
@@ -800,8 +801,8 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 validation_of_added_keys_proof_of_possession_failure: 50000000,
             },
             event_constants: DriveAbciValidationConstants {
-                maximum_vote_polls_to_process: 0,
-                maximum_contenders_to_consider: 0,
+                maximum_vote_polls_to_process: 2,
+                maximum_contenders_to_consider: 100,
             },
         },
         query: DriveAbciQueryVersions {
