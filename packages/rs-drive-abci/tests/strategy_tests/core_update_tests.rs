@@ -5,7 +5,8 @@ mod tests {
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use crate::strategy::{MasternodeListChangesStrategy, NetworkStrategy};
     use drive_abci::config::{
-        ChainLockConfig, ExecutionConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig,
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
+        ValidatorSetConfig,
     };
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::platform_types::validator_set::v0::ValidatorSetV0Getters;
@@ -67,7 +68,8 @@ mod tests {
                 quorum_size,
                 ..Default::default()
             },
-            chain_lock: ChainLockConfig::default_100_67(),
+
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -168,6 +170,7 @@ mod tests {
                 ..Default::default()
             },
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -257,6 +260,7 @@ mod tests {
                 ..Default::default()
             },
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,

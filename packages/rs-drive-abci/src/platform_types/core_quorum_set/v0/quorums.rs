@@ -147,7 +147,7 @@ impl Quorums {
 /// Quorum for signature verification
 #[derive(Debug, Clone)]
 pub struct Quorum {
-    /// Index is present only for rotated quorums
+    /// Index is present only for rotated quorums (DIP24)
     pub index: Option<u32>,
 
     /// Quorum threshold public key is used to verify

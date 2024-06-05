@@ -61,8 +61,6 @@ mod tests {
         };
 
         let config = PlatformConfig {
-            validator_set: ValidatorSetConfig::default(),
-            chain_lock: ChainLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,

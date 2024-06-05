@@ -8,7 +8,8 @@ mod tests {
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     use drive_abci::config::{
-        ChainLockConfig, ExecutionConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig,
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
+        ValidatorSetConfig,
     };
 
     use dpp::dashcore::hashes::Hash;
@@ -78,7 +79,8 @@ mod tests {
         };
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
-            chain_lock: ChainLockConfig::default_100_67(),
+
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -153,6 +155,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,

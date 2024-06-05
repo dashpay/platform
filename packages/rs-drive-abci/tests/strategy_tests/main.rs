@@ -75,7 +75,7 @@ mod tests {
     use drive::drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{
-        ChainLockConfig, ExecutionConfig, PlatformTestConfig, ValidatorSetConfig,
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformTestConfig, ValidatorSetConfig,
     };
 
     use drive_abci::logging::LogLevel;
@@ -117,6 +117,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -161,6 +162,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -205,6 +207,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -336,6 +339,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -468,6 +472,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -529,6 +534,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -577,6 +583,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -633,6 +640,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -694,6 +702,13 @@ mod tests {
                 ..Default::default()
             },
             chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: 24,
@@ -789,6 +804,13 @@ mod tests {
                 quorum_active_signers: 24,
                 quorum_rotation: false,
             },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -865,6 +887,13 @@ mod tests {
                 quorum_active_signers: 24,
                 quorum_rotation: false,
             },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -930,6 +959,13 @@ mod tests {
                 ..Default::default()
             },
             chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: 24,
@@ -1030,6 +1066,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -1083,6 +1120,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -1163,6 +1201,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -1281,6 +1320,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -1367,6 +1407,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -1470,6 +1511,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -1550,6 +1592,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -1657,6 +1700,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -1764,6 +1808,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -1889,6 +1934,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2013,6 +2059,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2126,6 +2173,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2239,6 +2287,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2367,6 +2416,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2511,6 +2561,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2579,6 +2630,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -2658,6 +2710,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -2742,6 +2795,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -2838,6 +2892,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -3410,6 +3465,13 @@ mod tests {
                 quorum_active_signers: 24,
                 quorum_rotation: false,
             },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 1,
@@ -3584,6 +3646,13 @@ mod tests {
                 quorum_active_signers: 24,
                 quorum_rotation: false,
             },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 1,
@@ -3729,6 +3798,13 @@ mod tests {
                 quorum_active_signers: 24,
                 quorum_rotation: false,
             },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 1,
@@ -3858,6 +3934,13 @@ mod tests {
                 ..Default::default()
             },
             chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 3,
                 quorum_window: 24,
@@ -4007,6 +4090,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -4062,6 +4146,7 @@ mod tests {
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,

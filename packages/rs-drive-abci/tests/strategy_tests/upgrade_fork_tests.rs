@@ -14,7 +14,8 @@ mod tests {
         MasternodeListChangesStrategy, NetworkStrategy, StrategyRandomness, UpgradingInfo,
     };
     use drive_abci::config::{
-        ChainLockConfig, ExecutionConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig,
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
+        ValidatorSetConfig,
     };
     use drive_abci::mimic::MimicExecuteBlockOptions;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -68,6 +69,7 @@ mod tests {
                 let mut config = PlatformConfig {
                     validator_set: ValidatorSetConfig::default_100_67(),
                     chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 125,
@@ -313,6 +315,7 @@ mod tests {
                         ..Default::default()
                     },
                     chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 30,
@@ -712,6 +715,7 @@ mod tests {
                         ..Default::default()
                     },
                     chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 80,
@@ -947,6 +951,7 @@ mod tests {
                         ..Default::default()
                     },
                     chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 50,
@@ -1278,6 +1283,7 @@ mod tests {
                         ..Default::default()
                     },
                     chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 30,

@@ -470,6 +470,19 @@ impl Default for InstantLockConfig {
     }
 }
 
+impl InstantLockConfig {
+    /// Creates a default config for LLMQ 100 67
+    pub fn default_100_67() -> Self {
+        Self {
+            quorum_type: QuorumType::Llmq100_67,
+            quorum_size: 100,
+            quorum_window: 24,
+            quorum_active_signers: 24,
+            quorum_rotation: false,
+        }
+    }
+}
+
 impl QuorumLikeConfig for InstantLockConfig {
     fn quorum_type(&self) -> QuorumType {
         self.quorum_type
