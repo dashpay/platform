@@ -10,6 +10,7 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::get_vote_polls_by_end_date_request_v0;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "server")]
@@ -30,17 +31,28 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, o2o::o2o)]
+#[map(dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0)]
+#[ghosts(prove: {true})]
 pub struct VotePollsByEndDateDriveQuery {
     /// What is the start time we are asking for
+    #[from(@.start_time_info.as_ref().map(|x| (x.start_time_ms, x.start_time_included)))]
+    #[into(start_time_info,~.map(|(start_time_ms, start_time_included)| get_vote_polls_by_end_date_request_v0::StartAtTimeInfo{start_time_ms, start_time_included}))]
     pub start_time: Option<(TimestampMillis, TimestampIncluded)>,
     /// What vote poll are we asking for?
+    #[from(@.end_time_info.as_ref().map(|x| (x.end_time_ms, x.end_time_included)))]
+    #[into(end_time_info,~.map(|(end_time_ms, end_time_included)| get_vote_polls_by_end_date_request_v0::EndAtTimeInfo{end_time_ms, end_time_included}))]
     pub end_time: Option<(TimestampMillis, TimestampIncluded)>,
     /// Limit
+    #[from(~.map(|v|v as u16))]
+    #[into(~.map(|v|v as u32))]
     pub limit: Option<u16>,
     /// Offset
+    #[from(~.map(|v|v as u16))]
+    #[into(~.map(|v|v as u32))]
     pub offset: Option<u16>,
     /// Ascending
+    #[map(ascending)]
     pub order_ascending: bool,
 }
 
