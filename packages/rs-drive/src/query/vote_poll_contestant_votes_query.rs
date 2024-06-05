@@ -1,5 +1,6 @@
+use super::ContractLookupFn;
 use crate::drive::votes::paths::VotePollPaths;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
 #[cfg(feature = "server")]
@@ -79,6 +80,32 @@ impl ContestedDocumentVotePollVotesDriveQuery {
         } = self;
         Ok(ResolvedContestedDocumentVotePollVotesDriveQuery {
             vote_poll: vote_poll.resolve_allow_borrowed(drive, transaction, platform_version)?,
+            contestant_id: *contestant_id,
+            offset: *offset,
+            limit: *limit,
+            start_at: *start_at,
+            order_ascending: *order_ascending,
+        })
+    }
+
+    /// Resolves the contested document vote poll drive query.
+    ///
+    /// See [ContestedDocumentVotePollVotesDriveQuery::resolve](ContestedDocumentVotePollVotesDriveQuery::resolve) for more information.
+    #[cfg(feature = "verify")]
+    pub fn resolve_with_known_contracts_provider<'a>(
+        &self,
+        known_contracts_provider: &'a ContractLookupFn<'a>,
+    ) -> Result<ResolvedContestedDocumentVotePollVotesDriveQuery<'a>, Error> {
+        let ContestedDocumentVotePollVotesDriveQuery {
+            vote_poll,
+            contestant_id,
+            offset,
+            limit,
+            start_at,
+            order_ascending,
+        } = self;
+        Ok(ResolvedContestedDocumentVotePollVotesDriveQuery {
+            vote_poll: vote_poll.resolve_with_known_contracts_provider(known_contracts_provider)?,
             contestant_id: *contestant_id,
             offset: *offset,
             limit: *limit,
