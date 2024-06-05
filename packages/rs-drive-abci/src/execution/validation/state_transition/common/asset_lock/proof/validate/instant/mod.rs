@@ -53,6 +53,8 @@ impl AssetLockProofValidation for InstantAssetLockProof {
                 return Ok(validation_result);
             }
 
+            // TODO: Shouldn't we add an operation for fees?
+
             // This is a limited verification and will work properly only for recently signed instant locks.
             // Even valid instant locks that was signed some time ago will be considered invalid due to limited
             // quorum information in the platform state. In turn, this verification doesn't use Core RPC or any other

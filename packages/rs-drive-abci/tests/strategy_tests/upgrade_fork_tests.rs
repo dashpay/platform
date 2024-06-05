@@ -554,13 +554,19 @@ mod tests {
                 quorum_size: 30,
                 ..Default::default()
             },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 epoch_time_length_s,
                 ..Default::default()
             },
             initial_protocol_version: TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE,
             block_spacing_ms: epoch_time_length_s * 1000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 

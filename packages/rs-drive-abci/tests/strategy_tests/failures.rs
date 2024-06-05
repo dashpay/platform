@@ -79,7 +79,7 @@ mod tests {
         };
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
-
+            chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
@@ -87,7 +87,11 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
