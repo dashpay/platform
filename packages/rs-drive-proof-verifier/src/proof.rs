@@ -9,7 +9,8 @@ use dapi_grpc::platform::v0::{
     get_identity_balance_and_revision_request, get_identity_balance_request,
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
     get_identity_keys_request, get_identity_nonce_request, get_identity_request,
-    get_path_elements_request, GetPathElementsRequest, GetPathElementsResponse,
+    get_path_elements_request, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
     ResponseMetadata,
@@ -41,11 +42,12 @@ use dpp::identity::Purpose;
 use dpp::platform_value::{self};
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
+use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQuery};
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{ContractLookupFn, DriveQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::TryFromIntError;
 use std::sync::Arc;
 
@@ -1374,9 +1376,55 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
     }
 }
 
-impl FromProof<platform::GetVotePollsByEndDateRequest>
-    for ContestedDocumentResourceVotePollsGroupedByTimestamp
-{
+impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
+    type Request = GetContestedResourceVotersForIdentityRequest;
+    type Response = GetContestedResourceVotersForIdentityResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query: ContestedDocumentVotePollVotesDriveQuery =
+            request.try_into_versioned(platform_version)?;
+        // todo!("continue implementation when verify_ is implemented");
+        //
+        // Parse request to get resolved contract that implements verify_*_proof
+        let contracts_provider = known_contracts_provider_fn(provider);
+
+        let resolved_request =
+            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, voters) = resolved_request
+            .verify_vote_poll_votes_proof(&proof.grovedb_proof, platform_version)
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        if voters.is_empty() {
+            return Ok((None, mtd.clone()));
+        }
+        let result: Voters = voters.into_iter().map(Voter::from).collect();
+
+        Ok((Some(result), mtd.clone()))
+    }
+}
+
+impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTimestamp {
     type Request = platform::GetVotePollsByEndDateRequest;
     type Response = platform::GetVotePollsByEndDateResponse;
 
@@ -1396,41 +1444,21 @@ impl FromProof<platform::GetVotePollsByEndDateRequest>
         let drive_query: VotePollsByEndDateDriveQuery =
             request.try_into_versioned(platform_version)?;
 
-        // Parse request to get resolved contract that implements verify_*_proof
-        let contracts_provider = known_contracts_provider_fn(provider);
-        todo!("continue implementation");
-        /*
-            let resolved_request =
-                drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-            // Parse response to read proof and metadata
-            let proof = response.proof().or(Err(Error::NoProofInResult))?;
-            let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        let (root_hash, vote_polls) = drive_query
+            .verify_vote_polls_by_end_date_proof(&proof.grovedb_proof, platform_version)
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
 
-            let (root_hash, contested_resource_vote_state) = resolved_request
-                .verify_vote_poll_vote_state_proof(&proof.grovedb_proof, platform_version)
-                .map_err(|e| Error::DriveError {
-                    error: e.to_string(),
-                })?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-            verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        let response = VotePollsGroupedByTimestamp::from_iter(vote_polls);
 
-            let document_type = resolved_request.vote_poll.document_type()?;
-
-            let contenders = contested_resource_vote_state
-                .into_iter()
-                .map(|v| {
-                    Contender::try_from_contender_with_serialized_document(
-                        v,
-                        document_type,
-                        platform_version,
-                    )
-                    .map(|c| (c.identity_id, Some(c)))
-                })
-                .collect::<Result<Contenders, _>>()?;
-
-            Ok((Some(contenders), mtd.clone()))
-        */
+        Ok((Some(response), mtd.clone()))
     }
 }
 

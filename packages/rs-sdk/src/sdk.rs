@@ -716,7 +716,7 @@ impl SdkBuilder {
                         }
                         // We have cyclical dependency Sdk <-> GrpcContextProvider, so we just do some
                         // workaround using additional Arc.
-                        let  context_provider=Arc::new(context_provider);
+                        let context_provider=Arc::new(context_provider);
                         sdk.context_provider.replace(Arc::new(Box::new(context_provider.clone())));
                         context_provider.set_sdk(Some(sdk.clone()));
                     } else{

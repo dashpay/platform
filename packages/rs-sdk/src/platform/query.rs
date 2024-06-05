@@ -3,10 +3,11 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use std::fmt::Debug;
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo;
-use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0;
-use dapi_grpc::platform::v0::GetContestedResourcesRequest;
-use dapi_grpc::platform::v0::{
+use dapi_grpc::platform::v0::GetVotePollsByEndDateRequest;
+use dapi_grpc::platform::v0::{get_contested_resources_request::get_contested_resources_request_v0,
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
+    get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo as VoteStateStartInfo,
+    get_contested_resource_voters_for_identity_request::get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo as VotePollVotesStartInfo,
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
     AllKeys, GetContestedResourceVoteStateRequest, GetEpochsInfoRequest, GetIdentityKeysRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
@@ -15,6 +16,7 @@ use dapi_grpc::platform::v0::{
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::ProtocolError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
+use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::DriveQuery;
@@ -353,7 +355,11 @@ impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDr
             unimplemented!("queries without proofs are not supported yet");
         }
 
-        let start_at_identifier_info = self.start_at.map(|v| StartAtIdentifierInfo {
+        if self.offset.is_some() {
+            return Err(Error::Generic("ContestedDocumentVotePollDriveQuery.offset field is internal and must be set to None".into()));
+        }
+
+        let start_at_identifier_info = self.start_at.map(|v| VoteStateStartInfo {
             start_identifier: v.0.to_vec(),
             start_identifier_included: v.1,
         });
@@ -365,7 +371,7 @@ impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDr
             count: self.limit.map(|v| v as u32),
             document_type_name: self.vote_poll.document_type_name.clone(),
             index_name: self.vote_poll.index_name,
-            index_values: self.vote_poll.index_values.iter().map(|v|                
+            index_values: self.vote_poll.index_values.iter().map(|v|
                 bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e| ProtocolError::EncodingError(e.to_string()))).collect::<Result<Vec<_>,_>>()?,
             order_ascending: self.order_ascending,
             result_type:match  self.result_type {
@@ -380,3 +386,51 @@ impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDr
         .into())
     }
 }
+
+impl Query<GetContestedResourceVotersForIdentityRequest>
+    for ContestedDocumentVotePollVotesDriveQuery
+{
+    fn query(self, prove: bool) -> Result<GetContestedResourceVotersForIdentityRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        if self.offset.is_some() {
+            return Err(Error::Generic("ContestedDocumentVotePollVotesDriveQuery.offset field is internal and must be set to None".into()));
+        }
+
+        Ok(proto::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0 {
+            prove,
+            contract_id: self.vote_poll.contract_id.to_vec(),
+            document_type_name: self.vote_poll.document_type_name.clone(),
+            index_name: self.vote_poll.index_name,
+            index_values: self.vote_poll.index_values.iter().map(|v|
+                bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e| ProtocolError::EncodingError(e.to_string()))).collect::<Result<Vec<_>,_>>()?,
+            order_ascending: self.order_ascending,
+            count: self.limit.map(|v| v as u32),
+            contestant_id: self.contestant_id.to_vec(),
+            start_at_identifier_info: self.start_at.map(|v| VotePollVotesStartInfo {
+                start_identifier: v.0.to_vec(),
+                start_identifier_included: v.1,
+            }),
+        }
+        .into())
+    }
+}
+
+// impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
+//     fn query(self, prove: bool) -> Result<GetVotePollsByEndDateRequest, Error> {
+//         if !prove {
+//             unimplemented!("queries without proofs are not supported yet");
+//         }
+
+//         if  self.
+//         Ok(
+//             proto::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0 {
+//                 prove,
+//                 end_date: self.end_date,
+//                 count: self.count,
+//             }
+//             .into(),
+//         )
+//     }
+// }

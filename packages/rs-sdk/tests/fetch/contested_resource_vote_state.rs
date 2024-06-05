@@ -56,17 +56,16 @@ async fn contested_resource_vote_states_not_found() {
             contract_id: data_contract_id,
         },
         allow_include_locked_and_abstaining_vote_tally: true,
+        // TODO test other result types
         result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
     };
 
-    let _first_contender = Contender::fetch_many(&sdk, query)
+    let contenders = Contender::fetch_many(&sdk, query)
         .await
-        .expect("fetch many contenders")
-        .contenders
-        .pop_first()
-        .expect("first contender must exist")
-        .1
-        .expect("contender must exist");
+        .expect("fetch many contenders");
 
-    // assert_eq!(first_doc, doc);
+    assert!(
+        contenders.contenders.is_empty(),
+        "no contenders expected for this query"
+    );
 }

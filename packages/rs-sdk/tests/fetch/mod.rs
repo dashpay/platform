@@ -11,6 +11,7 @@ mod common;
 mod config;
 mod contested_resource;
 mod contested_resource_vote_state;
+mod contested_resource_voters;
 mod data_contract;
 mod document;
 mod epoch;

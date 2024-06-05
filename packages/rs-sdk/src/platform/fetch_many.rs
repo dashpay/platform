@@ -11,12 +11,12 @@ use crate::{
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetContestedResourceVoteStateRequest, GetContestedResourcesRequest, GetDataContractsRequest,
-    GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourcesRequest, GetDataContractsRequest, GetDocumentsResponse,
+    GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
-use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
@@ -24,16 +24,18 @@ use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
+use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls::VotePoll};
 use drive::query::vote_poll_vote_state_query::Contender;
 use drive_proof_verifier::types::{
     Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
     IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades,
+    VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
 
-use super::LimitQuery;
+use super::{Fetch, LimitQuery};
 
 /// Fetch multiple objects from the Platform.
 ///
@@ -332,7 +334,25 @@ impl FetchMany<Identifier, ContestedResources> for ContestedResource {
 /// Fetch multiple contenders for a contested document resource vote poll.
 ///
 /// Returns [Contender](drive_proof_verifier::types::Contenders) indexed by [Identifier](dpp::prelude::Identifier).
+///
+/// ## Supported query types
+///
+/// TODO: Document supported query types
 #[async_trait::async_trait]
 impl FetchMany<Identifier, Contenders> for Contender {
     type Request = GetContestedResourceVoteStateRequest;
+}
+///  Fetch voters
+/// ## Supported query types
+///
+/// TODO: Document supported query types
+impl FetchMany<usize, Voters> for Voter {
+    type Request = GetContestedResourceVotersForIdentityRequest;
+}
+
+//   GetContestedResourceIdentityVoteStatus
+
+// GetVotePollsByEndDateRequest
+impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
+    type Request = GetVotePollsByEndDateRequest;
 }

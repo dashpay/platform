@@ -5,8 +5,8 @@ use dapi_grpc::platform::v0::{
     get_contested_resource_vote_state_request::{
         self, get_contested_resource_vote_state_request_v0,
     },
-    GetContestedResourceVoteStateRequest, GetContestedResourcesRequest,
-    GetVotePollsByEndDateRequest,
+    GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourcesRequest, GetVotePollsByEndDateRequest,
 };
 use dpp::bincode::{config::Configuration, error::DecodeError};
 use dpp::{
@@ -16,6 +16,7 @@ use dpp::{
     voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
 use drive::query::{
+    vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery,
     vote_poll_vote_state_query::{
         ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
     },
@@ -180,6 +181,60 @@ impl TryFromVersioned<GetContestedResourcesRequest> for VotePollsByDocumentTypeQ
                 }
             }
         };
+        Ok(result)
+    }
+}
+
+impl TryFromVersioned<GetContestedResourceVotersForIdentityRequest>
+    for ContestedDocumentVotePollVotesDriveQuery
+{
+    fn try_from_versioned(
+        value: GetContestedResourceVotersForIdentityRequest,
+        _version: &PlatformVersion,
+    ) -> Result<Self, Error> {
+        let result = match value.version.ok_or(Error::EmptyVersion)? {
+            grpc::get_contested_resource_voters_for_identity_request::Version::V0(v) => {
+                ContestedDocumentVotePollVotesDriveQuery {
+                    vote_poll: ContestedDocumentResourceVotePoll {
+                        contract_id: Identifier::from_bytes(&v.contract_id).map_err(|e| {
+                            Error::RequestDecodeError {
+                                error: e.to_string(),
+                            }
+                        })?,
+                        document_type_name: v.document_type_name.clone(),
+                        index_name: v.index_name.clone(),
+                        index_values: bincode_decode_values(v.index_values.iter()).map_err(
+                            |e| Error::RequestDecodeError {
+                                error: e.to_string(),
+                            },
+                        )?,
+                    },
+                    contestant_id: Identifier::from_bytes(&v.contestant_id).map_err(|e| {
+                        Error::RequestDecodeError {
+                            error: e.to_string(),
+                        }
+                    })?,
+                    limit: v.count.map(|v| v as u16),
+                    offset: None,
+                    start_at: v
+                        .start_at_identifier_info
+                        .map(|v| {
+                            let result: Result<[u8; 32], std::array::TryFromSliceError> =
+                                v.start_identifier.as_slice().try_into();
+                            match result {
+                                Ok(id) => Ok((id, v.start_identifier_included)),
+                                Err(e) => Err(e.to_string()),
+                            }
+                        })
+                        .transpose()
+                        .map_err(|e| Error::RequestDecodeError {
+                            error: e.to_string(),
+                        })?,
+                    order_ascending: v.order_ascending,
+                }
+            }
+        };
+
         Ok(result)
     }
 }

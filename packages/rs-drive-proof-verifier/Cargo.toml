@@ -8,7 +8,7 @@ crate-type = ["cdylib"]
 
 [features]
 default = ["mocks"]
-mocks = ["dep:serde", "json"]
+mocks = ["dep:serde", "json", "dep:bincode"]
 json = ["dep:serde_json"]
 
 [dependencies]
@@ -21,6 +21,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 dpp = { path = "../rs-dpp", features = [
   "bls-signatures",
 ], default-features = false }
+bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.12", features = [
   "crypto",
 ], default-features = false }

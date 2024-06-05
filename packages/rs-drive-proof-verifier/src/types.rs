@@ -6,10 +6,13 @@
 //! defined in this module.
 
 use crate::proof::Length;
-use dpp::prelude::IdentityNonce;
+use bincode::Decode;
+use dpp::bincode::Encode;
+use dpp::prelude::{IdentityNonce, TimestampMillis};
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::voting::vote_polls::VotePoll;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     dashcore::ProTxHash,
@@ -20,7 +23,7 @@ use dpp::{
 };
 use drive::grovedb::Element;
 use drive::query::vote_poll_vote_state_query::Contender;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -73,6 +76,34 @@ impl FromIterator<(Identifier, Option<Contender>)> for Contenders {
     }
 }
 
+/// Identifier of a single voter
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Clone, derive_more::From, Default)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, serde::Serialize, serde::Deserialize)
+)]
+pub struct Voter(pub Identifier);
+
+/// Multiple voters.
+#[derive(Debug, Clone, derive_more::From, Default)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, serde::Serialize, serde::Deserialize)
+)]
+pub struct Voters(pub BTreeSet<Voter>);
+
+impl<A> FromIterator<(A, Option<Voter>)> for Voters {
+    fn from_iter<T: IntoIterator<Item = (A, Option<Voter>)>>(iter: T) -> Self {
+        Self::from_iter(iter.into_iter().filter_map(|(_, v)| v))
+    }
+}
+
+impl FromIterator<Voter> for Voters {
+    fn from_iter<T: IntoIterator<Item = Voter>>(iter: T) -> Self {
+        iter.into_iter().collect::<BTreeSet<_>>().into()
+    }
+}
+
 /// Multiple grovedb elements.
 ///
 /// Mapping between the key id and associated elements.
@@ -100,37 +131,49 @@ pub type ContestedResources = RetrievedObjects<Identifier, ContestedResource>;
 pub type ContestedVote = (ContestedDocumentResourceVotePoll, ResourceVoteChoice);
 
 /// Contested document resource vote polls grouped by timestamp.
-#[derive(Clone, Debug)]
-pub struct ContestedDocumentResourceVotePollsGroupedByTimestamp(
-    pub BTreeMap<u64, Vec<ContestedDocumentResourceVotePoll>>,
-);
+#[derive(Clone, Debug, Default, derive_more::From, Encode, Decode)]
+pub struct VotePollsGroupedByTimestamp(pub RetrievedObjects<TimestampMillis, Vec<VotePoll>>);
 
-/// Create iterator for `ContestedDocumentResourceVotePollsGroupedByTimestamp`.
-///
-/// This implementation flattens the `BTreeMap` into a vector of tuples `(u64, ContestedDocumentResourceVotePoll)`
-/// and then creates an iterator from the vector.
-///
-/// It means it copies all values from the `BTreeMap`.
-impl IntoIterator for ContestedDocumentResourceVotePollsGroupedByTimestamp {
-    type Item = (u64, ContestedDocumentResourceVotePoll);
-    type IntoIter = std::vec::IntoIter<(u64, ContestedDocumentResourceVotePoll)>;
+/// Insert items into the map, appending them to the existing values for the same key.
+impl FromIterator<(u64, Option<Vec<VotePoll>>)> for VotePollsGroupedByTimestamp {
+    fn from_iter<T: IntoIterator<Item = (u64, Option<Vec<VotePoll>>)>>(iter: T) -> Self {
+        let mut map = BTreeMap::new();
 
-    fn into_iter(self) -> Self::IntoIter {
-        let v: Vec<(u64, ContestedDocumentResourceVotePoll)> =
-            self.0.iter().fold(Vec::new(), |mut acc, (k, v)| {
-                v.iter().for_each(|poll| {
-                    acc.push((*k, poll.clone()));
-                });
-                acc
-            });
+        for (timestamp, vote_poll) in iter {
+            let entry = map.entry(timestamp).or_insert(Some(Vec::new()));
+            if let Some(vote_poll) = vote_poll {
+                if let Some(inner) = entry {
+                    inner.extend(vote_poll);
+                } else {
+                    panic!("unexpected None value in VotePollsGroupedByTimestamp::from_iter(), this should never happen")
+                }
+            }
+        }
 
-        v.into_iter()
+        Self(map)
     }
 }
 
-impl Length for ContestedDocumentResourceVotePollsGroupedByTimestamp {
+/// Insert items into the map, appending them to the existing values for the same key.
+impl FromIterator<(u64, Vec<VotePoll>)> for VotePollsGroupedByTimestamp {
+    fn from_iter<T: IntoIterator<Item = (u64, Vec<VotePoll>)>>(iter: T) -> Self {
+        Self::from_iter(iter.into_iter().map(|(k, v)| (k, Some(v))))
+    }
+}
+
+/// Insert items into the map, grouping them by timestamp.
+impl FromIterator<(u64, Option<VotePoll>)> for VotePollsGroupedByTimestamp {
+    fn from_iter<T: IntoIterator<Item = (u64, Option<VotePoll>)>>(iter: T) -> Self {
+        Self::from_iter(iter.into_iter().map(|(k, opt)| (k, opt.map(|v| vec![v]))))
+    }
+}
+
+impl Length for VotePollsGroupedByTimestamp {
     fn count_some(&self) -> usize {
-        self.0.values().map(|v| v.len()).sum()
+        self.0
+            .values()
+            .filter_map(|opt| opt.as_ref().map(|v| v.len()))
+            .sum()
     }
 }
 
