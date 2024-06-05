@@ -4,6 +4,8 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::voting::vote_polls::VotePoll;
 use drive::grovedb::TransactionArg;
 
 mod v0;
@@ -13,9 +15,10 @@ where
     C: CoreRPCLike,
 {
     /// Checks for ended vote polls
-    pub(in crate::execution) fn check_for_ended_contested_resource_vote_polls(
+    pub(in crate::execution) fn clean_up_after_vote_polls_end(
         &self,
         block_info: &BlockInfo,
+        vote_polls: &[VotePoll],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -23,15 +26,16 @@ where
             .drive_abci
             .methods
             .voting
-            .check_for_ended_contested_resource_vote_polls
+            .clean_up_after_vote_poll_end
         {
-            0 => self.check_for_ended_contested_resource_vote_polls_v0(
+            0 => self.clean_up_after_vote_polls_end_v0(
                 block_info,
+                vote_polls,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "check_for_ended_contested_resource_vote_polls".to_string(),
+                method: "clean_up_after_vote_polls_end".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

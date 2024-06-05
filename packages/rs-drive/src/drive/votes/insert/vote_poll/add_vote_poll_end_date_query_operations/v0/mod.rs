@@ -9,8 +9,7 @@ use crate::drive::object_size_info::PathKeyElementInfo::{PathKeyElementSize, Pat
 use crate::drive::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
 use crate::drive::votes::paths::{
     vote_contested_resource_end_date_queries_at_time_tree_path_vec,
-    vote_contested_resource_end_date_queries_tree_path,
-    vote_contested_resource_end_date_queries_tree_path_vec,
+    vote_end_date_queries_tree_path, vote_end_date_queries_tree_path_vec,
 };
 use crate::drive::Drive;
 use crate::error::Error;
@@ -51,7 +50,7 @@ impl Drive {
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_path(vote_contested_resource_end_date_queries_tree_path()),
+                KeyInfoPath::from_known_path(vote_end_date_queries_tree_path()),
                 EstimatedLayerInformation {
                     is_sum_tree: false,
                     // We can estimate that there is at least a vote concluding every block, and we put blocks at 6 seconds.
@@ -90,7 +89,7 @@ impl Drive {
 
         // Let's start by inserting a tree for the end date
 
-        let end_date_query_path = vote_contested_resource_end_date_queries_tree_path_vec();
+        let end_date_query_path = vote_end_date_queries_tree_path_vec();
 
         let drive_key = DriveKeyInfo::Key(encode_u64(end_date));
 

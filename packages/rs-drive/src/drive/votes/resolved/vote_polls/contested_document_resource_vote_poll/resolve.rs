@@ -136,7 +136,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_values,
         } = self;
 
-        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
+        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll as owned".to_string())))?;
         Ok(ContestedDocumentResourceVotePollWithContractInfo {
             contract: DataContractOwnedResolvedInfo::DataContractFetchInfo(contract),
             document_type_name,
@@ -159,7 +159,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_values,
         } = self;
 
-        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
+        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll as borrowed".to_string())))?;
         Ok(
             ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
                 contract: DataContractResolvedInfo::ArcDataContractFetchInfo(contract),
@@ -243,7 +243,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_values,
         } = self;
 
-        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
+        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll as owned, but allowing borrowed".to_string())))?;
         Ok(
             ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
                 contract: DataContractResolvedInfo::ArcDataContractFetchInfo(contract),

@@ -8,7 +8,7 @@ pub mod contested_document_resource_vote_poll;
 
 /// Module containing logic to resolve various components.
 #[cfg(feature = "server")]
-pub(crate) mod resolve;
+pub mod resolve;
 
 /// Represents a resolved vote poll in the system.
 #[derive(Debug, Clone, PartialEq, From)]

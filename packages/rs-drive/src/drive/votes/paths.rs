@@ -18,9 +18,9 @@ use platform_version::version::PlatformVersion;
 ///
 ///     Votes
 ///
+///     |- End date Queries [key: "e"]
 ///     |- Decisions [key: "d"]
 ///     |- Contested Resource [key: "c"]
-///        |- End date Queries [key: "e"]
 ///        |- Active polls [key: "p"]
 ///        |- Identifier Votes Query [key: "i"]
 ///
@@ -52,6 +52,9 @@ pub const RESOURCE_LOCK_VOTE_TREE_KEY_U8: u8 = 'l' as u8;
 
 /// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
 pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = 'a' as u8;
+
+/// The tree key for storage
+pub const VOTING_STORAGE_TREE_KEY: u8 = 1;
 
 /// Convenience methods to be easily able to get a path when we know the vote poll
 pub trait VotePollPaths {
@@ -172,7 +175,7 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
         let key = vote_choice.to_key();
         let mut contender_voting_path = self.contenders_path(platform_version)?;
         contender_voting_path.push(key);
-        contender_voting_path.push(vec![1]);
+        contender_voting_path.push(vec![VOTING_STORAGE_TREE_KEY]);
         Ok(contender_voting_path)
     }
 }
@@ -306,19 +309,17 @@ pub fn vote_contested_resource_tree_path_vec() -> Vec<Vec<u8>> {
 }
 
 /// the end dates of contested resources
-pub fn vote_contested_resource_end_date_queries_tree_path<'a>() -> [&'a [u8]; 3] {
+pub fn vote_end_date_queries_tree_path<'a>() -> [&'a [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes),
-        &[CONTESTED_RESOURCE_TREE_KEY as u8],
         &[END_DATE_QUERIES_TREE_KEY as u8],
     ]
 }
 
 /// the end dates of contested resources as a vec
-pub fn vote_contested_resource_end_date_queries_tree_path_vec() -> Vec<Vec<u8>> {
+pub fn vote_end_date_queries_tree_path_vec() -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Votes as u8],
-        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
         vec![END_DATE_QUERIES_TREE_KEY as u8],
     ]
 }
@@ -428,7 +429,6 @@ pub fn vote_contested_resource_end_date_queries_at_time_tree_path_vec(
 ) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Votes as u8],
-        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
         vec![END_DATE_QUERIES_TREE_KEY as u8],
         encode_u64(time),
     ]

@@ -1,8 +1,7 @@
 use crate::common::encode::encode_u64;
 use crate::drive::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
 use crate::drive::votes::paths::{
-    vote_contested_resource_end_date_queries_at_time_tree_path_vec,
-    vote_contested_resource_end_date_queries_tree_path,
+    vote_contested_resource_end_date_queries_at_time_tree_path_vec, vote_end_date_queries_tree_path,
 };
 use crate::drive::Drive;
 use crate::error::Error;
@@ -17,7 +16,7 @@ impl Drive {
     /// any vote polls should be closed.
     pub(in crate::drive::votes::insert) fn remove_contested_resource_vote_poll_end_date_query_operations_v0(
         &self,
-        vote_polls: &[ContestedDocumentResourceVotePoll],
+        vote_polls: &[&ContestedDocumentResourceVotePoll],
         end_date: TimestampMillis,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -53,7 +52,7 @@ impl Drive {
             )?;
         }
 
-        let end_date_query_path = vote_contested_resource_end_date_queries_tree_path();
+        let end_date_query_path = vote_end_date_queries_tree_path();
 
         let end_date_key = encode_u64(end_date);
 

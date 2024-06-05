@@ -9,7 +9,6 @@ use crate::error::Error;
 use crate::common::encode::decode_u64;
 use crate::error::drive::DriveError;
 use crate::query::VotePollsByEndDateDriveQuery;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 
 impl VotePollsByEndDateDriveQuery {
