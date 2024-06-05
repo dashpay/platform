@@ -410,7 +410,7 @@ dependencies = [
  "bitflags 2.5.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -1611,6 +1611,7 @@ dependencies = [
  "chrono",
  "ciborium",
  "criterion",
+ "dapi-grpc",
  "derive_more",
  "dpp",
  "enum-map",
@@ -1625,6 +1626,7 @@ dependencies = [
  "itertools 0.11.0",
  "moka",
  "nohash-hasher",
+ "o2o",
  "parking_lot",
  "platform-version",
  "rand",
@@ -1696,6 +1698,7 @@ dependencies = [
 name = "drive-proof-verifier"
 version = "1.0.0-dev.15"
 dependencies = [
+ "bincode 2.0.0-rc.3",
  "dapi-grpc",
  "derive_more",
  "dpp",
@@ -3381,6 +3384,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "o2o"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92fe678906d461639588d034bf69445708e0fd932f8fdb67b213055b7be7f974"
+dependencies = [
+ "o2o-impl",
+ "o2o-macros",
+]
+
+[[package]]
+name = "o2o-impl"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e40d6662f6acc9a6d263eed48d1f2bf46cc08de8c8f333a6c9ee2a904414bab"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "o2o-macros"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a9c950b7d0f5729614e88a28f207efcfe281332a505def69ac5560bb7cc36ef"
+dependencies = [
+ "o2o-impl",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "object"
 version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3867,7 +3901,7 @@ checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
  "heck 0.5.0",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "log",
  "multimap 0.10.0",
  "once_cell",
@@ -3900,7 +3934,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.66",
