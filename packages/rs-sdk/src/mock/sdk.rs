@@ -164,6 +164,26 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetContestedResourceVoteStateRequest>(filename)
                         .await?
                 }
+                "GetContestedResourceVotersForIdentityRequest" => {
+                    self.load_expectation::<proto::GetContestedResourceVotersForIdentityRequest>(
+                        filename,
+                    )
+                    .await?
+                }
+                "GetContestedResourceIdentityVotesRequest" => {
+                    self.load_expectation::<proto::GetContestedResourceIdentityVotesRequest>(
+                        filename,
+                    )
+                    .await?
+                }
+                "GetVotePollsByEndDateRequest" => {
+                    self.load_expectation::<proto::GetVotePollsByEndDateRequest>(filename)
+                        .await?
+                }
+                "GetPrefundedSpecializedBalanceRequest" => {
+                    self.load_expectation::<proto::GetPrefundedSpecializedBalanceRequest>(filename)
+                        .await?
+                }
                 _ => {
                     return Err(Error::Config(format!(
                         "unknown request type {} in {}",

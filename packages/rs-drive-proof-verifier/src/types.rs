@@ -168,6 +168,15 @@ impl FromIterator<(u64, Option<VotePoll>)> for VotePollsGroupedByTimestamp {
     }
 }
 
+impl IntoIterator for VotePollsGroupedByTimestamp {
+    type Item = (u64, Option<Vec<VotePoll>>);
+    type IntoIter = std::collections::btree_map::IntoIter<u64, Option<Vec<VotePoll>>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 impl Length for VotePollsGroupedByTimestamp {
     fn count_some(&self) -> usize {
         self.0

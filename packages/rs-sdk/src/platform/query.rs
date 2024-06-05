@@ -3,6 +3,7 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use std::fmt::Debug;
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0;
 use dapi_grpc::platform::v0::GetVotePollsByEndDateRequest;
 use dapi_grpc::platform::v0::{get_contested_resources_request::get_contested_resources_request_v0,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
@@ -19,7 +20,7 @@ use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
-use drive::query::DriveQuery;
+use drive::query::{DriveQuery, VotePollsByEndDateDriveQuery};
 use rs_dapi_client::transport::TransportRequest;
 
 use crate::{error::Error, platform::document_query::DocumentQuery};
@@ -417,20 +418,14 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
     }
 }
 
-// impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
-//     fn query(self, prove: bool) -> Result<GetVotePollsByEndDateRequest, Error> {
-//         if !prove {
-//             unimplemented!("queries without proofs are not supported yet");
-//         }
+impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
+    fn query(self, prove: bool) -> Result<GetVotePollsByEndDateRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let mut request: GetVotePollsByEndDateRequestV0 = self.into();
+        request.prove = prove;
 
-//         if  self.
-//         Ok(
-//             proto::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0 {
-//                 prove,
-//                 end_date: self.end_date,
-//                 count: self.count,
-//             }
-//             .into(),
-//         )
-//     }
-// }
+        Ok(request.into())
+    }
+}
