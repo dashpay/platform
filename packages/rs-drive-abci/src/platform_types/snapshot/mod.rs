@@ -56,6 +56,31 @@ pub struct SnapshotFetchingSession<'db> {
     pub state_sync_info: Pin<Box<MultiStateSyncSession<'db>>>,
 }
 
+impl<'db> SnapshotFetchingSession<'db> {
+    /// Creates a new `SnapshotFetchingSession`.
+    ///
+    /// # Parameters
+    ///
+    /// - `snapshot`: The accepted snapshot.
+    /// - `app_hash`: The application hash associated with the snapshot.
+    /// - `state_sync_info`: The state sync information.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of `SnapshotFetchingSession`.
+    pub fn new(
+        snapshot: abci::Snapshot,
+        app_hash: Vec<u8>,
+        state_sync_info: Pin<Box<MultiStateSyncSession<'db>>>,
+    ) -> Self {
+        SnapshotFetchingSession {
+            snapshot,
+            app_hash,
+            state_sync_info,
+        }
+    }
+}
+
 // TODO: Use Metrics for statistics
 struct Metrics {
     success: usize,

@@ -28,6 +28,7 @@ mod query;
 mod strategy;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
+mod state_sync;
 
 pub type BlockHeight = u64;
 

@@ -37,12 +37,23 @@ pub struct ConsensusAbciApplication<'p, C> {
 impl<'p, C> ConsensusAbciApplication<'p, C> {
     /// Create new ABCI app
     pub fn new(platform: &'p Platform<C>) -> Self {
+        let snapshot_manager = SnapshotManager::new(
+            platform
+                .config
+                .state_sync_config
+                .checkpoints_path
+                .to_str()
+                .unwrap()
+                .to_string(),
+            platform.config.state_sync_config.max_num_snapshots,
+            platform.config.state_sync_config.snapshots_frequency,
+        );
         Self {
             platform,
             transaction: Default::default(),
             block_execution_context: Default::default(),
             snapshot_fetching_session: Default::default(),
-            snapshot_manager: Default::default(),
+            snapshot_manager,
         }
     }
 }

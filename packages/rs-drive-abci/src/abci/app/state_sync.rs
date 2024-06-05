@@ -87,6 +87,7 @@ where
         &self,
         _: tonic::Request<proto::RequestListSnapshots>,
     ) -> Result<tonic::Response<proto::ResponseListSnapshots>, tonic::Status> {
+        tracing::trace!("[state_sync] api list_snapshots called");
         let snapshots = self
             .snapshot_manager
             .get_snapshots(&self.platform.drive.grove)
@@ -120,6 +121,7 @@ where
         request: tonic::Request<proto::RequestLoadSnapshotChunk>,
     ) -> Result<tonic::Response<proto::ResponseLoadSnapshotChunk>, tonic::Status> {
         let request_snapshot_chunk = request.into_inner();
+        tracing::trace!("[state_sync] api load_snapshot_chunk height:{} chunk_id:{}", request_snapshot_chunk.height, hex::encode(&request_snapshot_chunk.chunk_id));
         let matched_snapshot = self
             .snapshot_manager
             .get_snapshot_at_height(
