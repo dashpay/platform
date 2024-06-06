@@ -54,6 +54,7 @@ impl AssetLockProofValidation for InstantAssetLockProof {
             }
 
             // TODO: Shouldn't we add an operation for fees?
+            // TODO: The error should say that instant lock probably invalid and we should use ChainAssetLockProof
 
             // This is a limited verification and will work properly only for recently signed instant locks.
             // Even valid instant locks that was signed some time ago will be considered invalid due to limited
