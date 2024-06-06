@@ -171,6 +171,10 @@ where
         let new_validator_sets = quorum_infos
             .into_iter()
             .map(|(quorum_hash, info_result)| {
+                // TODO: There is a non-determinism here because quorum info is not based on core chain locked height
+                //  so you will might get different members and tenderdash will fail when you will try to update
+                //  validator set with different memebers.
+
                 let validator_set = ValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
                     info_result,
                     block_platform_state,
