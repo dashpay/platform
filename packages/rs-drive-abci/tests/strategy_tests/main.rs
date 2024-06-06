@@ -1036,7 +1036,8 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
-        // drive_abci::logging::Loggers::default().try_install().ok();
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
+
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -1069,12 +1070,13 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
+            sign_instant_locks: true,
             ..Default::default()
         };
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
-            instant_lock: InstantLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -2673,6 +2675,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            sign_instant_locks: true,
             ..Default::default()
         };
         let config = PlatformConfig {

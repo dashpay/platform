@@ -370,6 +370,26 @@ pub(crate) fn run_chain_for_strategy(
                 instant_lock_quorums_details,
                 instant_lock_signing_quorums,
             )
+        } else if strategy.sign_instant_locks {
+            let signing_quorums = validator_quorums
+                .iter()
+                .map(|(quorum_hash, info)| {
+                    let bytes = info.private_key.to_bytes();
+                    let fixed_bytes: [u8; 32] = bytes
+                        .as_slice()
+                        .try_into()
+                        .expect("Expected a byte array of length 32");
+                    (
+                        *quorum_hash,
+                        SigningQuorum {
+                            index: info.quorum_index,
+                            private_key: fixed_bytes,
+                        },
+                    )
+                })
+                .collect();
+
+            (Default::default(), Default::default(), signing_quorums)
         } else {
             Default::default()
         };

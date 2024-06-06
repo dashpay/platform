@@ -40,7 +40,7 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use strategy_tests::{KeyMaps, Strategy};
-use strategy_tests::transitions::{create_state_transitions_for_identities, instant_asset_lock_proof_fixture};
+use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
@@ -60,8 +60,6 @@ use dpp::state_transition::documents_batch_transition::document_transition::{Doc
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
@@ -1379,49 +1377,24 @@ impl NetworkStrategy {
         }
 
         signer.add_keys(keys);
-        let mut state_transitions =
-            create_state_transitions_for_identities(identities, signer, rng, platform_version);
 
         if self.sign_instant_locks {
-            let quorum_config = QuorumConfig {
-                quorum_type: platform_config.instant_lock.quorum_type,
-                active_signers: platform_config.instant_lock.quorum_active_signers,
-                rotation: platform_config.instant_lock.quorum_rotation,
-                window: platform_config.instant_lock.quorum_window,
-            };
+            let identities_with_proofs = create_signed_instant_asset_lock_proofs_for_identities(
+                identities,
+                rng,
+                instant_lock_quorums,
+                platform_config,
+                platform_version,
+            );
 
-            for (_, state_transition) in state_transitions.iter_mut() {
-                let StateTransition::IdentityCreate(IdentityCreateTransition::V0(
-                    IdentityCreateTransitionV0 {
-                        asset_lock_proof:
-                            AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }),
-                        ..
-                    },
-                )) = state_transition
-                else {
-                    panic!("must be identity create transition v0 with instant lock proof");
-                };
-
-                let request_id = instant_lock
-                    .request_id()
-                    .expect("failed to build request id");
-
-                let (quorum_hash, quorum) = instant_lock_quorums
-                    .choose_quorum(&quorum_config, request_id.as_ref())
-                    .expect("failed to choose quorum for instant lock transaction signing");
-
-                instant_lock.signature = quorum
-                    .sign_for_instant_lock(
-                        &quorum_config,
-                        &quorum_hash,
-                        request_id.as_ref(),
-                        &instant_lock.txid,
-                    )
-                    .expect("failed to sign transaction for instant lock");
-            }
+            create_state_transitions_for_identities_and_proofs(
+                identities_with_proofs,
+                signer,
+                platform_version,
+            )
+        } else {
+            create_state_transitions_for_identities(identities, signer, rng, platform_version)
         }
-
-        state_transitions
     }
 
     // add this because strategy tests library now requires a callback and uses the actual chain.
@@ -1438,19 +1411,10 @@ impl NetworkStrategy {
             .unwrap();
         let sk: [u8; 32] = pk.try_into().unwrap();
         let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
-        let asset_lock_proof =
+        let mut asset_lock_proof =
             instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
 
-        let mut state_transition = IdentityTopUpTransition::try_from_identity(
-            identity,
-            asset_lock_proof,
-            secret_key.as_ref(),
-            0,
-            platform_version,
-            None,
-        )
-        .expect("expected to create top up transition");
-
+        // Sign transaction and update signature in instant lock proof
         if self.sign_instant_locks {
             let quorum_config = QuorumConfig {
                 quorum_type: platform_config.instant_lock.quorum_type,
@@ -1459,15 +1423,11 @@ impl NetworkStrategy {
                 window: platform_config.instant_lock.quorum_window,
             };
 
-            let StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
-                IdentityTopUpTransitionV0 {
-                    asset_lock_proof:
-                        AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }),
-                    ..
-                },
-            )) = &mut state_transition
+            // Sign transaction and update instant lock
+            let AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }) =
+                &mut asset_lock_proof
             else {
-                panic!("must be identity topup transition v0 with instant lock proof");
+                panic!("must be instant lock proof");
             };
 
             let request_id = instant_lock
@@ -1488,7 +1448,15 @@ impl NetworkStrategy {
                 .expect("failed to sign transaction for instant lock");
         }
 
-        state_transition
+        IdentityTopUpTransition::try_from_identity(
+            identity,
+            asset_lock_proof,
+            secret_key.as_ref(),
+            0,
+            platform_version,
+            None,
+        )
+        .expect("expected to create top up transition")
     }
 }
 
@@ -1550,4 +1518,61 @@ pub struct ChainExecutionParameters {
     pub current_identity_contract_nonce_counter: BTreeMap<(Identifier, Identifier), IdentityNonce>,
     pub start_time_ms: u64,
     pub current_time_ms: u64,
+}
+
+fn create_signed_instant_asset_lock_proofs_for_identities(
+    identities: Vec<Identity>,
+    rng: &mut StdRng,
+    instant_lock_quorums: &Quorums<SigningQuorum>,
+    platform_config: &PlatformConfig,
+    platform_version: &PlatformVersion,
+) -> Vec<(Identity, [u8; 32], AssetLockProof)> {
+    let quorum_config = QuorumConfig {
+        quorum_type: platform_config.instant_lock.quorum_type,
+        active_signers: platform_config.instant_lock.quorum_active_signers,
+        rotation: platform_config.instant_lock.quorum_rotation,
+        window: platform_config.instant_lock.quorum_window,
+    };
+
+    identities
+        .into_iter()
+        .map(|identity| {
+            // Create instant asset lock proof
+            let (_, pk) = ECDSA_SECP256K1
+                .random_public_and_private_key_data(rng, platform_version)
+                .unwrap();
+
+            let pk_fixed: [u8; 32] = pk.try_into().unwrap();
+            let secret_key = SecretKey::from_str(hex::encode(pk_fixed).as_str()).unwrap();
+            let private_key = PrivateKey::new(secret_key, Network::Dash);
+
+            let mut asset_lock_proof = instant_asset_lock_proof_fixture(private_key);
+
+            // Sign transaction and update instant lock
+            let AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }) =
+                &mut asset_lock_proof
+            else {
+                panic!("must be instant lock proof");
+            };
+
+            let request_id = instant_lock
+                .request_id()
+                .expect("failed to build request id");
+
+            let (quorum_hash, quorum) = instant_lock_quorums
+                .choose_quorum(&quorum_config, request_id.as_ref())
+                .expect("failed to choose quorum for instant lock transaction signing");
+
+            instant_lock.signature = quorum
+                .sign_for_instant_lock(
+                    &quorum_config,
+                    &quorum_hash,
+                    request_id.as_ref(),
+                    &instant_lock.txid,
+                )
+                .expect("failed to sign transaction for instant lock");
+
+            (identity, pk_fixed, asset_lock_proof)
+        })
+        .collect()
 }
