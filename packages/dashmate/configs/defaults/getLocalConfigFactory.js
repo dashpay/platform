@@ -70,12 +70,25 @@ export default function getLocalConfigFactory(getBaseConfig) {
           },
           abci: {
             validatorSet: {
-              llmqType: 106,
+              quorum: {
+                llmqType: 106,
+                dkgInterval: 24,
+                activeSigners: 2,
+              },
             },
             chainLock: {
-              llmqType: 100,
-              dkgInterval: 24,
-              llmqSize: 3,
+              quorum: {
+                llmqType: 100,
+                dkgInterval: 24,
+                activeSigners: 2,
+              },
+            },
+            instantLock: {
+              quorum: {
+                llmqType: 100,
+                dkgInterval: 24,
+                activeSigners: 2,
+              },
             },
           },
         },

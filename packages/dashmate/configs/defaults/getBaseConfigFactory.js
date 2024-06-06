@@ -15,6 +15,7 @@ import semver from 'semver';
 
 import fs from 'fs';
 import {
+  NETWORK_MAINNET,
   NETWORK_TESTNET, PACKAGE_ROOT_DIR,
 } from '../../src/constants.js';
 import Config from '../../src/config/Config.js';
@@ -245,12 +246,25 @@ export default function getBaseConfigFactory(homeDir) {
               retention: 60 * 3,
             },
             validatorSet: {
-              llmqType: 4,
+              quorum: {
+                llmqType: 4,
+                dkgInterval: 24,
+                activeSigners: 24,
+              },
             },
             chainLock: {
-              llmqType: 2,
-              dkgInterval: 288,
-              llmqSize: 400,
+              quorum: {
+                llmqType: 2,
+                dkgInterval: 288,
+                activeSigners: 4,
+              },
+            },
+            instantLock: {
+              quorum: {
+                llmqType: 5,
+                dkgInterval: 288,
+                activeSigners: 32,
+              },
             },
             metrics: {
               enabled: false,
@@ -425,7 +439,7 @@ export default function getBaseConfigFactory(homeDir) {
         },
       },
       externalIp: null,
-      network: NETWORK_TESTNET,
+      network: NETWORK_MAINNET,
       environment: 'production',
     };
 
