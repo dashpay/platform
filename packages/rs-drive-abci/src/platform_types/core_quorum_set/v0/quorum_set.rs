@@ -1,8 +1,6 @@
 use crate::config::{ChainLockConfig, QuorumLikeConfig};
-use crate::error::Error;
-use crate::platform_types::core_quorum_set::v0::quorums::{Quorum, Quorums};
-use crate::platform_types::core_quorum_set::{ReversedQuorumHashBytes, VerificationQuorum};
-use dashcore_rpc::dashcore::ChainLock;
+use crate::platform_types::core_quorum_set::v0::quorums::Quorums;
+use crate::platform_types::core_quorum_set::VerificationQuorum;
 use dashcore_rpc::json::QuorumType;
 use dpp::dashcore::{QuorumHash, QuorumSigningRequestId};
 use std::vec::IntoIter;
@@ -95,13 +93,9 @@ impl<'q> Iterator for QuorumsVerificationDataIterator<'q> {
     type Item = (QuorumHash, &'q VerificationQuorum);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let quorum_set = self.quorum_sets.next();
+        let quorum_set = self.quorum_sets.next()?;
 
-        let Some(quorum_set) = quorum_set else {
-            return None;
-        };
-
-        quorum_set.choose_quorum(&self.config, self.request_id.as_ref())
+        quorum_set.choose_quorum(self.config, self.request_id.as_ref())
     }
 }
 
