@@ -42,12 +42,13 @@ use dpp::identity::Purpose;
 use dpp::platform_value::{self};
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
+use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQuery};
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{ContractLookupFn, DriveQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use std::sync::Arc;
 
@@ -974,13 +975,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let maybe_epoch_info = if epoch_info.count_some() > 0 {
-            Some(epoch_info)
-        } else {
-            None
-        };
-
-        Ok((maybe_epoch_info, mtd.clone()))
+        Ok((epoch_info.into_option(), mtd.clone()))
     }
 }
 
@@ -1009,19 +1004,15 @@ impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrade
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, object) =
+        let (root_hash, objects) =
             Drive::verify_upgrade_state(&proof.grovedb_proof, platform_version)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        if object.is_empty() {
-            return Ok((None, mtd.clone()));
-        }
+        // Convert objects to a map of Option values
+        let response: Self = objects.into_iter().map(|(k, v)| (k, Some(v))).collect();
 
-        Ok((
-            Some(object.into_iter().map(|(k, v)| (k, Some(v))).collect()),
-            mtd.clone(),
-        ))
+        Ok((response.into_option(), mtd.clone()))
     }
 }
 
@@ -1091,7 +1082,7 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
             })
             .collect::<Result<MasternodeProtocolVotes, Error>>()?;
 
-        Ok((Some(votes), mtd.clone()))
+        Ok((votes.into_option(), mtd.clone()))
     }
 }
 
@@ -1127,7 +1118,7 @@ impl FromProof<GetPathElementsRequest> for Elements {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((Some(objects), mtd.clone()))
+        Ok((objects.into_option(), mtd.clone()))
     }
 }
 
@@ -1178,11 +1169,7 @@ where
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        if documents.is_empty() {
-            Ok((None, mtd.clone()))
-        } else {
-            Ok((Some(documents), mtd.clone()))
-        }
+        Ok((documents.into_option(), mtd.clone()))
     }
 }
 
@@ -1260,6 +1247,10 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        if identities_contract_keys.is_empty() {
+            return Ok((None, mtd.clone()));
+        }
 
         Ok((Some(identities_contract_keys), mtd.clone()))
     }
@@ -1424,6 +1415,53 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
     }
 }
 
+impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceVotesByIdentity {
+    type Request = platform::GetContestedResourceIdentityVotesRequest;
+    type Response = platform::GetContestedResourceIdentityVotesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query = ContestedResourceVotesGivenByIdentityQuery::try_from(request)?;
+
+        // Parse request to get resolved contract that implements verify_*_proof
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let contract_provider_fn = known_contracts_provider_fn(provider);
+        let (root_hash, voters) = drive_query
+            .verify_identity_votes_given_proof(
+                &proof.grovedb_proof,
+                &contract_provider_fn,
+                platform_version,
+            )
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let response: ResourceVotesByIdentity = voters
+            .into_iter()
+            .map(|(id, vote)| (id, Some(vote)))
+            .collect();
+
+        Ok((response.into_option(), mtd.clone()))
+    }
+}
+
 impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTimestamp {
     type Request = platform::GetVotePollsByEndDateRequest;
     type Response = platform::GetVotePollsByEndDateResponse;
@@ -1460,7 +1498,7 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
 
         let response = VotePollsGroupedByTimestamp::from_iter(vote_polls);
 
-        Ok((Some(response), mtd.clone()))
+        Ok((response.into_option(), mtd.clone()))
     }
 }
 
@@ -1556,3 +1594,24 @@ define_length!(Identity);
 define_length!(IdentityBalance);
 define_length!(IdentityBalanceAndRevision);
 // define_length!(IdentityPublicKeys, |d: &IdentityPublicKeys| d.count_some());
+
+trait IntoOption
+where
+    Self: Sized,
+{
+    /// For zero-length data structures, return None, otherwise return Some(self)
+    fn into_option(self) -> Option<Self>;
+}
+
+impl<L: Length> IntoOption for L {
+    fn into_option(self) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        if self.count_some() == 0 {
+            None
+        } else {
+            Some(self)
+        }
+    }
+}

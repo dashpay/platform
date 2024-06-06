@@ -13,6 +13,7 @@ pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     dashcore::ProTxHash,
@@ -129,6 +130,9 @@ pub type ContestedResources = RetrievedObjects<Identifier, ContestedResource>;
 
 /// A contested vote for querying
 pub type ContestedVote = (ContestedDocumentResourceVotePoll, ResourceVoteChoice);
+
+/// Votes casted by some identity.
+pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
 
 /// Contested document resource vote polls grouped by timestamp.
 #[derive(Clone, Debug, Default, derive_more::From, Encode, Decode)]

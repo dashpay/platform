@@ -3,8 +3,9 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use std::fmt::Debug;
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0;
-use dapi_grpc::platform::v0::GetVotePollsByEndDateRequest;
+use dapi_grpc::platform::v0::{ GetContestedResourceIdentityVotesRequest, GetVotePollsByEndDateRequest};
 use dapi_grpc::platform::v0::{get_contested_resources_request::get_contested_resources_request_v0,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
     get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo as VoteStateStartInfo,
@@ -17,6 +18,7 @@ use dapi_grpc::platform::v0::{get_contested_resources_request::get_contested_res
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::ProtocolError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
+use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
@@ -415,6 +417,24 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
             }),
         }
         .into())
+    }
+}
+
+impl Query<GetContestedResourceIdentityVotesRequest>
+    for ContestedResourceVotesGivenByIdentityQuery
+{
+    fn query(self, prove: bool) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        if self.offset.is_some() {
+            return Err(Error::Generic("ContestedResourceVotesGivenByIdentityQuery.offset field is internal and must be set to None".into()));
+        }
+
+        let mut request = GetContestedResourceIdentityVotesRequestV0::from(self);
+        request.prove = prove;
+
+        Ok(request.into())
     }
 }
 

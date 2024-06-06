@@ -10,6 +10,7 @@ mod broadcast;
 mod common;
 mod config;
 mod contested_resource;
+mod contested_resource_identity_votes;
 mod contested_resource_pools_by_ts;
 mod contested_resource_vote_state;
 mod contested_resource_voters;

@@ -11,13 +11,13 @@ use crate::{
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
-    GetContestedResourcesRequest, GetDataContractsRequest, GetDocumentsResponse,
-    GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
+    GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
+    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identity::KeyID;
@@ -25,17 +25,20 @@ use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
 use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls::VotePoll};
+use dpp::{
+    block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
+};
 use drive::query::vote_poll_vote_state_query::Contender;
 use drive_proof_verifier::types::{
     Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
     IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades,
-    VotePollsGroupedByTimestamp, Voter, Voters,
+    ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
 
-use super::{Fetch, LimitQuery};
+use super::LimitQuery;
 
 /// Fetch multiple objects from the Platform.
 ///
@@ -351,6 +354,10 @@ impl FetchMany<usize, Voters> for Voter {
 }
 
 //   GetContestedResourceIdentityVoteStatus
+
+impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
+    type Request = GetContestedResourceIdentityVotesRequest;
+}
 
 // GetVotePollsByEndDateRequest
 impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {

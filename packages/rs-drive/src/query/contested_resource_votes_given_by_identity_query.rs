@@ -10,6 +10,13 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+use dapi_grpc::platform::v0::{
+    get_contested_resource_identity_votes_request::{
+        self, get_contested_resource_identity_votes_request_v0,
+        GetContestedResourceIdentityVotesRequestV0,
+    },
+    GetContestedResourceIdentityVotesRequest,
+};
 use dpp::bincode;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
@@ -20,6 +27,7 @@ use grovedb::reference_path::ReferencePathType;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{PathQuery, SizedQuery};
+use hex::ToHex;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -253,5 +261,69 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                 offset: self.offset,
             },
         })
+    }
+}
+
+#[cfg(feature = "verify")]
+impl TryFrom<GetContestedResourceIdentityVotesRequest>
+    for ContestedResourceVotesGivenByIdentityQuery
+{
+    type Error = Error;
+    fn try_from(request: GetContestedResourceIdentityVotesRequest) -> Result<Self, Self::Error> {
+        let v0 = match request.version {
+            Some(get_contested_resource_identity_votes_request::Version::V0(v)) => v,
+            _ => {
+                return Err(Error::Protocol(
+                    dpp::version::PlatformVersionError::UnknownVersionError(
+                        "invalid request version; only version 0 is supported".to_string(),
+                    )
+                    .into(),
+                ))
+            }
+        };
+
+        Ok(Self {
+            identity_id: Identifier::from_vec(v0.identity_id)?,
+            offset: v0.offset.map(|x| x as u16),
+            limit: v0.limit.map(|x| x as u16),
+            start_at: v0
+                .start_at_vote_poll_id_info
+                .map(|x| {
+                    x.start_at_poll_identifier
+                        .try_into()
+                        .map(|id| (id, x.start_poll_identifier_included))
+                })
+                .transpose()
+                .map_err(|e: <Vec<u8> as TryInto<[u8; 32]>>::Error| {
+                    Error::Value(dpp::platform_value::Error::ByteLengthNot32BytesError(
+                        format!(
+                            "length of start_poll_identifier '0x{}' is not 32 bytes",
+                            e.encode_hex::<String>()
+                        ),
+                    ))
+                })?,
+            order_ascending: v0.order_ascending,
+        })
+    }
+}
+
+#[cfg(feature = "verify")]
+impl From<ContestedResourceVotesGivenByIdentityQuery>
+    for GetContestedResourceIdentityVotesRequestV0
+{
+    fn from(value: ContestedResourceVotesGivenByIdentityQuery) -> Self {
+        GetContestedResourceIdentityVotesRequestV0 {
+            prove: true, // prove is the default
+            identity_id: value.identity_id.to_vec(),
+            offset: value.offset.map(|x| x as u32),
+            limit: value.limit.map(|x| x as u32),
+            start_at_vote_poll_id_info: value.start_at.map(|(id, included)| {
+                get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo {
+                    start_at_poll_identifier: id.to_vec(),
+                    start_poll_identifier_included: included,
+                }
+            }),
+            order_ascending: value.order_ascending,
+        }
     }
 }
