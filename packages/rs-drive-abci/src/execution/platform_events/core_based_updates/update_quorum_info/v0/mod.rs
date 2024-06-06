@@ -367,7 +367,7 @@ where
                     .current_quorums()
                     .contains_key::<QuorumHash>(quorum_hash)
             })
-            .map(|(quorum_hash, _)| {
+            .map(|(quorum_hash, index)| {
                 let quorum_info = self.core_rpc.get_quorum_info(
                     quorum_set_type.quorum_type(),
                     quorum_hash,
@@ -385,17 +385,12 @@ where
                 tracing::trace!(
                     ?public_key,
                     ?quorum_hash,
+                    index,
                     quorum_type = ?quorum_set_type.quorum_type(),
                     "add new {} quorum {}",
                     quorum_set_type,
                     quorum_hash,
                 );
-
-                let index = if quorum_info.quorum_index == 0 {
-                    None
-                } else {
-                    Some(quorum_info.quorum_index)
-                };
 
                 Ok((*quorum_hash, VerificationQuorum { public_key, index }))
             })
