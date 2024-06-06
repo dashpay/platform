@@ -9,11 +9,12 @@ use dapi_grpc::platform::v0::{
     get_identity_balance_and_revision_request, get_identity_balance_request,
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
     get_identity_keys_request, get_identity_nonce_request, get_identity_request,
-    get_path_elements_request, get_vote_polls_by_end_date_request,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, ResponseMetadata,
+    get_path_elements_request, get_prefunded_specialized_balance_request,
+    get_vote_polls_by_end_date_request, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    ResponseMetadata,
 };
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
@@ -1499,6 +1500,47 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
         let response = VotePollsGroupedByTimestamp::from_iter(vote_polls);
 
         Ok((response.into_option(), mtd.clone()))
+    }
+}
+
+impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpecializedBalance {
+    type Request = platform::GetPrefundedSpecializedBalanceRequest;
+    type Response = platform::GetPrefundedSpecializedBalanceResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let balance_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_prefunded_specialized_balance_request::Version::V0(v0) => {
+                Identifier::from_vec(v0.id).map_err(|e| Error::RequestDecodeError {
+                    error: e.to_string(),
+                })?
+            }
+        };
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let (root_hash, balance) = Drive::verify_specialized_balance(
+            &proof.grovedb_proof,
+            balance_id.into_buffer(),
+            false,
+            platform_version,
+        )?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((balance.map(|v| v.into()), mtd.clone()))
     }
 }
 

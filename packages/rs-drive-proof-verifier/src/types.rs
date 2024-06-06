@@ -8,6 +8,7 @@
 use crate::proof::Length;
 use bincode::Decode;
 use dpp::bincode::Encode;
+use dpp::fee::Credits;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -118,7 +119,7 @@ pub type IdentityBalanceAndRevision = (u64, Revision);
 
 /// Contested resource values.
 /// At this point, only Documents are supported
-#[derive(derive_more::From)]
+#[derive(derive_more::From, Clone, Debug)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum ContestedResource {
     /// Contested document
@@ -133,6 +134,22 @@ pub type ContestedVote = (ContestedDocumentResourceVotePoll, ResourceVoteChoice)
 
 /// Votes casted by some identity.
 pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
+
+/// Prefunded specialized balance.
+#[derive(Debug, derive_more::From, Encode, Decode, Copy, Clone)]
+pub struct PrefundedSpecializedBalance(Credits);
+impl PrefundedSpecializedBalance {
+    /// Get the balance.
+    pub fn to_credits(&self) -> Credits {
+        Credits::from(self)
+    }
+}
+
+impl From<&PrefundedSpecializedBalance> for Credits {
+    fn from(value: &PrefundedSpecializedBalance) -> Self {
+        value.0
+    }
+}
 
 /// Contested document resource vote polls grouped by timestamp.
 #[derive(Clone, Debug, Default, derive_more::From, Encode, Decode)]
