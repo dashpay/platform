@@ -6,7 +6,8 @@ pub use crate::platform_types::core_quorum_set::v0::quorum_set::{
     CoreQuorumSetV0, CoreQuorumSetV0Methods, QuorumConfig, QuorumsVerificationDataIterator,
 };
 pub use crate::platform_types::core_quorum_set::v0::quorums::{
-    Quorum, QuorumVerificationData, Quorums, ReversedQuorumHashBytes, ThresholdBlsPublicKey,
+    Quorum, Quorums, ReversedQuorumHashBytes, SigningQuorum, ThresholdBlsPublicKey,
+    VerificationQuorum,
 };
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -36,19 +37,19 @@ impl CoreQuorumSetV0Methods for CoreQuorumSet {
         }
     }
 
-    fn set_current_quorums(&mut self, quorums: Quorums) {
+    fn set_current_quorums(&mut self, quorums: Quorums<VerificationQuorum>) {
         match self {
             Self::V0(v0) => v0.set_current_quorums(quorums),
         }
     }
 
-    fn current_quorums(&self) -> &Quorums {
+    fn current_quorums(&self) -> &Quorums<VerificationQuorum> {
         match self {
             Self::V0(v0) => v0.current_quorums(),
         }
     }
 
-    fn current_quorums_mut(&mut self) -> &mut Quorums {
+    fn current_quorums_mut(&mut self) -> &mut Quorums<VerificationQuorum> {
         match self {
             Self::V0(v0) => v0.current_quorums_mut(),
         }
@@ -62,7 +63,7 @@ impl CoreQuorumSetV0Methods for CoreQuorumSet {
 
     fn replace_quorums(
         &mut self,
-        quorums: Quorums,
+        quorums: Quorums<VerificationQuorum>,
         last_active_core_height: u32,
         updated_at_core_height: u32,
     ) {
@@ -75,7 +76,7 @@ impl CoreQuorumSetV0Methods for CoreQuorumSet {
 
     fn update_previous_quorums(
         &mut self,
-        previous_quorums: Quorums,
+        previous_quorums: Quorums<VerificationQuorum>,
         last_active_core_height: u32,
         updated_at_core_height: u32,
     ) {

@@ -37,10 +37,13 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
     let selected_quorums =
         quorum_set.select_quorums(instant_lock_height, verification_height, request_id);
 
-    for (reversed_quorum_hash, public_key) in selected_quorums {
+    for (quorum_hash, quorum) in selected_quorums {
         // The signature must verify against the quorum public key and SHA256(llmqType, quorumHash, SHA256(height), txId).
         // llmqType and quorumHash must be taken from the quorum selected in 1.
         let mut engine = sha256d::Hash::engine();
+
+        let mut reversed_quorum_hash = quorum_hash.to_byte_array().to_vec();
+        reversed_quorum_hash.reverse();
 
         engine.input(&[quorum_set.config().quorum_type as u8]);
         engine.input(reversed_quorum_hash.as_slice());
@@ -49,7 +52,10 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
-        if public_key.verify(&signature, message_digest.as_ref()) {
+        if quorum
+            .public_key
+            .verify(&signature, message_digest.as_ref())
+        {
             return Ok(true);
         }
     }

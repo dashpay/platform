@@ -5,6 +5,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dashcore_rpc::json::{ExtendedQuorumListResult, QuorumType};
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 use crate::platform_types::validator_set::v0::{
     ValidatorSetV0, ValidatorSetV0Getters, ValidatorSetV0Setters,
@@ -12,10 +13,35 @@ use crate::platform_types::validator_set::v0::{
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 
-use crate::platform_types::core_quorum_set::{CoreQuorumSet, CoreQuorumSetV0Methods, Quorum};
+use crate::platform_types::core_quorum_set::{
+    CoreQuorumSet, CoreQuorumSetV0Methods, VerificationQuorum,
+};
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::dashcore::QuorumHash;
 use tracing::Level;
+
+enum QuorumSetType {
+    ChainLock(QuorumType),
+    InstantLock(QuorumType),
+}
+
+impl QuorumSetType {
+    fn quorum_type(&self) -> QuorumType {
+        match self {
+            QuorumSetType::ChainLock(quorum_type) => *quorum_type,
+            QuorumSetType::InstantLock(quorum_type) => *quorum_type,
+        }
+    }
+}
+
+impl Display for QuorumSetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QuorumSetType::ChainLock(quorum_type) => write!(f, "chain lock ({quorum_type})"),
+            QuorumSetType::InstantLock(quorum_type) => write!(f, "instant lock ({quorum_type})"),
+        }
+    }
+}
 
 impl<C> Platform<C>
 where
@@ -187,56 +213,42 @@ where
 
         // Update Chain Lock quorums
 
-        // Use already updated validator sets if we use the same quorums
-        if validator_set_quorum_type == chain_lock_quorum_type {
-            // Update only in case if there are any changes
-            if is_validator_set_updated {
-                let quorums = block_platform_state
-                    .validator_sets()
-                    .iter()
-                    .map(|(quorum_hash, validator_set)| {
-                        (
-                            *quorum_hash,
-                            validator_set.threshold_public_key().clone(),
-                            validator_set.quorum_index(),
-                        )
-                    })
-                    .collect();
-
-                let quorum_set = block_platform_state.chain_lock_validating_quorums_mut();
-
-                tracing::trace!("updated chain lock validating quorums to current validator set");
-
-                if !start_from_scratch {
-                    // we already have state, so we update last and previous quorums
-                    quorum_set.replace_quorums(
-                        quorums,
-                        last_committed_core_height,
-                        core_block_height,
-                    );
-                } else {
-                    // the only case where there will be no platform_state is init chain,
-                    // so there is no previous quorums to update
-                    quorum_set.set_current_quorums(quorums)
-                }
-            }
-        } else {
-            // Update quorums from the extended quorum list
-            self.update_quorums_from_quorum_list(
-                "chain lock",
-                chain_lock_quorum_type,
-                block_platform_state.chain_lock_validating_quorums_mut(),
-                platform_state,
-                &extended_quorum_list,
-                last_committed_core_height,
-                core_block_height,
-            )?;
-        }
+        self.update_quorums(
+            QuorumSetType::ChainLock(chain_lock_quorum_type),
+            block_platform_state,
+            platform_state,
+            &extended_quorum_list,
+            is_validator_set_updated,
+            core_block_height,
+        )?;
 
         // Update Instant Lock quorums
 
+        self.update_quorums(
+            QuorumSetType::InstantLock(instant_lock_quorum_type),
+            block_platform_state,
+            platform_state,
+            &extended_quorum_list,
+            is_validator_set_updated,
+            core_block_height,
+        )?;
+
+        Ok(())
+    }
+
+    fn update_quorums(
+        &self,
+        quorum_set_type: QuorumSetType,
+        block_platform_state: &mut PlatformState,
+        platform_state: Option<&PlatformState>,
+        extended_quorum_list: &ExtendedQuorumListResult,
+        is_validator_set_updated: bool,
+        core_block_height: u32,
+    ) -> Result<(), Error> {
+        let last_committed_core_height = block_platform_state.last_committed_core_height();
+
         // Use already updated validator sets if we use the same quorums
-        if validator_set_quorum_type == instant_lock_quorum_type {
+        if self.config.validator_set.quorum_type == quorum_set_type.quorum_type() {
             // Update only in case if there are any changes
             if is_validator_set_updated {
                 let quorums = block_platform_state
@@ -245,17 +257,22 @@ where
                     .map(|(quorum_hash, validator_set)| {
                         (
                             *quorum_hash,
-                            validator_set.threshold_public_key().clone(),
-                            validator_set.quorum_index(),
+                            VerificationQuorum {
+                                public_key: validator_set.threshold_public_key().clone(),
+                                index: validator_set.quorum_index(),
+                            },
                         )
                     })
                     .collect();
 
-                let quorum_set = block_platform_state.instant_lock_validating_quorums_mut();
+                tracing::trace!(
+                    "updated {} validating quorums to current validator set",
+                    quorum_set_type
+                );
 
-                tracing::trace!("updated instant lock validating quorums to current validator set");
+                let quorum_set = quorum_set_by_type_mut(block_platform_state, &quorum_set_type);
 
-                if !start_from_scratch {
+                if platform_state.is_some() {
                     // we already have state, so we update last and previous quorums
                     quorum_set.replace_quorums(
                         quorums,
@@ -269,13 +286,14 @@ where
                 }
             }
         } else {
+            let quorum_set = quorum_set_by_type_mut(block_platform_state, &quorum_set_type);
+
             // Update quorums from the extended quorum list
             self.update_quorums_from_quorum_list(
-                "instant lock",
-                instant_lock_quorum_type,
-                block_platform_state.instant_lock_validating_quorums_mut(),
+                &quorum_set_type,
+                quorum_set,
                 platform_state,
-                &extended_quorum_list,
+                extended_quorum_list,
                 last_committed_core_height,
                 core_block_height,
             )?;
@@ -286,8 +304,7 @@ where
 
     fn update_quorums_from_quorum_list(
         &self,
-        name: &str,
-        quorum_type: QuorumType,
+        quorum_set_type: &QuorumSetType,
         quorum_set: &mut CoreQuorumSet,
         platform_state: Option<&PlatformState>,
         full_quorum_list: &ExtendedQuorumListResult,
@@ -296,11 +313,11 @@ where
     ) -> Result<(), Error> {
         let quorums_list: BTreeMap<_, _> = full_quorum_list
             .quorums_by_type
-            .get(&quorum_type)
+            .get(&quorum_set_type.quorum_type())
             .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
                 format!(
-                    "expected quorums of type {}, but did not receive any from Dash Core",
-                    quorum_type
+                    "expected quorums {}, but did not receive any from Dash Core",
+                    quorum_set_type
                 ),
             )))?
             .iter()
@@ -327,10 +344,10 @@ where
                 if !retain {
                     tracing::trace!(
                         ?quorum_hash,
-                        quorum_type = ?quorum_type,
-                        "removed old {name} quorum {} with quorum type {}",
+                        quorum_type = ?quorum_set_type.quorum_type(),
+                        "removed old {} quorum {}",
+                        quorum_set_type,
                         quorum_hash,
-                        quorum_type
                     );
                 }
                 removed_a_validating_quorum |= !retain;
@@ -338,55 +355,53 @@ where
             });
 
         // Fetch quorum info and their keys from the RPC for new quorums
-        let quorum_infos = quorums_list
+        // and then create VerificationQuorum instances
+        let new_quorums = quorums_list
             .into_iter()
-            .filter(|(key, _)| !quorum_set.current_quorums().contains_key::<QuorumHash>(key))
-            .map(|(key, _)| {
-                let quorum_info_result = self.core_rpc.get_quorum_info(quorum_type, key, None)?;
+            .filter(|(quorum_hash, _)| {
+                !quorum_set
+                    .current_quorums()
+                    .contains_key::<QuorumHash>(quorum_hash)
+            })
+            .map(|(quorum_hash, _)| {
+                let quorum_info = self.core_rpc.get_quorum_info(
+                    quorum_set_type.quorum_type(),
+                    quorum_hash,
+                    None,
+                )?;
 
-                Ok((*key, quorum_info_result))
+                let public_key =
+                    match BlsPublicKey::from_bytes(quorum_info.quorum_public_key.as_slice())
+                        .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
+                    {
+                        Ok(public_key) => public_key,
+                        Err(e) => return Err(e.into()),
+                    };
+
+                tracing::trace!(
+                    ?public_key,
+                    ?quorum_hash,
+                    quorum_type = ?quorum_set_type.quorum_type(),
+                    "add new {} quorum {}",
+                    quorum_set_type,
+                    quorum_hash,
+                );
+
+                let index = if quorum_info.quorum_index == 0 {
+                    None
+                } else {
+                    Some(quorum_info.quorum_index)
+                };
+
+                Ok((*quorum_hash, VerificationQuorum { public_key, index }))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
-        let added_a_validating_quorum = !quorum_infos.is_empty();
+        let are_quorums_updated = !new_quorums.is_empty() || removed_a_validating_quorum;
 
-        if added_a_validating_quorum {
-            // Map to validating quorums
-            let new_quorums = quorum_infos
-                .into_iter()
-                .map(|(quorum_hash, info_result)| {
-                    let public_key =
-                        match BlsPublicKey::from_bytes(info_result.quorum_public_key.as_slice())
-                            .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
-                        {
-                            Ok(public_key) => public_key,
-                            Err(e) => return Err(e.into()),
-                        };
+        quorum_set.current_quorums_mut().extend(new_quorums);
 
-                    tracing::trace!(
-                        ?public_key,
-                        ?quorum_hash,
-                        quorum_type = ?quorum_type,
-                        "add new {name} quorum {} with quorum type {}",
-                        quorum_hash,
-                        quorum_type
-                    );
-
-                    let index = if info_result.quorum_index == 0 {
-                        None
-                    } else {
-                        Some(info_result.quorum_index)
-                    };
-
-                    Ok((quorum_hash, Quorum { public_key, index }))
-                })
-                .collect::<Result<Vec<_>, Error>>()?;
-
-            // Add new validator_sets entries
-            quorum_set.current_quorums_mut().extend(new_quorums);
-        }
-
-        if added_a_validating_quorum || removed_a_validating_quorum {
+        if are_quorums_updated {
             if let Some(old_state) = platform_state {
                 let previous_validating_quorums =
                     old_state.chain_lock_validating_quorums().current_quorums();
@@ -400,5 +415,15 @@ where
         }
 
         Ok(())
+    }
+}
+
+fn quorum_set_by_type_mut<'p>(
+    block_platform_state: &'p mut PlatformState,
+    quorum_set_type: &QuorumSetType,
+) -> &'p mut CoreQuorumSet {
+    match quorum_set_type {
+        QuorumSetType::ChainLock(_) => block_platform_state.chain_lock_validating_quorums_mut(),
+        QuorumSetType::InstantLock(_) => block_platform_state.instant_lock_validating_quorums_mut(),
     }
 }

@@ -1,13 +1,16 @@
-use crate::config::QuorumLikeConfig;
-use crate::platform_types::core_quorum_set::v0::quorums::{QuorumVerificationData, Quorums};
+use crate::config::{ChainLockConfig, QuorumLikeConfig};
+use crate::error::Error;
+use crate::platform_types::core_quorum_set::v0::quorums::{Quorum, Quorums};
+use crate::platform_types::core_quorum_set::{ReversedQuorumHashBytes, VerificationQuorum};
+use dashcore_rpc::dashcore::ChainLock;
 use dashcore_rpc::json::QuorumType;
-use dpp::dashcore::QuorumSigningRequestId;
+use dpp::dashcore::{QuorumHash, QuorumSigningRequestId};
 use std::vec::IntoIter;
 
 /// Previously obtained quorums and heights. Required for signature verification
 #[derive(Debug, Clone)]
 pub(super) struct PreviousQuorumsV0 {
-    pub(super) quorums: Quorums,
+    pub(super) quorums: Quorums<VerificationQuorum>,
 
     /// The core height at which these quorums were last active
     pub(super) active_core_height: u32,
@@ -26,7 +29,7 @@ pub struct CoreQuorumSetV0 {
     pub(super) config: QuorumConfig,
 
     /// Current quorums
-    pub(super) current_quorums: Quorums,
+    pub(super) current_quorums: Quorums<VerificationQuorum>,
 
     /// The slightly old quorums used for validating ch ain locks (or instant locks), it's important to keep
     /// these because validation of signatures happens for the quorums that are 8 blocks before the
@@ -40,13 +43,13 @@ pub trait CoreQuorumSetV0Methods {
     fn config(&self) -> &QuorumConfig;
 
     /// Set current quorum keys
-    fn set_current_quorums(&mut self, quorums: Quorums);
+    fn set_current_quorums(&mut self, quorums: Quorums<VerificationQuorum>);
 
     /// Current quorum
-    fn current_quorums(&self) -> &Quorums;
+    fn current_quorums(&self) -> &Quorums<VerificationQuorum>;
 
     /// Last quorum keys mutable
-    fn current_quorums_mut(&mut self) -> &mut Quorums;
+    fn current_quorums_mut(&mut self) -> &mut Quorums<VerificationQuorum>;
 
     /// Has previous quorums?
     fn has_previous_quorums(&self) -> bool;
@@ -54,7 +57,7 @@ pub trait CoreQuorumSetV0Methods {
     /// Set last quorums keys and update previous quorums
     fn replace_quorums(
         &mut self,
-        quorums: Quorums,
+        quorums: Quorums<VerificationQuorum>,
         last_active_core_height: u32,
         updated_at_core_height: u32,
     );
@@ -62,7 +65,7 @@ pub trait CoreQuorumSetV0Methods {
     /// Update previous quorums
     fn update_previous_quorums(
         &mut self,
-        previous_quorums: Quorums,
+        previous_quorums: Quorums<VerificationQuorum>,
         last_active_core_height: u32,
         updated_at_core_height: u32,
     );
@@ -83,13 +86,13 @@ pub struct QuorumsVerificationDataIterator<'q> {
     /// Request ID to chose right quorum
     request_id: QuorumSigningRequestId,
     /// Appropriate quorum sets
-    quorum_sets: IntoIter<&'q Quorums>,
+    quorum_sets: IntoIter<&'q Quorums<VerificationQuorum>>,
     /// Should we expect signature verification to be successful
     should_be_verifiable: bool,
 }
 
-impl<'p> Iterator for QuorumsVerificationDataIterator<'p> {
-    type Item = QuorumVerificationData<'p>;
+impl<'q> Iterator for QuorumsVerificationDataIterator<'q> {
+    type Item = (QuorumHash, &'q VerificationQuorum);
 
     fn next(&mut self) -> Option<Self::Item> {
         let quorum_set = self.quorum_sets.next();
@@ -98,17 +101,7 @@ impl<'p> Iterator for QuorumsVerificationDataIterator<'p> {
             return None;
         };
 
-        if self.config.rotation {
-            quorum_set.find_rotating_quorum_verification_data(
-                self.config.active_signers,
-                self.request_id.as_ref(),
-            )
-        } else {
-            quorum_set.find_classic_quorum_verification_data(
-                self.config.quorum_type,
-                self.request_id.as_ref(),
-            )
-        }
+        quorum_set.choose_quorum(&self.config, self.request_id.as_ref())
     }
 }
 
@@ -147,15 +140,15 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
         &self.config
     }
 
-    fn set_current_quorums(&mut self, quorums: Quorums) {
+    fn set_current_quorums(&mut self, quorums: Quorums<VerificationQuorum>) {
         self.current_quorums = quorums;
     }
 
-    fn current_quorums(&self) -> &Quorums {
+    fn current_quorums(&self) -> &Quorums<VerificationQuorum> {
         &self.current_quorums
     }
 
-    fn current_quorums_mut(&mut self) -> &mut Quorums {
+    fn current_quorums_mut(&mut self) -> &mut Quorums<VerificationQuorum> {
         &mut self.current_quorums
     }
 
@@ -165,7 +158,7 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
 
     fn replace_quorums(
         &mut self,
-        quorums: Quorums,
+        quorums: Quorums<VerificationQuorum>,
         last_active_height: u32,
         updated_at_core_height: u32,
     ) {
@@ -176,7 +169,7 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
 
     fn update_previous_quorums(
         &mut self,
-        previous_quorums: Quorums,
+        previous_quorums: Quorums<VerificationQuorum>,
         last_active_core_height: u32,
         updated_at_core_height: u32,
     ) {
@@ -263,6 +256,21 @@ impl CoreQuorumSetV0 {
                 active_signers: config.quorum_active_signers(),
                 rotation: config.quorum_rotation(),
                 window: config.quorum_window(),
+            },
+            current_quorums: Quorums::default(),
+            previous: None,
+        }
+    }
+}
+
+impl From<ChainLockConfig> for CoreQuorumSetV0 {
+    fn from(value: ChainLockConfig) -> Self {
+        CoreQuorumSetV0 {
+            config: QuorumConfig {
+                quorum_type: value.quorum_type,
+                active_signers: value.quorum_active_signers,
+                rotation: value.quorum_rotation,
+                window: value.quorum_window,
             },
             current_quorums: Quorums::default(),
             previous: None,

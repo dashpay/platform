@@ -91,7 +91,7 @@ where
             .chain_lock_validating_quorums()
             .select_quorums(chain_lock_height, verification_height, request_id);
 
-        let Some((quorum_hash, public_key)) = selected_quorums.next() else {
+        let Some((quorum_hash, quorum)) = selected_quorums.next() else {
             return Ok(None);
         };
 
@@ -99,14 +99,19 @@ where
 
         let mut engine = sha256d::Hash::engine();
 
+        let mut reversed_quorum_hash = quorum_hash.to_byte_array().to_vec();
+        reversed_quorum_hash.reverse();
+
         engine.input(&[quorum_config.quorum_type as u8]);
-        engine.input(quorum_hash.as_slice());
+        engine.input(reversed_quorum_hash.as_slice());
         engine.input(request_id.as_byte_array());
         engine.input(chain_lock.block_hash.as_byte_array());
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
-        let mut chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
+        let mut chain_lock_verified = quorum
+            .public_key
+            .verify(&signature, message_digest.as_ref());
 
         tracing::debug!(
             ?chain_lock,
@@ -115,7 +120,7 @@ where
             round,
             chain_lock.block_height,
             hex::encode(message_digest.as_byte_array()),
-            hex::encode(quorum_hash.as_slice()),
+            hex::encode(reversed_quorum_hash.as_slice()),
             hex::encode(chain_lock.block_hash.as_byte_array()),
             if chain_lock_verified { "verified"} else {"not verified"},
             platform_state.last_committed_core_height(),
@@ -126,7 +131,7 @@ where
         if !chain_lock_verified {
             // We should also check the other quorum, as there could be the situation where the core height wasn't updated every block.
             if selected_quorums.len() == 2 {
-                let Some((quorum_hash, public_key)) = selected_quorums.next() else {
+                let Some((quorum_hash, quorum)) = selected_quorums.next() else {
                     // we return that we are not able to verify
                     return Ok(None);
                 };
@@ -135,14 +140,19 @@ where
 
                 let mut engine = sha256d::Hash::engine();
 
+                let mut reversed_quorum_hash = quorum_hash.to_byte_array().to_vec();
+                reversed_quorum_hash.reverse();
+
                 engine.input(&[quorum_config.quorum_type as u8]);
-                engine.input(quorum_hash.as_slice());
+                engine.input(reversed_quorum_hash.as_slice());
                 engine.input(request_id.as_byte_array());
                 engine.input(chain_lock.block_hash.as_byte_array());
 
                 let message_digest = sha256d::Hash::from_engine(engine);
 
-                chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
+                chain_lock_verified = quorum
+                    .public_key
+                    .verify(&signature, message_digest.as_ref());
 
                 tracing::debug!(
                     ?chain_lock,
@@ -151,7 +161,7 @@ where
                     round,
                     chain_lock.block_height,
                     hex::encode(message_digest.as_byte_array()),
-                    hex::encode(quorum_hash.as_slice()),
+                    hex::encode(reversed_quorum_hash.as_slice()),
                     hex::encode(chain_lock.block_hash.as_byte_array()),
                     if chain_lock_verified { "verified"} else {"not verified"}
                 );

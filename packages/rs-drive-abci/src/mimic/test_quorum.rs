@@ -1,3 +1,4 @@
+use crate::platform_types::core_quorum_set::Quorum;
 use crate::platform_types::validator::v0::ValidatorV0;
 use crate::platform_types::validator_set::v0::ValidatorSetV0;
 use dashcore_rpc::dashcore::hashes::Hash;
@@ -269,5 +270,11 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
             quorum_public_key: public_key.to_bytes().to_vec(),
             secret_key_share: None,
         }
+    }
+}
+
+impl Quorum for TestQuorumInfo {
+    fn index(&self) -> Option<u32> {
+        self.quorum_index
     }
 }

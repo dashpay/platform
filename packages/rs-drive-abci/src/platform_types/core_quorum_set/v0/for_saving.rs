@@ -1,6 +1,6 @@
 use crate::platform_types::core_quorum_set::v0::quorum_set::{PreviousQuorumsV0, QuorumConfig};
 use crate::platform_types::core_quorum_set::{
-    CoreQuorumSetForSaving, CoreQuorumSetV0, Quorum, Quorums, ThresholdBlsPublicKey,
+    CoreQuorumSetForSaving, CoreQuorumSetV0, Quorums, ThresholdBlsPublicKey, VerificationQuorum,
 };
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::QuorumHash;
@@ -138,12 +138,12 @@ pub struct QuorumForSavingV0 {
     index: Option<u32>,
 }
 
-impl From<Vec<QuorumForSavingV0>> for Quorums {
+impl From<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
     fn from(value: Vec<QuorumForSavingV0>) -> Self {
         Quorums::from_iter(value.into_iter().map(|quorum| {
             (
                 QuorumHash::from_byte_array(quorum.hash.to_buffer()),
-                Quorum {
+                VerificationQuorum {
                     public_key: quorum.public_key,
                     index: quorum.index,
                 },
@@ -152,7 +152,7 @@ impl From<Vec<QuorumForSavingV0>> for Quorums {
     }
 }
 
-impl Into<Vec<QuorumForSavingV0>> for Quorums {
+impl Into<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
     fn into(self) -> Vec<QuorumForSavingV0> {
         self.into_iter()
             .map(|(hash, quorum)| QuorumForSavingV0 {
