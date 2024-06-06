@@ -3,7 +3,7 @@ const winston = require('winston');
 
 // TODO: Refactor to use params instead on envs
 
-const LOG_LEVEL = process.env.LOG_LEVEL || 'silent';
+const LOG_LEVEL = 'silly'; // process.env.LOG_LEVEL || 'silent';
 const LOG_TO_FILE = process.env.LOG_WALLET_TO_FILE || 'false';
 
 // Log levels:
