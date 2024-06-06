@@ -6,8 +6,7 @@ pub use crate::platform_types::core_quorum_set::v0::quorum_set::{
     CoreQuorumSetV0, CoreQuorumSetV0Methods, QuorumConfig, QuorumsVerificationDataIterator,
 };
 pub use crate::platform_types::core_quorum_set::v0::quorums::{
-    Quorum, Quorums, ReversedQuorumHashBytes, SigningQuorum, ThresholdBlsPublicKey,
-    VerificationQuorum,
+    Quorum, Quorums, SigningQuorum, ThresholdBlsPublicKey, VerificationQuorum,
 };
 use bincode::{Decode, Encode};
 use derive_more::From;

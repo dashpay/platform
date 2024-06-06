@@ -1,19 +1,12 @@
-use dashcore_rpc::json::QuorumType;
 use derive_more::{Deref, DerefMut, From};
 use dpp::bls_signatures::PrivateKey;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
-use dpp::dashcore::consensus::Encodable;
-use dpp::dashcore::{QuorumHash, QuorumSigningRequestId, Transaction, TxIn, Txid, VarInt};
-use dpp::{bls_signatures, ProtocolError};
+use dpp::dashcore::{QuorumHash, Txid};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 pub use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
 
-/// Reversed quorum hash bytes. Used for signature verification as part of the signature payload
-pub type ReversedQuorumHashBytes = Vec<u8>;
-
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::core_quorum_set::QuorumConfig;
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
@@ -106,18 +99,26 @@ impl<Q: Quorum> Quorums<Q> {
         quorum_config: &QuorumConfig,
         request_id: &[u8; 32],
     ) -> Option<(QuorumHash, &Q)> {
-        let n = quorum_config.active_signers as u64;
+        let active_signers = quorum_config.active_signers as u32;
 
-        let b = u64::from_le_bytes(request_id[24..32].try_into().unwrap());
+        // binary (base-2) logarithm from active_signers
+        let n = 31 - active_signers.leading_zeros();
+
+        // Extract last 64 bits of request_id
+        let b = u64::from_le_bytes(
+            request_id[24..32]
+                .try_into()
+                .expect("request_id is [u8; 32]"),
+        );
 
         // Take last n bits of b
         let mask = (1u64 << n) - 1;
-        let signer = mask & (b >> (64 - n));
+        let signer = mask & (b >> (64 - n - 1));
 
         self.0
             .iter()
-            .find(|(hash, quorum)| quorum.index() == Some(signer as u32))
-            .map(|(hash, quorum)| (*hash, quorum))
+            .find(|(_, quorum)| quorum.index() == Some(signer as u32))
+            .map(|(quorum_hash, quorum)| (*quorum_hash, quorum))
     }
 }
 
@@ -192,81 +193,3 @@ impl SigningQuorum {
         Ok(BLSSignature::from(g2element_bytes))
     }
 }
-
-//
-// const IS_LOCK_REQUEST_ID_PREFIX: &str = "islock";
-//
-// // TODO: Must be in dashcore lib
-//
-// pub struct InstantLockQuorumSigner {
-//     quorum_hash: QuorumHash,
-//     quorum_type: QuorumType,
-//     quorum_private_key: PrivateKey,
-// }
-//
-// impl InstantLockQuorumSigner {
-//     pub fn new(
-//         quorum_hash: QuorumHash,
-//         quorum_type: QuorumType,
-//         quorum_private_key: PrivateKey,
-//     ) -> Self {
-//         Self {
-//             quorum_hash,
-//             quorum_type,
-//             quorum_private_key,
-//         }
-//     }
-//
-//     pub fn sign(
-//         &self,
-//         request_id: &QuorumSigningRequestId,
-//         transaction: &Transaction,
-//     ) -> Result<BLSSignature, ProtocolError> {
-//         // The signature must verify against the quorum public key and SHA256(llmqType, quorumHash, SHA256(height), txId).
-//         // llmqType and quorumHash must be taken from the quorum selected in 1.
-//         let mut engine = sha256d::Hash::engine();
-//
-//         let mut reversed_quorum_hash = self.quorum_hash.to_byte_array().to_vec();
-//         reversed_quorum_hash.reverse();
-//
-//         engine.input(&[self.quorum_type as u8]);
-//         engine.input(reversed_quorum_hash.as_slice());
-//         engine.input(request_id.as_byte_array());
-//         engine.input(transaction.txid().as_byte_array());
-//
-//         let message_digest = sha256d::Hash::from_engine(engine);
-//
-//         let g2element = self.quorum_private_key.sign(message_digest.as_ref());
-//         let g2element_bytes = *g2element.to_bytes();
-//
-//         Ok(BLSSignature::from(g2element_bytes))
-//     }
-// }
-//
-// fn request_id_for_tx(tx: &Transaction) -> Result<QuorumSigningRequestId, ProtocolError> {
-//     let mut engine = QuorumSigningRequestId::engine();
-//
-//     // Prefix
-//     let prefix_len = VarInt(IS_LOCK_REQUEST_ID_PREFIX.len() as u64);
-//     prefix_len.consensus_encode(&mut engine).map_err(|e| {
-//         ProtocolError::CorruptedSerialization(format!("can't serialize varInt for request_id: {e}"))
-//     })?;
-//
-//     engine.input(IS_LOCK_REQUEST_ID_PREFIX.as_bytes());
-//
-//     // Inputs
-//     let inputs_len = VarInt(tx.input.len() as u64);
-//     inputs_len.consensus_encode(&mut engine).map_err(|e| {
-//         ProtocolError::CorruptedSerialization(format!("can't serialize varInt for request_id: {e}"))
-//     })?;
-//
-//     for TxIn {
-//         previous_output, ..
-//     } in &tx.input
-//     {
-//         engine.input(&previous_output.txid[..]);
-//         engine.input(&previous_output.vout.to_le_bytes());
-//     }
-//
-//     Ok(QuorumSigningRequestId::from_engine(engine))
-// }
