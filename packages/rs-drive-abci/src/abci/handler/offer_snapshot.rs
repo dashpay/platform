@@ -19,7 +19,10 @@ where
     let offered_snapshot = request.snapshot.ok_or(AbciError::StateSyncBadRequest(
         "offer_snapshot empty snapshot in request".to_string(),
     ))?;
-    tracing::trace!("[state_sync] api offer_snapshot height:{}", offered_snapshot.height);
+    tracing::trace!(
+        "[state_sync] api offer_snapshot height:{}",
+        offered_snapshot.height
+    );
     let mut session_write_guard = app.snapshot_fetching_session().write().map_err(|_| {
         AbciError::StateSyncInternalError(
             "offer_snapshot unable to lock session (poisoned)".to_string(),
@@ -28,7 +31,10 @@ where
     if session_write_guard.is_none() {
         // No session currently, start a new one.
         app.platform().drive.grove.wipe().map_err(|e| {
-            AbciError::StateSyncInternalError(format!("offer_snapshot unable to wipe grovedb:{}", e))
+            AbciError::StateSyncInternalError(format!(
+                "offer_snapshot unable to wipe grovedb:{}",
+                e
+            ))
         })?;
         let state_sync_info = app
             .platform()
@@ -41,12 +47,15 @@ where
                     e
                 ))
             })?;
-        let session = SnapshotFetchingSession::new(offered_snapshot, request_app_hash.to_vec(), state_sync_info);
+        let session = SnapshotFetchingSession::new(
+            offered_snapshot,
+            request_app_hash.to_vec(),
+            state_sync_info,
+        );
         *session_write_guard = Some(session);
         let response = proto::ResponseOfferSnapshot::default();
         Ok(response)
-    }
-    else {
+    } else {
         // Already syncing another snapshot session
         let session = session_write_guard
             .as_mut()
@@ -59,7 +68,10 @@ where
             )));
         }
         app.platform().drive.grove.wipe().map_err(|e| {
-            AbciError::StateSyncInternalError(format!("offer_snapshot unable to wipe grovedb:{}", e))
+            AbciError::StateSyncInternalError(format!(
+                "offer_snapshot unable to wipe grovedb:{}",
+                e
+            ))
         })?;
         let state_sync_info = app
             .platform()

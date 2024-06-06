@@ -11,7 +11,10 @@ pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db>(
 where
     A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
 {
-    tracing::trace!("[state_sync] api apply_snapshot_chunk chunk_id:{}", hex::encode(&request.chunk_id));
+    tracing::trace!(
+        "[state_sync] api apply_snapshot_chunk chunk_id:{}",
+        hex::encode(&request.chunk_id)
+    );
     let mut is_state_sync_completed: bool = false;
     // Lock first the RwLock
     let mut session_write_guard = app.snapshot_fetching_session().write().map_err(|_| {
@@ -39,10 +42,8 @@ where
                     e
                 ))
             })?;
-        if next_chunk_ids.is_empty() {
-            if session.state_sync_info.is_sync_completed() {
-                is_state_sync_completed = true;
-            }
+        if next_chunk_ids.is_empty() && session.state_sync_info.is_sync_completed() {
+            is_state_sync_completed = true;
         }
         if !is_state_sync_completed {
             return Ok(proto::ResponseApplySnapshotChunk {
@@ -62,12 +63,20 @@ where
             ))?;
         let state_sync_info = session.state_sync_info;
         app.platform().drive.grove.commit_session(state_sync_info);
-        let incorrect_hashes = app.platform().drive.grove.verify_grovedb(None)
+        let incorrect_hashes = app
+            .platform()
+            .drive
+            .grove
+            .verify_grovedb(None)
             .map_err(|e| {
-                AbciError::StateSyncInternalError("apply_snapshot_chunk unable to verify grovedb".to_string())
+                AbciError::StateSyncInternalError(
+                    "apply_snapshot_chunk unable to verify grovedb".to_string(),
+                )
             })?;
         if incorrect_hashes.len() > 0 {
-            Err(AbciError::StateSyncInternalError("apply_snapshot_chunk grovedb verification failed ".to_string()))?;
+            Err(AbciError::StateSyncInternalError(
+                "apply_snapshot_chunk grovedb verification failed ".to_string(),
+            ))?;
         }
         return Ok(proto::ResponseApplySnapshotChunk {
             result: proto::response_apply_snapshot_chunk::Result::Accept.into(),

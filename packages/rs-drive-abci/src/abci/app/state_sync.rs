@@ -121,7 +121,11 @@ where
         request: tonic::Request<proto::RequestLoadSnapshotChunk>,
     ) -> Result<tonic::Response<proto::ResponseLoadSnapshotChunk>, tonic::Status> {
         let request_snapshot_chunk = request.into_inner();
-        tracing::trace!("[state_sync] api load_snapshot_chunk height:{} chunk_id:{}", request_snapshot_chunk.height, hex::encode(&request_snapshot_chunk.chunk_id));
+        tracing::trace!(
+            "[state_sync] api load_snapshot_chunk height:{} chunk_id:{}",
+            request_snapshot_chunk.height,
+            hex::encode(&request_snapshot_chunk.chunk_id)
+        );
         let matched_snapshot = self
             .snapshot_manager
             .get_snapshot_at_height(

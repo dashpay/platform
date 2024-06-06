@@ -2,6 +2,7 @@ use crate::abci::app::{
     BlockExecutionApplication, PlatformApplication, SnapshotFetchingApplication,
     SnapshotManagerApplication, TransactionalApplication,
 };
+use crate::abci::handler::error;
 use crate::abci::handler::error::error_into_exception;
 use crate::abci::{handler, AbciError};
 use crate::error::execution::ExecutionError;
@@ -10,13 +11,12 @@ use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::{Snapshot, SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::CoreRPCLike;
+use dapi_grpc::tonic;
 use dpp::version::PlatformVersion;
 use drive::grovedb::{GroveDb, Transaction};
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
-use dapi_grpc::tonic;
-use crate::abci::handler::error;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -215,7 +215,10 @@ where
             .get_snapshots(&self.platform.drive.grove)
             .map_err(|e| {
                 // Convert the error into ResponseException
-                let abci_error = AbciError::StateSyncInternalError(format!("list_snapshots unable to get snapshots: {}", e));
+                let abci_error = AbciError::StateSyncInternalError(format!(
+                    "list_snapshots unable to get snapshots: {}",
+                    e
+                ));
                 error_into_exception(crate::error::Error::Abci(abci_error))
             })?;
 
@@ -248,38 +251,38 @@ where
         &self,
         request: proto::RequestLoadSnapshotChunk,
     ) -> Result<proto::ResponseLoadSnapshotChunk, proto::ResponseException> {
-        tracing::trace!("[state_sync] api load_snapshot_chunk height:{} chunk_id:{}", request.height, hex::encode(&request.chunk_id));
+        tracing::trace!(
+            "[state_sync] api load_snapshot_chunk height:{} chunk_id:{}",
+            request.height,
+            hex::encode(&request.chunk_id)
+        );
         let matched_snapshot = self
             .snapshot_manager
-            .get_snapshot_at_height(
-                &self.platform.drive.grove,
-                request.height as i64,
-            )
+            .get_snapshot_at_height(&self.platform.drive.grove, request.height as i64)
             .map_err(|_| {
                 // Convert the error into ResponseException
-                let abci_error = AbciError::StateSyncInternalError("load_snapshot_chunk failed".to_string());
+                let abci_error =
+                    AbciError::StateSyncInternalError("load_snapshot_chunk failed".to_string());
                 error_into_exception(crate::error::Error::Abci(abci_error))
             })?
-            .ok_or_else(||{
+            .ok_or_else(|| {
                 // Convert the error into ResponseException
-                let abci_error = AbciError::StateSyncInternalError("load_snapshot_chunk failed".to_string());
+                let abci_error =
+                    AbciError::StateSyncInternalError("load_snapshot_chunk failed".to_string());
                 error_into_exception(crate::error::Error::Abci(abci_error))
             })?;
-        let db = GroveDb::open(&matched_snapshot.path)
-            .map_err(|e|{
-                // Convert the error into ResponseException
-                let abci_error = AbciError::StateSyncInternalError(format!("load_snapshot_chunk failed:{}", e));
-                error_into_exception(crate::error::Error::Abci(abci_error))
-            })?;
+        let db = GroveDb::open(&matched_snapshot.path).map_err(|e| {
+            // Convert the error into ResponseException
+            let abci_error =
+                AbciError::StateSyncInternalError(format!("load_snapshot_chunk failed:{}", e));
+            error_into_exception(crate::error::Error::Abci(abci_error))
+        })?;
         let chunk = db
-            .fetch_chunk(
-                &request.chunk_id,
-                None,
-                request.version as u16,
-            )
-            .map_err(|e|{
+            .fetch_chunk(&request.chunk_id, None, request.version as u16)
+            .map_err(|e| {
                 // Convert the error into ResponseException
-                let abci_error = AbciError::StateSyncInternalError(format!("load_snapshot_chunk failed:{}", e));
+                let abci_error =
+                    AbciError::StateSyncInternalError(format!("load_snapshot_chunk failed:{}", e));
                 error_into_exception(crate::error::Error::Abci(abci_error))
             })?;
         let mut response = proto::ResponseLoadSnapshotChunk::default();
