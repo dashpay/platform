@@ -18,7 +18,9 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
     platform_state: &PlatformState,
 ) -> Result<bool, Error> {
     // First verify that the signature conforms to a signature
-    let signature = G2Element::from_bytes(instant_lock.signature.as_bytes())?;
+    let Ok(signature) = G2Element::from_bytes(instant_lock.signature.as_bytes()) else {
+        return Ok(false);
+    };
 
     let instant_lock_height = platform_state.last_committed_core_height();
 

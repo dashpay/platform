@@ -36,7 +36,9 @@ where
         let quorum_config = quorum_set.config();
 
         // First verify that the signature conforms to a signature
-        let signature = G2Element::from_bytes(chain_lock.signature.as_bytes())?;
+        let Ok(signature) = G2Element::from_bytes(chain_lock.signature.as_bytes()) else {
+            return Ok(Some(false));
+        };
 
         // we attempt to verify the chain lock locally
         let chain_lock_height = chain_lock.block_height;
