@@ -23,6 +23,7 @@ pub mod paths;
 #[cfg(feature = "server")]
 mod setup;
 
+#[cfg(feature = "server")]
 mod fetch_identities_voting_for_contenders;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Resolve contested document resource vote poll module
