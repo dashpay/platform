@@ -167,13 +167,12 @@ where
 
             // We need to clean up the vote poll
             // This means removing it and also removing all current votes
-            // todo()
-            // self.clean_up_after_vote_polls_end(
-            //     block_info,
-            //     &vote_polls,
-            //     transaction,
-            //     platform_version,
-            // )?;
+            self.clean_up_after_vote_polls_end(
+                block_info,
+                &vote_polls,
+                transaction,
+                platform_version,
+            )?;
         }
         Ok(())
     }
