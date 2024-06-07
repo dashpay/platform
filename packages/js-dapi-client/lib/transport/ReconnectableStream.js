@@ -284,7 +284,7 @@ class ReconnectableStream extends EventEmitter {
    */
   cancel() {
     // eslint-disable-next-line no-unused-expressions
-    this.logger && this.logger.debug('[ReconnectableStream] Canceling stream');
+    this.logger && this.logger.debug('[ReconnectableStream] Canceling streams');
     this.stopAutoReconnect();
     return this.stream.cancel();
   }
