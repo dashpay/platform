@@ -53,7 +53,7 @@ where
             request.initial_protocol_version,
             request.initial_protocol_version,
             &self.config,
-        );
+        )?;
 
         let genesis_block_info = BlockInfo {
             height: request.initial_height,

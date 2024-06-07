@@ -250,7 +250,7 @@ impl<C> Platform<C> {
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
             &config,
-        );
+        )?;
 
         let height = platform_state.last_committed_block_height();
 

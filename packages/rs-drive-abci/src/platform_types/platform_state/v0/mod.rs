@@ -231,26 +231,30 @@ impl PlatformStateV0 {
         current_protocol_version_in_consensus: ProtocolVersion,
         next_epoch_protocol_version: ProtocolVersion,
         config: &PlatformConfig,
-    ) -> PlatformStateV0 {
-        let platform_version = PlatformVersion::get(current_protocol_version_in_consensus)
-            .expect("invalid protocol version");
+    ) -> Result<PlatformStateV0, Error> {
+        let platform_version = PlatformVersion::get(current_protocol_version_in_consensus)?;
 
-        PlatformStateV0 {
+        let state = PlatformStateV0 {
             last_committed_block_info: None,
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
             current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
             validator_sets: Default::default(),
-            chain_lock_validating_quorums: CoreQuorumSet::new(&config.chain_lock, platform_version),
+            chain_lock_validating_quorums: CoreQuorumSet::new(
+                &config.chain_lock,
+                platform_version,
+            )?,
             instant_lock_validating_quorums: CoreQuorumSet::new(
                 &config.instant_lock,
                 platform_version,
-            ),
+            )?,
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
-        }
+        };
+
+        Ok(state)
     }
 }
 

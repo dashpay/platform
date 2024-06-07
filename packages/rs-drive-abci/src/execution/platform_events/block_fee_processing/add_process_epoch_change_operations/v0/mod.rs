@@ -253,7 +253,8 @@ mod tests {
                 INITIAL_PROTOCOL_VERSION,
                 INITIAL_PROTOCOL_VERSION,
                 &platform.config,
-            );
+            )
+            .expect("failed to create platform state");
 
             let block_execution_context = BlockExecutionContextV0 {
                 block_state_info: block_info.clone().into(),

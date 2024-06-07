@@ -121,14 +121,16 @@ impl PlatformState {
         current_protocol_version_in_consensus: ProtocolVersion,
         next_epoch_protocol_version: ProtocolVersion,
         config: &PlatformConfig,
-    ) -> PlatformState {
+    ) -> Result<PlatformState, Error> {
         //todo find the current Platform state for the protocol version
-        PlatformStateV0::default_with_protocol_versions(
+        let state = PlatformStateV0::default_with_protocol_versions(
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
             config,
-        )
-        .into()
+        )?
+        .into();
+
+        Ok(state)
     }
 
     /// Retrieve version 0, or an error if not currently on version 0

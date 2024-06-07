@@ -1,6 +1,8 @@
 mod v0;
 
 use crate::config::QuorumLikeConfig;
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::platform_types::core_quorum_set::v0::for_saving::CoreQuorumSetForSavingV0;
 pub use crate::platform_types::core_quorum_set::v0::quorum_set::{
     CoreQuorumSetV0, CoreQuorumSetV0Methods, QuorumConfig, QuorumsVerificationDataIterator,
@@ -23,10 +25,18 @@ pub enum CoreQuorumSet {
 
 impl CoreQuorumSet {
     /// Create a default SignatureVerificationQuorums
-    pub fn new(config: &impl QuorumLikeConfig, platform_version: &PlatformVersion) -> Self {
-        // TODO: default for platform version
-
-        CoreQuorumSetV0::new(config).into()
+    pub fn new(
+        config: &impl QuorumLikeConfig,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
+        match platform_version.drive_abci.structs.core_quorum_set {
+            0 => Ok(CoreQuorumSetV0::new(config).into()),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "CoreQuorumSet.new".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }
 
