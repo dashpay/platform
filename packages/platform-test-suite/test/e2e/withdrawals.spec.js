@@ -1,4 +1,5 @@
 const { expect } = require('chai');
+const { HDPrivateKey } = require('@dashevo/dashcore-lib');
 
 const wait = require('@dashevo/dapi-client/lib/utils/wait');
 const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platform/methods/identities/creditWithdrawal');
@@ -12,9 +13,15 @@ describe('Withdrawals', function withdrawalsTest() {
   let identity;
 
   before(async () => {
+    // TODO: Remove
+    const privateKey = HDPrivateKey.fromBuffer(Buffer.alloc(64, 1));
+
     client = await createClientWithFundedWallet(
       10000000,
+      privateKey,
     );
+
+    console.log(`Withdrawal wallet ID ${client.wallet.walletId}`);
 
     await client.platform.initialize();
   });
