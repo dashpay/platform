@@ -196,6 +196,8 @@ class ReconnectableStream extends EventEmitter {
    * @private
    */
   endHandler() {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger && this.logger.debug('[ReconnectableStream] End handler');
     this.stopAutoReconnect();
     this.stream = null;
     this.emit(EVENTS.END);
@@ -222,6 +224,8 @@ class ReconnectableStream extends EventEmitter {
    * @param e
    */
   retryOnError(e) {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger && this.logger.debug('[ReconnectableStream] Error handler', e);
     // Stop reconnect timeout if there is one
     this.stopAutoReconnect();
 
@@ -279,6 +283,8 @@ class ReconnectableStream extends EventEmitter {
    * @returns {*}
    */
   cancel() {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger && this.logger.debug('[ReconnectableStream] Canceling stream');
     this.stopAutoReconnect();
     return this.stream.cancel();
   }
