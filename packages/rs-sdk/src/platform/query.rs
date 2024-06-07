@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0;
-use dapi_grpc::platform::v0::{ GetContestedResourceIdentityVotesRequest, GetVotePollsByEndDateRequest};
+use dapi_grpc::platform::v0::{ GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest, GetVotePollsByEndDateRequest};
 use dapi_grpc::platform::v0::{get_contested_resources_request::get_contested_resources_request_v0,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
     get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo as VoteStateStartInfo,
@@ -447,5 +447,21 @@ impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
         request.prove = prove;
 
         Ok(request.into())
+    }
+}
+
+impl Query<GetPrefundedSpecializedBalanceRequest> for Identifier {
+    fn query(self, prove: bool) -> Result<GetPrefundedSpecializedBalanceRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        Ok(GetPrefundedSpecializedBalanceRequest {
+            version: Some(proto::get_prefunded_specialized_balance_request::Version::V0(
+                proto::get_prefunded_specialized_balance_request::GetPrefundedSpecializedBalanceRequestV0 {
+                    id: self.to_vec(),
+                    prove,
+                },
+            )),
+        })
     }
 }

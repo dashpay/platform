@@ -217,6 +217,6 @@ impl Fetch for ExtendedEpochInfo {
     type Request = platform_proto::GetEpochsInfoRequest;
 }
 
-// impl Fetch for ContestedVote {
-//     type Request = platform_proto::GetContestedResourceIdentityVotesRequest;
-// }
+impl Fetch for drive_proof_verifier::types::PrefundedSpecializedBalance {
+    type Request = platform_proto::GetPrefundedSpecializedBalanceRequest;
+}

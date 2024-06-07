@@ -13,7 +13,9 @@ use dpp::{
         PlatformSerializableWithPlatformVersion,
     },
 };
-use drive_proof_verifier::types::{Contenders, VotePollsGroupedByTimestamp, Voters};
+use drive_proof_verifier::types::{
+    Contenders, PrefundedSpecializedBalance, VotePollsGroupedByTimestamp, Voters,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -262,6 +264,20 @@ impl MockResponse for VotePollsGroupedByTimestamp {
     {
         bincode::decode_from_slice(buf, BINCODE_CONFIG)
             .expect("decode VotePollsGroupedByTimestamp")
+            .0
+    }
+}
+
+impl MockResponse for PrefundedSpecializedBalance {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode PrefundedSpecializedBalance")
+    }
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode PrefundedSpecializedBalance")
             .0
     }
 }
