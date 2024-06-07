@@ -59,6 +59,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 llmqType: 6,
                 dkgInterval: 24,
                 activeSigners: 24,
+                rotation: false,
               },
             },
             chainLock: {
@@ -66,6 +67,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 llmqType: 1,
                 dkgInterval: 24,
                 activeSigners: 24,
+                rotation: false,
               },
             },
             instantLock: {
@@ -73,6 +75,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 llmqType: 5,
                 dkgInterval: 288,
                 activeSigners: 32,
+                rotation: true,
               },
             },
           },

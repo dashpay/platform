@@ -118,8 +118,11 @@ export default {
         activeSigners: {
           type: 'integer',
         },
+        rotation: {
+          type: 'boolean',
+        },
       },
-      required: ['llmqType', 'dkgInterval', 'activeSigners'],
+      required: ['llmqType', 'dkgInterval', 'activeSigners', 'rotation'],
       additionalProperties: false,
     },
   },

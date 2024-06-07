@@ -640,6 +640,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               llmqType: networkConfig.get('platform.drive.abci.chainLock.quorum.llmqType'),
               dkgInterval: networkConfig.get('platform.drive.abci.chainLock.quorum.dkgInterval'),
               activeSigners: networkConfig.get('platform.drive.abci.chainLock.quorum.activeSigners'),
+              rotation: networkConfig.get('platform.drive.abci.chainLock.quorum.rotation'),
             };
 
             delete options.platform.drive.abci.chainLock.llmqType;
@@ -650,6 +651,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               llmqType: networkConfig.get('platform.drive.abci.validatorSet.quorum.llmqType'),
               dkgInterval: networkConfig.get('platform.drive.abci.validatorSet.quorum.dkgInterval'),
               activeSigners: networkConfig.get('platform.drive.abci.validatorSet.quorum.activeSigners'),
+              rotation: networkConfig.get('platform.drive.abci.validatorSet.quorum.rotation'),
             };
 
             delete options.platform.drive.abci.validatorSet.llmqType;
@@ -659,6 +661,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 llmqType: networkConfig.get('platform.drive.abci.instantLock.quorum.llmqType'),
                 dkgInterval: networkConfig.get('platform.drive.abci.instantLock.quorum.dkgInterval'),
                 activeSigners: networkConfig.get('platform.drive.abci.instantLock.quorum.activeSigners'),
+                rotation: networkConfig.get('platform.drive.abci.instantLock.quorum.rotation'),
               },
             };
           });

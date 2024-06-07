@@ -250,6 +250,7 @@ export default function getBaseConfigFactory(homeDir) {
                 llmqType: 4,
                 dkgInterval: 24,
                 activeSigners: 24,
+                rotation: false,
               },
             },
             chainLock: {
@@ -257,6 +258,7 @@ export default function getBaseConfigFactory(homeDir) {
                 llmqType: 2,
                 dkgInterval: 288,
                 activeSigners: 4,
+                rotation: false,
               },
             },
             instantLock: {
@@ -264,6 +266,7 @@ export default function getBaseConfigFactory(homeDir) {
                 llmqType: 5,
                 dkgInterval: 288,
                 activeSigners: 32,
+                rotation: true,
               },
             },
             metrics: {

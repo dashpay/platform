@@ -74,6 +74,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
                 llmqType: 106,
                 dkgInterval: 24,
                 activeSigners: 2,
+                rotation: false,
               },
             },
             chainLock: {
@@ -81,13 +82,15 @@ export default function getLocalConfigFactory(getBaseConfig) {
                 llmqType: 100,
                 dkgInterval: 24,
                 activeSigners: 2,
+                rotation: false,
               },
             },
             instantLock: {
               quorum: {
-                llmqType: 100,
+                llmqType: 104,
                 dkgInterval: 24,
                 activeSigners: 2,
+                rotation: false,
               },
             },
           },
