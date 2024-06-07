@@ -9,6 +9,7 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 
+use crate::error::execution::ExecutionError;
 use crate::platform_types::core_quorum_set::CoreQuorumSetV0Methods;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
@@ -67,6 +68,10 @@ where
             return Ok(None); // the chain lock is too far in the future or the past to verify locally
         }
 
+        let mut selected_quorums = platform_state
+            .chain_lock_validating_quorums()
+            .select_quorums_for_heights(chain_lock_height, verification_height);
+
         // TODO: We can use chain_lock.request_id()
 
         // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
@@ -89,11 +94,13 @@ where
 
         // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 
-        let mut selected_quorums = platform_state
-            .chain_lock_validating_quorums()
-            .select_quorums(chain_lock_height, verification_height, request_id);
+        let quorums = selected_quorums.next().ok_or_else(|| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "No quorums selected for chain lock signature verification for specified height",
+            ))
+        })?;
 
-        let Some((quorum_hash, quorum)) = selected_quorums.next() else {
+        let Some((quorum_hash, quorum)) = quorums.choose_quorum(request_id.as_ref()) else {
             return Ok(None);
         };
 
@@ -132,8 +139,10 @@ where
 
         if !chain_lock_verified {
             // We should also check the other quorum, as there could be the situation where the core height wasn't updated every block.
-            if selected_quorums.len() == 2 {
-                let Some((quorum_hash, quorum)) = selected_quorums.next() else {
+            if let Some(second_to_check_quorums) = selected_quorums.next() {
+                let Some((quorum_hash, quorum)) =
+                    second_to_check_quorums.choose_quorum(request_id.as_ref())
+                else {
                     // we return that we are not able to verify
                     return Ok(None);
                 };

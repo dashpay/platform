@@ -5,15 +5,14 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::core_quorum_set::v0::for_saving::CoreQuorumSetForSavingV0;
 pub use crate::platform_types::core_quorum_set::v0::quorum_set::{
-    CoreQuorumSetV0, CoreQuorumSetV0Methods, QuorumConfig, QuorumsVerificationDataIterator,
-    SIGN_OFFSET,
+    CoreQuorumSetV0, CoreQuorumSetV0Methods, QuorumConfig, QuorumsWithConfig,
+    SelectedQuorumSetIterator, SIGN_OFFSET,
 };
 pub use crate::platform_types::core_quorum_set::v0::quorums::{
     Quorum, Quorums, SigningQuorum, ThresholdBlsPublicKey, VerificationQuorum,
 };
 use bincode::{Decode, Encode};
 use derive_more::From;
-use dpp::dashcore::QuorumSigningRequestId;
 use dpp::version::PlatformVersion;
 
 /// Quorums with keys for signature verification
@@ -99,14 +98,13 @@ impl CoreQuorumSetV0Methods for CoreQuorumSet {
         }
     }
 
-    fn select_quorums(
+    fn select_quorums_for_heights(
         &self,
         signing_height: u32,
         verification_height: u32,
-        request_id: QuorumSigningRequestId,
-    ) -> QuorumsVerificationDataIterator {
+    ) -> SelectedQuorumSetIterator {
         match self {
-            Self::V0(v0) => v0.select_quorums(signing_height, verification_height, request_id),
+            Self::V0(v0) => v0.select_quorums_for_heights(signing_height, verification_height),
         }
     }
 }

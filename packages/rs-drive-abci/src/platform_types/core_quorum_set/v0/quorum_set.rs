@@ -2,7 +2,7 @@ use crate::config::{ChainLockConfig, QuorumLikeConfig};
 use crate::platform_types::core_quorum_set::v0::quorums::Quorums;
 use crate::platform_types::core_quorum_set::VerificationQuorum;
 use dashcore_rpc::json::QuorumType;
-use dpp::dashcore::{QuorumHash, QuorumSigningRequestId};
+use dpp::dashcore::QuorumHash;
 use std::vec::IntoIter;
 
 /// Offset for signature verification
@@ -71,46 +71,63 @@ pub trait CoreQuorumSetV0Methods {
         updated_at_core_height: u32,
     );
 
-    /// Select quorums for signature verification
-    fn select_quorums(
+    /// Select quorums for signature verification based on sign and verification heights
+    fn select_quorums_for_heights(
         &self,
         signing_height: u32,
         verification_height: u32,
-        request_id: QuorumSigningRequestId,
-    ) -> QuorumsVerificationDataIterator;
+    ) -> SelectedQuorumSetIterator;
 }
 
 /// Iterator over selected quorum sets and specific quorums based on request_id and quorum configuration
-pub struct QuorumsVerificationDataIterator<'q> {
+pub struct SelectedQuorumSetIterator<'q> {
     /// Quorum configuration
     config: &'q QuorumConfig,
-    /// Request ID to chose right quorum
-    request_id: QuorumSigningRequestId,
     /// Appropriate quorum sets
-    quorum_sets: IntoIter<&'q Quorums<VerificationQuorum>>,
+    quorum_set: IntoIter<&'q Quorums<VerificationQuorum>>,
     /// Should we expect signature verification to be successful
     should_be_verifiable: bool,
 }
 
-impl<'q> Iterator for QuorumsVerificationDataIterator<'q> {
-    type Item = (QuorumHash, &'q VerificationQuorum);
+impl<'q> Iterator for SelectedQuorumSetIterator<'q> {
+    type Item = QuorumsWithConfig<'q>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let quorum_set = self.quorum_sets.next()?;
-
-        quorum_set.choose_quorum(self.config, self.request_id.as_ref())
+        self.quorum_set.next().map(|quorums| QuorumsWithConfig {
+            quorums,
+            config: self.config,
+        })
     }
 }
 
-impl<'q> QuorumsVerificationDataIterator<'q> {
+/// Quorums with configuration
+pub struct QuorumsWithConfig<'q> {
+    /// Quorums
+    pub quorums: &'q Quorums<VerificationQuorum>,
+    /// Config
+    pub config: &'q QuorumConfig,
+}
+
+impl<'q> QuorumsWithConfig<'q> {
+    /// Choose pseudorandom DIP8 or DIP24 quorum based on quorum config
+    /// and request_id
+    pub fn choose_quorum(
+        &self,
+        request_id: &[u8; 32],
+    ) -> Option<(QuorumHash, &VerificationQuorum)> {
+        self.quorums.choose_quorum(self.config, request_id)
+    }
+}
+
+impl<'q> SelectedQuorumSetIterator<'q> {
     /// Number of quorum sets
     pub fn len(&self) -> usize {
-        self.quorum_sets.len()
+        self.quorum_set.len()
     }
 
     /// Does the iterator have any quorum sets
     pub fn is_empty(&self) -> bool {
-        self.quorum_sets.len() == 0
+        self.quorum_set.len() == 0
     }
 
     /// Should we expect signature verification to be successful
@@ -181,12 +198,11 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
         });
     }
 
-    fn select_quorums(
+    fn select_quorums_for_heights(
         &self,
         signing_height: u32,
         verification_height: u32,
-        request_id: QuorumSigningRequestId,
-    ) -> QuorumsVerificationDataIterator {
+    ) -> SelectedQuorumSetIterator {
         let mut quorums = Vec::new();
         let mut should_be_verifiable = false;
 
@@ -236,10 +252,9 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
             quorums.push(&self.current_quorums);
         }
 
-        QuorumsVerificationDataIterator {
+        SelectedQuorumSetIterator {
             config: &self.config,
-            request_id,
-            quorum_sets: quorums.into_iter(),
+            quorum_set: quorums.into_iter(),
             should_be_verifiable,
         }
     }
