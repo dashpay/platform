@@ -197,10 +197,12 @@ class ReconnectableStream extends EventEmitter {
    */
   endHandler() {
     // eslint-disable-next-line no-unused-expressions
-    this.logger && this.logger.debug('[ReconnectableStream] End handler');
-    this.stopAutoReconnect();
-    this.stream = null;
-    this.emit(EVENTS.END);
+    this.logger && this.logger.debug('[ReconnectableStream] End handler, stream exists:', !!this.stream);
+    if (this.stream) {
+      this.stopAutoReconnect();
+      this.stream = null;
+      this.emit(EVENTS.END);
+    }
   }
 
   /**
@@ -219,7 +221,9 @@ class ReconnectableStream extends EventEmitter {
     // "Response closed without grpc-status (Headers only) {
     //    [Error: Response closed without grpc-status (Headers only)]"
     // TODO: do we need to propagate GrpcErrorCodes.CANCELLED further?
-    if (e.code === GrpcErrorCodes.CANCELLED || e.code === GrpcErrorCodes.UNKNOWN) {
+    if (e.code === GrpcErrorCodes.CANCELLED
+      || (e.code === GrpcErrorCodes.UNKNOWN && this.stream === null)
+    ) {
       // e.code
       this.logger && this.logger.debug(`[ReconnectableStream] Returning from error handler without restart, error code ${e.code}, e:`);
       return;
@@ -302,6 +306,8 @@ class ReconnectableStream extends EventEmitter {
     const { stream } = this;
     setTimeout(() => {
       stream.removeListener(EVENTS.ERROR, this.errorHandler);
+      // endHa
+      // this.stream = null;
     }, 1000);
     return this.stream.cancel();
   }
