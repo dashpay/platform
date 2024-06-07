@@ -10,9 +10,10 @@ const DAPIClientError = require('../../errors/DAPIClientError');
 
 /**
  * @param {GrpcTransport} grpcTransport
+ * @param logger
  * @returns {subscribeToTransactionsWithProofs}
  */
-function subscribeToTransactionsWithProofsFactory(grpcTransport) {
+function subscribeToTransactionsWithProofsFactory(grpcTransport, logger) {
   /**
    * @typedef {subscribeToTransactionsWithProofs}
    * @param {object} bloomFilter
@@ -29,7 +30,7 @@ function subscribeToTransactionsWithProofsFactory(grpcTransport) {
    *    EventEmitter|!grpc.web.ClientReadableStream<!TransactionsWithProofsResponse>
    * }
    */
-  async function subscribeToTransactionsWithProofs(bloomFilter, options = { }) {
+  async function subscribeToTransactionsWithProofs(bloomFilter, options = {}) {
     // eslint-disable-next-line no-param-reassign
     options = {
       count: 0,

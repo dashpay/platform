@@ -57,6 +57,8 @@ class ReconnectableStream extends EventEmitter {
 
     const opts = { ...defaultOptions, ...options };
 
+    this.logger = opts.logger;
+
     /**
      * Auto-reconnect interval in millisecond
      * It is needed to automatically reconnect to another DAPI node
@@ -109,6 +111,8 @@ class ReconnectableStream extends EventEmitter {
   }
 
   async connect(...args) {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger && this.logger.debug('[ReconnectableStream] Connecting to stream');
     // Memorize current stream args (which can be altered by beforeReconnect logic)
     this.args = args;
 
@@ -127,6 +131,8 @@ class ReconnectableStream extends EventEmitter {
     if (this.reconnectTimeout) {
       throw new Error('Auto reconnect timeout is already running.');
     }
+    // eslint-disable-next-line no-unused-expressions
+    this.logger && this.logger.debug('[ReconnectableStream] Setting reconnect timeout');
     this.reconnectTimeout = this.setTimeout(
       this.reconnect,
       this.autoReconnectInterval,
@@ -134,6 +140,8 @@ class ReconnectableStream extends EventEmitter {
   }
 
   reconnect() {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger && this.logger.debug('[ReconnectableStream] Try reconnecting to stream');
     if (this.reconnectTimeout) {
       this.reconnectTimeout = null;
       this.stream.cancel();
@@ -146,6 +154,8 @@ class ReconnectableStream extends EventEmitter {
       this.emit(EVENTS.BEFORE_RECONNECT, updateArgs);
       this.connect(...newArgs)
         .catch((connectError) => this.emit(EVENTS.ERROR, connectError));
+      // eslint-disable-next-line no-unused-expressions
+      this.logger && this.logger.debug('[ReconnectableStream] Reconnected to stream');
     }
   }
 
@@ -252,9 +262,13 @@ class ReconnectableStream extends EventEmitter {
    * @private
    */
   stopAutoReconnect() {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger && this.logger.debug('[ReconnectableStream] Stopping auto reconnect');
     if (this.reconnectTimeout) {
       this.clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+      // eslint-disable-next-line no-unused-expressions
+      this.logger && this.logger.debug('[ReconnectableStream] Stoped auto reconnect');
     }
   }
 

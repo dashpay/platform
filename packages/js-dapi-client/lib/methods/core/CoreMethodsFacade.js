@@ -15,8 +15,9 @@ class CoreMethodsFacade {
   /**
    * @param {JsonRpcTransport} jsonRpcTransport
    * @param {GrpcTransport} grpcTransport
+   * @param logger
    */
-  constructor(jsonRpcTransport, grpcTransport) {
+  constructor(jsonRpcTransport, grpcTransport, logger) {
     this.broadcastTransaction = broadcastTransactionFactory(grpcTransport);
     this.getBestBlockHash = getBestBlockHashFactory(jsonRpcTransport);
     this.getBestBlockHeight = getBestBlockHeightFactory(grpcTransport);

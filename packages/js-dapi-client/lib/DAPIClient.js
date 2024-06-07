@@ -56,7 +56,7 @@ class DAPIClient extends EventEmitter {
       this.options,
     );
 
-    this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport);
+    this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport, this.logger);
     this.platform = new PlatformMethodsFacade(grpcTransport);
     this.logger = logger.getForId(
       this.options.loggerOptions.identifier,
@@ -70,7 +70,7 @@ class DAPIClient extends EventEmitter {
    * @private
    */
   initBlockHeadersProvider() {
-    this.blockHeadersProvider = createBlockHeadersProviderFromOptions(this.options, this.core);
+    this.blockHeadersProvider = createBlockHeadersProviderFromOptions(this.options, this.core, this.logger);
 
     this.blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
       this.emit(EVENTS.ERROR, e);
@@ -79,8 +79,7 @@ class DAPIClient extends EventEmitter {
 
   /**
    * Close all open connections
-   *
-   * @return {Promise<void>}
+   * @returns {Promise<void>}
    */
   async disconnect() {
     // Stop block headers provider
