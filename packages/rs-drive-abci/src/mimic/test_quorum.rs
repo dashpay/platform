@@ -272,9 +272,3 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
         }
     }
 }
-
-impl Quorum for TestQuorumInfo {
-    fn index(&self) -> Option<u32> {
-        self.quorum_index
-    }
-}
