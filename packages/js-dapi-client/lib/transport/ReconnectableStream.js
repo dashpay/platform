@@ -211,9 +211,17 @@ class ReconnectableStream extends EventEmitter {
   errorHandler(e) {
     // eslint-disable-next-line no-unused-expressions
     this.logger && this.logger.debug(`[ReconnectableStream] Error in stream, code ${e.code}, e:`, e);
+
     // In case of cancellation nothing has to happen.
+    // Do not retry UNKNOWN error code - HACH for grpc-web that ignores following error that happens
+    // in a while after stream cancellation
+    // Error message:
+    // "Response closed without grpc-status (Headers only) {
+    //    [Error: Response closed without grpc-status (Headers only)]"
     // TODO: do we need to propagate GrpcErrorCodes.CANCELLED further?
-    if (e.code === GrpcErrorCodes.CANCELLED) {
+    if (e.code === GrpcErrorCodes.CANCELLED || e.code === GrpcErrorCodes.UNKNOWN) {
+      // e.code
+      this.logger && this.logger.debug(`[ReconnectableStream] Returning from error handler without restart, error code ${e.code}, e:`);
       return;
     }
 
