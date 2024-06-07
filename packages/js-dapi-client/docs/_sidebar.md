@@ -7,6 +7,7 @@
                 - [.broadcastTransaction()](usage/application/core/broadcastTransaction.md)
                 - [.generateToAddress()](usage/application/core/generateToAddress.md)
                 - [.getBestBlockHash()](usage/application/core/getBestBlockHash.md)
+                - [.getBestBlockHeight()](usage/application/core/getBestBlockHeight.md)
                 - [.getBlockByHash()](usage/application/core/getBlockByHash.md)
                 - [.getBlockByHeight()](usage/application/core/getBlockByHeight.md)
                 - [.getBlockHash()](usage/application/core/getBlockHash.md)
