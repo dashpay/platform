@@ -132,6 +132,7 @@ pub fn contract_lookup_fn_for_contract<'a>(
 /// Convert a sequence of byte vectors into a sequence of [values](platform_value::Value).
 ///
 /// Small utility function to decode a sequence of byte vectors into a sequence of [values](platform_value::Value).
+#[cfg(feature = "verify")]
 fn bincode_decode_values<V: AsRef<[u8]>, T: Iterator<Item = V>>(
     values: T,
 ) -> Result<Vec<Value>, bincode::error::DecodeError> {

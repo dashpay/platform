@@ -11,6 +11,7 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+#[cfg(feature = "verify")]
 use dapi_grpc::platform::v0::{
     get_contested_resource_voters_for_identity_request,
     GetContestedResourceVotersForIdentityRequest,
@@ -267,6 +268,7 @@ impl ContestedDocumentVotePollVotesDriveQuery {
     }
 }
 
+#[cfg(feature = "verify")]
 impl TryFrom<GetContestedResourceVotersForIdentityRequest>
     for ContestedDocumentVotePollVotesDriveQuery
 {

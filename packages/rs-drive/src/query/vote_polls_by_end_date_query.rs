@@ -3,17 +3,19 @@ use crate::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use crate::drive::Drive;
 #[cfg(feature = "server")]
 use crate::error::drive::DriveError;
-#[cfg(feature = "server")]
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
-use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::{
-    self, get_vote_polls_by_end_date_request_v0, GetVotePollsByEndDateRequestV0,
+#[cfg(feature = "verify")]
+use dapi_grpc::platform::v0::{
+    get_vote_polls_by_end_date_request::{
+        self, get_vote_polls_by_end_date_request_v0, GetVotePollsByEndDateRequestV0,
+    },
+    GetVotePollsByEndDateRequest,
 };
-use dapi_grpc::platform::v0::GetVotePollsByEndDateRequest;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "server")]
@@ -404,8 +406,9 @@ impl VotePollsByEndDateDriveQuery {
     }
 }
 
+#[cfg(feature = "verify")]
 impl TryFrom<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
-    type Error = Error;
+    type Error = crate::error::Error;
     fn try_from(value: GetVotePollsByEndDateRequest) -> Result<Self, Self::Error> {
         let result = match value
             .version
@@ -427,6 +430,7 @@ impl TryFrom<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
     }
 }
 
+#[cfg(feature = "verify")]
 impl From<VotePollsByEndDateDriveQuery> for GetVotePollsByEndDateRequestV0 {
     fn from(value: VotePollsByEndDateDriveQuery) -> Self {
         GetVotePollsByEndDateRequestV0 {

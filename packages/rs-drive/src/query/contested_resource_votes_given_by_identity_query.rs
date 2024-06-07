@@ -10,6 +10,7 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+#[cfg(feature = "verify")]
 use dapi_grpc::platform::v0::{
     get_contested_resource_identity_votes_request::{
         self, get_contested_resource_identity_votes_request_v0,
@@ -27,6 +28,7 @@ use grovedb::reference_path::ReferencePathType;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{PathQuery, SizedQuery};
+#[cfg(feature = "verify")]
 use hex::ToHex;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

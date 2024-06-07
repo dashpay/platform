@@ -24,8 +24,6 @@ byteorder = { version = "1.4.3" }
 indexmap = { version = "2.0.2" }
 # used for creating queries from sql, can be used in verifier
 sqlparser = { version = "0.38.0" }
-
-
 # used for int maps and needed in the verifier
 nohash-hasher = { version = "0.2.0" }
 dpp = { path = "../rs-dpp", features = [
@@ -33,7 +31,7 @@ dpp = { path = "../rs-dpp", features = [
 ], default-features = false, optional = true }
 thiserror = { version = "1.0.59" }
 tracing = { version = "0.1.37", default-features = false, features = [] }
-derive_more = { version = "0.99.17", optional = true }
+derive_more = { version = "0.99.17" }
 hex = { version = "0.4.3" }
 
 # optional dependencies
@@ -57,8 +55,8 @@ grovedb = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumT
 grovedb-costs = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree", optional = true }
 grovedb-path = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree" }
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree", optional = true }
-o2o = { version = "0.4.3", optional = true }
 dapi-grpc = { path = "../dapi-grpc", optional = true }
+
 [dev-dependencies]
 criterion = "0.3.5"
 platform-version = { path = "../rs-platform-version", features = [
@@ -117,7 +115,5 @@ verify = [
   "grovedb/verify",
   "grovedb-costs",
   "dpp/state-transitions",
-  "dep:derive_more",
-  "dep:o2o",
   "dep:dapi-grpc",
 ]

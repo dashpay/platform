@@ -1626,7 +1626,6 @@ dependencies = [
  "itertools 0.11.0",
  "moka",
  "nohash-hasher",
- "o2o",
  "parking_lot",
  "platform-version",
  "rand",
@@ -3380,37 +3379,6 @@ dependencies = [
  "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "o2o"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92fe678906d461639588d034bf69445708e0fd932f8fdb67b213055b7be7f974"
-dependencies = [
- "o2o-impl",
- "o2o-macros",
-]
-
-[[package]]
-name = "o2o-impl"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e40d6662f6acc9a6d263eed48d1f2bf46cc08de8c8f333a6c9ee2a904414bab"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "o2o-macros"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a9c950b7d0f5729614e88a28f207efcfe281332a505def69ac5560bb7cc36ef"
-dependencies = [
- "o2o-impl",
  "syn 1.0.109",
 ]
 

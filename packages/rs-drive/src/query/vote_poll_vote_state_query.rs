@@ -13,9 +13,11 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
-use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0;
+#[cfg(feature = "verify")]
 use dapi_grpc::platform::v0::{
-    get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
+    get_contested_resource_vote_state_request,
+    get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0,
+    GetContestedResourceVoteStateRequest,
 };
 use dpp::bincode::{Decode, Encode};
 #[cfg(feature = "server")]
@@ -88,6 +90,7 @@ impl TryFrom<i32> for ContestedDocumentVotePollDriveQueryResultType {
     }
 }
 
+#[cfg(feature = "verify")]
 impl From<get_contested_resource_vote_state_request_v0::ResultType>
     for ContestedDocumentVotePollDriveQueryResultType
 {
@@ -125,6 +128,7 @@ pub struct ContestedDocumentVotePollDriveQuery {
     pub allow_include_locked_and_abstaining_vote_tally: bool,
 }
 
+#[cfg(feature = "verify")]
 impl TryFrom<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDriveQuery {
     type Error = Error;
     fn try_from(request: GetContestedResourceVoteStateRequest) -> Result<Self, Self::Error> {

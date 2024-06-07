@@ -1,3 +1,4 @@
+use super::ContractLookupFn;
 use crate::drive::object_size_info::DataContractResolvedInfo;
 use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
 #[cfg(feature = "server")]
@@ -12,6 +13,7 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+#[cfg(feature = "verify")]
 use dapi_grpc::platform::v0::{get_contested_resources_request, GetContestedResourcesRequest};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
@@ -30,9 +32,6 @@ use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
 use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
-use std::sync::Arc;
-
-use super::ContractLookupFn;
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
@@ -263,6 +262,7 @@ impl VotePollsByDocumentTypeQuery {
     }
 }
 
+#[cfg(feature = "verify")]
 impl TryFrom<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
     type Error = Error;
     fn try_from(value: GetContestedResourcesRequest) -> Result<Self, Error> {
