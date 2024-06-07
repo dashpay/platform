@@ -265,7 +265,7 @@ mod tests {
         let Some(
             get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
                 get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
-                    contenders,
+                    contenders, abstain_vote_tally, lock_vote_tally, finished_vote_info,
                 },
             ),
         ) = result
@@ -279,37 +279,20 @@ mod tests {
 
         let second_contender = contenders.last().unwrap();
 
-        let first_contender_document = Document::from_bytes(
-            first_contender
-                .document
-                .as_ref()
-                .expect("expected a document")
-                .as_slice(),
-            document_type.as_ref(),
-            platform_version,
-        )
-        .expect("expected to get document");
+        assert_eq!(first_contender
+                       .document, None);
 
-        let second_contender_document = Document::from_bytes(
-            second_contender
-                .document
-                .as_ref()
-                .expect("expected a document")
-                .as_slice(),
-            document_type.as_ref(),
-            platform_version,
-        )
-        .expect("expected to get document");
+        assert_eq!(second_contender
+                       .document, None);
 
-        assert_ne!(first_contender_document, second_contender_document);
 
         assert_eq!(first_contender.identifier, identity2_id.to_vec());
 
         assert_eq!(second_contender.identifier, identity1_id.to_vec());
 
-        assert_eq!(first_contender.vote_count, Some(0));
+        assert_eq!(first_contender.vote_count, Some(50));
 
-        assert_eq!(second_contender.vote_count, Some(0));
+        assert_eq!(second_contender.vote_count, Some(3));
 
         let GetContestedResourceVoteStateResponse { version } = platform
             .query_contested_resource_vote_state(
@@ -383,37 +366,21 @@ mod tests {
         let first_contender = result.contenders.first().unwrap();
 
         let second_contender = result.contenders.last().unwrap();
+        
+        // When something is here
+        
+        assert_eq!(first_contender
+                .serialized_document, None);
 
-        let first_contender_document = Document::from_bytes(
-            first_contender
-                .serialized_document
-                .as_ref()
-                .expect("expected a document")
-                .as_slice(),
-            document_type.as_ref(),
-            platform_version,
-        )
-        .expect("expected to get document");
-
-        let second_contender_document = Document::from_bytes(
-            second_contender
-                .serialized_document
-                .as_ref()
-                .expect("expected a document")
-                .as_slice(),
-            document_type.as_ref(),
-            platform_version,
-        )
-        .expect("expected to get document");
-
-        assert_ne!(first_contender_document, second_contender_document);
+        assert_eq!(second_contender
+                       .serialized_document, None);
 
         assert_eq!(first_contender.identity_id, identity2_id);
 
         assert_eq!(second_contender.identity_id, identity1_id);
 
-        assert_eq!(first_contender.vote_tally, Some(0));
+        assert_eq!(first_contender.vote_tally, Some(50));
 
-        assert_eq!(second_contender.vote_tally, Some(0));
+        assert_eq!(second_contender.vote_tally, Some(3));
     }
 }

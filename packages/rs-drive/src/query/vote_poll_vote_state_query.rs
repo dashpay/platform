@@ -29,6 +29,8 @@ use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "verify")]
 use std::sync::Arc;
+use dpp::prelude::{Identity, TimestampMillis};
+use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
@@ -236,6 +238,8 @@ pub struct ContestedDocumentVotePollDriveQueryExecutionResult {
     pub locked_vote_tally: Option<u32>,
     /// Abstaining tally
     pub abstaining_vote_tally: Option<u32>,
+    /// Finalization info
+    pub winner: Option<ContestedDocumentVotePollWinnerInfo>,
     /// The number of skipped items when an offset is given.
     pub skipped: u16,
 }
@@ -279,7 +283,7 @@ impl TryFrom<ContestedDocumentVotePollDriveQueryExecutionResult>
             contenders,
             locked_vote_tally,
             abstaining_vote_tally,
-            skipped,
+            ..
         } = value;
 
         let finalized_contenders = contenders
@@ -584,6 +588,7 @@ impl ContestedDocumentVotePollDriveQuery {
                             contenders,
                             locked_vote_tally: None,
                             abstaining_vote_tally: None,
+                            winner: None,
                             skipped,
                         })
                     }
@@ -610,6 +615,7 @@ impl ContestedDocumentVotePollDriveQuery {
                             contenders,
                             locked_vote_tally: None,
                             abstaining_vote_tally: None,
+                            winner: None,
                             skipped,
                         })
                     }
@@ -650,6 +656,7 @@ impl ContestedDocumentVotePollDriveQuery {
                             contenders,
                             locked_vote_tally,
                             abstaining_vote_tally,
+                            winner: None,
                             skipped,
                         })
                     }
@@ -808,6 +815,7 @@ impl ContestedDocumentVotePollDriveQuery {
                             contenders,
                             locked_vote_tally,
                             abstaining_vote_tally,
+                            winner: None,
                             skipped,
                         })
                     }
