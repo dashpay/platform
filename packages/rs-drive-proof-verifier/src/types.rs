@@ -129,7 +129,26 @@ pub enum ContestedResource {
 }
 
 /// Contested resources
-pub type ContestedResources = RetrievedObjects<Identifier, ContestedResource>;
+#[derive(derive_more::From, Clone, Debug, Default)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ContestedResources(pub BTreeMap<Identifier, ContestedResource>);
+
+impl FromIterator<(Identifier, Option<ContestedResource>)> for ContestedResources {
+    fn from_iter<T: IntoIterator<Item = (Identifier, Option<ContestedResource>)>>(iter: T) -> Self {
+        Self::from_iter(iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))))
+    }
+}
+impl FromIterator<(Identifier, ContestedResource)> for ContestedResources {
+    fn from_iter<T: IntoIterator<Item = (Identifier, ContestedResource)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl Length for ContestedResources {
+    fn count_some(&self) -> usize {
+        self.0.len()
+    }
+}
 
 /// A contested vote for querying
 pub type ContestedVote = (ContestedDocumentResourceVotePoll, ResourceVoteChoice);

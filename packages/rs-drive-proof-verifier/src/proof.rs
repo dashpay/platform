@@ -1292,15 +1292,11 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
             .into_iter()
             .map(|v| {
                 Document::from_platform_value(v, platform_version)
-                    .map(|doc| (doc.id(), Some(doc.into())))
+                    .map(|doc| (doc.id(), ContestedResource::from(doc)))
             })
             .collect::<Result<_, _>>()?;
 
-        if resources.is_empty() {
-            return Ok((None, mtd.clone()));
-        }
-
-        Ok((Some(resources), mtd.clone()))
+        Ok((resources.into_option(), mtd.clone()))
     }
 }
 

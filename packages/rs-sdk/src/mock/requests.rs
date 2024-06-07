@@ -14,7 +14,8 @@ use dpp::{
     },
 };
 use drive_proof_verifier::types::{
-    Contenders, PrefundedSpecializedBalance, VotePollsGroupedByTimestamp, Voters,
+    Contenders, ContestedResources, PrefundedSpecializedBalance, VotePollsGroupedByTimestamp,
+    Voters,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -278,6 +279,20 @@ impl MockResponse for PrefundedSpecializedBalance {
     {
         bincode::decode_from_slice(buf, BINCODE_CONFIG)
             .expect("decode PrefundedSpecializedBalance")
+            .0
+    }
+}
+
+impl MockResponse for ContestedResources {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, BINCODE_CONFIG).expect("encode ContestedResources")
+    }
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        bincode::serde::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode ContestedResources")
             .0
     }
 }

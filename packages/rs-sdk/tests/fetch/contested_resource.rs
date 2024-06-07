@@ -30,5 +30,5 @@ async fn test_contested_resources_not_found() {
         .await
         .expect("fetch contested resources");
 
-    assert!(rss.is_empty());
+    assert!(rss.0.is_empty());
 }
