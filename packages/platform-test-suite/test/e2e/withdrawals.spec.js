@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const { HDPrivateKey } = require('@dashevo/dashcore-lib');
+const { Mnemonic } = require('@dashevo/dashcore-lib');
 
 const wait = require('@dashevo/dapi-client/lib/utils/wait');
 const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platform/methods/identities/creditWithdrawal');
@@ -7,18 +7,17 @@ const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platfor
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
-describe('Withdrawals', function withdrawalsTest() {
+describe.only('Withdrawals', function withdrawalsTest() {
   this.bail(true);
   let client;
   let identity;
 
   before(async () => {
-    // TODO: Remove
-    const privateKey = HDPrivateKey.fromBuffer(Buffer.alloc(64, 1));
-
+    // from seed phrase
+    const privateKey = new Mnemonic('knife easily prosper input concert merge prepare autumn pen blood glance toilet').toHDPrivateKey('', 'testnet');
     client = await createClientWithFundedWallet(
       10000000,
-      privateKey,
+      privateKey.toString(),
     );
 
     console.log(`Withdrawal wallet ID ${client.wallet.walletId}`);

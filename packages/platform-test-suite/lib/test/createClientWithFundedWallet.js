@@ -15,7 +15,7 @@ let faucetClient;
 /**
  * Create and fund DashJS client
  * @param {number} amount - amount of Duffs to fund wallet with
- * @param {HDPrivateKey} [HDPrivateKey]
+ * @param {string} [HDPrivateKey]
  * @returns {Promise<Client>}
  */
 async function createClientWithFundedWallet(amount, HDPrivateKey = undefined) {
