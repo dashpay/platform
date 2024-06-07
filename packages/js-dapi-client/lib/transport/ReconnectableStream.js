@@ -209,6 +209,8 @@ class ReconnectableStream extends EventEmitter {
    * @param e
    */
   errorHandler(e) {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger && this.logger.debug(`[ReconnectableStream] Error in stream, code ${e.code}, e:`, e);
     // In case of cancellation nothing has to happen.
     // TODO: do we need to propagate GrpcErrorCodes.CANCELLED further?
     if (e.code === GrpcErrorCodes.CANCELLED) {
@@ -286,6 +288,13 @@ class ReconnectableStream extends EventEmitter {
     // eslint-disable-next-line no-unused-expressions
     this.logger && this.logger.debug('[ReconnectableStream] Canceling streams');
     this.stopAutoReconnect();
+    // Hack for browsers to properly unsubscribe from ERROR event.
+    // (It will continue propagating despite of calling cancel)
+    // Ref to unsubscribe from ERROR event
+    const { stream } = this;
+    setTimeout(() => {
+      stream.removeListener(EVENTS.ERROR, this.errorHandler);
+    }, 1000);
     return this.stream.cancel();
   }
 }
