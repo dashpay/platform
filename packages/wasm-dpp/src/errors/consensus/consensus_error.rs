@@ -72,6 +72,7 @@ use dpp::consensus::state::identity::identity_public_key_already_exists_for_uniq
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
@@ -248,6 +249,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DataContractUpdatePermissionError(e) => {
             DataContractUpdatePermissionErrorWasm::from(e).into()
+        }
+        StateError::MasternodeNotFoundError(e) => {
+            generic_consensus_error!(MasternodeNotFoundError, e).into()
         }
     }
 }

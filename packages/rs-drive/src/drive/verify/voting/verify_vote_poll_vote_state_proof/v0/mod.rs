@@ -64,6 +64,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                         contenders,
                         locked_vote_tally: None,
                         abstaining_vote_tally: None,
+                        winner: None,
                         skipped: 0,
                     },
                 ))
@@ -88,6 +89,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                         contenders,
                         locked_vote_tally: None,
                         abstaining_vote_tally: None,
+                        winner: None,
                         skipped: 0,
                     },
                 ))
@@ -134,6 +136,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                         contenders,
                         locked_vote_tally,
                         abstaining_vote_tally,
+                        winner: None,
                         skipped: 0,
                     },
                 ))
@@ -295,6 +298,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                         contenders,
                         locked_vote_tally,
                         abstaining_vote_tally,
+                        winner: None,
                         skipped: 0,
                     },
                 ))

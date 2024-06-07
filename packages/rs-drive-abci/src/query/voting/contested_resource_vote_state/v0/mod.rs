@@ -7,6 +7,8 @@ use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetConte
 use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{
     get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0,
 };
+use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info::FinishedVoteOutcome;
+use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
@@ -14,6 +16,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::{check_validation_result_with_data, platform_value};
+use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::error::query::QuerySyntaxError;
 use drive::query::vote_poll_vote_state_query::{
     ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery,
@@ -180,6 +183,22 @@ impl<C> Platform<C> {
 
             let abstain_vote_tally = results.abstaining_vote_tally;
             let lock_vote_tally = results.locked_vote_tally;
+            let finished_vote_info = results.winner.map(|winner_info| match winner_info {
+                ContestedDocumentVotePollWinnerInfo::NoWinner => FinishedVoteInfo {
+                    finished_vote_outcome: FinishedVoteOutcome::NoPreviousWinner as i32,
+                    won_by_identity_id: None,
+                },
+                ContestedDocumentVotePollWinnerInfo::WonByIdentity(identity_id) => {
+                    FinishedVoteInfo {
+                        finished_vote_outcome: FinishedVoteOutcome::TowardsIdentity as i32,
+                        won_by_identity_id: Some(identity_id.to_vec()),
+                    }
+                }
+                ContestedDocumentVotePollWinnerInfo::Locked => FinishedVoteInfo {
+                    finished_vote_outcome: FinishedVoteOutcome::Locked as i32,
+                    won_by_identity_id: None,
+                },
+            });
 
             let contenders = results
                 .contenders
@@ -206,6 +225,7 @@ impl<C> Platform<C> {
                             contenders,
                             abstain_vote_tally,
                             lock_vote_tally,
+                            finished_vote_info,
                         },
                     ),
                 ),

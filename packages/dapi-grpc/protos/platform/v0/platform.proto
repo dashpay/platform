@@ -758,10 +758,21 @@ message GetContestedResourceVoteStateRequest {
 
 message GetContestedResourceVoteStateResponse {
   message GetContestedResourceVoteStateResponseV0 {
+    message FinishedVoteInfo {
+      enum FinishedVoteOutcome {
+        TOWARDS_IDENTITY = 0;
+        LOCKED = 1;
+        NO_PREVIOUS_WINNER = 2;
+      }
+      FinishedVoteOutcome finished_vote_outcome = 1;
+      optional bytes won_by_identity_id = 2; // Only used when vote_choice_type is TOWARDS_IDENTITY
+    }
+
     message ContestedResourceContenders {
       repeated Contender contenders = 1;
       optional uint32 abstain_vote_tally = 2;
       optional uint32 lock_vote_tally = 3;
+      optional FinishedVoteInfo finished_vote_info = 4;
     }
 
     message Contender {

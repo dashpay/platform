@@ -286,7 +286,10 @@ pub struct DriveVoteSetupMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteCleanupMethodVersions {
     pub add_lock_for_contested_document_resource_vote_poll: FeatureVersion,
-    pub remove_votes_for_identity: FeatureVersion,
+    pub remove_all_votes_given_by_identity: FeatureVersion,
+    pub remove_specific_votes_given_by_identity: FeatureVersion,
+    pub remove_contested_resource_vote_poll_end_date_query_operations: FeatureVersion,
+    pub remove_contested_resource_vote_poll_votes_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -299,8 +302,6 @@ pub struct DriveVoteContestedResourceInsertMethodVersions {
     pub register_contested_resource_identity_vote: FeatureVersion,
     pub register_identity_vote: FeatureVersion,
     pub add_vote_poll_end_date_query_operations: FeatureVersion,
-    pub remove_contested_resource_vote_poll_end_date_query_operations: FeatureVersion,
-    pub remove_contested_resource_vote_poll_votes_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

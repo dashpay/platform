@@ -672,6 +672,7 @@ mod tests {
                         contenders,
                         abstain_vote_tally,
                         lock_vote_tally,
+                        finished_vote_info,
                     },
                 ),
             ) = result
