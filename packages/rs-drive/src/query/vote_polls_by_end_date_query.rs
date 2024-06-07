@@ -10,7 +10,10 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
-use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::get_vote_polls_by_end_date_request_v0;
+use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::{
+    self, get_vote_polls_by_end_date_request_v0, GetVotePollsByEndDateRequestV0,
+};
+use dapi_grpc::platform::v0::GetVotePollsByEndDateRequest;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "server")]
@@ -30,28 +33,17 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone, o2o::o2o)]
-#[map(dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0)]
-#[ghosts(prove: {true})]
+#[derive(Debug, PartialEq, Clone)]
 pub struct VotePollsByEndDateDriveQuery {
     /// What is the start time we are asking for
-    #[from(@.start_time_info.as_ref().map(|x| (x.start_time_ms, x.start_time_included)))]
-    #[into(start_time_info,~.map(|(start_time_ms, start_time_included)| get_vote_polls_by_end_date_request_v0::StartAtTimeInfo{start_time_ms, start_time_included}))]
     pub start_time: Option<(TimestampMillis, TimestampIncluded)>,
     /// What vote poll are we asking for?
-    #[from(@.end_time_info.as_ref().map(|x| (x.end_time_ms, x.end_time_included)))]
-    #[into(end_time_info,~.map(|(end_time_ms, end_time_included)| get_vote_polls_by_end_date_request_v0::EndAtTimeInfo{end_time_ms, end_time_included}))]
     pub end_time: Option<(TimestampMillis, TimestampIncluded)>,
     /// Limit
-    #[from(~.map(|v|v as u16))]
-    #[into(~.map(|v|v as u32))]
     pub limit: Option<u16>,
     /// Offset
-    #[from(~.map(|v|v as u16))]
-    #[into(~.map(|v|v as u32))]
     pub offset: Option<u16>,
     /// Ascending
-    #[map(ascending)]
     pub order_ascending: bool,
 }
 
@@ -408,6 +400,54 @@ impl VotePollsByEndDateDriveQuery {
                     Ok(data)
                 }
             }
+        }
+    }
+}
+
+impl TryFrom<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
+    type Error = Error;
+    fn try_from(value: GetVotePollsByEndDateRequest) -> Result<Self, Self::Error> {
+        let result = match value
+            .version
+            .ok_or(Error::Protocol(dpp::ProtocolError::NoProtocolVersionError))?
+        {
+            get_vote_polls_by_end_date_request::Version::V0(v) => VotePollsByEndDateDriveQuery {
+                start_time: v
+                    .start_time_info
+                    .map(|v| (v.start_time_ms, v.start_time_included)),
+                end_time: v
+                    .end_time_info
+                    .map(|v| (v.end_time_ms, v.end_time_included)),
+                limit: v.limit.map(|v| v as u16),
+                offset: v.offset.map(|v| v as u16),
+                order_ascending: v.ascending,
+            },
+        };
+        Ok(result)
+    }
+}
+
+impl From<VotePollsByEndDateDriveQuery> for GetVotePollsByEndDateRequestV0 {
+    fn from(value: VotePollsByEndDateDriveQuery) -> Self {
+        GetVotePollsByEndDateRequestV0 {
+            prove: true,
+            start_time_info: value
+                .start_time
+                .map(|(start_time_ms, start_time_included)| {
+                    get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
+                        start_time_ms,
+                        start_time_included,
+                    }
+                }),
+            end_time_info: value.end_time.map(|(end_time_ms, end_time_included)| {
+                get_vote_polls_by_end_date_request_v0::EndAtTimeInfo {
+                    end_time_ms,
+                    end_time_included,
+                }
+            }),
+            limit: value.limit.map(|v| v as u32),
+            offset: value.offset.map(|v| v as u32),
+            ascending: value.order_ascending,
         }
     }
 }

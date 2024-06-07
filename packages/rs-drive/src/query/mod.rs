@@ -129,6 +129,19 @@ pub fn contract_lookup_fn_for_contract<'a>(
     Box::new(func)
 }
 
+/// Convert a sequence of byte vectors into a sequence of [values](platform_value::Value).
+///
+/// Small utility function to decode a sequence of byte vectors into a sequence of [values](platform_value::Value).
+fn bincode_decode_values<V: AsRef<[u8]>, T: Iterator<Item = V>>(
+    values: T,
+) -> Result<Vec<Value>, bincode::error::DecodeError> {
+    values
+        .map(|v| {
+            dpp::bincode::decode_from_slice(v.as_ref(), bincode::config::standard()).map(|(v, _)| v)
+        })
+        .collect()
+}
+
 #[cfg(any(feature = "server", feature = "verify"))]
 /// A query to get the votes given out by an identity
 pub mod contested_resource_votes_given_by_identity_query;

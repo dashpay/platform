@@ -13,6 +13,10 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
+use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0;
+use dapi_grpc::platform::v0::{
+    get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
+};
 use dpp::bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
@@ -84,6 +88,22 @@ impl TryFrom<i32> for ContestedDocumentVotePollDriveQueryResultType {
     }
 }
 
+impl From<get_contested_resource_vote_state_request_v0::ResultType>
+    for ContestedDocumentVotePollDriveQueryResultType
+{
+    fn from(value: get_contested_resource_vote_state_request_v0::ResultType) -> Self {
+        use get_contested_resource_vote_state_request_v0::ResultType as GrpcResultType;
+        use ContestedDocumentVotePollDriveQueryResultType as DriveResultType;
+
+        match value {
+            GrpcResultType::Documents => DriveResultType::Documents,
+            GrpcResultType::DocumentsAndVoteTally => DriveResultType::DocumentsAndVoteTally,
+            GrpcResultType::IdentityIdsOnly => DriveResultType::IdentityIdsOnly,
+            GrpcResultType::VoteTally => DriveResultType::VoteTally,
+        }
+    }
+}
+
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct ContestedDocumentVotePollDriveQuery {
@@ -103,6 +123,65 @@ pub struct ContestedDocumentVotePollDriveQuery {
     /// This is not automatic, it will just be at the beginning if the order is ascending
     /// If the order is descending, we will get a value if we finish the query
     pub allow_include_locked_and_abstaining_vote_tally: bool,
+}
+
+impl TryFrom<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDriveQuery {
+    type Error = Error;
+    fn try_from(request: GetContestedResourceVoteStateRequest) -> Result<Self, Self::Error> {
+        let result = match request
+            .version
+            .ok_or(Error::Protocol(dpp::ProtocolError::NoProtocolVersionError))?
+        {
+            get_contested_resource_vote_state_request::Version::V0(v) => {
+                ContestedDocumentVotePollDriveQuery {
+                    limit: v.count.map(|v| v as u16),
+                    vote_poll: ContestedDocumentResourceVotePoll {
+                        contract_id: Identifier::from_bytes(&v.contract_id).map_err(|e| {
+                            Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                                "cannot decode contract id: {}",
+                                e
+                            )))
+                        })?,
+                        document_type_name: v.document_type_name.clone(),
+                        index_name: v.index_name.clone(),
+                        index_values: super::bincode_decode_values(v.index_values.iter()).map_err(
+                            |e| {
+                                Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                                    "cannot decode index_values: {}",
+                                    e
+                                )))
+                            },
+                        )?,
+                    },
+                    order_ascending: v.order_ascending,
+                    result_type: ContestedDocumentVotePollDriveQueryResultType::from(
+                        v.result_type(),
+                    ),
+                    start_at: v
+                        .start_at_identifier_info
+                        .map(|v| {
+                            let result: Result<[u8; 32], std::array::TryFromSliceError> =
+                                v.start_identifier.as_slice().try_into();
+                            match result {
+                                Ok(id) => Ok((id, v.start_identifier_included)),
+                                Err(e) => Err(e.to_string()),
+                            }
+                        })
+                        .transpose()
+                        .map_err(|e| {
+                            Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                                "cannot decode start_at: {}",
+                                e
+                            )))
+                        })?,
+                    offset: None, // offset is not supported when we use proofs
+                    allow_include_locked_and_abstaining_vote_tally: v
+                        .allow_include_locked_and_abstaining_vote_tally,
+                }
+            }
+        };
+        Ok(result)
+    }
 }
 
 /// Represents a contender in the contested document vote poll.

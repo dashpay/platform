@@ -12,6 +12,7 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+use dapi_grpc::platform::v0::{get_contested_resources_request, GetContestedResourcesRequest};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -259,6 +260,49 @@ impl VotePollsByDocumentTypeQuery {
     ) -> Result<Vec<Value>, Error> {
         let resolved = self.resolve(drive, transaction, platform_version)?;
         resolved.execute_no_proof(drive, transaction, drive_operations, platform_version)
+    }
+}
+
+impl TryFrom<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
+    type Error = Error;
+    fn try_from(value: GetContestedResourcesRequest) -> Result<Self, Error> {
+        let result = match value
+            .version
+            .ok_or(Error::Protocol(dpp::ProtocolError::NoProtocolVersionError))?
+        {
+            get_contested_resources_request::Version::V0(req) => VotePollsByDocumentTypeQuery {
+                contract_id: Identifier::from_bytes(&req.contract_id).map_err(|e| {
+                    Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                        "cannot decode contract id: {}",
+                        e
+                    )))
+                })?,
+                document_type_name: req.document_type_name.clone(),
+                index_name: req.index_name.clone(),
+                start_at_value: req
+                    .start_at_value_info
+                    .map(|i| (i.start_value, i.start_value_included)),
+                start_index_values: crate::query::bincode_decode_values(
+                    req.start_index_values.iter(),
+                )
+                .map_err(|e| {
+                    Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                        "cannot decode contract id: {}",
+                        e
+                    )))
+                })?,
+                end_index_values: crate::query::bincode_decode_values(req.end_index_values.iter())
+                    .map_err(|e| {
+                        Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                            "cannot decode contract id: {}",
+                            e
+                        )))
+                    })?,
+                limit: req.count.map(|v| v as u16),
+                order_ascending: req.order_ascending,
+            },
+        };
+        Ok(result)
     }
 }
 

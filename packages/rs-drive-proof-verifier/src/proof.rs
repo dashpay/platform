@@ -1,4 +1,4 @@
-use crate::{convert::TryIntoVersioned, types, types::*, ContextProvider, Error};
+use crate::{types, types::*, ContextProvider, Error};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
@@ -10,11 +10,10 @@ use dapi_grpc::platform::v0::{
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
     get_identity_keys_request, get_identity_nonce_request, get_identity_request,
     get_path_elements_request, get_prefunded_specialized_balance_request,
-    get_vote_polls_by_end_date_request, GetContestedResourceVotersForIdentityRequest,
-    GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    ResponseMetadata,
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, ResponseMetadata,
 };
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
@@ -1274,8 +1273,7 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query: VotePollsByDocumentTypeQuery =
-            request.try_into_versioned(platform_version)?;
+        let drive_query = VotePollsByDocumentTypeQuery::try_from(request)?;
         let resolved_request = drive_query
             .resolve_with_known_contracts_provider(&known_contracts_provider_fn(provider))?;
 
@@ -1325,8 +1323,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query: ContestedDocumentVotePollDriveQuery =
-            request.try_into_versioned(platform_version)?;
+        let drive_query = ContestedDocumentVotePollDriveQuery::try_from(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
         let contracts_provider = known_contracts_provider_fn(provider);
@@ -1385,10 +1382,8 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query: ContestedDocumentVotePollVotesDriveQuery =
-            request.try_into_versioned(platform_version)?;
-        // todo!("continue implementation when verify_ is implemented");
-        //
+        let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from(request)?;
+
         // Parse request to get resolved contract that implements verify_*_proof
         let contracts_provider = known_contracts_provider_fn(provider);
 
@@ -1480,10 +1475,7 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query: VotePollsByEndDateDriveQuery =
-            match request.version.ok_or(Error::EmptyVersion)? {
-                get_vote_polls_by_end_date_request::Version::V0(v0) => v0.into(),
-            };
+        let drive_query = VotePollsByEndDateDriveQuery::try_from(request)?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
