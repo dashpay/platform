@@ -102,24 +102,6 @@ async function main() {
     bloomFilterEmitterCollection,
   );
 
-  const blockHeadersCache = new BlockHeadersCache();
-
-  const chainDataProvider = new ChainDataProvider(
-    dashCoreRpcClient,
-    dashCoreZmqClient,
-    blockHeadersCache,
-  );
-
-  await chainDataProvider.init();
-
-  const masternodeListSync = new MasternodeListSync(
-    dashCoreRpcClient,
-    chainDataProvider,
-    config.network,
-  );
-
-  await masternodeListSync.init();
-
   // Send raw transactions via `subscribeToTransactionsWithProofs` stream if matched
   dashCoreZmqClient.on(
     dashCoreZmqClient.topics.rawtx,
@@ -140,6 +122,24 @@ async function main() {
     dashCoreZmqClient.topics.rawtxlocksig,
     emitInstantLockToFilterCollection,
   );
+
+  const blockHeadersCache = new BlockHeadersCache();
+
+  const chainDataProvider = new ChainDataProvider(
+    dashCoreRpcClient,
+    dashCoreZmqClient,
+    blockHeadersCache,
+  );
+
+  await chainDataProvider.init();
+
+  const masternodeListSync = new MasternodeListSync(
+    dashCoreRpcClient,
+    chainDataProvider,
+    config.network,
+  );
+
+  await masternodeListSync.init();
 
   // Start GRPC server
   logger.info('Starting GRPC server');

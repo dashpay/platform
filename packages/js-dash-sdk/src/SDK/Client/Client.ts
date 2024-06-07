@@ -180,6 +180,8 @@ export class Client extends EventEmitter {
     if (this.wallet) {
       await this.wallet.disconnect();
     }
+
+    await this.dapiClient.disconnect();
   }
 
   /**

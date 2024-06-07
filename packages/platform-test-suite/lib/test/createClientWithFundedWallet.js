@@ -61,7 +61,7 @@ async function createClientWithFundedWallet(amount, HDPrivateKey = undefined) {
   await fundWallet(faucetClient.wallet, client.wallet, amount);
 
   if (useFaucetWalletStorage) {
-    await faucetClient.wallet.disconnect();
+    await faucetClient.disconnect();
   }
 
   return client;

@@ -1,13 +1,10 @@
 const Dash = require('dash');
 
-const { SimplifiedMNListDiff } = require('@dashevo/dashcore-lib');
-
 const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock');
 
 const { hash, sha256 } = require('@dashevo/wasm-dpp/lib/utils/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
 const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 
 const {
@@ -663,46 +660,11 @@ describe('Platform', () => {
     });
 
     describe('Masternodes', () => {
-      let dapiClient;
-      const network = process.env.NETWORK;
-
-      beforeEach(() => {
-        dapiClient = new Dash.DAPIClient({
-          network,
-          seeds: getDAPISeeds(),
-        });
-      });
-
       it('should receive masternode identities', async () => {
         await client.platform.initialize();
 
-        let stream = await dapiClient.core.subscribeToMasternodeList();
-
-        const { mnList } = await new Promise((resolve, reject) => {
-          stream.on('data', (data) => {
-            if (!stream) {
-              return;
-            }
-
-            const diffBytes = data.getMasternodeListDiff();
-            const diffBuffer = Buffer.from(diffBytes);
-            const diff = new SimplifiedMNListDiff(diffBuffer, process.env.NETWORK);
-
-            stream.cancel();
-            stream = null;
-            resolve(diff);
-          });
-
-          stream.on('error', (error) => {
-            if (!stream) {
-              return;
-            }
-
-            stream.cancel();
-            stream = null;
-            reject(error);
-          });
-        });
+        const { mnList } = await client.getDAPIClient().dapiAddressProvider
+          .smlProvider.getSimplifiedMNList();
 
         for (const masternodeEntry of mnList) {
           if (!masternodeEntry.isValid) {

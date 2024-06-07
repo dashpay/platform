@@ -22,6 +22,7 @@ class SimplifiedMasternodeListProvider {
      * @type {ReconnectableStream}
      */
     this.stream = undefined;
+    this.removeStreamListeners = () => {};
 
     /**
      * @type {SimplifiedMNList}
@@ -47,6 +48,11 @@ class SimplifiedMasternodeListProvider {
    * @returns {Promise<void>}
    */
   async subscribeToMasternodeList() {
+    if (this.stream) {
+      this.logger.debug('Masternode list stream already started');
+      return Promise.resolve();
+    }
+
     this.logger.debug('Starting masternode list stream');
 
     this.stream = await this.createStream();
@@ -55,6 +61,8 @@ class SimplifiedMasternodeListProvider {
     let resolved = false;
 
     const rejectDiff = (error) => {
+      this.logger.silly('Stream is cancelled due to error. Retrying...', { error });
+
       this.stream.cancel();
       this.stream.retryOnError(error);
     };
@@ -172,6 +180,7 @@ class SimplifiedMasternodeListProvider {
           { diffCount },
         );
 
+        this.removeStreamListeners();
         this.stream = null;
       };
 
@@ -179,6 +188,13 @@ class SimplifiedMasternodeListProvider {
       this.stream.on('beforeReconnect', beforeReconnectHandler);
       this.stream.on('error', errorHandler);
       this.stream.on('end', endHandler);
+
+      this.removeStreamListeners = () => {
+        this.stream.removeListener('data', dataHandler);
+        this.stream.removeListener('beforeReconnect', beforeReconnectHandler);
+        this.stream.removeListener('error', errorHandler);
+        this.stream.removeListener('end', endHandler);
+      };
     });
   }
 
@@ -187,6 +203,7 @@ class SimplifiedMasternodeListProvider {
    */
   unsubscribe() {
     if (this.stream) {
+      this.removeStreamListeners();
       this.stream.cancel();
       this.stream = null;
     }

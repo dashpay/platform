@@ -76,6 +76,21 @@ class DAPIClient extends EventEmitter {
       this.emit(EVENTS.ERROR, e);
     });
   }
+
+  /**
+   * Close all open connections
+   *
+   * @return {Promise<void>}
+   */
+  async disconnect() {
+    // Stop block headers provider
+    await this.blockHeadersProvider.stop();
+
+    // Stop masternode list provider
+    if (this.dapiAddressProvider.smlProvider) {
+      await this.dapiAddressProvider.smlProvider.unsubscribe();
+    }
+  }
 }
 
 DAPIClient.EVENTS = EVENTS;

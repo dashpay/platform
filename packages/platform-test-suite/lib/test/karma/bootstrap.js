@@ -3,6 +3,7 @@ const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
+require('setimmediate');
 
 use(chaiAsPromised);
 use(dirtyChai);
