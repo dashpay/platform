@@ -64,7 +64,7 @@ pub struct Contenders {
     pub contenders: RetrievedObjects<Identifier, Contender>,
     /// Tally of abstain votes.
     pub abstain_vote_tally: Option<u32>,
-    ///
+    /// Tally of lock votes.
     pub lock_vote_tally: Option<u32>,
 }
 
@@ -153,45 +153,38 @@ impl From<&PrefundedSpecializedBalance> for Credits {
 
 /// Contested document resource vote polls grouped by timestamp.
 #[derive(Clone, Debug, Default, derive_more::From, Encode, Decode)]
-pub struct VotePollsGroupedByTimestamp(pub RetrievedObjects<TimestampMillis, Vec<VotePoll>>);
+pub struct VotePollsGroupedByTimestamp(pub BTreeMap<TimestampMillis, Vec<VotePoll>>);
 
 /// Insert items into the map, appending them to the existing values for the same key.
-impl FromIterator<(u64, Option<Vec<VotePoll>>)> for VotePollsGroupedByTimestamp {
-    fn from_iter<T: IntoIterator<Item = (u64, Option<Vec<VotePoll>>)>>(iter: T) -> Self {
+impl FromIterator<(u64, Vec<VotePoll>)> for VotePollsGroupedByTimestamp {
+    fn from_iter<T: IntoIterator<Item = (u64, Vec<VotePoll>)>>(iter: T) -> Self {
         let mut map = BTreeMap::new();
 
         for (timestamp, vote_poll) in iter {
-            let entry = map.entry(timestamp).or_insert(Some(Vec::new()));
-            if let Some(vote_poll) = vote_poll {
-                if let Some(inner) = entry {
-                    inner.extend(vote_poll);
-                } else {
-                    panic!("unexpected None value in VotePollsGroupedByTimestamp::from_iter(), this should never happen")
-                }
-            }
+            let entry = map.entry(timestamp).or_insert_with(Vec::new);
+            entry.extend(vote_poll);
         }
 
         Self(map)
     }
 }
 
-/// Insert items into the map, appending them to the existing values for the same key.
-impl FromIterator<(u64, Vec<VotePoll>)> for VotePollsGroupedByTimestamp {
-    fn from_iter<T: IntoIterator<Item = (u64, Vec<VotePoll>)>>(iter: T) -> Self {
-        Self::from_iter(iter.into_iter().map(|(k, v)| (k, Some(v))))
+/// Insert items into the map, grouping them by timestamp.
+impl FromIterator<(u64, VotePoll)> for VotePollsGroupedByTimestamp {
+    fn from_iter<T: IntoIterator<Item = (u64, VotePoll)>>(iter: T) -> Self {
+        Self::from_iter(iter.into_iter().map(|(k, v)| (k, vec![v])))
     }
 }
 
-/// Insert items into the map, grouping them by timestamp.
 impl FromIterator<(u64, Option<VotePoll>)> for VotePollsGroupedByTimestamp {
     fn from_iter<T: IntoIterator<Item = (u64, Option<VotePoll>)>>(iter: T) -> Self {
-        Self::from_iter(iter.into_iter().map(|(k, opt)| (k, opt.map(|v| vec![v]))))
+        Self::from_iter(iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))))
     }
 }
 
 impl IntoIterator for VotePollsGroupedByTimestamp {
-    type Item = (u64, Option<Vec<VotePoll>>);
-    type IntoIter = std::collections::btree_map::IntoIter<u64, Option<Vec<VotePoll>>>;
+    type Item = (u64, Vec<VotePoll>);
+    type IntoIter = std::collections::btree_map::IntoIter<u64, Vec<VotePoll>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -200,10 +193,7 @@ impl IntoIterator for VotePollsGroupedByTimestamp {
 
 impl Length for VotePollsGroupedByTimestamp {
     fn count_some(&self) -> usize {
-        self.0
-            .values()
-            .filter_map(|opt| opt.as_ref().map(|v| v.len()))
-            .sum()
+        self.0.values().map(|v| v.len()).sum()
     }
 }
 

@@ -209,7 +209,6 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
-
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let id = match request.version.ok_or(Error::EmptyVersion)? {
