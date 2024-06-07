@@ -16,7 +16,7 @@ import semver from 'semver';
 import fs from 'fs';
 import {
   NETWORK_MAINNET,
-  NETWORK_TESTNET, PACKAGE_ROOT_DIR,
+  PACKAGE_ROOT_DIR,
 } from '../../src/constants.js';
 import Config from '../../src/config/Config.js';
 
