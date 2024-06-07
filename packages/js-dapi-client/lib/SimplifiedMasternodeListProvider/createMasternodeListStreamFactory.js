@@ -37,6 +37,8 @@ function createMasternodeListStreamFactory(
         new MasternodeListRequest(),
         {
           timeout: undefined,
+          // TODO: Disable reconnect
+          // autoReconnectInterval: 0
         },
       ),
       {
