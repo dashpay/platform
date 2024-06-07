@@ -20,6 +20,8 @@ use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
+use dpp::prelude::{Identity, TimestampMillis};
+use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
@@ -29,8 +31,6 @@ use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "verify")]
 use std::sync::Arc;
-use dpp::prelude::{Identity, TimestampMillis};
-use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///

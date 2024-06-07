@@ -33,7 +33,7 @@ impl Drive {
             .drive
             .methods
             .vote
-            .contested_resource_insert
+            .cleanup
             .remove_contested_resource_vote_poll_votes_operations
         {
             0 => self.remove_contested_resource_vote_poll_votes_operations_v0(

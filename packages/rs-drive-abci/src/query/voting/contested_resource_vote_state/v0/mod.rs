@@ -183,27 +183,21 @@ impl<C> Platform<C> {
 
             let abstain_vote_tally = results.abstaining_vote_tally;
             let lock_vote_tally = results.locked_vote_tally;
-            let finished_vote_info = results.winner.map(|winner_info| {
-                match winner_info {
-                    ContestedDocumentVotePollWinnerInfo::NoWinner => {
-                        FinishedVoteInfo {
-                            finished_vote_outcome: FinishedVoteOutcome::NoPreviousWinner as i32,
-                            won_by_identity_id: None,
-                        }
-                    }
-                    ContestedDocumentVotePollWinnerInfo::WonByIdentity(identity_id) => {
-                        FinishedVoteInfo {
-                            finished_vote_outcome: FinishedVoteOutcome::TowardsIdentity as i32,
-                            won_by_identity_id: Some(identity_id.to_vec())
-                        }
-                    }
-                    ContestedDocumentVotePollWinnerInfo::Locked => {
-                        FinishedVoteInfo {
-                            finished_vote_outcome: FinishedVoteOutcome::Locked as i32,
-                            won_by_identity_id: None,
-                        }
+            let finished_vote_info = results.winner.map(|winner_info| match winner_info {
+                ContestedDocumentVotePollWinnerInfo::NoWinner => FinishedVoteInfo {
+                    finished_vote_outcome: FinishedVoteOutcome::NoPreviousWinner as i32,
+                    won_by_identity_id: None,
+                },
+                ContestedDocumentVotePollWinnerInfo::WonByIdentity(identity_id) => {
+                    FinishedVoteInfo {
+                        finished_vote_outcome: FinishedVoteOutcome::TowardsIdentity as i32,
+                        won_by_identity_id: Some(identity_id.to_vec()),
                     }
                 }
+                ContestedDocumentVotePollWinnerInfo::Locked => FinishedVoteInfo {
+                    finished_vote_outcome: FinishedVoteOutcome::Locked as i32,
+                    won_by_identity_id: None,
+                },
             });
 
             let contenders = results

@@ -900,7 +900,12 @@ mod tests {
             >,
             result_type: ResultType,
             platform_version: &PlatformVersion,
-        ) -> (Vec<Contender>, Option<u32>, Option<u32>, Option<FinishedVoteInfo>) {
+        ) -> (
+            Vec<Contender>,
+            Option<u32>,
+            Option<u32>,
+            Option<FinishedVoteInfo>,
+        ) {
             // Now let's run a query for the vote totals
 
             let domain = dpns_contract
@@ -1356,7 +1361,7 @@ mod tests {
                     ResultType::DocumentsAndVoteTally,
                     platform_version,
                 );
-                
+
                 assert_eq!(finished_vote_info, None);
 
                 assert_eq!(contenders.len(), 2);

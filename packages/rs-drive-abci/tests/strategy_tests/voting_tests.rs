@@ -265,7 +265,10 @@ mod tests {
         let Some(
             get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
                 get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
-                    contenders, abstain_vote_tally, lock_vote_tally, finished_vote_info,
+                    contenders,
+                    abstain_vote_tally,
+                    lock_vote_tally,
+                    finished_vote_info,
                 },
             ),
         ) = result
@@ -279,12 +282,9 @@ mod tests {
 
         let second_contender = contenders.last().unwrap();
 
-        assert_eq!(first_contender
-                       .document, None);
+        assert_eq!(first_contender.document, None);
 
-        assert_eq!(second_contender
-                       .document, None);
-
+        assert_eq!(second_contender.document, None);
 
         assert_eq!(first_contender.identifier, identity2_id.to_vec());
 
@@ -366,14 +366,12 @@ mod tests {
         let first_contender = result.contenders.first().unwrap();
 
         let second_contender = result.contenders.last().unwrap();
-        
-        // When something is here
-        
-        assert_eq!(first_contender
-                .serialized_document, None);
 
-        assert_eq!(second_contender
-                       .serialized_document, None);
+        // When something is here
+
+        assert_eq!(first_contender.serialized_document, None);
+
+        assert_eq!(second_contender.serialized_document, None);
 
         assert_eq!(first_contender.identity_id, identity2_id);
 
