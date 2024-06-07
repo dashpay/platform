@@ -9,6 +9,7 @@ use crate::error::Error;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -17,9 +18,10 @@ impl Drive {
         &self,
         contested_document_resource_vote_poll_with_contract_info: &ContestedDocumentResourceVotePollWithContractInfo,
         restrict_to_only_fetch_contenders: Option<Vec<Identifier>>,
+        also_fetch_abstaining_and_locked_votes: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<Identifier, Vec<Identifier>>, Error> {
+    ) -> Result<BTreeMap<ResourceVoteChoice, Vec<Identifier>>, Error> {
         match platform_version
             .drive
             .methods
@@ -29,6 +31,7 @@ impl Drive {
             0 => self.fetch_identities_voting_for_contenders_v0(
                 contested_document_resource_vote_poll_with_contract_info,
                 restrict_to_only_fetch_contenders,
+                also_fetch_abstaining_and_locked_votes,
                 transaction,
                 platform_version,
             ),

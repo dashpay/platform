@@ -89,7 +89,7 @@ pub trait VotePollPaths {
     /// The path that would store the votes for a single contender
     fn contender_voting_path(
         &self,
-        vote_choice: ResourceVoteChoice,
+        vote_choice: &ResourceVoteChoice,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error>;
 }
@@ -169,7 +169,7 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
 
     fn contender_voting_path(
         &self,
-        vote_choice: ResourceVoteChoice,
+        vote_choice: &ResourceVoteChoice,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let key = vote_choice.to_key();
@@ -255,7 +255,7 @@ impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllo
 
     fn contender_voting_path(
         &self,
-        vote_choice: ResourceVoteChoice,
+        vote_choice: &ResourceVoteChoice,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let key = vote_choice.to_key();

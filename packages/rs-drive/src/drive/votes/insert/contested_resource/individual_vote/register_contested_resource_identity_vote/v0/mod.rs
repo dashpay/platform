@@ -91,7 +91,7 @@ impl Drive {
 
         // We start by inserting the main vote as a value of 1 or 4 depending on the strength
 
-        let mut voting_path = vote_poll.contender_voting_path(vote_choice, platform_version)?;
+        let mut voting_path = vote_poll.contender_voting_path(&vote_choice, platform_version)?;
 
         self.batch_insert::<0>(
             PathKeyElement((

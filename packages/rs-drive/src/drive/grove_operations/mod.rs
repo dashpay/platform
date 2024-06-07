@@ -197,6 +197,7 @@ pub enum BatchDeleteApplyType {
     },
 }
 
+#[derive(Clone)]
 /// Batch delete up tree apply type
 pub enum BatchDeleteUpTreeApplyType {
     /// Stateless batch delete

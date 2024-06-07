@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 /// In this case Malaka might have a bad connotation in Greek, hence some might votes to Lock
 /// the name.
 ///
-#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Encode, Decode, Ord, Eq, PartialOrd, PartialEq, Default)]
 #[cfg_attr(
     feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),

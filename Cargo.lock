@@ -831,9 +831,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.4"
+version = "4.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90bc066a67923782aa8515dbaea16946c5bcc5addbd668bb80af688e53e548a0"
+checksum = "a9689a29b593160de5bc4aacab7b5d54fb52231de70122626c178e6a368994c7"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -841,9 +841,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.2"
+version = "4.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae129e2e766ae0ec03484e609954119f123cc1fe650337e155d03b022f24f7b4"
+checksum = "2e5387378c84f6faa26890ebf9f0a92989f8873d4d380467bcd0d8d8620424df"
 dependencies = [
  "anstream",
  "anstyle",
@@ -853,9 +853,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.4"
+version = "4.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "528131438037fd55894f62d6e9f068b8f45ac57ffa77517819645d10aed04f64"
+checksum = "c780290ccf4fb26629baa7a1081e68ced113f1d3ec302fa5948f1c381ebf06c6"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -865,9 +865,9 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98cc8fbded0c607b7ba9dd60cd98df59af97e84d24e49c8557331cfc26d301ce"
+checksum = "4b82cf0babdbd58558212896d1a4272303a57bdb245c2bf1147185fb45640e70"
 
 [[package]]
 name = "colorchoice"
@@ -1314,7 +1314,7 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "bip37-bloom-filter",
  "ciborium",
- "clap 4.5.4",
+ "clap 4.5.6",
  "dapi-grpc",
  "dapi-grpc-macros",
  "dashcore-rpc",
@@ -1650,7 +1650,7 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "chrono",
  "ciborium",
- "clap 4.5.4",
+ "clap 4.5.6",
  "console-subscriber",
  "dapi-grpc",
  "dashcore-rpc",
@@ -2196,7 +2196,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b29791803245b834370929302922c267dcadc99e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#07a5a192b4d9e9b0fabf79ff1570b492d09f892a"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bitvec",
@@ -2219,7 +2219,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b29791803245b834370929302922c267dcadc99e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#07a5a192b4d9e9b0fabf79ff1570b492d09f892a"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2229,7 +2229,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b29791803245b834370929302922c267dcadc99e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#07a5a192b4d9e9b0fabf79ff1570b492d09f892a"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2252,12 +2252,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b29791803245b834370929302922c267dcadc99e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#07a5a192b4d9e9b0fabf79ff1570b492d09f892a"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b29791803245b834370929302922c267dcadc99e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#07a5a192b4d9e9b0fabf79ff1570b492d09f892a"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2276,7 +2276,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b29791803245b834370929302922c267dcadc99e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#07a5a192b4d9e9b0fabf79ff1570b492d09f892a"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -5360,7 +5360,7 @@ dependencies = [
  "serde",
  "serde_spanned",
  "toml_datetime",
- "winnow 0.6.11",
+ "winnow 0.6.13",
 ]
 
 [[package]]
@@ -6371,9 +6371,9 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "0.6.11"
+version = "0.6.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56c52728401e1dc672a56e81e593e912aa54c78f40246869f78359a2bf24d29d"
+checksum = "59b5e5f6c299a3c7890b876a2a587f3115162487e704907d9b6cd29473052ba1"
 dependencies = [
  "memchr",
 ]

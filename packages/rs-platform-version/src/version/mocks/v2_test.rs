@@ -234,6 +234,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     register_identity_vote: 0,
                     add_vote_poll_end_date_query_operations: 0,
                     remove_contested_resource_vote_poll_end_date_query_operations: 0,
+                    remove_contested_resource_vote_poll_votes_operations: 0,
                 },
                 cleanup: DriveVoteCleanupMethodVersions {
                     add_lock_for_contested_document_resource_vote_poll: 0,
