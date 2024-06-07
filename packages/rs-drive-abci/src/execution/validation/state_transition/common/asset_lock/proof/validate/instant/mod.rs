@@ -62,11 +62,11 @@ impl AssetLockProofValidation for InstantAssetLockProof {
             // IO. This is done to prevent DoS attacks on slow verify instant lock signature Core RPC method.
             // In case of failed signature verification (or any knowing the fact that signing quorum is old),
             // we expect clients to use ChainAssetLockProof.
-            let is_instant_lock_signature_valid = self
+            let is_valid = self
                 .instant_lock()
                 .verify_recent_signature_locally(platform_ref.state, platform_version)?;
 
-            if !is_instant_lock_signature_valid {
+            if !is_valid {
                 return Ok(ConsensusValidationResult::new_with_error(
                     InvalidInstantAssetLockProofSignatureError::new().into(),
                 ));

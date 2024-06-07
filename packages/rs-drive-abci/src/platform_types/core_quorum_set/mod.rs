@@ -4,6 +4,7 @@ use crate::config::QuorumLikeConfig;
 use crate::platform_types::core_quorum_set::v0::for_saving::CoreQuorumSetForSavingV0;
 pub use crate::platform_types::core_quorum_set::v0::quorum_set::{
     CoreQuorumSetV0, CoreQuorumSetV0Methods, QuorumConfig, QuorumsVerificationDataIterator,
+    SIGN_OFFSET,
 };
 pub use crate::platform_types::core_quorum_set::v0::quorums::{
     Quorum, Quorums, SigningQuorum, ThresholdBlsPublicKey, VerificationQuorum,

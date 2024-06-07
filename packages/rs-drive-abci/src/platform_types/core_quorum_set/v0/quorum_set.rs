@@ -5,6 +5,9 @@ use dashcore_rpc::json::QuorumType;
 use dpp::dashcore::{QuorumHash, QuorumSigningRequestId};
 use std::vec::IntoIter;
 
+/// Offset for signature verification
+pub const SIGN_OFFSET: u32 = 8;
+
 /// Previously obtained quorums and heights. Required for signature verification
 #[derive(Debug, Clone)]
 pub(super) struct PreviousQuorumsV0 {
@@ -192,7 +195,7 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
             let change_quorum_height = previous.updated_at_core_height;
             let previous_quorums_change_height = previous.previous_change_height;
 
-            if signing_height > 8 && verification_height >= change_quorum_height {
+            if signing_height > SIGN_OFFSET && verification_height >= change_quorum_height {
                 // in this case we are sure that we should be targeting the current quorum
                 // We updated core chain lock height from 100 to 105, new chain lock comes in for block 114
                 //  ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height) ------ 106 (new chain lock verification height 114 - 8)
@@ -202,7 +205,8 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
                 // We should also use current quorums, this is because at 105 we are sure new chain lock validating quorums are active
                 quorums.push(&self.current_quorums);
                 should_be_verifiable = true;
-            } else if signing_height > 8 && verification_height <= previous_quorum_height {
+            } else if signing_height > SIGN_OFFSET && verification_height <= previous_quorum_height
+            {
                 should_be_verifiable = previous_quorums_change_height
                     .map(|previous_quorums_change_height| {
                         verification_height > previous_quorums_change_height

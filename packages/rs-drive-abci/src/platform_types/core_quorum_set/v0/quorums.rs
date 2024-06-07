@@ -4,6 +4,7 @@ use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::{QuorumHash, Txid};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
+use std::fmt::Debug;
 
 pub use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
 
@@ -12,7 +13,7 @@ use crate::platform_types::core_quorum_set::QuorumConfig;
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 
 /// Quorum per hash
-#[derive(Debug, Clone, Deref, DerefMut, From)]
+#[derive(Clone, Deref, DerefMut, From)]
 pub struct Quorums<Q>(BTreeMap<QuorumHash, Q>);
 
 impl<Q> Default for Quorums<Q> {
@@ -113,12 +114,24 @@ impl<Q: Quorum> Quorums<Q> {
 
         // Take last n bits of b
         let mask = (1u64 << n) - 1;
-        let signer = mask & (b >> (64 - n - 1));
+        let signer = (mask & (b >> (64 - n - 1))) as u32;
 
         self.0
             .iter()
-            .find(|(_, quorum)| quorum.index() == Some(signer as u32))
+            .find(|(_, quorum)| quorum.index() == Some(signer))
             .map(|(quorum_hash, quorum)| (*quorum_hash, quorum))
+    }
+}
+
+impl<Q: Debug> Debug for Quorums<Q> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map()
+            .entries(
+                self.0
+                    .iter()
+                    .map(|(quorum_hash, quorum)| (quorum_hash.to_string(), quorum)),
+            )
+            .finish()
     }
 }
 
@@ -129,7 +142,7 @@ pub trait Quorum {
 }
 
 /// Quorum for signature verification
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct VerificationQuorum {
     /// Index is present only for rotated quorums (DIP24)
     pub index: Option<u32>,
@@ -137,6 +150,18 @@ pub struct VerificationQuorum {
     /// Quorum threshold public key is used to verify
     /// signatures produced by corresponding quorum
     pub public_key: ThresholdBlsPublicKey,
+}
+
+impl Debug for VerificationQuorum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VerificationQuorum")
+            .field("index", &self.index)
+            .field(
+                "public_key",
+                &hex::encode(*self.public_key.to_bytes()).to_string(),
+            )
+            .finish()
+    }
 }
 
 impl Quorum for VerificationQuorum {
