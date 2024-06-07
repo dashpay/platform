@@ -61,7 +61,7 @@ pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct Contenders {
     /// Contenders indexed by their identity IDs.
-    pub contenders: RetrievedObjects<Identifier, Contender>,
+    pub contenders: BTreeMap<Identifier, Contender>,
     /// Tally of abstain votes.
     pub abstain_vote_tally: Option<u32>,
     /// Tally of lock votes.
@@ -71,7 +71,9 @@ pub struct Contenders {
 impl FromIterator<(Identifier, Option<Contender>)> for Contenders {
     fn from_iter<T: IntoIterator<Item = (Identifier, Option<Contender>)>>(iter: T) -> Self {
         Self {
-            contenders: BTreeMap::from_iter(iter),
+            contenders: BTreeMap::from_iter(
+                iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))),
+            ),
             abstain_vote_tally: None,
             lock_vote_tally: None,
         }

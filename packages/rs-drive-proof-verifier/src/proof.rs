@@ -1351,7 +1351,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
                     document_type,
                     platform_version,
                 )
-                .map(|c| (c.identity_id, Some(c)))
+                .map(|c| (c.identity_id, c))
             })
             .collect::<Result<_, _>>()?;
 
