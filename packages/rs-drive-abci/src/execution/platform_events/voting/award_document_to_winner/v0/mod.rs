@@ -19,7 +19,7 @@ where
         &self,
         block_info: &BlockInfo,
         contender: FinalizedContender,
-        vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
+        vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {

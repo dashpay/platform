@@ -3,9 +3,14 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::identifier::Identifier;
+use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 mod v0;
 
@@ -16,8 +21,11 @@ where
     /// Checks for ended vote polls
     pub(in crate::execution) fn clean_up_after_contested_resources_vote_polls_end(
         &self,
-        block_info: &BlockInfo,
-        vote_polls: &[&ContestedDocumentResourceVotePoll],
+        vote_polls: Vec<(
+            &ContestedDocumentResourceVotePollWithContractInfo,
+            &TimestampMillis,
+            &BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
+        )>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -28,7 +36,6 @@ where
             .clean_up_after_contested_resources_vote_poll_end
         {
             0 => self.clean_up_after_contested_resources_vote_polls_end_v0(
-                block_info,
                 vote_polls,
                 transaction,
                 platform_version,

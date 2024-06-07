@@ -261,7 +261,7 @@ impl<'a> ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
     ) -> Result<PathQuery, Error> {
         let path = self
             .vote_poll
-            .contender_voting_path(TowardsIdentity(self.contestant_id), platform_version)?;
+            .contender_voting_path(&TowardsIdentity(self.contestant_id), platform_version)?;
 
         let mut query = Query::new_with_direction(self.order_ascending);
 

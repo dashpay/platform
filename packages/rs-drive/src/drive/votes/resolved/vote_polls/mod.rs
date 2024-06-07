@@ -1,7 +1,10 @@
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use derive_more::From;
 use dpp::identifier::Identifier;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::ProtocolError;
+use std::collections::BTreeMap;
 
 /// Module containing logic for contested document resource vote polls.
 pub mod contested_document_resource_vote_poll;
@@ -16,6 +19,16 @@ pub enum ResolvedVotePoll {
     /// A resolved vote poll with contract information for a contested document resource.
     ContestedDocumentResourceVotePollWithContractInfo(
         ContestedDocumentResourceVotePollWithContractInfo,
+    ),
+}
+
+/// Represents a resolved vote poll in the system that also contains votes.
+#[derive(Debug, Clone, PartialEq, From)]
+pub enum ResolvedVotePollWithVotes {
+    /// A resolved vote poll with contract information for a contested document resource.
+    ContestedDocumentResourceVotePollWithContractInfoAndVotes(
+        ContestedDocumentResourceVotePollWithContractInfo,
+        BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
     ),
 }
 

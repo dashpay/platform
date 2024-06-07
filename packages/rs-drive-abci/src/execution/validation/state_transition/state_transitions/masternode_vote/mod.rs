@@ -4333,6 +4333,40 @@ mod tests {
                 );
 
                 let platform_state = platform.state.load();
+
+                let (contenders, abstaining, locking) = get_vote_states(
+                    &platform,
+                    &platform_state,
+                    &dpns_contract,
+                    "quantum",
+                    None,
+                    true,
+                    true,
+                    None,
+                    ResultType::DocumentsAndVoteTally,
+                    platform_version,
+                );
+
+                assert_eq!(contenders.len(), 2);
+
+                let first_contender = contenders.first().unwrap();
+
+                let second_contender = contenders.last().unwrap();
+
+                assert_ne!(first_contender.document, second_contender.document);
+
+                assert_eq!(first_contender.identity_id, contender_1.id());
+
+                assert_eq!(second_contender.identity_id, contender_2.id());
+
+                assert_eq!(first_contender.vote_tally, Some(50));
+
+                assert_eq!(second_contender.vote_tally, Some(5));
+
+                assert_eq!(abstaining, Some(10));
+
+                assert_eq!(locking, Some(3));
+
                 let mut platform_state = (**platform_state).clone();
 
                 let block_info = BlockInfo {
@@ -4398,48 +4432,13 @@ mod tests {
 
                 assert_eq!(second_contender.identity_id, contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(50));
+                assert_eq!(first_contender.vote_tally, Some(0));
 
-                assert_eq!(second_contender.vote_tally, Some(5));
+                assert_eq!(second_contender.vote_tally, Some(0));
 
-                assert_eq!(abstaining, Some(10));
+                assert_eq!(abstaining, Some(0));
 
-                assert_eq!(locking, Some(3));
-
-                // Now let's not include locked and abstaining
-
-                let (contenders, abstaining, locking) = get_vote_states(
-                    &platform,
-                    &platform_state,
-                    &dpns_contract,
-                    "quantum",
-                    None,
-                    true,
-                    false,
-                    None,
-                    ResultType::DocumentsAndVoteTally,
-                    platform_version,
-                );
-
-                assert_eq!(contenders.len(), 2);
-
-                let first_contender = contenders.first().unwrap();
-
-                let second_contender = contenders.last().unwrap();
-
-                assert_ne!(first_contender.document, second_contender.document);
-
-                assert_eq!(first_contender.identity_id, contender_1.id());
-
-                assert_eq!(second_contender.identity_id, contender_2.id());
-
-                assert_eq!(first_contender.vote_tally, Some(50));
-
-                assert_eq!(second_contender.vote_tally, Some(5));
-
-                assert_eq!(abstaining, None);
-
-                assert_eq!(locking, None);
+                assert_eq!(locking, Some(0));
             }
         }
     }

@@ -3,13 +3,15 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::document::DocumentV0Getters;
+use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
-use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
+use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
 use drive::grovedb::TransactionArg;
 use drive::query::vote_poll_vote_state_query::FinalizedContender;
 use drive::query::VotePollsByEndDateDriveQuery;
 use itertools::Itertools;
+use std::collections::BTreeMap;
 
 impl<C> Platform<C>
 where
@@ -24,7 +26,7 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // let's start by getting the vote polls that have finished
-        let vote_polls =
+        let vote_polls_by_timestamp =
             VotePollsByEndDateDriveQuery::execute_no_proof_for_specialized_end_time_query(
                 block_info.time_ms,
                 platform_version
@@ -38,8 +40,8 @@ where
                 platform_version,
             )?;
 
-        for (end_date, vote_polls) in vote_polls {
-            for vote_poll in &vote_polls {
+        let vote_polls_with_info = vote_polls_by_timestamp.into_iter().map(|(end_date, vote_polls)| {
+            let vote_polls_with_votes = vote_polls.into_iter().map(|vote_poll| {
                 let resolved_vote_poll =
                     vote_poll.resolve(&self.drive, transaction, platform_version)?;
                 match resolved_vote_poll {
@@ -91,6 +93,7 @@ where
                             self.drive.fetch_identities_voting_for_contenders(
                                 &resolved_contested_document_resource_vote_poll,
                                 restrict_to_only_fetch_contenders,
+                                true,
                                 transaction,
                                 platform_version,
                             )?;
@@ -110,7 +113,7 @@ where
                                     document_type,
                                     platform_version,
                                 )
-                                .map_err(Error::Drive)
+                                    .map_err(Error::Drive)
                             })
                             .collect::<Result<Vec<_>, Error>>()?;
                         // Now we sort by the document creation date
@@ -155,25 +158,23 @@ where
                                 self.award_document_to_winner(
                                     block_info,
                                     top_contender,
-                                    resolved_contested_document_resource_vote_poll,
+                                    &resolved_contested_document_resource_vote_poll,
                                     transaction,
                                     platform_version,
                                 )?;
                             }
                         }
+                        Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
                     }
                 }
-            }
+            }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;
+            Ok((end_date, vote_polls_with_votes))
+        }).collect::<Result<BTreeMap<TimestampMillis, Vec<ResolvedVotePollWithVotes>>, Error>>()?;
 
-            // We need to clean up the vote poll
-            // This means removing it and also removing all current votes
-            self.clean_up_after_vote_polls_end(
-                block_info,
-                &vote_polls,
-                transaction,
-                platform_version,
-            )?;
-        }
+        // We need to clean up the vote polls
+        // This means removing it and also removing all current votes
+        self.clean_up_after_vote_polls_end(&vote_polls_with_info, transaction, platform_version)?;
+
         Ok(())
     }
 }

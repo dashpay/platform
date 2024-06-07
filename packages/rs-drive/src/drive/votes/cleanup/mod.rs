@@ -1,3 +1,5 @@
 mod remove_votes_for_identity;
 
 mod add_lock_for_contested_document_resource_vote_poll;
+mod remove_contested_resource_vote_poll_end_date_query_operations;
+mod remove_contested_resource_vote_poll_votes_operations;
