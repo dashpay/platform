@@ -766,6 +766,10 @@ message GetContestedResourceVoteStateResponse {
       }
       FinishedVoteOutcome finished_vote_outcome = 1;
       optional bytes won_by_identity_id = 2; // Only used when vote_choice_type is TOWARDS_IDENTITY
+      uint64 finished_at_block_height = 3;
+      uint32 finished_at_core_block_height = 4;
+      uint64 finished_at_block_time_ms = 5;
+      uint32 finished_at_epoch = 6;
     }
 
     message ContestedResourceContenders {

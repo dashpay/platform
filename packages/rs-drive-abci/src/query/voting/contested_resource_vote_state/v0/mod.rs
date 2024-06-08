@@ -184,22 +184,37 @@ impl<C> Platform<C> {
 
             let abstain_vote_tally = results.abstaining_vote_tally;
             let lock_vote_tally = results.locked_vote_tally;
-            let finished_vote_info = results.winner.map(|winner_info| match winner_info {
-                ContestedDocumentVotePollWinnerInfo::NoWinner => FinishedVoteInfo {
-                    finished_vote_outcome: FinishedVoteOutcome::NoPreviousWinner as i32,
-                    won_by_identity_id: None,
-                },
-                ContestedDocumentVotePollWinnerInfo::WonByIdentity(identity_id) => {
-                    FinishedVoteInfo {
-                        finished_vote_outcome: FinishedVoteOutcome::TowardsIdentity as i32,
-                        won_by_identity_id: Some(identity_id.to_vec()),
-                    }
-                }
-                ContestedDocumentVotePollWinnerInfo::Locked => FinishedVoteInfo {
-                    finished_vote_outcome: FinishedVoteOutcome::Locked as i32,
-                    won_by_identity_id: None,
-                },
-            });
+            let finished_vote_info =
+                results
+                    .winner
+                    .map(|(winner_info, finished_at_block_info)| match winner_info {
+                        ContestedDocumentVotePollWinnerInfo::NoWinner => FinishedVoteInfo {
+                            finished_vote_outcome: FinishedVoteOutcome::NoPreviousWinner as i32,
+                            won_by_identity_id: None,
+                            finished_at_block_height: finished_at_block_info.height,
+                            finished_at_core_block_height: finished_at_block_info.core_height,
+                            finished_at_block_time_ms: finished_at_block_info.time_ms,
+                            finished_at_epoch: finished_at_block_info.epoch.index as u32,
+                        },
+                        ContestedDocumentVotePollWinnerInfo::WonByIdentity(identity_id) => {
+                            FinishedVoteInfo {
+                                finished_vote_outcome: FinishedVoteOutcome::TowardsIdentity as i32,
+                                won_by_identity_id: Some(identity_id.to_vec()),
+                                finished_at_block_height: finished_at_block_info.height,
+                                finished_at_core_block_height: finished_at_block_info.core_height,
+                                finished_at_block_time_ms: finished_at_block_info.time_ms,
+                                finished_at_epoch: finished_at_block_info.epoch.index as u32,
+                            }
+                        }
+                        ContestedDocumentVotePollWinnerInfo::Locked => FinishedVoteInfo {
+                            finished_vote_outcome: FinishedVoteOutcome::Locked as i32,
+                            won_by_identity_id: None,
+                            finished_at_block_height: finished_at_block_info.height,
+                            finished_at_core_block_height: finished_at_block_info.core_height,
+                            finished_at_block_time_ms: finished_at_block_info.time_ms,
+                            finished_at_epoch: finished_at_block_info.epoch.index as u32,
+                        },
+                    });
 
             let contenders = results
                 .contenders

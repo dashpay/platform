@@ -4436,7 +4436,18 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(finished_vote_info, None);
+                assert_eq!(
+                    finished_vote_info,
+                    Some(FinishedVoteInfo {
+                        finished_vote_outcome:
+                            finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                        won_by_identity_id: Some(contender_1.id().to_vec()),
+                        finished_at_block_height: 10000,
+                        finished_at_core_block_height: 42,
+                        finished_at_block_time_ms: 1209900000,
+                        finished_at_epoch: 0
+                    })
+                );
 
                 assert_eq!(contenders.len(), 2);
 
