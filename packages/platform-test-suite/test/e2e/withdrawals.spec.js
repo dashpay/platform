@@ -10,16 +10,19 @@ const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 describe('Withdrawals', function withdrawalsTest() {
   this.bail(true);
 
-  if (typeof window !== 'undefined') {
-    this.skip('temporarily disabled on browser because of header stream is not syncing' +
-      ' headers at some point. Our theory is that because wallets aren\'t offloading properly' +
-      ' and we have too many streams open.');
-  }
-
   let client;
   let identity;
 
   before(async () => {
+    // TODO: temporarily disabled on browser because of header stream is not syncing
+    //   headers at some point. Our theory is that because wallets aren't offloading properly
+    //   and we have too many streams open.
+    if (typeof window !== 'undefined') {
+      this.skip('temporarily disabled on browser because of header stream is not syncing' +
+        ' headers at some point. Our theory is that because wallets aren\'t offloading properly' +
+        ' and we have too many streams open.');
+    }
+
     // from seed phrase
     const privateKey = new Mnemonic('knife easily prosper input concert merge prepare autumn pen blood glance toilet').toHDPrivateKey('', 'testnet');
     client = await createClientWithFundedWallet(
