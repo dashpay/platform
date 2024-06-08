@@ -63,8 +63,9 @@ impl Drive {
             // We also need to delete all the references
 
             for resource_vote_choice in vote_choices.keys() {
-                if let ResourceVoteChoice::TowardsIdentity(identifier) = resource_vote_choice {
-                    let contender_path = vote_poll.contender_path(*identifier, platform_version)?;
+                if matches!(resource_vote_choice, ResourceVoteChoice::TowardsIdentity(_)) {
+                    let contender_path =
+                        vote_poll.contender_path(resource_vote_choice, platform_version)?;
                     self.batch_delete(
                         contender_path.as_slice().into(),
                         vec![0].as_slice(),

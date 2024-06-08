@@ -1,1 +1,2 @@
 pub mod contested_document_vote_poll_winner_info;
+pub mod finalized_contested_document_vote_poll_stored_info;

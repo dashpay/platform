@@ -4,13 +4,12 @@ use crate::error::Error;
 use derive_more::From;
 use dpp::block::epoch::Epoch;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use dpp::voting::contender_structs::ContenderWithSerializedDocument;
 use grovedb::TransactionArg;
 
 mod v0;
 
-use crate::query::vote_poll_vote_state_query::{
-    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery,
-};
+use crate::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 pub use v0::*;
 
 /// Represents the outcome of a query to retrieve documents.

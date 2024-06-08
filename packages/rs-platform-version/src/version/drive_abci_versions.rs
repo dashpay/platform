@@ -300,7 +300,7 @@ pub struct DriveAbciBlockEndMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciVotingMethodVersions {
-    pub keep_record_of_vote_poll: FeatureVersion,
+    pub keep_record_of_finished_contested_resource_vote_poll: FeatureVersion,
     pub clean_up_after_vote_poll_end: FeatureVersion,
     pub clean_up_after_contested_resources_vote_poll_end: FeatureVersion,
     pub check_for_ended_vote_polls: FeatureVersion,

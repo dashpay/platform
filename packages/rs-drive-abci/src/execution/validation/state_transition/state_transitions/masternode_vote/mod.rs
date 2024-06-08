@@ -182,7 +182,6 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::ops::Deref;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0;
-    use drive::query::vote_poll_vote_state_query::Contender;
     use dapi_grpc::platform::v0::get_prefunded_specialized_balance_response;
     use dapi_grpc::platform::v0::get_prefunded_specialized_balance_response::{
         get_prefunded_specialized_balance_response_v0,
@@ -194,6 +193,7 @@ mod tests {
     mod vote_tests {
         use assert_matches::assert_matches;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::{finished_vote_info, FinishedVoteInfo};
+        use dpp::voting::contender_structs::Contender;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
         use super::*;

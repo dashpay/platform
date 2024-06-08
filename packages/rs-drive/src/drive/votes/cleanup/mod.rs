@@ -1,6 +1,7 @@
 mod remove_all_votes_given_by_identity;
 
 mod add_lock_for_contested_document_resource_vote_poll;
+mod remove_contested_resource_vote_poll_contenders_operations;
 mod remove_contested_resource_vote_poll_documents_operations;
 mod remove_contested_resource_vote_poll_end_date_query_operations;
 mod remove_contested_resource_vote_poll_votes_operations;

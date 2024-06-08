@@ -43,14 +43,24 @@ where
         self.drive
             .remove_contested_resource_vote_poll_votes_operations(
                 vote_polls.as_slice(),
+                true,
                 &mut operations,
                 transaction,
                 platform_version,
             )?;
 
-        // We remove the documents
+        // We remove the documents that contenders have
         self.drive
             .remove_contested_resource_vote_poll_documents_operations(
+                vote_polls.as_slice(),
+                &mut operations,
+                transaction,
+                platform_version,
+            )?;
+
+        // We remove the contenders
+        self.drive
+            .remove_contested_resource_vote_poll_contenders_operations(
                 vote_polls.as_slice(),
                 &mut operations,
                 transaction,

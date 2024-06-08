@@ -5,10 +5,11 @@ use dpp::block::block_info::BlockInfo;
 use dpp::document::DocumentV0Getters;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
+use dpp::voting::contender_structs::FinalizedContender;
+use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
 use drive::grovedb::TransactionArg;
-use drive::query::vote_poll_vote_state_query::FinalizedContender;
 use drive::query::VotePollsByEndDateDriveQuery;
 use itertools::Itertools;
 use std::collections::BTreeMap;
@@ -113,7 +114,7 @@ where
                                     document_type,
                                     platform_version,
                                 )
-                                    .map_err(Error::Drive)
+                                    .map_err(Error::Protocol)
                             })
                             .collect::<Result<Vec<_>, Error>>()?;
                         // Now we sort by the document creation date
@@ -133,9 +134,8 @@ where
                                 })
                                 .then_with(|| a.document.id().cmp(&b.document.id()))
                         });
-
                         // We award the document to the top contender
-                        if let Some(top_contender) = maybe_top_contender {
+                        let winner_info = if let Some(top_contender) = maybe_top_contender {
                             // let's check to make sure the lock votes didn't win it
                             // if the lock is tied with the top contender the top contender gets it
                             if result.locked_vote_tally > top_contender.final_vote_tally {
@@ -145,15 +145,9 @@ where
                                     transaction,
                                     platform_version,
                                 )?;
+                                ContestedDocumentVotePollWinnerInfo::Locked
                             } else {
-                                // We want to keep a record of how everyone voted
-                                self.keep_record_of_vote_poll(
-                                    block_info,
-                                    &top_contender,
-                                    &resolved_contested_document_resource_vote_poll,
-                                    transaction,
-                                    platform_version,
-                                )?;
+                                let contender_id = top_contender.identity_id;
                                 // We award the document to the winner of the vote poll
                                 self.award_document_to_winner(
                                     block_info,
@@ -162,8 +156,20 @@ where
                                     transaction,
                                     platform_version,
                                 )?;
+                                ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_id)
                             }
-                        }
+                        } else {
+                            ContestedDocumentVotePollWinnerInfo::NoWinner
+                        };
+                        // We want to keep a record of how everyone voted
+                        self.keep_record_of_finished_contested_resource_vote_poll(
+                            block_info,
+                            &resolved_contested_document_resource_vote_poll,
+                            &identifiers_voting_for_contenders,
+                            winner_info,
+                            transaction,
+                            platform_version,
+                        )?;
                         Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
                     }
                 }

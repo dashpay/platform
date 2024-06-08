@@ -9,10 +9,11 @@ use crate::drive::votes::paths::{
 };
 use crate::error::drive::DriveError;
 use crate::query::vote_poll_vote_state_query::{
-    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQueryExecutionResult,
+    ContestedDocumentVotePollDriveQueryExecutionResult,
     ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery,
 };
 use dpp::version::PlatformVersion;
+use dpp::voting::contender_structs::ContenderWithSerializedDocument;
 
 impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
     /// Verifies a proof for a collection of documents.

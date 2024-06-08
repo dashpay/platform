@@ -18,14 +18,13 @@ use grovedb::TransactionArg;
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any votes poll should be closed. This will remove them to recoup space
-    pub fn remove_contested_resource_vote_poll_votes_operations(
+    pub fn remove_contested_resource_vote_poll_contenders_operations(
         &self,
         vote_polls: &[(
             &ContestedDocumentResourceVotePollWithContractInfo,
             &TimestampMillis,
             &BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
         )],
-        remove_vote_tree_too: bool,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -35,17 +34,16 @@ impl Drive {
             .methods
             .vote
             .cleanup
-            .remove_contested_resource_vote_poll_votes_operations
+            .remove_contested_resource_vote_poll_contenders_operations
         {
-            0 => self.remove_contested_resource_vote_poll_votes_operations_v0(
+            0 => self.remove_contested_resource_vote_poll_contenders_operations_v0(
                 vote_polls,
-                remove_vote_tree_too,
                 batch_operations,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "remove_contested_resource_vote_poll_votes_operations".to_string(),
+                method: "remove_contested_resource_vote_poll_contenders_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

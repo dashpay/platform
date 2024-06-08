@@ -228,6 +228,7 @@ pub struct IdentityVersions {
 #[derive(Clone, Debug, Default)]
 pub struct VotingVersions {
     pub default_vote_poll_time_duration_ms: u64,
+    pub finalized_contested_document_vote_poll_stored_info_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

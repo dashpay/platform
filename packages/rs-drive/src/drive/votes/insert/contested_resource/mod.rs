@@ -1,1 +1,2 @@
 mod individual_vote;
+mod insert_record_of_finished_vote_poll;

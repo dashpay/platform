@@ -53,6 +53,12 @@ pub const RESOURCE_LOCK_VOTE_TREE_KEY_U8: u8 = 'l' as u8;
 /// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
 pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = 'a' as u8;
 
+/// The finished info
+pub const RESOURCE_FINISHED_INFO_KEY: char = 'f';
+
+/// The finished info
+pub const RESOURCE_FINISHED_INFO_KEY_U8: u8 = 'f' as u8;
+
 /// The tree key for storage
 pub const VOTING_STORAGE_TREE_KEY: u8 = 1;
 
@@ -82,7 +88,7 @@ pub trait VotePollPaths {
     /// The path that would store the contender information for a single contender
     fn contender_path(
         &self,
-        identity_id: Identifier,
+        vote_choice: &ResourceVoteChoice,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error>;
 
@@ -159,11 +165,11 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
 
     fn contender_path(
         &self,
-        identity_id: Identifier,
+        vote_choice: &ResourceVoteChoice,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let mut contenders_path = self.contenders_path(platform_version)?;
-        contenders_path.push(identity_id.to_vec());
+        contenders_path.push(vote_choice.to_key());
         Ok(contenders_path)
     }
 
@@ -245,11 +251,11 @@ impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllo
 
     fn contender_path(
         &self,
-        identity_id: Identifier,
+        vote_choice: &ResourceVoteChoice,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let mut contenders_path = self.contenders_path(platform_version)?;
-        contenders_path.push(identity_id.to_vec());
+        contenders_path.push(vote_choice.to_key());
         Ok(contenders_path)
     }
 

@@ -6,8 +6,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::query::vote_poll_vote_state_query::{
-    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQueryExecutionResult,
-    ResolvedContestedDocumentVotePollDriveQuery,
+    ContestedDocumentVotePollDriveQueryExecutionResult, ResolvedContestedDocumentVotePollDriveQuery,
 };
 use dpp::version::PlatformVersion;
 

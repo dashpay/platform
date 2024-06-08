@@ -230,6 +230,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions {
                     register_contested_resource_identity_vote: 0,
+                    insert_record_of_finished_vote_poll: 0,
                     register_identity_vote: 0,
                     add_vote_poll_end_date_query_operations: 0,
                 },
@@ -240,6 +241,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     remove_contested_resource_vote_poll_end_date_query_operations: 0,
                     remove_contested_resource_vote_poll_votes_operations: 0,
                     remove_contested_resource_vote_poll_documents_operations: 0,
+                    remove_contested_resource_vote_poll_contenders_operations: 0,
                 },
                 setup: DriveVoteSetupMethodVersions {
                     add_initial_vote_tree_main_structure_operations: 0,
@@ -639,7 +641,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 append_signatures_and_broadcast_withdrawal_transactions: 0,
             },
             voting: DriveAbciVotingMethodVersions {
-                keep_record_of_vote_poll: 0,
+                keep_record_of_finished_contested_resource_vote_poll: 0,
                 clean_up_after_vote_poll_end: 0,
                 clean_up_after_contested_resources_vote_poll_end: 0,
                 check_for_ended_vote_polls: 0,
@@ -1181,6 +1183,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
         voting_versions: VotingVersions {
             default_vote_poll_time_duration_ms: 1_209_600_000, //2 weeks
+            finalized_contested_document_vote_poll_stored_info_version: 0,
         },
         asset_lock_versions: AssetLockVersions {
             reduced_asset_lock_value: FeatureVersionBounds {
