@@ -4662,8 +4662,8 @@ mod tests {
                     assert_eq!(
                         finished_vote_info,
                         Some(FinishedVoteInfo {
-                            finished_vote_outcome:
-                                finished_vote_info::FinishedVoteOutcome::Locked as i32,
+                            finished_vote_outcome: finished_vote_info::FinishedVoteOutcome::Locked
+                                as i32,
                             won_by_identity_id: None,
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
@@ -4712,10 +4712,7 @@ mod tests {
 
                     assert_eq!(
                         finished_vote_info,
-                        Some((
-                            ContestedDocumentVotePollWinnerInfo::Locked,
-                            block_info
-                        ))
+                        Some((ContestedDocumentVotePollWinnerInfo::Locked, block_info))
                     );
 
                     assert_eq!(contenders.len(), 2);
