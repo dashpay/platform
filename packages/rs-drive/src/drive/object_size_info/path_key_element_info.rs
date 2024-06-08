@@ -11,6 +11,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::Element;
 
 /// Path key element info
+#[derive(Debug)]
 pub enum PathKeyElementInfo<'a, const N: usize> {
     /// A triple Path Key and Element
     PathFixedSizeKeyRefElement(([&'a [u8]; N], &'a [u8], Element)),

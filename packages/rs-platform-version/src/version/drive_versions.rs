@@ -290,6 +290,7 @@ pub struct DriveVoteCleanupMethodVersions {
     pub remove_specific_votes_given_by_identity: FeatureVersion,
     pub remove_contested_resource_vote_poll_end_date_query_operations: FeatureVersion,
     pub remove_contested_resource_vote_poll_votes_operations: FeatureVersion,
+    pub remove_contested_resource_vote_poll_documents_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

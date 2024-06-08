@@ -48,6 +48,15 @@ where
                 platform_version,
             )?;
 
+        // We remove the documents
+        self.drive
+            .remove_contested_resource_vote_poll_documents_operations(
+                vote_polls.as_slice(),
+                &mut operations,
+                transaction,
+                platform_version,
+            )?;
+
         let vote_poll_ids = vote_polls
             .iter()
             .map(|(vote_poll, _, _)| Ok((*vote_poll, vote_poll.unique_id()?)))

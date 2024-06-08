@@ -177,7 +177,8 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                                     }
                                     _ => {
                                         return Err(Error::Drive(DriveError::CorruptedDriveState(
-                                            "unexpected key for sum tree value".to_string(),
+                                            "unexpected key for sum tree value in verification"
+                                                .to_string(),
                                         )));
                                     }
                                 }

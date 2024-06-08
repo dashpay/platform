@@ -239,6 +239,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     remove_specific_votes_given_by_identity: 0,
                     remove_contested_resource_vote_poll_end_date_query_operations: 0,
                     remove_contested_resource_vote_poll_votes_operations: 0,
+                    remove_contested_resource_vote_poll_documents_operations: 0,
                 },
                 setup: DriveVoteSetupMethodVersions {
                     add_initial_vote_tree_main_structure_operations: 0,

@@ -198,6 +198,7 @@ impl Drive {
                     target: QueryTargetValue(document_type.estimated_size(platform_version)? as u32),
                 }
             };
+
             let inserted = self.batch_insert_if_not_exists(
                 path_key_element_info,
                 apply_type,
