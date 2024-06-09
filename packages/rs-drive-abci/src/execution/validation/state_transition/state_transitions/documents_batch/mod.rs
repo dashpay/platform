@@ -266,21 +266,28 @@ mod tests {
     use rand::SeedableRng;
 
     mod creation_tests {
+        use std::sync::Arc;
         use rand::Rng;
         use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
+        use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info;
+        use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
         use super::*;
         use dpp::data_contract::accessors::v0::DataContractV0Setters;
         use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
         use dpp::document::Document;
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
         use dpp::util::hash::hash_double;
+        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
         use drive::drive::object_size_info::DataContractResolvedInfo;
         use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
+        use crate::execution::validation::state_transition::state_transitions::tests::{create_dpns_name_contest, fast_forward_to_block, get_vote_states, perform_votes_multi};
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
         #[test]
         fn test_document_creation() {
@@ -816,6 +823,63 @@ mod tests {
             assert_eq!(first_contender.vote_tally, Some(0));
 
             assert_eq!(second_contender.vote_tally, Some(0));
+        }
+
+        #[test]
+        fn test_that_a_contested_vote_can_not_be_added_to_after_a_week() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                7,
+                "quantum",
+                platform_version,
+            );
+
+            perform_votes_multi(
+                &mut platform,
+                dpns_contract.as_ref(),
+                vec![
+                    (TowardsIdentity(contender_1.id()), 50),
+                    (TowardsIdentity(contender_2.id()), 5),
+                    (ResourceVoteChoice::Abstain, 10),
+                    (ResourceVoteChoice::Lock, 3),
+                ],
+                "quantum",
+                10,
+                platform_version,
+            );
+
+            fast_forward_to_block(&platform, 500_000_000, 900); //less than a week
+
+            let platform_state = platform.state.load();
+
+            let (contender_3, contender_4, dpns_contract) = create_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                8,
+                "quantum",
+                platform_version,
+            );
+
+            fast_forward_to_block(&platform, 1_000_000_000, 900); //more than a week, less than 2 weeks
+
+            let platform_state = platform.state.load();
+
+            let (contender_5, contender_6, dpns_contract) = create_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                9,
+                "quantum",
+                platform_version,
+            );
+            //todo() this should fail!
         }
 
         #[test]
