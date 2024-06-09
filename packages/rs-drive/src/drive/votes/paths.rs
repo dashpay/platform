@@ -47,16 +47,16 @@ pub const RESOURCE_LOCK_VOTE_TREE_KEY: char = 'l';
 pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY: char = 'k';
 
 /// In the active vote poll this will contain votes for locking the contested resource
-pub const RESOURCE_LOCK_VOTE_TREE_KEY_U8: u8 = 'l' as u8;
+pub const RESOURCE_LOCK_VOTE_TREE_KEY_U8: u8 = b'l';
 
 /// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
-pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = 'k' as u8;
+pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = b'k';
 
 /// The finished info
 pub const RESOURCE_STORED_INFO_KEY: char = 'b';
 
 /// The finished info
-pub const RESOURCE_STORED_INFO_KEY_U8: u8 = 'b' as u8;
+pub const RESOURCE_STORED_INFO_KEY_U8: u8 = b'b'; //62
 
 /// The tree key for storage
 pub const VOTING_STORAGE_TREE_KEY: u8 = 1;

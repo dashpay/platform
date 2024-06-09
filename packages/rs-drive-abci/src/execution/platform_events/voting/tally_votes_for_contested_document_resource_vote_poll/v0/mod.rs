@@ -34,7 +34,6 @@ where
                     .maximum_contenders_to_consider,
             ),
             start_at: None,
-            order_ascending: true,
             allow_include_locked_and_abstaining_vote_tally: true,
         };
 

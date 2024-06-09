@@ -1,6 +1,6 @@
 use crate::drive::votes::paths::{
     VotePollPaths, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8, RESOURCE_LOCK_VOTE_TREE_KEY_U8,
-    VOTING_STORAGE_TREE_KEY,
+    RESOURCE_STORED_INFO_KEY_U8, VOTING_STORAGE_TREE_KEY,
 };
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
@@ -42,7 +42,7 @@ impl Drive {
                 ]);
             }
         } else if also_fetch_abstaining_and_locked_votes {
-            query.insert_all()
+            query.insert_range_after(vec![RESOURCE_STORED_INFO_KEY_U8]..)
         } else {
             query.insert_range_after(vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..)
         }

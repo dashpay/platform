@@ -739,7 +739,6 @@ mod tests {
                             allow_include_locked_and_abstaining_vote_tally: true,
                             start_at_identifier_info: None,
                             count: None,
-                            order_ascending: true,
                             prove: false,
                         },
                     )),
@@ -821,7 +820,6 @@ mod tests {
                             allow_include_locked_and_abstaining_vote_tally: true,
                             start_at_identifier_info: None,
                             count: None,
-                            order_ascending: true,
                             prove: true,
                         },
                     )),
@@ -860,7 +858,6 @@ mod tests {
                 offset: None,
                 limit: None,
                 start_at: None,
-                order_ascending: true,
                 allow_include_locked_and_abstaining_vote_tally: true,
             };
 
@@ -1036,7 +1033,6 @@ mod tests {
         dpns_contract: &DataContract,
         name: &str,
         count: Option<u32>,
-        order_ascending: bool,
         allow_include_locked_and_abstaining_vote_tally: bool,
         start_at_identifier_info: Option<
             get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo,
@@ -1081,7 +1077,6 @@ mod tests {
                             allow_include_locked_and_abstaining_vote_tally,
                             start_at_identifier_info,
                             count,
-                            order_ascending,
                             prove: false,
                         },
                     )),
@@ -1137,7 +1132,6 @@ mod tests {
         dpns_contract: &DataContract,
         name: &str,
         count: Option<u32>,
-        order_ascending: bool,
         allow_include_locked_and_abstaining_vote_tally: bool,
         start_at_identifier_info: Option<
             get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo,
@@ -1182,7 +1176,6 @@ mod tests {
                             allow_include_locked_and_abstaining_vote_tally,
                             start_at_identifier_info,
                             count,
-                            order_ascending,
                             prove: true,
                         },
                     )),
@@ -1224,7 +1217,6 @@ mod tests {
                 offset: None,
                 limit: count.map(|a| a as u16),
                 start_at: None,
-                order_ascending,
                 allow_include_locked_and_abstaining_vote_tally,
             };
 

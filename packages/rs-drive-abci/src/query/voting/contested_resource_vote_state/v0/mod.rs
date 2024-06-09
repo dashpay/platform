@@ -35,7 +35,6 @@ impl<C> Platform<C> {
             allow_include_locked_and_abstaining_vote_tally,
             start_at_identifier_info,
             count,
-            order_ascending,
             prove,
         }: GetContestedResourceVoteStateRequestV0,
         platform_state: &PlatformState,
@@ -147,7 +146,6 @@ impl<C> Platform<C> {
                     ))
                 })
                 .transpose()?,
-            order_ascending,
             allow_include_locked_and_abstaining_vote_tally,
         };
 

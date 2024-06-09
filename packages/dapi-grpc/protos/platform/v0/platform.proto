@@ -747,8 +747,7 @@ message GetContestedResourceVoteStateRequest {
     bool allow_include_locked_and_abstaining_vote_tally = 6;
     optional StartAtIdentifierInfo start_at_identifier_info = 7;
     optional uint32 count = 8;
-    bool order_ascending = 9;
-    bool prove = 10;
+    bool prove = 9;
   }
 
   oneof version {
