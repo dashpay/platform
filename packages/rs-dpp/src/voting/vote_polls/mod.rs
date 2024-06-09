@@ -1,5 +1,4 @@
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
-use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::ProtocolError;
 use derive_more::From;
@@ -7,7 +6,6 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 #[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 pub mod contested_document_resource_vote_poll;
 

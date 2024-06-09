@@ -7,6 +7,8 @@ use dpp::ProtocolError;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::drive::contract::DataContractFetchInfo;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
+use crate::error::Error;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
 
@@ -16,7 +18,7 @@ impl DocumentCreateTransitionActionV0 {
         value: DocumentCreateTransitionV0,
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, Error> {
         let DocumentCreateTransitionV0 {
             base,
             data,
@@ -50,7 +52,12 @@ impl DocumentCreateTransitionActionV0 {
                     index_values,
                 };
 
-                Ok::<_, ProtocolError>((vote_poll, credits))
+                let resolved_vote_poll = vote_poll
+                    .resolve_owned_with_provided_arc_contract_fetch_info(
+                        base.data_contract_fetch_info(),
+                    )?;
+
+                Ok::<_, Error>((resolved_vote_poll, credits))
             })
             .transpose()?;
 
@@ -67,7 +74,7 @@ impl DocumentCreateTransitionActionV0 {
         value: &DocumentCreateTransitionV0,
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, Error> {
         let DocumentCreateTransitionV0 {
             base,
             data,
@@ -103,7 +110,12 @@ impl DocumentCreateTransitionActionV0 {
                     index_values,
                 };
 
-                Ok::<_, ProtocolError>((vote_poll, *credits))
+                let resolved_vote_poll = vote_poll
+                    .resolve_owned_with_provided_arc_contract_fetch_info(
+                        base.data_contract_fetch_info(),
+                    )?;
+
+                Ok::<_, Error>((resolved_vote_poll, *credits))
             })
             .transpose()?;
 

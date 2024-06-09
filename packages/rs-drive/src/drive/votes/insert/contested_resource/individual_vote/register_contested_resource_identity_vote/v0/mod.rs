@@ -1,10 +1,7 @@
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyElement,
-};
+use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::object_size_info::PathKeyInfo;
 use crate::drive::votes::paths::{
-    vote_contested_resource_identity_votes_tree_path,
     vote_contested_resource_identity_votes_tree_path_for_identity_vec,
     vote_contested_resource_identity_votes_tree_path_vec, VotePollPaths,
 };

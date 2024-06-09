@@ -19,7 +19,7 @@ pub const EPOCH_0: Epoch = Epoch {
 // We make this immutable because it should never be changed or updated
 // @immutable
 /// Epoch struct
-#[derive(Serialize, Deserialize, Default, Clone, Eq, PartialEq, Copy, Encode, Decode, Debug)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Copy, Encode, Decode, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Epoch {
     /// Epoch index
@@ -28,6 +28,12 @@ pub struct Epoch {
     /// Key
     // todo: don't serialize key
     pub key: [u8; 2],
+}
+
+impl Default for Epoch {
+    fn default() -> Self {
+        Self::new(0).unwrap()
+    }
 }
 
 impl Epoch {

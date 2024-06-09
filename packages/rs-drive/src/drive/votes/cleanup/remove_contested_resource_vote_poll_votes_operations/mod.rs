@@ -12,7 +12,6 @@ use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::TransactionArg;
 
 impl Drive {

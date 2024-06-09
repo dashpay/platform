@@ -6,7 +6,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::grovedb::TransactionArg;
 use std::collections::BTreeMap;

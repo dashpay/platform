@@ -1,5 +1,5 @@
 use crate::drive::grove_operations::BatchDeleteApplyType;
-use crate::drive::votes::paths::{VotePollPaths, VOTING_STORAGE_TREE_KEY};
+use crate::drive::votes::paths::VotePollPaths;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::votes::ResourceVoteChoiceToKeyTrait;
 use crate::drive::Drive;

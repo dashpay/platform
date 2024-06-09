@@ -4,8 +4,8 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ impl Drive {
     pub(super) fn add_contested_document_for_contract_apply_and_add_to_operations_v0(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
-        contested_document_resource_vote_poll: ContestedDocumentResourceVotePoll,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         insert_without_check: bool,
         block_info: &BlockInfo,
         document_is_unique_for_document_type_in_batch: bool,

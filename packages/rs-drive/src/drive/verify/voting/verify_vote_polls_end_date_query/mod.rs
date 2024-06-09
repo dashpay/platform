@@ -9,7 +9,6 @@ use crate::error::Error;
 
 use crate::query::VotePollsByEndDateDriveQuery;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 
 impl VotePollsByEndDateDriveQuery {

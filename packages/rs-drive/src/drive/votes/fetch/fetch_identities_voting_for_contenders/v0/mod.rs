@@ -23,7 +23,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<ResourceVoteChoice, Vec<Identifier>>, Error> {
-        let mut path = contested_document_resource_vote_poll_with_contract_info
+        let path = contested_document_resource_vote_poll_with_contract_info
             .contenders_path(platform_version)?;
 
         let mut query = Query::new_with_direction(true);

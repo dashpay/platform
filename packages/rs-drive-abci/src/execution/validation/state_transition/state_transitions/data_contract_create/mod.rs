@@ -3,7 +3,6 @@ mod identity_nonce;
 mod state;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -109,7 +108,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -125,7 +124,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
             0 => self.validate_state_v0(
                 platform,
                 validation_mode,
-                epoch,
+                &block_info.epoch,
                 tx,
                 execution_context,
                 platform_version,

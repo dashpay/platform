@@ -1,2 +1,2 @@
 mod individual_vote;
-mod insert_record_of_finished_vote_poll;
+mod insert_stored_info_for_contested_resource_vote_poll;

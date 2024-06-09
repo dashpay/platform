@@ -2,7 +2,7 @@ mod v0;
 
 use crate::drive::flags::StorageFlags;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
+use crate::drive::object_size_info::PathInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

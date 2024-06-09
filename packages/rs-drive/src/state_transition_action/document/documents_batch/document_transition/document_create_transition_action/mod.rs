@@ -16,7 +16,7 @@ use dpp::ProtocolError;
 pub use v0::*;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction};
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 
 /// document create transition action
 #[derive(Debug, Clone, From)]
@@ -64,13 +64,15 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
 
     fn take_prefunded_voting_balance(
         &mut self,
-    ) -> Option<(ContestedDocumentResourceVotePoll, Credits)> {
+    ) -> Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.prefunded_voting_balance.take(),
         }
     }
 
-    fn prefunded_voting_balance(&self) -> &Option<(ContestedDocumentResourceVotePoll, Credits)> {
+    fn prefunded_voting_balance(
+        &self,
+    ) -> &Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => &v0.prefunded_voting_balance,
         }

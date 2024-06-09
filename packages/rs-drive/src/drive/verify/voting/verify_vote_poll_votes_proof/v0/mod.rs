@@ -1,7 +1,7 @@
 use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
 use dpp::platform_value;
-use grovedb::{Element, GroveDb};
+use grovedb::GroveDb;
 
 use crate::error::Error;
 

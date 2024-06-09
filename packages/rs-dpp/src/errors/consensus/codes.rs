@@ -206,6 +206,8 @@ impl ErrorWithCode for StateError {
             Self::DocumentTimestampsAreEqualError(_) => 40107,
             Self::DocumentNotForSaleError(_) => 40108,
             Self::DocumentIncorrectPurchasePriceError(_) => 40109,
+            Self::DocumentContestCurrentlyLockedError(_) => 40110,
+            Self::DocumentContestNotJoinableError(_) => 40111,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

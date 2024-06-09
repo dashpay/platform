@@ -2,6 +2,7 @@ use crate::block::epoch::{Epoch, EPOCH_0};
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
     time_ms: 0,
@@ -27,6 +28,30 @@ pub struct BlockInfo {
 
     /// Current fee epoch
     pub epoch: Epoch,
+}
+
+impl fmt::Display for BlockInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "BlockInfo {{ time_ms: {}, height: {}, core_height: {}, epoch: {} }}",
+            self.time_ms, self.height, self.core_height, self.epoch.index
+        )
+    }
+}
+
+// Implementing PartialOrd for BlockInfo based on height
+impl PartialOrd for BlockInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+// Implementing Ord for BlockInfo based on height
+impl Ord for BlockInfo {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.height.cmp(&other.height)
+    }
 }
 
 impl BlockInfo {

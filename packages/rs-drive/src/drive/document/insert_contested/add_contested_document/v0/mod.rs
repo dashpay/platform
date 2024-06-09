@@ -7,8 +7,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::fee::fee_result::FeeResult;
 
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -17,8 +18,9 @@ impl Drive {
     pub(super) fn add_contested_document_v0(
         &self,
         owned_document_info: OwnedDocumentInfo,
-        contested_document_resource_vote_poll: ContestedDocumentResourceVotePoll,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         insert_without_check: bool,
+        also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -29,7 +31,8 @@ impl Drive {
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
                 contested_document_resource_vote_poll
-                    .contract_id
+                    .contract
+                    .id()
                     .into_buffer(),
                 Some(&block_info.epoch),
                 true,
@@ -53,6 +56,13 @@ impl Drive {
             document_type,
         };
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        if let Some(vote_poll_stored_start_info) = also_insert_vote_poll_stored_info {
+            self.insert_stored_info_for_contested_resource_vote_poll_operations(
+                &contested_document_resource_vote_poll,
+                vote_poll_stored_start_info,
+                platform_version,
+            )?;
+        }
         self.add_contested_document_for_contract_apply_and_add_to_operations(
             document_and_contract_info,
             contested_document_resource_vote_poll,

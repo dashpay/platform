@@ -8,9 +8,8 @@ use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::ProtocolError;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
-use drive::error::drive::DriveError;
 use drive::grovedb::TransactionArg;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 impl<C> Platform<C>
 where

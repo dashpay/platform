@@ -1,3 +1,4 @@
+use crate::drive::contract::DataContractFetchInfo;
 #[cfg(feature = "server")]
 use crate::drive::object_size_info::DataContractOwnedResolvedInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -95,6 +96,20 @@ pub trait ContestedDocumentResourceVotePollResolver {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
+
+    /// Resolve owned into a struct that allows for a borrowed contract
+    #[cfg(any(feature = "verify", feature = "server"))]
+    fn resolve_with_provided_arc_contract_fetch_info(
+        &self,
+        data_contract: Arc<DataContractFetchInfo>,
+    ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error>;
+
+    /// Resolve owned into a struct that allows for a borrowed contract
+    #[cfg(any(feature = "verify", feature = "server"))]
+    fn resolve_owned_with_provided_arc_contract_fetch_info(
+        self,
+        data_contract: Arc<DataContractFetchInfo>,
+    ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error>;
 }
 
 impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVotePoll {
@@ -195,6 +210,64 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
                 index_values: index_values.clone(),
             },
         )
+    }
+
+    #[cfg(any(feature = "verify", feature = "server"))]
+    fn resolve_with_provided_arc_contract_fetch_info(
+        &self,
+        data_contract: Arc<DataContractFetchInfo>,
+    ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error> {
+        let ContestedDocumentResourceVotePoll {
+            contract_id,
+            document_type_name,
+            index_name,
+            index_values,
+        } = self;
+
+        if contract_id != data_contract.contract.id_ref() {
+            return Err(Error::DataContract(
+                DataContractError::ProvidedContractMismatch(format!(
+                    "data contract provided {} is not the one required {}",
+                    data_contract.contract.id_ref(),
+                    contract_id
+                )),
+            ));
+        }
+        Ok(ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::DataContractFetchInfo(data_contract),
+            document_type_name: document_type_name.clone(),
+            index_name: index_name.clone(),
+            index_values: index_values.clone(),
+        })
+    }
+
+    #[cfg(any(feature = "verify", feature = "server"))]
+    fn resolve_owned_with_provided_arc_contract_fetch_info(
+        self,
+        data_contract: Arc<DataContractFetchInfo>,
+    ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error> {
+        let ContestedDocumentResourceVotePoll {
+            contract_id,
+            document_type_name,
+            index_name,
+            index_values,
+        } = self;
+
+        if contract_id != data_contract.contract.id_ref() {
+            return Err(Error::DataContract(
+                DataContractError::ProvidedContractMismatch(format!(
+                    "data contract provided {} is not the one required {}",
+                    data_contract.contract.id_ref(),
+                    contract_id
+                )),
+            ));
+        }
+        Ok(ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::DataContractFetchInfo(data_contract),
+            document_type_name,
+            index_name,
+            index_values,
+        })
     }
 
     #[cfg(any(feature = "verify", feature = "server"))]

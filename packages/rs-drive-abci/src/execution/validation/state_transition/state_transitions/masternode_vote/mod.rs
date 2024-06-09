@@ -4,7 +4,6 @@ mod state;
 mod structure;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -58,7 +57,7 @@ impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
-        _epoch: &Epoch,
+        _block_info: &BlockInfo,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -121,7 +120,6 @@ mod tests {
     use dapi_grpc::platform::v0::get_prefunded_specialized_balance_request::GetPrefundedSpecializedBalanceRequestV0;
     use std::collections::BTreeMap;
     use std::sync::Arc;
-    use rand::Rng;
     use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
     use dapi_grpc::platform::v0::get_contested_resources_response::{get_contested_resources_response_v0, GetContestedResourcesResponseV0};
     use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
@@ -163,7 +161,7 @@ mod tests {
     use drive::drive::Drive;
     use crate::execution::validation::state_transition::state_transitions::tests::{create_dpns_name_contest, verify_dpns_name_contest, perform_vote, setup_masternode_identity, get_proved_vote_states, get_vote_states, perform_votes_multi};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::{finished_vote_info, FinishedVoteInfo};
-    use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+    use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
     use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::get_vote_polls_by_end_date_request_v0;
     mod vote_tests {
 

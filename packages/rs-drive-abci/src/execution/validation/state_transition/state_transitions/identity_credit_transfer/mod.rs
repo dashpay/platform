@@ -4,7 +4,6 @@ mod state;
 mod structure;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -89,7 +88,7 @@ impl StateTransitionStateValidationV0 for IdentityCreditTransferTransition {
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
-        _epoch: &Epoch,
+        _block_info: &BlockInfo,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

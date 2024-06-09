@@ -1,4 +1,4 @@
-use dpp::block::epoch::Epoch;
+use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
@@ -25,7 +25,7 @@ pub trait DocumentCreateTransitionActionValidation {
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -58,7 +58,7 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -73,7 +73,7 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
             0 => self.validate_state_v0(
                 platform,
                 owner_id,
-                epoch,
+                block_info,
                 execution_context,
                 transaction,
                 platform_version,

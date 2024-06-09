@@ -1,7 +1,6 @@
 use crate::drive::votes::paths::{
-    VotePollPaths, RESOURCE_ABSTAIN_VOTE_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8,
-    RESOURCE_FINISHED_INFO_KEY, RESOURCE_FINISHED_INFO_KEY_U8, RESOURCE_LOCK_VOTE_TREE_KEY,
-    RESOURCE_LOCK_VOTE_TREE_KEY_U8,
+    VotePollPaths, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8, RESOURCE_LOCK_VOTE_TREE_KEY_U8,
+    RESOURCE_STORED_INFO_KEY_U8,
 };
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
@@ -13,24 +12,18 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
-use dpp::bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::voting::contender_structs::{
     ContenderWithSerializedDocument, FinalizedContenderWithSerializedDocument,
-    FinalizedResourceVoteChoicesWithVoterInfo,
 };
-use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
-use dpp::voting::vote_outcomes::finalized_contested_document_vote_poll_stored_info::{
-    FinalizedContestedDocumentVotePollStoredInfo,
-    FinalizedContestedDocumentVotePollStoredInfoV0Getters,
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
+    ContestedDocumentVotePollStoredInfo, ContestedDocumentVotePollStoredInfoV0Getters,
 };
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
@@ -526,24 +519,50 @@ impl ContestedDocumentVotePollDriveQuery {
                                     }
                                     abstaining_vote_tally = Some(sum_tree_value as u32);
                                 }
-                                Some(key) if key == &RESOURCE_FINISHED_INFO_KEY_U8 => {
+                                Some(key) if key == &RESOURCE_STORED_INFO_KEY_U8 => {
                                     // The vote is actually over, let's deserialize the info
-                                    let finalized_contested_document_vote_poll_stored_info = FinalizedContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&vote_tally.into_item_bytes()?)?;
-                                    locked_vote_tally = Some(
-                                        finalized_contested_document_vote_poll_stored_info
-                                            .locked_votes(),
-                                    );
-                                    abstaining_vote_tally = Some(
-                                        finalized_contested_document_vote_poll_stored_info
-                                            .abstain_votes(),
-                                    );
-                                    winner = Some((
-                                        *finalized_contested_document_vote_poll_stored_info
-                                            .winner(),
-                                        *finalized_contested_document_vote_poll_stored_info
-                                            .finalization_block(),
-                                    ));
-                                    contenders = finalized_contested_document_vote_poll_stored_info.contender_votes_in_vec_of_contender_with_serialized_document();
+                                    let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&vote_tally.into_item_bytes()?)?;
+                                    if finalized_contested_document_vote_poll_stored_info
+                                        .vote_poll_status()
+                                        .awarded_or_locked()
+                                    {
+                                        locked_vote_tally = Some(
+                                            finalized_contested_document_vote_poll_stored_info
+                                                .last_locked_votes()
+                                                .ok_or(Error::Drive(
+                                                    DriveError::CorruptedDriveState(
+                                                        "we should have last locked votes"
+                                                            .to_string(),
+                                                    ),
+                                                ))?,
+                                        );
+                                        abstaining_vote_tally = Some(
+                                            finalized_contested_document_vote_poll_stored_info
+                                                .last_abstain_votes()
+                                                .ok_or(Error::Drive(
+                                                    DriveError::CorruptedDriveState(
+                                                        "we should have last abstain votes"
+                                                            .to_string(),
+                                                    ),
+                                                ))?,
+                                        );
+                                        winner = Some((
+                                            finalized_contested_document_vote_poll_stored_info
+                                                .winner(),
+                                            finalized_contested_document_vote_poll_stored_info
+                                                .last_finalization_block()
+                                                .ok_or(Error::Drive(
+                                                    DriveError::CorruptedDriveState(
+                                                        "we should have a last finalization block"
+                                                            .to_string(),
+                                                    ),
+                                                ))?,
+                                        ));
+                                        contenders = finalized_contested_document_vote_poll_stored_info
+                                            .contender_votes_in_vec_of_contender_with_serialized_document().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                            "we should have a last contender votes".to_string(),
+                                        )))?;
+                                    }
                                 }
 
                                 _ => {
@@ -647,22 +666,35 @@ impl ContestedDocumentVotePollDriveQuery {
                                             contenders.push(contender);
                                         } else {
                                             // The vote is actually over, let's deserialize the info
-                                            let finalized_contested_document_vote_poll_stored_info = FinalizedContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&serialized_item_info)?;
-                                            locked_vote_tally = Some(
-                                                finalized_contested_document_vote_poll_stored_info
-                                                    .locked_votes(),
-                                            );
-                                            abstaining_vote_tally = Some(
-                                                finalized_contested_document_vote_poll_stored_info
-                                                    .abstain_votes(),
-                                            );
-                                            winner = Some((
-                                                *finalized_contested_document_vote_poll_stored_info
-                                                    .winner(),
-                                                *finalized_contested_document_vote_poll_stored_info
-                                                    .finalization_block(),
-                                            ));
-                                            contenders = finalized_contested_document_vote_poll_stored_info.contender_votes_in_vec_of_contender_with_serialized_document();
+                                            let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&serialized_item_info)?;
+                                            if finalized_contested_document_vote_poll_stored_info
+                                                .vote_poll_status()
+                                                .awarded_or_locked()
+                                            {
+                                                locked_vote_tally = Some(
+                                                    finalized_contested_document_vote_poll_stored_info
+                                                        .last_locked_votes()
+                                                        .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                            "we should have last locked votes".to_string(),
+                                                        )))?,
+                                                );
+                                                abstaining_vote_tally =
+                                                    Some(finalized_contested_document_vote_poll_stored_info
+                                                        .last_abstain_votes().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                        "we should have last abstain votes".to_string(),
+                                                    )))?);
+                                                winner = Some((
+                                                    finalized_contested_document_vote_poll_stored_info.winner(),
+                                                    finalized_contested_document_vote_poll_stored_info
+                                                        .last_finalization_block().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                        "we should have a last finalization block".to_string(),
+                                                    )))?,
+                                                ));
+                                                contenders = finalized_contested_document_vote_poll_stored_info
+                                                    .contender_votes_in_vec_of_contender_with_serialized_document().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                    "we should have a last contender votes".to_string(),
+                                                )))?;
+                                            }
                                         }
                                     }
                                     _ => {
@@ -728,22 +760,35 @@ impl ContestedDocumentVotePollDriveQuery {
                                             contenders.push(contender);
                                         } else {
                                             // The vote is actually over, let's deserialize the info
-                                            let finalized_contested_document_vote_poll_stored_info = FinalizedContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&serialized_item_info)?;
-                                            locked_vote_tally = Some(
-                                                finalized_contested_document_vote_poll_stored_info
-                                                    .locked_votes(),
-                                            );
-                                            abstaining_vote_tally = Some(
-                                                finalized_contested_document_vote_poll_stored_info
-                                                    .abstain_votes(),
-                                            );
-                                            winner = Some((
-                                                *finalized_contested_document_vote_poll_stored_info
-                                                    .winner(),
-                                                *finalized_contested_document_vote_poll_stored_info
-                                                    .finalization_block(),
-                                            ));
-                                            contenders = finalized_contested_document_vote_poll_stored_info.contender_votes_in_vec_of_contender_with_serialized_document();
+                                            let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&serialized_item_info)?;
+                                            if finalized_contested_document_vote_poll_stored_info
+                                                .vote_poll_status()
+                                                .awarded_or_locked()
+                                            {
+                                                locked_vote_tally = Some(
+                                                    finalized_contested_document_vote_poll_stored_info
+                                                        .last_locked_votes()
+                                                        .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                            "we should have last locked votes".to_string(),
+                                                        )))?,
+                                                );
+                                                abstaining_vote_tally =
+                                                    Some(finalized_contested_document_vote_poll_stored_info
+                                                        .last_abstain_votes().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                        "we should have last abstain votes".to_string(),
+                                                    )))?);
+                                                winner = Some((
+                                                    finalized_contested_document_vote_poll_stored_info.winner(),
+                                                    finalized_contested_document_vote_poll_stored_info
+                                                        .last_finalization_block().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                        "we should have a last finalization block".to_string(),
+                                                    )))?,
+                                                ));
+                                                contenders = finalized_contested_document_vote_poll_stored_info
+                                                    .contender_votes_in_vec_of_contender_with_serialized_document().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                    "we should have a last contender votes".to_string(),
+                                                )))?;
+                                            }
                                         }
                                     }
                                     _ => {

@@ -9,7 +9,6 @@ use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::IndexProperty;
-use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use platform_version::version::PlatformVersion;
@@ -45,19 +44,19 @@ pub const IDENTITY_VOTES_TREE_KEY: char = 'i';
 pub const RESOURCE_LOCK_VOTE_TREE_KEY: char = 'l';
 
 /// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
-pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY: char = 'a';
+pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY: char = 'k';
 
 /// In the active vote poll this will contain votes for locking the contested resource
 pub const RESOURCE_LOCK_VOTE_TREE_KEY_U8: u8 = 'l' as u8;
 
 /// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
-pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = 'a' as u8;
+pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = 'k' as u8;
 
 /// The finished info
-pub const RESOURCE_FINISHED_INFO_KEY: char = 'f';
+pub const RESOURCE_STORED_INFO_KEY: char = 'b';
 
 /// The finished info
-pub const RESOURCE_FINISHED_INFO_KEY_U8: u8 = 'f' as u8;
+pub const RESOURCE_STORED_INFO_KEY_U8: u8 = 'b' as u8;
 
 /// The tree key for storage
 pub const VOTING_STORAGE_TREE_KEY: u8 = 1;

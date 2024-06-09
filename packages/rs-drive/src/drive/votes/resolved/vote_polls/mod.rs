@@ -2,7 +2,6 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 use derive_more::From;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::ProtocolError;
 use std::collections::BTreeMap;
 

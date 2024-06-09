@@ -1,8 +1,5 @@
-use crate::drive::grove_operations::{BatchDeleteApplyType, BatchDeleteUpTreeApplyType};
-use crate::drive::votes::paths::{
-    vote_contested_resource_end_date_queries_at_time_tree_path_vec, VotePollPaths,
-    VOTING_STORAGE_TREE_KEY,
-};
+use crate::drive::grove_operations::BatchDeleteApplyType;
+use crate::drive::votes::paths::{VotePollPaths, VOTING_STORAGE_TREE_KEY};
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -10,8 +7,6 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use grovedb::batch::KeyInfoPath;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

@@ -16,8 +16,8 @@ use dpp::prelude::Identifier;
 
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -70,7 +70,7 @@ pub enum DocumentOperationType<'a> {
         /// The document and contract info, also may contain the owner_id
         owned_document_info: OwnedDocumentInfo<'a>,
         /// The vote poll in question that will should be created
-        contested_document_resource_vote_poll: ContestedDocumentResourceVotePoll,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
         /// Document type

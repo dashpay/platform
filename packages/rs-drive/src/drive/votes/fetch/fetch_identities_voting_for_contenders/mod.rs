@@ -26,6 +26,7 @@ impl Drive {
             .drive
             .methods
             .vote
+            .fetch
             .fetch_identities_voting_for_contenders
         {
             0 => self.fetch_identities_voting_for_contenders_v0(

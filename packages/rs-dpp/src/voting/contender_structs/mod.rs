@@ -4,8 +4,10 @@ use crate::document::Document;
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::ProtocolError;
+use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
+use std::fmt;
 
 /// Represents a contender in the contested document vote poll.
 /// This is for internal use where the document is in serialized form
@@ -48,6 +50,21 @@ pub struct FinalizedResourceVoteChoicesWithVoterInfo {
     pub resource_vote_choice: ResourceVoteChoice,
     /// The pro_tx_hashes of the voters for this contender.
     pub voters: Vec<Identifier>,
+}
+impl fmt::Display for FinalizedResourceVoteChoicesWithVoterInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let voters_str: Vec<String> = self
+            .voters
+            .iter()
+            .map(|v| v.to_string(Encoding::Base58))
+            .collect();
+        write!(
+            f,
+            "FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: {}, voters: [{}] }}",
+            self.resource_vote_choice,
+            voters_str.join(", ")
+        )
+    }
 }
 
 /// Represents a finalized contender in the contested document vote poll.

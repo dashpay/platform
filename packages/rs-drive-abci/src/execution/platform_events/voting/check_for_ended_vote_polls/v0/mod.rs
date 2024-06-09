@@ -6,7 +6,7 @@ use dpp::document::DocumentV0Getters;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
-use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
 use drive::grovedb::TransactionArg;

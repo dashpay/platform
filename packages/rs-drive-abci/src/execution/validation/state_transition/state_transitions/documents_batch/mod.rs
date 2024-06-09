@@ -7,7 +7,6 @@ mod state;
 mod transformer;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -190,7 +189,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -218,7 +217,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
                 self.validate_state_v0(
                     documents_batch_transition_action,
                     &platform.into(),
-                    epoch,
+                    block_info,
                     execution_context,
                     tx,
                     platform_version,
@@ -266,14 +265,11 @@ mod tests {
     use rand::SeedableRng;
 
     mod creation_tests {
-        use std::sync::Arc;
         use rand::Rng;
         use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
-        use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info;
-        use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
         use super::*;
         use dpp::data_contract::accessors::v0::DataContractV0Setters;
         use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
@@ -286,8 +282,7 @@ mod tests {
         use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
-        use crate::execution::validation::state_transition::state_transitions::tests::{create_dpns_name_contest, fast_forward_to_block, get_vote_states, perform_votes_multi};
-        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+        use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_name_contest, fast_forward_to_block, perform_votes_multi};
 
         #[test]
         fn test_document_creation() {
@@ -860,11 +855,12 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (contender_3, contender_4, dpns_contract) = create_dpns_name_contest(
+            let contender_3 = add_contender_to_dpns_name_contest(
                 &mut platform,
                 &platform_state,
-                8,
+                4,
                 "quantum",
+                None, // this should succeed, as we are under a week
                 platform_version,
             );
 
@@ -872,11 +868,12 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (contender_5, contender_6, dpns_contract) = create_dpns_name_contest(
+            let contender_4 = add_contender_to_dpns_name_contest(
                 &mut platform,
                 &platform_state,
                 9,
                 "quantum",
+                Some(""), // this should fail, as we are over a week
                 platform_version,
             );
             //todo() this should fail!

@@ -5,7 +5,6 @@ use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
 use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
@@ -235,7 +234,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         action,
         platform,
         ValidationMode::Validator,
-        &block_info.epoch,
+        block_info,
         &mut state_transition_execution_context,
         transaction,
     )?;
@@ -481,7 +480,7 @@ pub(crate) trait StateTransitionStateValidationV0:
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -865,7 +864,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -875,7 +874,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 action,
                 platform,
                 validation_mode,
-                epoch,
+                block_info,
                 execution_context,
                 tx,
             ),
@@ -884,7 +883,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 action,
                 platform,
                 validation_mode,
-                epoch,
+                block_info,
                 execution_context,
                 tx,
             ),
@@ -909,7 +908,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 action,
                 platform,
                 validation_mode,
-                epoch,
+                block_info,
                 execution_context,
                 tx,
             ),
@@ -932,7 +931,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 action,
                 platform,
                 validation_mode,
-                epoch,
+                block_info,
                 execution_context,
                 tx,
             ),
@@ -941,7 +940,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 action,
                 platform,
                 validation_mode,
-                epoch,
+                block_info,
                 execution_context,
                 tx,
             ),
@@ -949,7 +948,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 action,
                 platform,
                 validation_mode,
-                epoch,
+                block_info,
                 execution_context,
                 tx,
             ),
@@ -957,7 +956,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 action,
                 platform,
                 validation_mode,
-                epoch,
+                block_info,
                 execution_context,
                 tx,
             ),

@@ -6,9 +6,9 @@ use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedResourceVoteChoicesWithVoterInfo;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::vote_outcomes::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
-use dpp::voting::vote_outcomes::finalized_contested_document_vote_poll_stored_info::FinalizedContestedDocumentVotePollStoredInfo;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+use drive::error::drive::DriveError;
 use drive::grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -36,20 +36,39 @@ where
                 },
             )
             .collect();
+        let stored_info_from_disk = self
+            .drive
+            .fetch_contested_document_vote_poll_stored_info(
+                vote_poll,
+                &block_info.epoch,
+                transaction,
+                platform_version,
+            )?
+            .1
+            .ok_or(Error::Drive(drive::error::Error::Drive(
+                DriveError::CorruptedDriveState(
+                    "there must be a record of the vote poll in the state".to_string(),
+                ),
+            )))?;
+
+        // We perform an upgrade of the stored version just in case, most of the time this does nothing
+        let mut stored_info = stored_info_from_disk.update_to_latest_version(platform_version)?;
+
         // We need to construct the finalized contested document vote poll stored info
-        let info_to_store = FinalizedContestedDocumentVotePollStoredInfo::new(
+        stored_info.finalize_vote_poll(
             finalized_resource_vote_choices_with_voter_infos,
             *block_info,
             winner_info,
-            platform_version,
         )?;
 
-        self.drive.insert_record_of_finished_vote_poll(
-            vote_poll,
-            info_to_store,
-            transaction,
-            platform_version,
-        )?;
+        // We reinsert the info
+        self.drive
+            .insert_stored_info_for_contested_resource_vote_poll(
+                vote_poll,
+                stored_info,
+                transaction,
+                platform_version,
+            )?;
 
         Ok(())
     }
