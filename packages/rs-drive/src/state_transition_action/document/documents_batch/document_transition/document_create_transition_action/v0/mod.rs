@@ -22,6 +22,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 
 /// document create transition action v0
 #[derive(Debug, Clone)]
@@ -36,6 +37,10 @@ pub struct DocumentCreateTransitionActionV0 {
     /// aside that will be used by voters to vote)
     pub prefunded_voting_balance:
         Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)>,
+    /// We store contest info only in the case of a new contested document that creates a new contest
+    pub current_store_contest_info: Option<ContestedDocumentVotePollStoredInfo>,
+    /// We store contest info only in the case of a new contested document that creates a new contest
+    pub should_store_contest_info: Option<ContestedDocumentVotePollStoredInfo>,
 }
 
 /// document create transition action accessors v0
@@ -63,6 +68,18 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     fn prefunded_voting_balance(
         &self,
     ) -> &Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)>;
+
+    /// Get the should store contest info (if it should be stored)
+    fn should_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo>;
+
+    /// Take the should store contest info (if it should be stored) and replace it with None.
+    fn take_should_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo>;
+
+    /// Get the current store contest info (if it should be stored)
+    fn current_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo>;
+
+    /// Take the current store contest info (if it should be stored) and replace it with None.
+    fn take_current_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo>;
 }
 
 /// documents from create transition v0

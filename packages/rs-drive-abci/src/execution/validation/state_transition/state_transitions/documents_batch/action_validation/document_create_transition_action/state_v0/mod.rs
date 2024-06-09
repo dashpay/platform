@@ -16,8 +16,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{C
 use drive::error::drive::DriveError;
 use drive::query::TransactionArg;
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
 
@@ -38,7 +37,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
+        _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -98,18 +97,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
         if let Some((contested_document_resource_vote_poll, credits)) =
             self.prefunded_voting_balance()
         {
-            let (fee_result, maybe_stored_info) = platform
-                .drive
-                .fetch_contested_document_vote_poll_stored_info(
-                    contested_document_resource_vote_poll,
-                    &block_info.epoch,
-                    transaction,
-                    platform_version,
-                )?;
-            execution_context
-                .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
-
-            if let Some(stored_info) = maybe_stored_info {
+            if let Some(stored_info) = self.current_store_contest_info() {
                 // We have previous stored info
                 match stored_info.vote_poll_status() {
                     ContestedDocumentVotePollStatus::NotStarted => {
@@ -128,10 +116,10 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
                         Ok(SimpleConsensusValidationResult::new_with_error(
                             ConsensusError::StateError(StateError::DocumentContestCurrentlyLockedError(
                                 DocumentContestCurrentlyLockedError::new(
-                                contested_document_resource_vote_poll.into(),
-                                stored_info,
-                                platform_version.fee_version.vote_resolution_fund_fees.contested_document_vote_resolution_unlock_fund_required_amount,
-                            ))),
+                                    contested_document_resource_vote_poll.into(),
+                                    stored_info.clone(),
+                                    platform_version.fee_version.vote_resolution_fund_fees.contested_document_vote_resolution_unlock_fund_required_amount,
+                                ))),
                         ))
                     }
                     ContestedDocumentVotePollStatus::Started(start_block) => {
@@ -143,7 +131,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
                             Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::DocumentContestNotJoinableError(
                                 DocumentContestNotJoinableError::new(
                                     contested_document_resource_vote_poll.into(),
-                                    stored_info,
+                                    stored_info.clone(),
                                     start_block.time_ms,
                                     block_info.time_ms,
                                     join_time_allowed,

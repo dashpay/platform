@@ -56,13 +56,6 @@ impl Drive {
             document_type,
         };
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        if let Some(vote_poll_stored_start_info) = also_insert_vote_poll_stored_info {
-            self.insert_stored_info_for_contested_resource_vote_poll_operations(
-                &contested_document_resource_vote_poll,
-                vote_poll_stored_start_info,
-                platform_version,
-            )?;
-        }
         self.add_contested_document_for_contract_apply_and_add_to_operations(
             document_and_contract_info,
             contested_document_resource_vote_poll,
@@ -70,6 +63,7 @@ impl Drive {
             block_info,
             true,
             apply,
+            also_insert_vote_poll_stored_info,
             transaction,
             &mut drive_operations,
             platform_version,

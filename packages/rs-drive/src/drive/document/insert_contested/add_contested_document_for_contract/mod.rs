@@ -11,6 +11,7 @@ use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -34,6 +35,7 @@ impl Drive {
         insert_without_check: bool,
         block_info: BlockInfo,
         apply: bool,
+        also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
@@ -50,6 +52,7 @@ impl Drive {
                 insert_without_check,
                 block_info,
                 apply,
+                also_insert_vote_poll_stored_info,
                 transaction,
                 platform_version,
             ),

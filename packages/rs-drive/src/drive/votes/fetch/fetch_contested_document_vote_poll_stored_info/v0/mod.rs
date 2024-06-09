@@ -22,7 +22,7 @@ impl Drive {
         let path = contested_document_resource_vote_poll_with_contract_info
             .contenders_path(platform_version)?;
         let mut cost_operations = vec![];
-        let maybe_element = self.grove_get_raw(
+        let maybe_element = self.grove_get_raw_optional(
             path.as_slice().into(),
             vec![RESOURCE_STORED_INFO_KEY_U8].as_slice(),
             DirectQueryType::StatefulDirectQuery,

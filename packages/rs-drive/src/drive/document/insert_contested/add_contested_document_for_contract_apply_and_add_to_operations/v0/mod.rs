@@ -6,6 +6,7 @@ use dpp::block::block_info::BlockInfo;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -21,6 +22,7 @@ impl Drive {
         block_info: &BlockInfo,
         document_is_unique_for_document_type_in_batch: bool,
         stateful: bool,
+        also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -36,6 +38,7 @@ impl Drive {
                 contested_document_resource_vote_poll,
                 insert_without_check,
                 block_info,
+                also_insert_vote_poll_stored_info,
                 &mut None,
                 &mut estimated_costs_only_with_layer_info,
                 transaction,
@@ -54,6 +57,7 @@ impl Drive {
                 contested_document_resource_vote_poll,
                 insert_without_check,
                 block_info,
+                also_insert_vote_poll_stored_info,
                 &mut Some(drive_operations),
                 &mut estimated_costs_only_with_layer_info,
                 transaction,
