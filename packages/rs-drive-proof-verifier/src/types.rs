@@ -9,9 +9,9 @@ use std::collections::BTreeMap;
 
 use dpp::prelude::IdentityNonce;
 pub use dpp::version::ProtocolVersionVoteCount;
+use dpp::voting::contender_structs::Contender;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     dashcore::ProTxHash,
@@ -21,7 +21,6 @@ use dpp::{
     util::deserializer::ProtocolVersion,
 };
 use drive::grovedb::Element;
-use drive::query::vote_poll_vote_state_query::Contender;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
