@@ -15,10 +15,16 @@ impl Drive {
     pub(super) fn fetch_contested_document_vote_poll_stored_info_v0(
         &self,
         contested_document_resource_vote_poll_with_contract_info: &ContestedDocumentResourceVotePollWithContractInfo,
-        epoch: &Epoch,
+        epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(FeeResult, Option<ContestedDocumentVotePollStoredInfo>), Error> {
+    ) -> Result<
+        (
+            Option<FeeResult>,
+            Option<ContestedDocumentVotePollStoredInfo>,
+        ),
+        Error,
+    > {
         let path = contested_document_resource_vote_poll_with_contract_info
             .contenders_path(platform_version)?;
         let mut cost_operations = vec![];
@@ -30,13 +36,18 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
-        let fee_result = Drive::calculate_fee(
-            None,
-            Some(cost_operations),
-            epoch,
-            self.config.epochs_per_era,
-            platform_version,
-        )?;
+
+        let fee_result = epoch
+            .map(|epoch| {
+                Drive::calculate_fee(
+                    None,
+                    Some(cost_operations),
+                    epoch,
+                    self.config.epochs_per_era,
+                    platform_version,
+                )
+            })
+            .transpose()?;
         let Some(element) = maybe_element else {
             return Ok((fee_result, None));
         };

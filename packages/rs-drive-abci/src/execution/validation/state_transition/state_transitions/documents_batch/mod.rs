@@ -818,7 +818,7 @@ mod tests {
         }
 
         #[test]
-        fn test_that_a_contested_vote_can_not_be_added_to_after_a_week() {
+        fn test_that_a_contested_document_can_not_be_added_to_after_a_week() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -865,15 +865,98 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let contender_4 = add_contender_to_dpns_name_contest(
+            // We expect this to fail
+
+            let _contender_4 = add_contender_to_dpns_name_contest(
                 &mut platform,
                 &platform_state,
                 9,
                 "quantum",
-                Some(""), // this should fail, as we are over a week
+                Some("Document Contest for vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } is not joinable V0(ContestedDocumentVotePollStoredInfoV0 { finalized_events: [], vote_poll_status: Started(BlockInfo { time_ms: 3000, height: 0, core_height: 0, epoch: 0 }), locked_count: 0 }), it started 3000 and it is now 1000003000, and you can only join for 604800000"), // this should fail, as we are over a week
                 platform_version,
             );
-            //todo() this should fail!
+        }
+
+        #[test]
+        fn test_that_a_contested_document_can_not_be_added_if_we_are_locked() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                7,
+                "quantum",
+                platform_version,
+            );
+
+            perform_votes_multi(
+                &mut platform,
+                dpns_contract.as_ref(),
+                vec![
+                    (TowardsIdentity(contender_1.id()), 3),
+                    (TowardsIdentity(contender_2.id()), 5),
+                    (ResourceVoteChoice::Abstain, 10),
+                    (ResourceVoteChoice::Lock, 50),
+                ],
+                "quantum",
+                10,
+                platform_version,
+            );
+
+            fast_forward_to_block(&platform, 200_000_000, 900); //less than a week
+
+            let platform_state = platform.state.load();
+
+            let contender_3 = add_contender_to_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                4,
+                "quantum",
+                None, // this should succeed, as we are under a week
+                platform_version,
+            );
+
+            fast_forward_to_block(&platform, 2_000_000_000, 900); //more than two weeks
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            platform
+                .check_for_ended_vote_polls(
+                    &BlockInfo {
+                        time_ms: 2_000_000_000,
+                        height: 900,
+                        core_height: 42,
+                        epoch: Default::default(),
+                    },
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected to check for ended vote polls");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let platform_state = platform.state.load();
+
+            // We expect this to fail
+
+            let _contender_4 = add_contender_to_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                9,
+                "quantum",
+                Some("Document Contest for vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 { finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 { resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Abstain, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u, 5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Lock, voters: [14MaZELpiqw9Ar1TgG967tPwDxm1Vmykf4RJkV9CSBvp, CriqrFqi178KnT2cgay5MCkf5pkh1hasNNspivkCX5n, 27RfG8uGpyKbqqnr4hBCM1raUGPpr4gG3iuzkfSBBYvw, 2BjX2J4T1FEtoFeCbXTqgbsaT9Y46VgprBjp57XYKTm5, 2Hkzj9tQvRM33eGuJGrSYamtcovpUbHbKcgnej8Uyu9o, 2UYVEKeR3hW4ychcn9hFyVqjb6imNJWNoAw7o2TVLmeT, 2eUjgMPhXJWJinxriaWJEQuY8QkZwGptJfw1jPhHe1kA, 3aDY49u9bPuCAruPuXPQcyYDmz5CkCxTLogwTbpTQhK8, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V, 3swdruXXX2oCVthuqCLcs3jiyyjikZ6mHfTyDbhhYFpr, 4HD2RaqYUeu2qne29SgSg1q7QNsCat3TKsgJN3M7mwjs, 4wJ9S1nn6eUiqeMPrJweMw26MSWqdsfXc2K4V4exo8MJ, 4wbuSyhfH52D8ohXEqDMj2SCqxyYyw6EBJjXGrbD7gaX, 52vMgLeUNShUvr2uwsN7nTZaRK33vSQ8bVBQ7h82p82Z, 5Bcb3RxXu4BgSj8CYTp33ChLmy2YiffGf2r2t31Mxcdv, 5SM9jqscqFq4yjncNAcD66xhYGBe7MWMeNEC5CGvFMSR, 5U28rCCGU9jfetcLikGY96cSfnsDFAw71aKatv7D8RNY, 5ge8VEzRMApREH6nYHTJ9kKoZ4gNATF4gwMkKiPNFn2X, 5pYptJYBSw4g5ud2W9XsVJiGL3SEERsHUDLymy7yagkH, 64X9GjPPC9wqqv2mu35pCJbSHEWzTcjTQMSAj84LZGby, 6tUa6r1Rqcrw6BKdgSjqw6P5cLwwsdEasrx25xJ1jyGy, 75GYjACNwsaVhwj3MSEowTB1riZHMycZro8mMEgFLZ4z, 7bnNhHqWpLNeKk1APwe9vBHMrhQzZuiJJuHuTY5Rvpso, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA, 8RLTSr4inUHuJ9xZmKnCErv7M5M7aFLQFZ6JVMkHAbVc, 8ihqg1AbpNZ8pFfJVjaqscVkBwXGMFMe9UogPwtMCU65, 8vuWmPZtDdmwFCAez4yxc9hNtSUhcUUJTunMPUBYsKZg, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn, 9FqjzdpGCZmRsW3C6WJWov3PTB5pQmMRfmESSAm5aDy6, 9ZsrkfAmzpbJRuPDEoCuixBNe8FZKi7myCuqbaSJD9gr, 9tLuR56o8SHPeym9Uw6pX2JAeG4G24BwWsAF56XDvguZ, A37G3cY3tU3rDg3Dj7Q3PPXbkGK1W2T2cfgcWfTxvpfY, B7qxTW7779iDRqjC2af9mHtbendJCjMCnVeu1xSjyH6i, BFB4YYTJHYULZyNBtAfCGE81dP56GbG9T24DsSYwZNGh, BXeNfZYNC4oetTPULzpvdUUAaXLMruZbuu8drekYhV2p, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C, DJemF3kCXuHQSPi7y57CrT2D3yAraCCb6PFKvjnJgPMm, DoQuTLKPHzaAgAoxRqmqrm2Qy9bfdPr3adPeypkhGrGA, EK8Yb6TZoH4aKoMtkzBXtnckf5WB2RVTVgNXYf1y1e2R, EYhibyc33dQYHs1DLuzXc32Q462H1M5QEm3HhTVpLUJf, EcouVEjKx9189HuZeAK1RwSxFtctENFMHbdnqb6A9sJk, Ezkr9YEzLV6zsXesusbyk77aF342nCXMt3KaV5E7iJvi, GZvYVr4hQk3bp65bgqkZPGLHxFku2g1TNeJeGxerF57d, GorCxh81wFUGqR4uMhSoMVG2CBFgCQpGHgMQyaKjyfMA, HLa9WaCbh4xPfeP93okaXVvQyTuAqPETvMmFFdQcES69, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX, HWBvY9zHMvpDoSktSBvPJPNBs2RwS5y5YUSEbLWeetZn] }], start_block: BlockInfo { time_ms: 3000, height: 0, core_height: 0, epoch: 0 }, finalization_block: BlockInfo { time_ms: 2000000000, height: 900, core_height: 42, epoch: 0 }, winner: Locked }], vote_poll_status: Locked, locked_count: 1 }), unlocking is possible by paying 400000000000 credits"), // this should fail, as it is locked
+                platform_version,
+            );
         }
 
         #[test]

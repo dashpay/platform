@@ -13,6 +13,7 @@ use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
@@ -78,12 +79,14 @@ impl DocumentCreateTransitionActionV0 {
                 let (fetch_fee_result, maybe_current_store_contest_info) = drive
                     .fetch_contested_document_vote_poll_stored_info(
                         contested_document_resource_vote_poll,
-                        &block_info.epoch,
+                        Some(&block_info.epoch),
                         transaction,
                         platform_version,
                     )?;
 
-                fee_result = fetch_fee_result;
+                fee_result = fetch_fee_result.ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution("expected fee result"),
+                ))?;
                 let should_store_contest_info = if maybe_current_store_contest_info.is_none() {
                     // We are starting a new contest
                     Some(ContestedDocumentVotePollStoredInfo::new(
@@ -173,12 +176,14 @@ impl DocumentCreateTransitionActionV0 {
                 let (fetch_fee_result, maybe_current_store_contest_info) = drive
                     .fetch_contested_document_vote_poll_stored_info(
                         contested_document_resource_vote_poll,
-                        &block_info.epoch,
+                        Some(&block_info.epoch),
                         transaction,
                         platform_version,
                     )?;
 
-                fee_result = fetch_fee_result;
+                fee_result = fetch_fee_result.ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution("expected fee result"),
+                ))?;
                 let should_store_contest_info = if maybe_current_store_contest_info.is_none() {
                     // We are starting a new contest
                     Some(ContestedDocumentVotePollStoredInfo::new(

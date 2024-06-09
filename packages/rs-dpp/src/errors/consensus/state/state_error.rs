@@ -38,6 +38,8 @@ use crate::consensus::state::identity::invalid_identity_contract_nonce_error::In
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -153,6 +155,12 @@ pub enum StateError {
 
     #[error(transparent)]
     MasternodeNotFoundError(MasternodeNotFoundError),
+
+    #[error(transparent)]
+    VotePollNotFoundError(VotePollNotFoundError),
+
+    #[error(transparent)]
+    VotePollNotAvailableForVotingError(VotePollNotAvailableForVotingError),
 }
 
 impl From<StateError> for ConsensusError {

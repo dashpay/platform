@@ -2,6 +2,7 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 use derive_more::From;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_polls::VotePoll;
 use dpp::ProtocolError;
 use std::collections::BTreeMap;
 
@@ -19,6 +20,18 @@ pub enum ResolvedVotePoll {
     ContestedDocumentResourceVotePollWithContractInfo(
         ContestedDocumentResourceVotePollWithContractInfo,
     ),
+}
+
+impl From<&ResolvedVotePoll> for VotePoll {
+    fn from(value: &ResolvedVotePoll) -> Self {
+        match value {
+            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
+                contested_document_resource_vote_poll,
+            ) => VotePoll::ContestedDocumentResourceVotePoll(
+                contested_document_resource_vote_poll.into(),
+            ),
+        }
+    }
 }
 
 /// Represents a resolved vote poll in the system that also contains votes.

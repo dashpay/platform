@@ -2,6 +2,7 @@ mod balance;
 mod nonce;
 mod state;
 mod structure;
+mod transform_into_action;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -18,6 +19,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::masternode_vote::state::v0::MasternodeVoteStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
 use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -41,7 +43,9 @@ impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
             .masternode_vote_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform, tx, platform_version),
+            0 => self
+                .transform_into_action_v0(platform, tx, platform_version)
+                .map(|result| result.map(|action| action.into())),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: transform_into_action".to_string(),
                 known_versions: vec![0],

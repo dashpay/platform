@@ -66,6 +66,8 @@ use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, MaxDocume
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
+use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
@@ -73,6 +75,8 @@ use dpp::consensus::state::identity::master_public_key_update_error::MasterPubli
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
@@ -252,6 +256,18 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::MasternodeNotFoundError(e) => {
             generic_consensus_error!(MasternodeNotFoundError, e).into()
+        }
+        StateError::DocumentContestCurrentlyLockedError(e) => {
+            generic_consensus_error!(DocumentContestCurrentlyLockedError, e).into()
+        }
+        StateError::DocumentContestNotJoinableError(e) => {
+            generic_consensus_error!(DocumentContestNotJoinableError, e).into()
+        }
+        StateError::VotePollNotFoundError(e) => {
+            generic_consensus_error!(VotePollNotFoundError, e).into()
+        }
+        StateError::VotePollNotAvailableForVotingError(e) => {
+            generic_consensus_error!(VotePollNotAvailableForVotingError, e).into()
         }
     }
 }

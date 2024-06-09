@@ -40,7 +40,7 @@ where
             .drive
             .fetch_contested_document_vote_poll_stored_info(
                 vote_poll,
-                &block_info.epoch,
+                None,
                 transaction,
                 platform_version,
             )?

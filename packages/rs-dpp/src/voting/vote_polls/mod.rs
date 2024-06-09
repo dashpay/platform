@@ -6,6 +6,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 #[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 pub mod contested_document_resource_vote_poll;
 
@@ -19,6 +20,16 @@ pub mod contested_document_resource_vote_poll;
 #[platform_serialize(limit = 100000)]
 pub enum VotePoll {
     ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll),
+}
+
+impl fmt::Display for VotePoll {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            VotePoll::ContestedDocumentResourceVotePoll(poll) => {
+                write!(f, "ContestedDocumentResourceVotePoll({})", poll)
+            }
+        }
+    }
 }
 
 impl Default for VotePoll {

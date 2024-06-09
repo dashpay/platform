@@ -693,7 +693,7 @@ mod tests {
             };
             assert_eq!(consensus_error.to_string(), expected_err);
         } else {
-            assert_eq!(processing_result.valid_count(), 2);
+            assert_eq!(processing_result.valid_count(), 1);
         }
         identity_1
     }

@@ -17,10 +17,16 @@ impl Drive {
     pub fn fetch_contested_document_vote_poll_stored_info(
         &self,
         contested_document_resource_vote_poll_with_contract_info: &ContestedDocumentResourceVotePollWithContractInfo,
-        epoch: &Epoch,
+        epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(FeeResult, Option<ContestedDocumentVotePollStoredInfo>), Error> {
+    ) -> Result<
+        (
+            Option<FeeResult>,
+            Option<ContestedDocumentVotePollStoredInfo>,
+        ),
+        Error,
+    > {
         match platform_version
             .drive
             .methods

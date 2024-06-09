@@ -227,6 +227,8 @@ impl ErrorWithCode for StateError {
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,
+            Self::VotePollNotFoundError(_) => 40301,
+            Self::VotePollNotAvailableForVotingError(_) => 40302,
 
             // Prefunded specialized balances Errors: 40400-40499
             Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,
