@@ -13,6 +13,7 @@ use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 impl Drive {
@@ -45,6 +46,7 @@ impl Drive {
         voter_pro_tx_hash: [u8; 32],
         strength: u8,
         vote: ResolvedVote,
+        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -61,6 +63,7 @@ impl Drive {
                 voter_pro_tx_hash,
                 strength,
                 vote,
+                previous_resource_vote_choice_to_remove,
                 block_info,
                 apply,
                 transaction,
@@ -104,6 +107,7 @@ impl Drive {
         voter_pro_tx_hash: [u8; 32],
         strength: u8,
         vote: ResolvedVote,
+        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -122,6 +126,7 @@ impl Drive {
                 voter_pro_tx_hash,
                 strength,
                 vote,
+                previous_resource_vote_choice_to_remove,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,

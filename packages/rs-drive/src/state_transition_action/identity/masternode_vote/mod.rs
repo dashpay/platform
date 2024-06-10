@@ -54,10 +54,19 @@ impl MasternodeVoteTransitionAction {
     }
 
     /// The previous resource vote choice that needs to be removed
-    pub fn previous_resource_vote_choice_to_remove(&self) -> Option<ResourceVoteChoice> {
+    pub fn take_previous_resource_vote_choice_to_remove(&mut self) -> Option<ResourceVoteChoice> {
         match self {
             MasternodeVoteTransitionAction::V0(transition) => {
-                transition.previous_resource_vote_choice_to_remove
+                transition.previous_resource_vote_choice_to_remove.take()
+            }
+        }
+    }
+
+    /// The previous resource vote choice that needs to be removed
+    pub fn previous_resource_vote_choice_to_remove(&self) -> &Option<ResourceVoteChoice> {
+        match self {
+            MasternodeVoteTransitionAction::V0(transition) => {
+                &transition.previous_resource_vote_choice_to_remove
             }
         }
     }

@@ -1,4 +1,4 @@
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
+use crate::drive::grove_operations::{BatchDeleteApplyType, BatchInsertTreeApplyType};
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::object_size_info::PathKeyInfo;
 use crate::drive::votes::paths::{
@@ -26,6 +26,7 @@ impl Drive {
         strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
+        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -42,6 +43,7 @@ impl Drive {
             strength,
             vote_poll,
             vote_choice,
+            previous_resource_vote_choice_to_remove,
             block_info,
             &mut estimated_costs_only_with_layer_info,
             transaction,
@@ -73,6 +75,7 @@ impl Drive {
         strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
+        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -99,6 +102,26 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
+
+        if let Some(previous_resource_vote_choice_to_remove) =
+            previous_resource_vote_choice_to_remove
+        {
+            let previous_voting_path = vote_poll.contender_voting_path(
+                &previous_resource_vote_choice_to_remove,
+                platform_version,
+            )?;
+
+            self.batch_delete(
+                previous_voting_path.as_slice().into(),
+                voter_pro_tx_hash.as_slice(),
+                BatchDeleteApplyType::StatefulBatchDelete {
+                    is_known_to_be_subtree_with_sum: Some((false, true)),
+                },
+                transaction,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?;
+        }
 
         let votes_identities_path = vote_contested_resource_identity_votes_tree_path_vec();
 
@@ -132,6 +155,7 @@ impl Drive {
                 e
             )))
         })?;
+
         self.batch_insert::<0>(
             PathKeyElement((
                 path,
