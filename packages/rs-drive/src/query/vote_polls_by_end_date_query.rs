@@ -9,13 +9,6 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
-#[cfg(feature = "verify")]
-use dapi_grpc::platform::v0::{
-    get_vote_polls_by_end_date_request::{
-        self, get_vote_polls_by_end_date_request_v0, GetVotePollsByEndDateRequestV0,
-    },
-    GetVotePollsByEndDateRequest,
-};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "server")]
@@ -402,56 +395,6 @@ impl VotePollsByEndDateDriveQuery {
                     Ok(data)
                 }
             }
-        }
-    }
-}
-
-#[cfg(feature = "verify")]
-impl TryFrom<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
-    type Error = crate::error::Error;
-    fn try_from(value: GetVotePollsByEndDateRequest) -> Result<Self, Self::Error> {
-        let result = match value
-            .version
-            .ok_or(Error::Protocol(dpp::ProtocolError::NoProtocolVersionError))?
-        {
-            get_vote_polls_by_end_date_request::Version::V0(v) => VotePollsByEndDateDriveQuery {
-                start_time: v
-                    .start_time_info
-                    .map(|v| (v.start_time_ms, v.start_time_included)),
-                end_time: v
-                    .end_time_info
-                    .map(|v| (v.end_time_ms, v.end_time_included)),
-                limit: v.limit.map(|v| v as u16),
-                offset: v.offset.map(|v| v as u16),
-                order_ascending: v.ascending,
-            },
-        };
-        Ok(result)
-    }
-}
-
-#[cfg(feature = "verify")]
-impl From<VotePollsByEndDateDriveQuery> for GetVotePollsByEndDateRequestV0 {
-    fn from(value: VotePollsByEndDateDriveQuery) -> Self {
-        GetVotePollsByEndDateRequestV0 {
-            prove: true,
-            start_time_info: value
-                .start_time
-                .map(|(start_time_ms, start_time_included)| {
-                    get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
-                        start_time_ms,
-                        start_time_included,
-                    }
-                }),
-            end_time_info: value.end_time.map(|(end_time_ms, end_time_included)| {
-                get_vote_polls_by_end_date_request_v0::EndAtTimeInfo {
-                    end_time_ms,
-                    end_time_included,
-                }
-            }),
-            limit: value.limit.map(|v| v as u32),
-            offset: value.offset.map(|v| v as u32),
-            ascending: value.order_ascending,
         }
     }
 }

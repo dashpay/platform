@@ -275,7 +275,6 @@ mod tests {
             panic!("expected contenders")
         };
 
-        todo!("quantmum, please do sth with abstain_vote_tally and lock_vote_tally");
         assert_eq!(contenders.len(), 2);
 
         let first_contender = contenders.first().unwrap();

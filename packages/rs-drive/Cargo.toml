@@ -55,7 +55,6 @@ grovedb = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumT
 grovedb-costs = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree", optional = true }
 grovedb-path = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree" }
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree", optional = true }
-dapi-grpc = { path = "../dapi-grpc", optional = true }
 
 [dev-dependencies]
 criterion = "0.3.5"
@@ -111,9 +110,4 @@ server = [
 full = ["server", "ciborium", "serde", "bs58", "tempfile", "base64", "chrono"]
 cbor_query = ["ciborium", "dpp/platform-value-cbor", "dpp/cbor"]
 grovedb_operations_logging = []
-verify = [
-  "grovedb/verify",
-  "grovedb-costs",
-  "dpp/state-transitions",
-  "dep:dapi-grpc",
-]
+verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions"]

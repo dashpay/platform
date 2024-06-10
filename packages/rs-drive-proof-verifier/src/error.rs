@@ -37,7 +37,7 @@ pub enum Error {
 
     /// Decode protobuf error
     #[error("decode request: {error}")]
-    RequestDecodeError { error: String },
+    RequestError { error: String },
 
     /// Decode protobuf response error
     #[error("decode response: {error}")]

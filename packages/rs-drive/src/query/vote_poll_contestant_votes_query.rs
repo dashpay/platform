@@ -11,11 +11,6 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
-#[cfg(feature = "verify")]
-use dapi_grpc::platform::v0::{
-    get_contested_resource_voters_for_identity_request,
-    GetContestedResourceVotersForIdentityRequest,
-};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
@@ -267,72 +262,6 @@ impl ContestedDocumentVotePollVotesDriveQuery {
         }
     }
 }
-
-#[cfg(feature = "verify")]
-impl TryFrom<GetContestedResourceVotersForIdentityRequest>
-    for ContestedDocumentVotePollVotesDriveQuery
-{
-    type Error = Error;
-
-    fn try_from(value: GetContestedResourceVotersForIdentityRequest) -> Result<Self, Self::Error> {
-        let result = match value
-            .version
-            .ok_or(Error::Protocol(dpp::ProtocolError::NoProtocolVersionError))?
-        {
-            get_contested_resource_voters_for_identity_request::Version::V0(v) => {
-                ContestedDocumentVotePollVotesDriveQuery {
-                    vote_poll: ContestedDocumentResourceVotePoll {
-                        contract_id: Identifier::from_bytes(&v.contract_id).map_err(|e| {
-                            Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                                "cannot decode contract id: {}",
-                                e
-                            )))
-                        })?,
-                        document_type_name: v.document_type_name.clone(),
-                        index_name: v.index_name.clone(),
-                        index_values: bincode_decode_values(v.index_values.iter()).map_err(
-                            |e| {
-                                Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                                    "cannot decode index values: {}",
-                                    e
-                                )))
-                            },
-                        )?,
-                    },
-                    contestant_id: Identifier::from_bytes(&v.contestant_id).map_err(|e| {
-                        Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                            "cannot decode contestant_id: {}",
-                            e
-                        )))
-                    })?,
-                    limit: v.count.map(|v| v as u16),
-                    offset: None,
-                    start_at: v
-                        .start_at_identifier_info
-                        .map(|v| {
-                            let result: Result<[u8; 32], std::array::TryFromSliceError> =
-                                v.start_identifier.as_slice().try_into();
-                            match result {
-                                Ok(id) => Ok((id, v.start_identifier_included)),
-                                Err(e) => Err(e.to_string()),
-                            }
-                        })
-                        .transpose()
-                        .map_err(|e| {
-                            Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                                "cannot decode start_at value: {}",
-                                e
-                            )))
-                        })?,
-                    order_ascending: v.order_ascending,
-                }
-            }
-        };
-
-        Ok(result)
-    }
-}
-
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
@@ -391,18 +320,4 @@ impl<'a> ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
             },
         })
     }
-}
-
-/// Convert a sequence of byte vectors into a sequence of [values](platform_value::Value).
-///
-/// Small utility function to decode a sequence of byte vectors into a sequence of [values](platform_value::Value).
-#[cfg(feature = "verify")]
-pub(crate) fn bincode_decode_values<V: AsRef<[u8]>, T: Iterator<Item = V>>(
-    values: T,
-) -> Result<Vec<dpp::platform_value::Value>, bincode::error::DecodeError> {
-    values
-        .map(|v| {
-            dpp::bincode::decode_from_slice(v.as_ref(), bincode::config::standard()).map(|(v, _)| v)
-        })
-        .collect()
 }

@@ -1,35 +1,32 @@
 //! Query trait representing criteria for fetching data from the platform.
 //!
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
-use std::fmt::Debug;
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
-use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0;
-use dapi_grpc::platform::v0::{ GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest, GetVotePollsByEndDateRequest};
-use dapi_grpc::platform::v0::{get_contested_resources_request::get_contested_resources_request_v0,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo as VoteStateStartInfo,
-    get_contested_resource_voters_for_identity_request::get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo as VotePollVotesStartInfo,
+use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    AllKeys, GetContestedResourceVoteStateRequest, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourcesRequest, GetEpochsInfoRequest, GetIdentityKeysRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
     KeyRequestType,
 };
+use dapi_grpc::platform::v0::{
+    GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest,
+    GetVotePollsByEndDateRequest,
+};
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
-use dpp::ProtocolError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveQuery, VotePollsByEndDateDriveQuery};
+use drive_proof_verifier::from_request::TryFromRequest;
 use rs_dapi_client::transport::TransportRequest;
+use std::fmt::Debug;
 
 use crate::{error::Error, platform::document_query::DocumentQuery};
 
 use super::types::epoch::EpochQuery;
-
-static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 /// Default limit of epoch records returned by the platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
 /// Default limit of epoch records returned by the platform.
@@ -315,40 +312,7 @@ impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
             unimplemented!("queries without proofs are not supported yet");
         }
 
-        Ok(
-            proto::get_contested_resources_request::GetContestedResourcesRequestV0 {
-                prove,
-                document_type_name: self.document_type_name,
-                index_name: self.index_name,
-                contract_id: self.contract_id.to_vec(),
-                start_index_values: self
-                    .start_index_values
-                    .iter()
-                    .map(|v| bincode::encode_to_vec(v, bincode::config::standard()))
-                    .collect::<Result<Vec<Vec<u8>>, _>>()
-                    .map_err(|e| {
-                        Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string()))
-                    })?,
-                end_index_values: self
-                    .end_index_values
-                    .iter()
-                    .map(|v| bincode::encode_to_vec(v, bincode::config::standard()))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| {
-                        Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string()))
-                    })?,
-                start_at_value_info: self.start_at_value.map(|(id, included)| {
-                    get_contested_resources_request_v0::StartAtValueInfo {
-                        start_value: id,
-                        start_value_included: included,
-                    }
-                }),
-
-                order_ascending: self.order_ascending,
-                count: self.limit.map(|v| v as u32),
-            }
-            .into(),
-        )
+        self.try_to_request().map_err(|e| e.into())
     }
 }
 
@@ -361,31 +325,7 @@ impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDr
         if self.offset.is_some() {
             return Err(Error::Generic("ContestedDocumentVotePollDriveQuery.offset field is internal and must be set to None".into()));
         }
-
-        let start_at_identifier_info = self.start_at.map(|v| VoteStateStartInfo {
-            start_identifier: v.0.to_vec(),
-            start_identifier_included: v.1,
-        });
-
-        use proto::get_contested_resource_vote_state_request:: get_contested_resource_vote_state_request_v0::ResultType as GrpcResultType;
-        Ok(proto::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0 {
-            prove,
-            contract_id:self.vote_poll.contract_id.to_vec(),
-            count: self.limit.map(|v| v as u32),
-            document_type_name: self.vote_poll.document_type_name.clone(),
-            index_name: self.vote_poll.index_name,
-            index_values: self.vote_poll.index_values.iter().map(|v|
-                bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e| ProtocolError::EncodingError(e.to_string()))).collect::<Result<Vec<_>,_>>()?,
-            result_type:match  self.result_type {
-                drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::Documents => GrpcResultType::Documents.into(),
-                drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => GrpcResultType::DocumentsAndVoteTally.into(),
-                drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::VoteTally => GrpcResultType::VoteTally.into(),
-                drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly => GrpcResultType::IdentityIdsOnly.into(),
-            },
-            start_at_identifier_info,
-            allow_include_locked_and_abstaining_vote_tally: self.allow_include_locked_and_abstaining_vote_tally,
-        }
-        .into())
+        self.try_to_request().map_err(|e| e.into())
     }
 }
 
@@ -400,22 +340,7 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
             return Err(Error::Generic("ContestedDocumentVotePollVotesDriveQuery.offset field is internal and must be set to None".into()));
         }
 
-        Ok(proto::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0 {
-            prove,
-            contract_id: self.vote_poll.contract_id.to_vec(),
-            document_type_name: self.vote_poll.document_type_name.clone(),
-            index_name: self.vote_poll.index_name,
-            index_values: self.vote_poll.index_values.iter().map(|v|
-                bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e| ProtocolError::EncodingError(e.to_string()))).collect::<Result<Vec<_>,_>>()?,
-            order_ascending: self.order_ascending,
-            count: self.limit.map(|v| v as u32),
-            contestant_id: self.contestant_id.to_vec(),
-            start_at_identifier_info: self.start_at.map(|v| VotePollVotesStartInfo {
-                start_identifier: v.0.to_vec(),
-                start_identifier_included: v.1,
-            }),
-        }
-        .into())
+        self.try_to_request().map_err(|e| e.into())
     }
 }
 
@@ -430,10 +355,7 @@ impl Query<GetContestedResourceIdentityVotesRequest>
             return Err(Error::Generic("ContestedResourceVotesGivenByIdentityQuery.offset field is internal and must be set to None".into()));
         }
 
-        let mut request = GetContestedResourceIdentityVotesRequestV0::from(self);
-        request.prove = prove;
-
-        Ok(request.into())
+        self.try_to_request().map_err(|e| e.into())
     }
 }
 
@@ -442,10 +364,8 @@ impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
-        let mut request: GetVotePollsByEndDateRequestV0 = self.into();
-        request.prove = prove;
 
-        Ok(request.into())
+        self.try_to_request().map_err(|e| e.into())
     }
 }
 
@@ -454,13 +374,6 @@ impl Query<GetPrefundedSpecializedBalanceRequest> for Identifier {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
-        Ok(GetPrefundedSpecializedBalanceRequest {
-            version: Some(proto::get_prefunded_specialized_balance_request::Version::V0(
-                proto::get_prefunded_specialized_balance_request::GetPrefundedSpecializedBalanceRequestV0 {
-                    id: self.to_vec(),
-                    prove,
-                },
-            )),
-        })
+        self.try_to_request().map_err(|e| e.into())
     }
 }

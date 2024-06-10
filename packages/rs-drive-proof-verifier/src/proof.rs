@@ -401,11 +401,11 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
 fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestType, Error> {
     let key_request_type = request
         .to_owned()
-        .ok_or(Error::RequestDecodeError {
+        .ok_or(Error::RequestError {
             error: "missing key request type".to_string(),
         })?
         .request
-        .ok_or(Error::RequestDecodeError {
+        .ok_or(Error::RequestError {
             error: "empty request field in key request type".to_string(),
         })?;
 
@@ -429,7 +429,7 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                                     Ok(GrpcKeyKind::AllKeysOfKindRequest) => {
                                         Ok(KeyKindRequestType::AllKeysOfKindRequest)
                                     }
-                                    _ => Err(Error::RequestDecodeError {
+                                    _ => Err(Error::RequestError {
                                         error: format!("missing requested key type: {}", kind),
                                     }),
                                 };
@@ -730,11 +730,9 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         let ids = ids
             .iter()
             .map(|id| {
-                id.clone()
-                    .try_into()
-                    .map_err(|_e| Error::RequestDecodeError {
-                        error: format!("wrong id size: expected: {}, got: {}", 32, id.len()),
-                    })
+                id.clone().try_into().map_err(|_e| Error::RequestError {
+                    error: format!("wrong id size: expected: {}, got: {}", 32, id.len()),
+                })
             })
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
@@ -905,7 +903,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {
 
         if let Some(mut e) = epochs.0 {
             if e.len() != 1 {
-                return Err(Error::RequestDecodeError {
+                return Err(Error::RequestError {
                     error: format!("expected 1 epoch, got {}", e.len()),
                 });
             }
@@ -981,7 +979,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
 
 fn try_u32_to_u16(i: u32) -> Result<u16, Error> {
     i.try_into()
-        .map_err(|e: TryFromIntError| Error::RequestDecodeError {
+        .map_err(|e: TryFromIntError| Error::RequestError {
             error: e.to_string(),
         })
 }
@@ -1045,7 +1043,7 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
                 None
             } else {
                 Some(request_v0.start_pro_tx_hash[..].try_into().map_err(
-                    |e: TryFromSliceError| Error::RequestDecodeError {
+                    |e: TryFromSliceError| Error::RequestError {
                         error: e.to_string(),
                     },
                 )?)
@@ -1148,7 +1146,7 @@ where
             request
                 .clone()
                 .try_into()
-                .map_err(|e: Q::Error| Error::RequestDecodeError {
+                .map_err(|e: Q::Error| Error::RequestError {
                     error: e.to_string(),
                 })?;
 
@@ -1273,7 +1271,7 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = VotePollsByDocumentTypeQuery::try_from(request)?;
+        let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
         let resolved_request = drive_query
             .resolve_with_known_contracts_provider(&known_contracts_provider_fn(provider))?;
 
@@ -1378,7 +1376,7 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from(request)?;
+        let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
         let contracts_provider = known_contracts_provider_fn(provider);
@@ -1424,7 +1422,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = ContestedResourceVotesGivenByIdentityQuery::try_from(request)?;
+        let drive_query = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
 
@@ -1471,7 +1469,7 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = VotePollsByEndDateDriveQuery::try_from(request)?;
+        let drive_query = VotePollsByEndDateDriveQuery::try_from_request(request)?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -1509,7 +1507,7 @@ impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpe
 
         let balance_id = match request.version.ok_or(Error::EmptyVersion)? {
             get_prefunded_specialized_balance_request::Version::V0(v0) => {
-                Identifier::from_vec(v0.id).map_err(|e| Error::RequestDecodeError {
+                Identifier::from_vec(v0.id).map_err(|e| Error::RequestError {
                     error: e.to_string(),
                 })?
             }
@@ -1536,11 +1534,11 @@ impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpe
 /// Errors when value is out of range.
 fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
     let i: Option<u16> = if i != 0 {
-        let i: u16 =
-            i.try_into()
-                .map_err(|e: std::num::TryFromIntError| Error::RequestDecodeError {
-                    error: format!("value {} out of range: {}", i, e),
-                })?;
+        let i: u16 = i
+            .try_into()
+            .map_err(|e: std::num::TryFromIntError| Error::RequestError {
+                error: format!("value {} out of range: {}", i, e),
+            })?;
         Some(i)
     } else {
         None

@@ -1611,7 +1611,6 @@ dependencies = [
  "chrono",
  "ciborium",
  "criterion",
- "dapi-grpc",
  "derive_more",
  "dpp",
  "enum-map",

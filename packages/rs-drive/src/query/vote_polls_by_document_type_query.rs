@@ -1,4 +1,3 @@
-use super::vote_poll_contestant_votes_query::bincode_decode_values;
 use super::ContractLookupFn;
 use crate::drive::object_size_info::DataContractResolvedInfo;
 use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
@@ -14,8 +13,6 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
-#[cfg(feature = "verify")]
-use dapi_grpc::platform::v0::{get_contested_resources_request, GetContestedResourcesRequest};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -263,50 +260,6 @@ impl VotePollsByDocumentTypeQuery {
     }
 }
 
-#[cfg(feature = "verify")]
-impl TryFrom<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
-    type Error = Error;
-    fn try_from(value: GetContestedResourcesRequest) -> Result<Self, Error> {
-        let result = match value
-            .version
-            .ok_or(Error::Protocol(dpp::ProtocolError::NoProtocolVersionError))?
-        {
-            get_contested_resources_request::Version::V0(req) => VotePollsByDocumentTypeQuery {
-                contract_id: Identifier::from_bytes(&req.contract_id).map_err(|e| {
-                    Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                        "cannot decode contract id: {}",
-                        e
-                    )))
-                })?,
-                document_type_name: req.document_type_name.clone(),
-                index_name: req.index_name.clone(),
-                start_at_value: req
-                    .start_at_value_info
-                    .map(|i| (i.start_value, i.start_value_included)),
-                start_index_values: bincode_decode_values(req.start_index_values.iter()).map_err(
-                    |e| {
-                        Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                            "cannot decode contract id: {}",
-                            e
-                        )))
-                    },
-                )?,
-                end_index_values: bincode_decode_values(req.end_index_values.iter()).map_err(
-                    |e| {
-                        Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                            "cannot decode contract id: {}",
-                            e
-                        )))
-                    },
-                )?,
-                limit: req.count.map(|v| v as u16),
-                order_ascending: req.order_ascending,
-            },
-        };
-        Ok(result)
-    }
-}
-
 impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
     pub(crate) fn document_type(&self) -> Result<DocumentTypeRef, Error> {
         Ok(self
@@ -340,14 +293,14 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), Error> {
         let document_type = self.document_type()?;
-        let mut properties_iter = index.properties.iter();
+        let properties_iter = index.properties.iter();
         let mut start_values_iter = self.start_index_values.iter();
         let mut end_values_iter = self.end_index_values.iter();
         let mut start_values_vec = vec![];
         let mut end_values_vec = vec![];
         let mut ended_start_values = false;
         let mut started_end_values = false;
-        while let Some(index_property) = properties_iter.next() {
+        for index_property in properties_iter {
             if !ended_start_values {
                 if let Some(start_value) = start_values_iter.next() {
                     let encoded = document_type.serialize_value_for_key(
