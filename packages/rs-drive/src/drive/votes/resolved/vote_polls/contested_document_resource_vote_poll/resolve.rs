@@ -1,9 +1,8 @@
-use crate::drive::contract::DataContractFetchInfo;
 #[cfg(feature = "server")]
+use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::object_size_info::DataContractOwnedResolvedInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::object_size_info::DataContractResolvedInfo;
-#[cfg(feature = "server")]
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
@@ -12,8 +11,6 @@ use crate::error::contract::DataContractError;
 use crate::error::Error;
 use crate::query::ContractLookupFn;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-#[cfg(feature = "verify")]
-use dpp::identifier::Identifier;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::prelude::DataContract;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -99,14 +96,14 @@ pub trait ContestedDocumentResourceVotePollResolver {
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
     /// Resolve owned into a struct that allows for a borrowed contract
-    #[cfg(any(feature = "verify", feature = "server"))]
+    #[cfg(feature = "server")]
     fn resolve_with_provided_arc_contract_fetch_info(
         &self,
         data_contract: Arc<DataContractFetchInfo>,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error>;
 
     /// Resolve owned into a struct that allows for a borrowed contract
-    #[cfg(any(feature = "verify", feature = "server"))]
+    #[cfg(feature = "server")]
     fn resolve_owned_with_provided_arc_contract_fetch_info(
         self,
         data_contract: Arc<DataContractFetchInfo>,
@@ -213,7 +210,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         )
     }
 
-    #[cfg(any(feature = "verify", feature = "server"))]
+    #[cfg(feature = "server")]
     fn resolve_with_provided_arc_contract_fetch_info(
         &self,
         data_contract: Arc<DataContractFetchInfo>,
@@ -242,7 +239,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         })
     }
 
-    #[cfg(any(feature = "verify", feature = "server"))]
+    #[cfg(feature = "server")]
     fn resolve_owned_with_provided_arc_contract_fetch_info(
         self,
         data_contract: Arc<DataContractFetchInfo>,

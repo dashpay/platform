@@ -376,7 +376,6 @@ impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDr
             index_name: self.vote_poll.index_name,
             index_values: self.vote_poll.index_values.iter().map(|v|
                 bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e| ProtocolError::EncodingError(e.to_string()))).collect::<Result<Vec<_>,_>>()?,
-            order_ascending: self.order_ascending,
             result_type:match  self.result_type {
                 drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::Documents => GrpcResultType::Documents.into(),
                 drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => GrpcResultType::DocumentsAndVoteTally.into(),

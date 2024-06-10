@@ -12,7 +12,6 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
-#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
@@ -31,8 +30,6 @@ use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, TransactionArg};
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "verify")]
-use std::sync::Arc;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
@@ -228,7 +225,7 @@ impl ContestedDocumentVotePollDriveQuery {
     /// Resolves with a known contract provider
     pub fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+        known_contracts_provider_fn: &'a super::ContractLookupFn<'a>,
     ) -> Result<ResolvedContestedDocumentVotePollDriveQuery<'a>, Error> {
         let ContestedDocumentVotePollDriveQuery {
             vote_poll,
@@ -489,7 +486,7 @@ impl ContestedDocumentVotePollDriveQuery {
 
                         for (key, vote_tally) in query_result_elements.to_key_elements().into_iter()
                         {
-                            match key.get(0) {
+                            match key.first() {
                                 Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
                                     let sum_tree_value = vote_tally.into_sum_tree_value()?;
                                     if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
@@ -606,7 +603,7 @@ impl ContestedDocumentVotePollDriveQuery {
                                             ))));
                                     }
 
-                                    match identity_bytes.get(0) {
+                                    match identity_bytes.first() {
                                         Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
                                             locked_vote_tally = Some(sum_tree_value as u32);
                                         }

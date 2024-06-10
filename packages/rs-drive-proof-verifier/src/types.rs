@@ -25,7 +25,6 @@ use dpp::{
     util::deserializer::ProtocolVersion,
 };
 use drive::grovedb::Element;
-use drive::query::vote_poll_vote_state_query::Contender;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.

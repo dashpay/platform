@@ -132,7 +132,7 @@ impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializ
 ///
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Contender {
     /// The identity ID of the contender.
     pub identity_id: Identifier,
@@ -140,4 +140,44 @@ pub struct Contender {
     pub document: Option<Document>,
     /// The vote tally for the contender.
     pub vote_tally: Option<u32>,
+}
+
+impl From<FinalizedContender> for Contender {
+    fn from(value: FinalizedContender) -> Self {
+        let FinalizedContender {
+            identity_id,
+            document,
+            final_vote_tally,
+            ..
+        } = value;
+
+        Contender {
+            identity_id,
+            document: Some(document),
+            vote_tally: Some(final_vote_tally),
+        }
+    }
+}
+
+impl Contender {
+    /// Try to get the finalized contender from a finalized contender with a serialized document
+    pub fn try_from_contender_with_serialized_document(
+        value: ContenderWithSerializedDocument,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let ContenderWithSerializedDocument {
+            identity_id,
+            serialized_document,
+            vote_tally,
+        } = value;
+
+        Ok(Contender {
+            identity_id,
+            document: serialized_document
+                .map(|v| Document::from_bytes(&v, document_type, platform_version))
+                .transpose()?,
+            vote_tally,
+        })
+    }
 }

@@ -11,10 +11,10 @@
 use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, ResponseMetadata};
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use dpp::platform_value::Identifier;
-use dpp::{document::Document, prelude::Identity};
-use drive_proof_verifier::types::ContestedVote;
+use dpp::{
+    block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
+    prelude::Identity,
+};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;

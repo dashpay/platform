@@ -18,7 +18,6 @@ use dapi_grpc::platform::v0::{
     GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
-use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
@@ -28,7 +27,7 @@ use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
 };
-use drive::query::vote_poll_vote_state_query::Contender;
+use dpp::{data_contract::DataContract, voting::contender_structs::Contender};
 use drive_proof_verifier::types::{
     Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
     IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades,

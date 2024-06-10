@@ -1,3 +1,4 @@
+use super::vote_poll_contestant_votes_query::bincode_decode_values;
 use super::ContractLookupFn;
 use crate::drive::object_size_info::DataContractResolvedInfo;
 use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
@@ -282,22 +283,22 @@ impl TryFrom<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
                 start_at_value: req
                     .start_at_value_info
                     .map(|i| (i.start_value, i.start_value_included)),
-                start_index_values: crate::query::bincode_decode_values(
-                    req.start_index_values.iter(),
-                )
-                .map_err(|e| {
-                    Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                        "cannot decode contract id: {}",
-                        e
-                    )))
-                })?,
-                end_index_values: crate::query::bincode_decode_values(req.end_index_values.iter())
-                    .map_err(|e| {
+                start_index_values: bincode_decode_values(req.start_index_values.iter()).map_err(
+                    |e| {
                         Error::Protocol(dpp::ProtocolError::DecodingError(format!(
                             "cannot decode contract id: {}",
                             e
                         )))
-                    })?,
+                    },
+                )?,
+                end_index_values: bincode_decode_values(req.end_index_values.iter()).map_err(
+                    |e| {
+                        Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                            "cannot decode contract id: {}",
+                            e
+                        )))
+                    },
+                )?,
                 limit: req.count.map(|v| v as u16),
                 order_ascending: req.order_ascending,
             },

@@ -1,13 +1,12 @@
 //! Tests for SDK requests that return one or more [Contender] objects.
 use crate::fetch::{common::setup_logs, config::Config};
 use dash_sdk::platform::{DocumentQuery, Fetch, FetchMany};
-use dpp::document::Document;
 use dpp::{
-    data_contract::DataContract,
+    data_contract::DataContract, document::Document, voting::contender_structs::Contender,
     voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
 use drive::query::vote_poll_vote_state_query::{
-    Contender, ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
+    ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
 };
 use std::sync::Arc;
 
@@ -47,7 +46,6 @@ async fn contested_resource_vote_states_not_found() {
     let query = ContestedDocumentVotePollDriveQuery {
         limit: None,
         offset: None,
-        order_ascending: true,
         start_at: None,
         vote_poll: ContestedDocumentResourceVotePoll {
             index_name: "parentNameAndLabel".to_string(),

@@ -290,13 +290,14 @@ impl TryFrom<GetContestedResourceVotersForIdentityRequest>
                         })?,
                         document_type_name: v.document_type_name.clone(),
                         index_name: v.index_name.clone(),
-                        index_values: crate::query::bincode_decode_values(v.index_values.iter())
-                            .map_err(|e| {
+                        index_values: bincode_decode_values(v.index_values.iter()).map_err(
+                            |e| {
                                 Error::Protocol(dpp::ProtocolError::DecodingError(format!(
                                     "cannot decode index values: {}",
                                     e
                                 )))
-                            })?,
+                            },
+                        )?,
                     },
                     contestant_id: Identifier::from_bytes(&v.contestant_id).map_err(|e| {
                         Error::Protocol(dpp::ProtocolError::DecodingError(format!(
@@ -390,4 +391,18 @@ impl<'a> ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
             },
         })
     }
+}
+
+/// Convert a sequence of byte vectors into a sequence of [values](platform_value::Value).
+///
+/// Small utility function to decode a sequence of byte vectors into a sequence of [values](platform_value::Value).
+#[cfg(feature = "verify")]
+pub(crate) fn bincode_decode_values<V: AsRef<[u8]>, T: Iterator<Item = V>>(
+    values: T,
+) -> Result<Vec<dpp::platform_value::Value>, bincode::error::DecodeError> {
+    values
+        .map(|v| {
+            dpp::bincode::decode_from_slice(v.as_ref(), bincode::config::standard()).map(|(v, _)| v)
+        })
+        .collect()
 }

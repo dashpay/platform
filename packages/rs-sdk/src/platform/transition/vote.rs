@@ -1,5 +1,4 @@
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
-use crate::platform::Fetch;
 use crate::{Error, Sdk};
 
 use dapi_grpc::platform::VersionedGrpcResponse;

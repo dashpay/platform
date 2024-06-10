@@ -1,4 +1,7 @@
+use crate::from_request::TryFromRequest;
 use crate::{types, types::*, ContextProvider, Error};
+use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
@@ -19,32 +22,30 @@ use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
 };
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 use dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
+use dpp::identity::Purpose;
+use dpp::platform_value::{self};
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
+use dpp::voting::contender_structs::Contender;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
-
-use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
-use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
-use dpp::block::block_info::BlockInfo;
-use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dpp::identity::Purpose;
-use dpp::platform_value::{self};
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
-use drive::query::vote_poll_vote_state_query::{Contender, ContestedDocumentVotePollDriveQuery};
+use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{ContractLookupFn, DriveQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
@@ -1318,7 +1319,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = ContestedDocumentVotePollDriveQuery::try_from(request)?;
+        let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
         let contracts_provider = known_contracts_provider_fn(provider);
