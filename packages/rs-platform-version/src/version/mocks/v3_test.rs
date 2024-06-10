@@ -262,6 +262,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 fetch: DriveVoteFetchMethodVersions {
                     fetch_identities_voting_for_contenders: 0,
                     fetch_contested_document_vote_poll_stored_info: 0,
+                    fetch_identity_contested_resource_vote: 0,
                 },
             },
             contract: DriveContractMethodVersions {

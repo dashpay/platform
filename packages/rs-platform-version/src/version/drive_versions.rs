@@ -277,6 +277,7 @@ pub struct DriveVoteMethodVersions {
 pub struct DriveVoteFetchMethodVersions {
     pub fetch_identities_voting_for_contenders: FeatureVersion,
     pub fetch_contested_document_vote_poll_stored_info: FeatureVersion,
+    pub fetch_identity_contested_resource_vote: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

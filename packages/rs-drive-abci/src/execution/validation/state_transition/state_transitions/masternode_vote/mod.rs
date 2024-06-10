@@ -407,6 +407,7 @@ mod tests {
                     masternode_1.id(),
                     &voting_key_1,
                     1,
+                    None,
                     platform_version,
                 );
 
@@ -477,6 +478,7 @@ mod tests {
                     masternode_1.id(),
                     &voting_key_1,
                     1,
+                    None,
                     platform_version,
                 );
 
@@ -957,6 +959,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -977,6 +980,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -997,6 +1001,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1078,6 +1083,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1113,6 +1119,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1195,6 +1202,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1215,6 +1223,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1235,6 +1244,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1507,6 +1517,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     1,
+                    None,
                     platform_version,
                 );
 
@@ -1522,6 +1533,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     2,
+                    None,
                     platform_version,
                 );
 
@@ -1537,6 +1549,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     3,
+                    None,
                     platform_version,
                 );
 
@@ -1666,6 +1679,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     1,
+                    None,
                     platform_version,
                 );
 
@@ -1681,6 +1695,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     2,
+                    None,
                     platform_version,
                 );
 
@@ -1696,6 +1711,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     3,
+                    None,
                     platform_version,
                 );
 
@@ -3223,6 +3239,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -3253,6 +3270,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -3329,6 +3347,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -3359,6 +3378,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -3776,6 +3796,110 @@ mod tests {
 
                     assert_eq!(locking, Some(60));
                 }
+            }
+        }
+        mod changing_vote {
+            use super::*;
+            #[test]
+            fn test_masternode_vote_again_same_vote_should_return_error() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (masternode, signer, voting_key) =
+                    setup_masternode_identity(&mut platform, 10, platform_version);
+
+                let platform_state = platform.state.load();
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    1,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    2,
+                    Some("Masternode vote is already present for masternode 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R voting for ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] })"),
+                    platform_version,
+                );
+            }
+
+            #[test]
+            fn test_masternode_vote_again_different_choice() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (masternode, signer, voting_key) =
+                    setup_masternode_identity(&mut platform, 10, platform_version);
+
+                let platform_state = platform.state.load();
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    1,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    2,
+                    None,
+                    platform_version,
+                );
             }
         }
     }

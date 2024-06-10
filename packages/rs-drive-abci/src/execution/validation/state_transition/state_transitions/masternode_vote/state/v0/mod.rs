@@ -1,29 +1,25 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
-use dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::ProTxHash;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use drive::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 
 use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
-    ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfo,
-    ContestedDocumentVotePollStoredInfoV0Getters,
+    ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
+use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dpp::voting::votes::Vote;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
-use drive::drive::votes::resolved::votes::resolved_resource_vote::ResolvedResourceVote;
 use drive::drive::votes::resolved::votes::ResolvedVote;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
@@ -45,6 +41,44 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // Before we transform into action we want to make sure that we have not yet voted
+
+        match self.vote() {
+            Vote::ResourceVote(resource_vote) => {
+                match resource_vote.vote_poll() {
+                    VotePoll::ContestedDocumentResourceVotePoll(vote_poll) => {
+                        let vote_id = vote_poll.unique_id()?;
+                        let maybe_existing_resource_vote_choice =
+                            platform.drive.fetch_identity_contested_resource_vote(
+                                self.pro_tx_hash(),
+                                vote_id,
+                                tx,
+                                &mut vec![],
+                                platform_version,
+                            )?;
+                        if let Some(existing_resource_vote_choice) =
+                            maybe_existing_resource_vote_choice
+                        {
+                            if existing_resource_vote_choice == resource_vote.resource_vote_choice()
+                            {
+                                // We are submitting a vote for something we already have
+                                return Ok(ConsensusValidationResult::new_with_error(
+                                    ConsensusError::StateError(
+                                        StateError::MasternodeVoteAlreadyPresentError(
+                                            MasternodeVoteAlreadyPresentError::new(
+                                                self.pro_tx_hash(),
+                                                resource_vote.vote_poll().clone(),
+                                            ),
+                                        ),
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let result = self.transform_into_action_v0(platform, tx, platform_version)?;
 
         if !result.is_valid() {
