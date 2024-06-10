@@ -151,7 +151,8 @@ impl Length for ContestedResources {
 }
 
 /// A contested vote for querying
-pub type ContestedVote = (ContestedDocumentResourceVotePoll, ResourceVoteChoice);
+#[derive(Debug, derive_more::From, Encode, Decode, Clone)]
+pub struct ContestedVote(ContestedDocumentResourceVotePoll, ResourceVoteChoice);
 
 /// Votes casted by some identity.
 pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;

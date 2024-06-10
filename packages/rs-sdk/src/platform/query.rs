@@ -1,7 +1,9 @@
 //! Query trait representing criteria for fetching data from the platform.
 //!
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
+use bincode::{Decode, Encode};
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
     AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
@@ -375,5 +377,42 @@ impl Query<GetPrefundedSpecializedBalanceRequest> for Identifier {
             unimplemented!("queries without proofs are not supported yet");
         }
         self.try_to_request().map_err(|e| e.into())
+    }
+}
+
+/// Query for single vote.
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct VoteQuery {
+    pub identity_id: Identifier,
+    pub vote_poll_id: Identifier,
+}
+impl VoteQuery {
+    pub fn new(identity_id: Identifier, vote_poll_id: Identifier) -> Self {
+        Self {
+            identity_id,
+            vote_poll_id,
+        }
+    }
+}
+
+impl Query<GetContestedResourceIdentityVotesRequest> for VoteQuery {
+    fn query(self, prove: bool) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        use         proto::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
+
+        Ok(GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: self.identity_id.to_vec(),
+            prove,
+            limit: Some(1),
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: self.vote_poll_id.to_vec(),
+                start_poll_identifier_included: true,
+            }),
+        }
+        .into())
     }
 }

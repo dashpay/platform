@@ -7,12 +7,12 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
-    get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
-    get_epochs_info_request, get_identities_contract_keys_request,
-    get_identity_balance_and_revision_request, get_identity_balance_request,
-    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
-    get_identity_keys_request, get_identity_nonce_request, get_identity_request,
-    get_path_elements_request, get_prefunded_specialized_balance_request,
+    get_contested_resource_identity_votes_request, get_data_contract_history_request,
+    get_data_contract_request, get_data_contracts_request, get_epochs_info_request,
+    get_identities_contract_keys_request, get_identity_balance_and_revision_request,
+    get_identity_balance_request, get_identity_by_public_key_hash_request,
+    get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request,
+    get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
     GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
@@ -38,6 +38,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::Contender;
+use dpp::voting::votes::Vote;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
@@ -1527,6 +1528,59 @@ impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpe
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((balance.map(|v| v.into()), mtd.clone()))
+    }
+}
+
+impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
+    type Request = platform::GetContestedResourceIdentityVotesRequest;
+    type Response = platform::GetContestedResourceIdentityVotesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request = request.into();
+        let id_in_request = match request.version.as_ref().ok_or(Error::EmptyVersion)? {
+            get_contested_resource_identity_votes_request::Version::V0(v0) => {
+                Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::RequestError {
+                    error: e.to_string(),
+                })?
+            }
+        };
+
+        let (mut maybe_votes, mtd) = ResourceVotesByIdentity::maybe_from_proof_with_metadata(
+            request,
+            response,
+            platform_version,
+            provider,
+        )?;
+
+        let (id, vote) = match maybe_votes.as_mut() {
+            Some(v) if v.len() > 1 => {
+                return Err(Error::ResponseDecodeError {
+                    error: format!("expected 1 vote, got {}", v.len()),
+                })
+            }
+            Some(v) if v.is_empty() => return Ok((None, mtd)),
+            Some(v) => v.pop_first().expect("is_empty() must detect empty map"),
+            None => return Ok((None, mtd)),
+        };
+
+        if id != id_in_request {
+            return Err(Error::ResponseDecodeError {
+                error: format!(
+                    "expected vote for identity {}, got vote for identity {}",
+                    id_in_request, id
+                ),
+            });
+        }
+
+        Ok((vote.map(Vote::ResourceVote), mtd))
     }
 }
 

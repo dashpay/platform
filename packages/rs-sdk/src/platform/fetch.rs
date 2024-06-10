@@ -11,6 +11,7 @@
 use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, ResponseMetadata};
+use dpp::voting::votes::Vote;
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
     prelude::Identity,
@@ -26,6 +27,9 @@ use super::DocumentQuery;
 ///
 /// To fetch an object from the platform, you need to define some query (criteria that fetched object must match) and
 /// use [Fetch::fetch()] for your object type.
+///
+/// Implementators of this trait should implement at least the [fetch_with_metadata()](Fetch::fetch_with_metadata)
+/// method, as other methods are convenience methods that call it with default settings.
 ///
 /// ## Example
 ///
@@ -219,4 +223,8 @@ impl Fetch for ExtendedEpochInfo {
 
 impl Fetch for drive_proof_verifier::types::PrefundedSpecializedBalance {
     type Request = platform_proto::GetPrefundedSpecializedBalanceRequest;
+}
+
+impl Fetch for Vote {
+    type Request = platform_proto::GetContestedResourceIdentityVotesRequest;
 }

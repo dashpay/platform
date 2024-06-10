@@ -1,21 +1,18 @@
 use super::MockDashPlatformSdk;
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo,
-    document::serialization_traits::DocumentCborMethodsV0,
-    document::Document,
-    platform_serialization::{
-        platform_encode_to_vec, platform_versioned_decode_from_slice, PlatformVersionEncode,
-        PlatformVersionedDecode,
-    },
+    document::{serialization_traits::DocumentCborMethodsV0, Document},
+    platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
     serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
+    voting::votes::Vote,
 };
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, PrefundedSpecializedBalance, VotePollsGroupedByTimestamp,
-    Voters,
+    Contenders, ContestedResources, IdentityBalanceAndRevision, PrefundedSpecializedBalance,
+    VotePollsGroupedByTimestamp, Voters,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -95,31 +92,82 @@ impl<K: Ord + Serialize + for<'de> Deserialize<'de>, V: Serialize + for<'de> Des
     where
         Self: Sized,
     {
-        serde_json::from_slice(buf).expect("decode vec of data")
+        bincode::serde::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode vec of data")
+            .0
     }
 
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        serde_json::to_vec(self).expect("encode vec of data")
+        bincode::serde::encode_to_vec(self, BINCODE_CONFIG).expect("encode vec of data")
     }
 }
 
-impl MockResponse for Identity
-where
-    Self: PlatformVersionedDecode + PlatformVersionEncode,
-{
-    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        // self.clone().serialize_to_bytes().expect("serialize data")
-        platform_encode_to_vec(self, BINCODE_CONFIG, sdk.version()).expect("serialize data")
-    }
+/// Serialize and deserialize the object for mocking using bincode.
+///
+/// Use this macro when the object implements platform serialization.
+macro_rules! impl_mock_response {
+    ($name:ident) => {
+        impl MockResponse for $name {
+            fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+                platform_encode_to_vec(self, BINCODE_CONFIG, sdk.version())
+                    .expect(concat!("encode ", stringify!($name)))
+            }
+            fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+            where
+                Self: Sized,
+            {
+                platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+                    .expect(concat!("decode ", stringify!($name)))
+            }
+        }
+    };
+}
 
-    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized + PlatformVersionedDecode,
-    {
-        // Self::deserialize_from_bytes(buf).expect("deserialize data")
-        platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
-            .expect("deserialize data")
-    }
+/// Serialize and deserialize the object for mocking using bincode.
+///
+/// Use this macro when the object does not implement platform serialization, but it implements
+/// Encode and Decode from bincode.
+macro_rules! impl_mock_response_bincode {
+    ($name:ident) => {
+        impl MockResponse for $name {
+            fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+                bincode::encode_to_vec(self, BINCODE_CONFIG)
+                    .expect(concat!("encode ", stringify!($name)))
+            }
+            fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+            where
+                Self: Sized,
+            {
+                bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                    .expect(concat!("decode ", stringify!($name)))
+                    .0
+            }
+        }
+    };
+}
+
+// TODO: Verify if this serialization is deterministic
+/// Serialize and deserialize the object for mocking using bincode::serde.
+///
+/// Use this macro when the object does not implement bincode nor platform serialization, but it implements
+/// Serialize and Deserialize from serde.
+macro_rules! impl_mock_response_serde {
+    ($name:ident) => {
+        impl MockResponse for $name {
+            fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+                bincode::serde::encode_to_vec(self, BINCODE_CONFIG)
+                    .expect(concat!("encode ", stringify!($name)))
+            }
+            fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+            where
+                Self: Sized,
+            {
+                bincode::serde::decode_from_slice(buf, BINCODE_CONFIG)
+                    .expect(concat!("decode ", stringify!($name)))
+                    .0
+            }
+        }
+    };
 }
 
 // FIXME: Seems that DataContract doesn't implement PlatformVersionedDecode + PlatformVersionEncode,
@@ -198,101 +246,14 @@ impl MockResponse for drive_proof_verifier::types::IdentityContractNonceFetcher 
     }
 }
 
-impl MockResponse for drive_proof_verifier::types::IdentityBalanceAndRevision {
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode IdentityBalanceAndRevision")
-    }
+impl_mock_response!(Identity);
 
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        let (item, _len) = bincode::decode_from_slice(buf, BINCODE_CONFIG)
-            .expect("decode IdentityBalanceAndRevision");
-        item
-    }
-}
+impl_mock_response_serde!(ExtendedEpochInfo);
+impl_mock_response_serde!(Contenders);
+impl_mock_response_serde!(ContestedResources);
+impl_mock_response_serde!(Vote);
 
-impl MockResponse for ExtendedEpochInfo {
-    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        platform_encode_to_vec(self, BINCODE_CONFIG, sdk.version())
-            .expect("encode ExtendedEpochInfo")
-    }
-    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
-            .expect("decode ExtendedEpochInfo")
-    }
-}
-// TODO: Verify if this serialization is deterministic
-impl MockResponse for Contenders {
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, BINCODE_CONFIG).expect("encode Contenders")
-    }
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        let (v, _) =
-            bincode::serde::decode_from_slice(buf, BINCODE_CONFIG).expect("decode Contenders");
-        v
-    }
-}
-
-impl MockResponse for Voters {
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode Voters")
-    }
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        bincode::decode_from_slice(buf, BINCODE_CONFIG)
-            .expect("decode Voters")
-            .0
-    }
-}
-
-impl MockResponse for VotePollsGroupedByTimestamp {
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode VotePollsGroupedByTimestamp")
-    }
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        bincode::decode_from_slice(buf, BINCODE_CONFIG)
-            .expect("decode VotePollsGroupedByTimestamp")
-            .0
-    }
-}
-
-impl MockResponse for PrefundedSpecializedBalance {
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode PrefundedSpecializedBalance")
-    }
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        bincode::decode_from_slice(buf, BINCODE_CONFIG)
-            .expect("decode PrefundedSpecializedBalance")
-            .0
-    }
-}
-
-impl MockResponse for ContestedResources {
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, BINCODE_CONFIG).expect("encode ContestedResources")
-    }
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        bincode::serde::decode_from_slice(buf, BINCODE_CONFIG)
-            .expect("decode ContestedResources")
-            .0
-    }
-}
+impl_mock_response_bincode!(IdentityBalanceAndRevision);
+impl_mock_response_bincode!(Voters);
+impl_mock_response_bincode!(VotePollsGroupedByTimestamp);
+impl_mock_response_bincode!(PrefundedSpecializedBalance);
