@@ -8,6 +8,7 @@ use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
 use crate::drive::votes::resolved::votes::ResolvedVote;
+use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::batch::KeyInfoPath;
@@ -85,7 +86,7 @@ pub enum IdentityOperationType {
         /// Contested Vote type
         vote: ResolvedVote,
         /// Remove previous contested resource vote choice
-        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
     },
     /// Updates an identities nonce for a specific contract.
     UpdateIdentityNonce {

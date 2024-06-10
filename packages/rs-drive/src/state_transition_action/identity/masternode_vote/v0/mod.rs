@@ -5,6 +5,9 @@ use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 
+/// The previous vote count
+pub type PreviousVoteCount = u16;
+
 /// action v0
 #[derive(Debug, Clone)]
 pub struct MasternodeVoteTransitionActionV0 {
@@ -15,7 +18,7 @@ pub struct MasternodeVoteTransitionActionV0 {
     /// the resource votes
     pub vote: ResolvedVote,
     /// vote choice to remove
-    pub previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
+    pub previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
     /// nonce
     pub nonce: IdentityNonce,
 }

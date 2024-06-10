@@ -6,6 +6,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::fee::op::LowLevelDriveOperation;
+use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -20,7 +21,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<ResourceVoteChoice>, Error> {
+    ) -> Result<Option<(ResourceVoteChoice, PreviousVoteCount)>, Error> {
         match platform_version
             .drive
             .methods

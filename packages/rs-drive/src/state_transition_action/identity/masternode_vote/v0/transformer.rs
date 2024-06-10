@@ -1,7 +1,9 @@
 use crate::drive::votes::resolved::votes::resolve::VoteResolver;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVoteTransitionActionV0;
+use crate::state_transition_action::identity::masternode_vote::v0::{
+    MasternodeVoteTransitionActionV0, PreviousVoteCount,
+};
 use dpp::state_transition::state_transitions::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::TransactionArg;
@@ -11,7 +13,7 @@ impl MasternodeVoteTransitionActionV0 {
     pub(crate) fn transform_from_owned_transition(
         value: MasternodeVoteTransitionV0,
         masternode_strength: u8,
-        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -35,7 +37,7 @@ impl MasternodeVoteTransitionActionV0 {
     pub(crate) fn transform_from_transition(
         value: &MasternodeVoteTransitionV0,
         masternode_strength: u8,
-        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

@@ -4021,7 +4021,21 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     5,
-                    Some(""),
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    6,
+                    Some("Masternode with id: 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R already voted 5 times and is trying to vote again, they can only vote 5 times"),
                     platform_version,
                 );
             }

@@ -4,6 +4,7 @@ use dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
 use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
+use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
@@ -52,7 +53,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
                                 &mut vec![],
                                 platform_version,
                             )?;
-                        if let Some(existing_resource_vote_choice) =
+                        if let Some((existing_resource_vote_choice, previous_vote_count)) =
                             maybe_existing_resource_vote_choice
                         {
                             if existing_resource_vote_choice == resource_vote.resource_vote_choice()
@@ -68,9 +69,32 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
                                         ),
                                     ),
                                 ));
+                            } else if previous_vote_count
+                                >= platform_version
+                                    .dpp
+                                    .validation
+                                    .voting
+                                    .votes_allowed_per_masternode
+                            {
+                                // We are submitting a vote for something we already have
+                                return Ok(ConsensusValidationResult::new_with_error(
+                                    ConsensusError::StateError(
+                                        StateError::MasternodeVotedTooManyTimesError(
+                                            MasternodeVotedTooManyTimesError::new(
+                                                self.pro_tx_hash(),
+                                                previous_vote_count,
+                                                platform_version
+                                                    .dpp
+                                                    .validation
+                                                    .voting
+                                                    .votes_allowed_per_masternode,
+                                            ),
+                                        ),
+                                    ),
+                                ));
                             } else {
                                 previous_resource_vote_choice_to_remove =
-                                    Some(existing_resource_vote_choice);
+                                    Some((existing_resource_vote_choice, previous_vote_count));
                             }
                         }
                     }

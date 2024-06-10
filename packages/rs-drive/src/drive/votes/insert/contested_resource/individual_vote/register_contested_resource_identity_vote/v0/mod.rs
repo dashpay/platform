@@ -6,9 +6,12 @@ use crate::drive::votes::paths::{
     vote_contested_resource_identity_votes_tree_path_vec, VotePollPaths,
 };
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+use crate::drive::votes::storage_form;
+use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -26,7 +29,7 @@ impl Drive {
         strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
-        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -75,7 +78,7 @@ impl Drive {
         strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
-        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -103,7 +106,9 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        if let Some(previous_resource_vote_choice_to_remove) =
+        let mut identity_vote_times = 1;
+
+        if let Some((previous_resource_vote_choice_to_remove, previous_vote_count)) =
             previous_resource_vote_choice_to_remove
         {
             let previous_voting_path = vote_poll.contender_voting_path(
@@ -121,6 +126,8 @@ impl Drive {
                 &mut drive_operations,
                 &platform_version.drive,
             )?;
+
+            identity_vote_times += previous_vote_count;
         }
 
         let votes_identities_path = vote_contested_resource_identity_votes_tree_path_vec();
@@ -144,12 +151,17 @@ impl Drive {
         voting_path.remove(0); // we remove the top (root tree vote key)
         voting_path.remove(0); // contested resource
 
-        let reference =
+        let reference_path_type =
             ReferencePathType::UpstreamRootHeightWithParentPathAdditionReference(2, voting_path);
         let config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
-        let encoded_reference = bincode::encode_to_vec(reference, config).map_err(|e| {
+
+        let storage_form = ContestedDocumentResourceVoteReferenceStorageForm {
+            reference_path_type,
+            identity_vote_times,
+        };
+        let encoded_reference = bincode::encode_to_vec(storage_form, config).map_err(|e| {
             Error::Protocol(ProtocolError::CorruptedSerialization(format!(
                 "can not encode reference: {}",
                 e

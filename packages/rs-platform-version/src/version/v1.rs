@@ -967,6 +967,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             document_type: DocumentTypeValidationVersions { validate_update: 0 },
             voting: VotingValidationVersions {
                 allow_other_contenders_time_ms: 604_800_000, // 1 week in ms
+                votes_allowed_per_masternode: 5,
             },
         },
         state_transition_serialization_versions: StateTransitionSerializationVersions {

@@ -4,6 +4,7 @@ use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -18,7 +19,7 @@ impl Drive {
         voter_pro_tx_hash: [u8; 32],
         strength: u8,
         vote: ResolvedVote,
-        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -51,7 +52,7 @@ impl Drive {
         voter_pro_tx_hash: [u8; 32],
         strength: u8,
         vote: ResolvedVote,
-        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
