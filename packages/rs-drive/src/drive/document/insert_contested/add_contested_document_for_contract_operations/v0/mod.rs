@@ -1,10 +1,11 @@
 use crate::drive::object_size_info::DocumentAndContractInfo;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -16,9 +17,10 @@ impl Drive {
     pub(super) fn add_contested_document_for_contract_operations_v0(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
-        contested_document_resource_vote_poll: ContestedDocumentResourceVotePoll,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         insert_without_check: bool,
         block_info: &BlockInfo,
+        also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -65,9 +67,21 @@ impl Drive {
         )?;
 
         if !contest_already_existed {
+            if let Some(vote_poll_stored_start_info) = also_insert_vote_poll_stored_info {
+                let mut operations = self
+                    .insert_stored_info_for_contested_resource_vote_poll_operations(
+                        &contested_document_resource_vote_poll,
+                        vote_poll_stored_start_info,
+                        platform_version,
+                    )?;
+                batch_operations.append(&mut operations);
+            }
+
             self.add_vote_poll_end_date_query_operations(
                 document_and_contract_info.owned_document_info.owner_id,
-                VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll),
+                VotePoll::ContestedDocumentResourceVotePoll(
+                    contested_document_resource_vote_poll.into(),
+                ),
                 end_date,
                 block_info,
                 estimated_costs_only_with_layer_info,

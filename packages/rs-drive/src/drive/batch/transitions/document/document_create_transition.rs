@@ -35,6 +35,8 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
 
         let maybe_prefunded_voting_balance = self.take_prefunded_voting_balance();
 
+        let also_insert_vote_poll_stored_info = self.take_should_store_contest_info();
+
         let document =
             Document::try_from_owned_create_transition_action(self, owner_id, platform_version)?;
 
@@ -78,6 +80,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                     contract_info: DataContractFetchInfo(contract_fetch_info),
                     document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
                     insert_without_check: false, //todo: consider setting to true
+                    also_insert_vote_poll_stored_info,
                 },
             ));
         } else {

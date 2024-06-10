@@ -6,6 +6,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value};
 #[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]
 #[cfg_attr(
@@ -20,6 +21,22 @@ pub struct ContestedDocumentResourceVotePoll {
     pub document_type_name: String,
     pub index_name: String,
     pub index_values: Vec<Value>,
+}
+
+impl fmt::Display for ContestedDocumentResourceVotePoll {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Format the index_values as a comma-separated list
+        let index_values_str: Vec<String> =
+            self.index_values.iter().map(|v| v.to_string()).collect();
+        write!(
+            f,
+            "ContestedDocumentResourceVotePoll {{ contract_id: {}, document_type_name: {}, index_name: {}, index_values: [{}] }}",
+            self.contract_id,
+            self.document_type_name,
+            self.index_name,
+            index_values_str.join(", ")
+        )
+    }
 }
 
 impl Default for ContestedDocumentResourceVotePoll {

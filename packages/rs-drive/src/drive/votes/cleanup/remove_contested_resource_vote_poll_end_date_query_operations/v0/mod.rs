@@ -1,7 +1,5 @@
 use crate::drive::grove_operations::BatchDeleteUpTreeApplyType;
-use crate::drive::votes::paths::{
-    vote_contested_resource_end_date_queries_at_time_tree_path_vec, vote_end_date_queries_tree_path,
-};
+use crate::drive::votes::paths::vote_contested_resource_end_date_queries_at_time_tree_path_vec;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;

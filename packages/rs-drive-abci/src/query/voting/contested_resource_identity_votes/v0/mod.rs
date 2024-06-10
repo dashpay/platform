@@ -7,9 +7,7 @@ use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetC
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::{
     get_contested_resource_identity_votes_response_v0, GetContestedResourceIdentityVotesResponseV0,
 };
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;

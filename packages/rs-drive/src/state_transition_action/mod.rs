@@ -86,7 +86,7 @@ impl StateTransitionAction {
             StateTransitionAction::PartiallyUseAssetLockAction(action) => {
                 action.user_fee_increase()
             }
-            StateTransitionAction::MasternodeVoteAction(action) => {
+            StateTransitionAction::MasternodeVoteAction(_) => {
                 UserFeeIncrease::default() // 0 (or none)
             }
         }

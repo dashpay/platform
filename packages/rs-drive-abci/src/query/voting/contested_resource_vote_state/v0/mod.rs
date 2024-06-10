@@ -7,6 +7,8 @@ use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetConte
 use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{
     get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0,
 };
+use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info::FinishedVoteOutcome;
+use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
@@ -14,9 +16,11 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::{check_validation_result_with_data, platform_value};
+use dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::error::query::QuerySyntaxError;
 use drive::query::vote_poll_vote_state_query::{
-    ContenderWithSerializedDocument, ContestedDocumentVotePollDriveQuery,
+    ContestedDocumentVotePollDriveQuery,
 };
 
 impl<C> Platform<C> {
@@ -31,7 +35,6 @@ impl<C> Platform<C> {
             allow_include_locked_and_abstaining_vote_tally,
             start_at_identifier_info,
             count,
-            order_ascending,
             prove,
         }: GetContestedResourceVoteStateRequestV0,
         platform_state: &PlatformState,
@@ -143,7 +146,6 @@ impl<C> Platform<C> {
                     ))
                 })
                 .transpose()?,
-            order_ascending,
             allow_include_locked_and_abstaining_vote_tally,
         };
 
@@ -180,6 +182,37 @@ impl<C> Platform<C> {
 
             let abstain_vote_tally = results.abstaining_vote_tally;
             let lock_vote_tally = results.locked_vote_tally;
+            let finished_vote_info =
+                results
+                    .winner
+                    .map(|(winner_info, finished_at_block_info)| match winner_info {
+                        ContestedDocumentVotePollWinnerInfo::NoWinner => FinishedVoteInfo {
+                            finished_vote_outcome: FinishedVoteOutcome::NoPreviousWinner as i32,
+                            won_by_identity_id: None,
+                            finished_at_block_height: finished_at_block_info.height,
+                            finished_at_core_block_height: finished_at_block_info.core_height,
+                            finished_at_block_time_ms: finished_at_block_info.time_ms,
+                            finished_at_epoch: finished_at_block_info.epoch.index as u32,
+                        },
+                        ContestedDocumentVotePollWinnerInfo::WonByIdentity(identity_id) => {
+                            FinishedVoteInfo {
+                                finished_vote_outcome: FinishedVoteOutcome::TowardsIdentity as i32,
+                                won_by_identity_id: Some(identity_id.to_vec()),
+                                finished_at_block_height: finished_at_block_info.height,
+                                finished_at_core_block_height: finished_at_block_info.core_height,
+                                finished_at_block_time_ms: finished_at_block_info.time_ms,
+                                finished_at_epoch: finished_at_block_info.epoch.index as u32,
+                            }
+                        }
+                        ContestedDocumentVotePollWinnerInfo::Locked => FinishedVoteInfo {
+                            finished_vote_outcome: FinishedVoteOutcome::Locked as i32,
+                            won_by_identity_id: None,
+                            finished_at_block_height: finished_at_block_info.height,
+                            finished_at_core_block_height: finished_at_block_info.core_height,
+                            finished_at_block_time_ms: finished_at_block_info.time_ms,
+                            finished_at_epoch: finished_at_block_info.epoch.index as u32,
+                        },
+                    });
 
             let contenders = results
                 .contenders
@@ -206,6 +239,7 @@ impl<C> Platform<C> {
                             contenders,
                             abstain_vote_tally,
                             lock_vote_tally,
+                            finished_vote_info,
                         },
                     ),
                 ),

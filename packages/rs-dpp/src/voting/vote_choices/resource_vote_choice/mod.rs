@@ -6,6 +6,7 @@ use bincode::{Decode, Encode};
 use platform_value::Identifier;
 #[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// A resource votes is a votes determining what we should do with a contested resource.
 /// For example Alice and Bob both want the username "Malaka"
@@ -27,6 +28,18 @@ pub enum ResourceVoteChoice {
     #[default]
     Abstain,
     Lock,
+}
+
+impl fmt::Display for ResourceVoteChoice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ResourceVoteChoice::TowardsIdentity(identifier) => {
+                write!(f, "TowardsIdentity({})", identifier)
+            }
+            ResourceVoteChoice::Abstain => write!(f, "Abstain"),
+            ResourceVoteChoice::Lock => write!(f, "Lock"),
+        }
+    }
 }
 
 impl TryFrom<(i32, Option<Vec<u8>>)> for ResourceVoteChoice {

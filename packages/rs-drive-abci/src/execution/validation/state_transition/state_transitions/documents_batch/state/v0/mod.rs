@@ -1,5 +1,4 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
@@ -34,7 +33,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
         &self,
         action: DocumentsBatchTransitionAction,
         platform: &PlatformStateRef,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
@@ -54,7 +53,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         &self,
         mut state_transition_action: DocumentsBatchTransitionAction,
         platform: &PlatformStateRef,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -81,7 +80,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -90,7 +89,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -99,7 +98,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -108,7 +107,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -117,7 +116,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     update_price_action.validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -127,7 +126,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,

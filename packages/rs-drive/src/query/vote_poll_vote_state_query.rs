@@ -1,7 +1,6 @@
-use super::ContractLookupFn;
 use crate::drive::votes::paths::{
-    VotePollPaths, RESOURCE_ABSTAIN_VOTE_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8,
-    RESOURCE_LOCK_VOTE_TREE_KEY, RESOURCE_LOCK_VOTE_TREE_KEY_U8,
+    VotePollPaths, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8, RESOURCE_LOCK_VOTE_TREE_KEY_U8,
+    RESOURCE_STORED_INFO_KEY_U8,
 };
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
@@ -13,20 +12,18 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
-#[cfg(feature = "verify")]
-use dapi_grpc::platform::v0::{
-    get_contested_resource_vote_state_request,
-    get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0,
-    GetContestedResourceVoteStateRequest,
-};
-use dpp::bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::document::Document;
 use dpp::identifier::Identifier;
+use dpp::serialization::PlatformDeserializable;
+use dpp::voting::contender_structs::{
+    ContenderWithSerializedDocument, FinalizedContenderWithSerializedDocument,
+};
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
+    ContestedDocumentVotePollStoredInfo, ContestedDocumentVotePollStoredInfoV0Getters,
+};
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
@@ -34,6 +31,8 @@ use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, TransactionArg};
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "verify")]
+use std::sync::Arc;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
@@ -90,23 +89,6 @@ impl TryFrom<i32> for ContestedDocumentVotePollDriveQueryResultType {
     }
 }
 
-#[cfg(feature = "verify")]
-impl From<get_contested_resource_vote_state_request_v0::ResultType>
-    for ContestedDocumentVotePollDriveQueryResultType
-{
-    fn from(value: get_contested_resource_vote_state_request_v0::ResultType) -> Self {
-        use get_contested_resource_vote_state_request_v0::ResultType as GrpcResultType;
-        use ContestedDocumentVotePollDriveQueryResultType as DriveResultType;
-
-        match value {
-            GrpcResultType::Documents => DriveResultType::Documents,
-            GrpcResultType::DocumentsAndVoteTally => DriveResultType::DocumentsAndVoteTally,
-            GrpcResultType::IdentityIdsOnly => DriveResultType::IdentityIdsOnly,
-            GrpcResultType::VoteTally => DriveResultType::VoteTally,
-        }
-    }
-}
-
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct ContestedDocumentVotePollDriveQuery {
@@ -120,211 +102,10 @@ pub struct ContestedDocumentVotePollDriveQuery {
     pub limit: Option<u16>,
     /// Start at identity id
     pub start_at: Option<([u8; 32], bool)>,
-    /// Ascending
-    pub order_ascending: bool,
     /// Include locked and abstaining vote tally
     /// This is not automatic, it will just be at the beginning if the order is ascending
     /// If the order is descending, we will get a value if we finish the query
     pub allow_include_locked_and_abstaining_vote_tally: bool,
-}
-
-#[cfg(feature = "verify")]
-impl TryFrom<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDriveQuery {
-    type Error = Error;
-    fn try_from(request: GetContestedResourceVoteStateRequest) -> Result<Self, Self::Error> {
-        let result = match request
-            .version
-            .ok_or(Error::Protocol(dpp::ProtocolError::NoProtocolVersionError))?
-        {
-            get_contested_resource_vote_state_request::Version::V0(v) => {
-                ContestedDocumentVotePollDriveQuery {
-                    limit: v.count.map(|v| v as u16),
-                    vote_poll: ContestedDocumentResourceVotePoll {
-                        contract_id: Identifier::from_bytes(&v.contract_id).map_err(|e| {
-                            Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                                "cannot decode contract id: {}",
-                                e
-                            )))
-                        })?,
-                        document_type_name: v.document_type_name.clone(),
-                        index_name: v.index_name.clone(),
-                        index_values: super::bincode_decode_values(v.index_values.iter()).map_err(
-                            |e| {
-                                Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                                    "cannot decode index_values: {}",
-                                    e
-                                )))
-                            },
-                        )?,
-                    },
-                    order_ascending: v.order_ascending,
-                    result_type: ContestedDocumentVotePollDriveQueryResultType::from(
-                        v.result_type(),
-                    ),
-                    start_at: v
-                        .start_at_identifier_info
-                        .map(|v| {
-                            let result: Result<[u8; 32], std::array::TryFromSliceError> =
-                                v.start_identifier.as_slice().try_into();
-                            match result {
-                                Ok(id) => Ok((id, v.start_identifier_included)),
-                                Err(e) => Err(e.to_string()),
-                            }
-                        })
-                        .transpose()
-                        .map_err(|e| {
-                            Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                                "cannot decode start_at: {}",
-                                e
-                            )))
-                        })?,
-                    offset: None, // offset is not supported when we use proofs
-                    allow_include_locked_and_abstaining_vote_tally: v
-                        .allow_include_locked_and_abstaining_vote_tally,
-                }
-            }
-        };
-        Ok(result)
-    }
-}
-
-/// Represents a contender in the contested document vote poll.
-/// This is for internal use where the document is in serialized form
-///
-/// This struct holds the identity ID of the contender, the serialized document,
-/// and the vote tally.
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub struct ContenderWithSerializedDocument {
-    /// The identity ID of the contender.
-    pub identity_id: Identifier,
-    /// The serialized document associated with the contender.
-    pub serialized_document: Option<Vec<u8>>,
-    /// The vote tally for the contender.
-    pub vote_tally: Option<u32>,
-}
-
-/// Represents a finalized contender in the contested document vote poll.
-/// This is for internal use where the document is in serialized form
-///
-/// This struct holds the identity ID of the contender, the serialized document,
-/// and the vote tally.
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub struct FinalizedContenderWithSerializedDocument {
-    /// The identity ID of the contender.
-    pub identity_id: Identifier,
-    /// The serialized document associated with the contender.
-    pub serialized_document: Vec<u8>,
-    /// The vote tally for the contender.
-    pub final_vote_tally: u32,
-}
-
-/// Represents a finalized contender in the contested document vote poll.
-/// This is for keeping information about previous vote polls
-///
-/// This struct holds the identity ID of the contender, the serialized document,
-/// and the vote tally.
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
-pub struct FinalizedContenderWithVoterInfo {
-    /// The identity ID of the contender.
-    pub identity_id: Identifier,
-    /// The pro_tx_hashes of the voters for this contender.
-    pub voters: Vec<Identifier>,
-}
-
-/// Represents a finalized contender in the contested document vote poll.
-/// This is for internal use where the document is in serialized form
-///
-/// This struct holds the identity ID of the contender, the document,
-/// and the vote tally.
-#[derive(Debug, PartialEq, Clone)]
-pub struct FinalizedContender {
-    /// The identity ID of the contender.
-    pub identity_id: Identifier,
-    /// The document associated with the contender.
-    pub document: Document,
-    /// The still serialized document
-    pub serialized_document: Vec<u8>,
-    /// The vote tally for the contender.
-    pub final_vote_tally: u32,
-}
-
-impl FinalizedContender {
-    /// Try to get the finalized contender from a finalized contender with a serialized document
-    pub fn try_from_contender_with_serialized_document(
-        value: FinalizedContenderWithSerializedDocument,
-        document_type: DocumentTypeRef,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
-        let FinalizedContenderWithSerializedDocument {
-            identity_id,
-            serialized_document,
-            final_vote_tally,
-        } = value;
-
-        Ok(FinalizedContender {
-            identity_id,
-            document: Document::from_bytes(&serialized_document, document_type, platform_version)?,
-            serialized_document,
-            final_vote_tally,
-        })
-    }
-}
-
-impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializedDocument {
-    type Error = Error;
-
-    fn try_from(value: ContenderWithSerializedDocument) -> Result<Self, Self::Error> {
-        let ContenderWithSerializedDocument {
-            identity_id,
-            serialized_document,
-            vote_tally,
-        } = value;
-
-        Ok(FinalizedContenderWithSerializedDocument {
-            identity_id,
-            serialized_document: serialized_document.ok_or(Error::Drive(
-                DriveError::CorruptedCodeExecution("expected serialized document"),
-            ))?,
-            final_vote_tally: vote_tally.ok_or(Error::Drive(
-                DriveError::CorruptedCodeExecution("expected vote tally"),
-            ))?,
-        })
-    }
-}
-
-/// Represents a contender in the contested document vote poll.
-///
-/// This struct holds the identity ID of the contender, the serialized document,
-/// and the vote tally.
-#[derive(Debug, PartialEq, Clone, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Contender {
-    /// The identity ID of the contender.
-    pub identity_id: Identifier,
-    /// The document associated with the contender.
-    pub document: Option<Document>,
-    /// The vote tally for the contender.
-    pub vote_tally: Option<u32>,
-}
-
-impl Contender {
-    /// Convert [ContenderWithSerializedDocument]  to [Contender]
-    pub fn try_from_contender_with_serialized_document(
-        value: ContenderWithSerializedDocument,
-        document_type: DocumentTypeRef,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
-        let document = value
-            .serialized_document
-            .map(|ref doc| Document::from_bytes(doc, document_type, platform_version))
-            .transpose()?;
-
-        Ok(Contender {
-            identity_id: value.identity_id,
-            document,
-            vote_tally: value.vote_tally,
-        })
-    }
 }
 
 /// Represents the result of executing a contested document vote poll drive query.
@@ -339,6 +120,8 @@ pub struct ContestedDocumentVotePollDriveQueryExecutionResult {
     pub locked_vote_tally: Option<u32>,
     /// Abstaining tally
     pub abstaining_vote_tally: Option<u32>,
+    /// Finalization info
+    pub winner: Option<(ContestedDocumentVotePollWinnerInfo, BlockInfo)>,
     /// The number of skipped items when an offset is given.
     pub skipped: u16,
 }
@@ -357,19 +140,6 @@ pub struct FinalizedContestedDocumentVotePollDriveQueryExecutionResult {
     pub abstaining_vote_tally: u32,
 }
 
-/// Represents the stored info after a contested document vote poll.
-///
-/// This struct holds the list of contenders, the abstaining vote tally.
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
-pub struct FinalizedContestedDocumentVotePollStoredInfo {
-    /// The list of contenders returned by the query.
-    pub contenders: Vec<FinalizedContenderWithVoterInfo>,
-    /// Locked tally
-    pub locking_voters: Vec<Identifier>,
-    /// Abstaining tally
-    pub abstaining_voters: Vec<Identifier>,
-}
-
 impl TryFrom<ContestedDocumentVotePollDriveQueryExecutionResult>
     for FinalizedContestedDocumentVotePollDriveQueryExecutionResult
 {
@@ -382,7 +152,7 @@ impl TryFrom<ContestedDocumentVotePollDriveQueryExecutionResult>
             contenders,
             locked_vote_tally,
             abstaining_vote_tally,
-            skipped,
+            ..
         } = value;
 
         let finalized_contenders = contenders
@@ -441,7 +211,6 @@ impl ContestedDocumentVotePollDriveQuery {
             offset,
             limit,
             start_at,
-            order_ascending,
             allow_include_locked_and_abstaining_vote_tally,
         } = self;
         Ok(ResolvedContestedDocumentVotePollDriveQuery {
@@ -450,7 +219,6 @@ impl ContestedDocumentVotePollDriveQuery {
             offset: *offset,
             limit: *limit,
             start_at: *start_at,
-            order_ascending: *order_ascending,
             allow_include_locked_and_abstaining_vote_tally:
                 *allow_include_locked_and_abstaining_vote_tally,
         })
@@ -460,7 +228,7 @@ impl ContestedDocumentVotePollDriveQuery {
     /// Resolves with a known contract provider
     pub fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &'a ContractLookupFn<'a>,
+        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
     ) -> Result<ResolvedContestedDocumentVotePollDriveQuery<'a>, Error> {
         let ContestedDocumentVotePollDriveQuery {
             vote_poll,
@@ -468,7 +236,6 @@ impl ContestedDocumentVotePollDriveQuery {
             offset,
             limit,
             start_at,
-            order_ascending,
             allow_include_locked_and_abstaining_vote_tally,
         } = self;
         Ok(ResolvedContestedDocumentVotePollDriveQuery {
@@ -478,7 +245,6 @@ impl ContestedDocumentVotePollDriveQuery {
             offset: *offset,
             limit: *limit,
             start_at: *start_at,
-            order_ascending: *order_ascending,
             allow_include_locked_and_abstaining_vote_tally:
                 *allow_include_locked_and_abstaining_vote_tally,
         })
@@ -496,7 +262,6 @@ impl ContestedDocumentVotePollDriveQuery {
             offset,
             limit,
             start_at,
-            order_ascending,
             allow_include_locked_and_abstaining_vote_tally,
         } = self;
         Ok(ResolvedContestedDocumentVotePollDriveQuery {
@@ -505,7 +270,6 @@ impl ContestedDocumentVotePollDriveQuery {
             offset: *offset,
             limit: *limit,
             start_at: *start_at,
-            order_ascending: *order_ascending,
             allow_include_locked_and_abstaining_vote_tally:
                 *allow_include_locked_and_abstaining_vote_tally,
         })
@@ -652,7 +416,6 @@ impl ContestedDocumentVotePollDriveQuery {
     ) -> Result<ContestedDocumentVotePollDriveQueryExecutionResult, Error> {
         let resolved = self.resolve(drive, transaction, platform_version)?;
         let path_query = resolved.construct_path_query(platform_version)?;
-        let order_ascending = resolved.order_ascending;
         let query_result = drive.grove_get_path_query(
             &path_query,
             transaction,
@@ -687,6 +450,7 @@ impl ContestedDocumentVotePollDriveQuery {
                             contenders,
                             locked_vote_tally: None,
                             abstaining_vote_tally: None,
+                            winner: None,
                             skipped,
                         })
                     }
@@ -713,6 +477,7 @@ impl ContestedDocumentVotePollDriveQuery {
                             contenders,
                             locked_vote_tally: None,
                             abstaining_vote_tally: None,
+                            winner: None,
                             skipped,
                         })
                     }
@@ -720,26 +485,85 @@ impl ContestedDocumentVotePollDriveQuery {
                         let mut contenders = Vec::new();
                         let mut locked_vote_tally: Option<u32> = None;
                         let mut abstaining_vote_tally: Option<u32> = None;
+                        let mut winner = None;
 
                         for (key, vote_tally) in query_result_elements.to_key_elements().into_iter()
                         {
-                            let sum_tree_value = vote_tally.into_sum_tree_value()?;
-                            if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
-                                return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                                    "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
-                                    sum_tree_value
-                                ))));
-                            }
-
                             match key.get(0) {
                                 Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
+                                    let sum_tree_value = vote_tally.into_sum_tree_value()?;
+                                    if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
+                                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                                            "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
+                                            sum_tree_value
+                                        ))));
+                                    }
                                     locked_vote_tally = Some(sum_tree_value as u32);
                                 }
                                 Some(key) if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 => {
+                                    let sum_tree_value = vote_tally.into_sum_tree_value()?;
+                                    if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
+                                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                                            "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
+                                            sum_tree_value
+                                        ))));
+                                    }
                                     abstaining_vote_tally = Some(sum_tree_value as u32);
+                                }
+                                Some(key) if key == &RESOURCE_STORED_INFO_KEY_U8 => {
+                                    // The vote is actually over, let's deserialize the info
+                                    let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&vote_tally.into_item_bytes()?)?;
+                                    if finalized_contested_document_vote_poll_stored_info
+                                        .vote_poll_status()
+                                        .awarded_or_locked()
+                                    {
+                                        locked_vote_tally = Some(
+                                            finalized_contested_document_vote_poll_stored_info
+                                                .last_locked_votes()
+                                                .ok_or(Error::Drive(
+                                                    DriveError::CorruptedDriveState(
+                                                        "we should have last locked votes"
+                                                            .to_string(),
+                                                    ),
+                                                ))?,
+                                        );
+                                        abstaining_vote_tally = Some(
+                                            finalized_contested_document_vote_poll_stored_info
+                                                .last_abstain_votes()
+                                                .ok_or(Error::Drive(
+                                                    DriveError::CorruptedDriveState(
+                                                        "we should have last abstain votes"
+                                                            .to_string(),
+                                                    ),
+                                                ))?,
+                                        );
+                                        winner = Some((
+                                            finalized_contested_document_vote_poll_stored_info
+                                                .winner(),
+                                            finalized_contested_document_vote_poll_stored_info
+                                                .last_finalization_block()
+                                                .ok_or(Error::Drive(
+                                                    DriveError::CorruptedDriveState(
+                                                        "we should have a last finalization block"
+                                                            .to_string(),
+                                                    ),
+                                                ))?,
+                                        ));
+                                        contenders = finalized_contested_document_vote_poll_stored_info
+                                            .contender_votes_in_vec_of_contender_with_serialized_document().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                            "we should have a last contender votes".to_string(),
+                                        )))?;
+                                    }
                                 }
 
                                 _ => {
+                                    let sum_tree_value = vote_tally.into_sum_tree_value()?;
+                                    if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
+                                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                                            "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
+                                            sum_tree_value
+                                        ))));
+                                    }
                                     let identity_id = Identifier::try_from(key)?;
                                     contenders.push(ContenderWithSerializedDocument {
                                         identity_id,
@@ -753,6 +577,7 @@ impl ContestedDocumentVotePollDriveQuery {
                             contenders,
                             locked_vote_tally,
                             abstaining_vote_tally,
+                            winner,
                             skipped,
                         })
                     }
@@ -762,147 +587,126 @@ impl ContestedDocumentVotePollDriveQuery {
                         let mut contenders = vec![];
                         let mut locked_vote_tally: Option<u32> = None;
                         let mut abstaining_vote_tally: Option<u32> = None;
+                        let mut winner = None;
 
-                        if order_ascending {
-                            // Handle ascending order
-                            while let Some((path, _, element)) = elements_iter.next() {
-                                let Some(identity_bytes) = path.last() else {
-                                    return Err(Error::Drive(DriveError::CorruptedDriveState(
-                                        "the path must have a last element".to_string(),
-                                    )));
-                                };
+                        // Handle ascending order
+                        while let Some((path, first_key, element)) = elements_iter.next() {
+                            let Some(identity_bytes) = path.last() else {
+                                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                                    "the path must have a last element".to_string(),
+                                )));
+                            };
 
-                                match element {
-                                    Element::SumTree(_, sum_tree_value, _) => {
-                                        if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
-                                            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                            match element {
+                                Element::SumTree(_, sum_tree_value, _) => {
+                                    if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
+                                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                                                 "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
                                                 sum_tree_value
                                             ))));
-                                        }
+                                    }
 
-                                        match identity_bytes.get(0) {
-                                            Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
-                                                locked_vote_tally = Some(sum_tree_value as u32);
-                                            }
-                                            Some(key)
-                                                if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 =>
-                                            {
-                                                abstaining_vote_tally = Some(sum_tree_value as u32);
-                                            }
-                                            _ => {
-                                                return Err(Error::Drive(
-                                                    DriveError::CorruptedDriveState(
-                                                        "unexpected key for sum tree value"
-                                                            .to_string(),
-                                                    ),
-                                                ));
-                                            }
+                                    match identity_bytes.get(0) {
+                                        Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
+                                            locked_vote_tally = Some(sum_tree_value as u32);
+                                        }
+                                        Some(key) if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 => {
+                                            abstaining_vote_tally = Some(sum_tree_value as u32);
+                                        }
+                                        _ => {
+                                            return Err(Error::Drive(
+                                                DriveError::CorruptedDriveState(
+                                                    "unexpected key for sum tree value".to_string(),
+                                                ),
+                                            ));
                                         }
                                     }
-                                    Element::Item(serialized_document, _) => {
+                                }
+                                Element::Item(serialized_item_info, _) => {
+                                    if first_key.len() == 1
+                                        && first_key.first() == Some(&RESOURCE_STORED_INFO_KEY_U8)
+                                    {
+                                        // this is the stored info, let's check to see if the vote is over
+                                        let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&serialized_item_info)?;
+                                        if finalized_contested_document_vote_poll_stored_info
+                                            .vote_poll_status()
+                                            .awarded_or_locked()
+                                        {
+                                            locked_vote_tally = Some(
+                                                finalized_contested_document_vote_poll_stored_info
+                                                    .last_locked_votes()
+                                                    .ok_or(Error::Drive(
+                                                        DriveError::CorruptedDriveState(
+                                                            "we should have last locked votes"
+                                                                .to_string(),
+                                                        ),
+                                                    ))?,
+                                            );
+                                            abstaining_vote_tally = Some(
+                                                finalized_contested_document_vote_poll_stored_info
+                                                    .last_abstain_votes()
+                                                    .ok_or(Error::Drive(
+                                                        DriveError::CorruptedDriveState(
+                                                            "we should have last abstain votes"
+                                                                .to_string(),
+                                                        ),
+                                                    ))?,
+                                            );
+                                            winner = Some((
+                                                        finalized_contested_document_vote_poll_stored_info.winner(),
+                                                        finalized_contested_document_vote_poll_stored_info
+                                                            .last_finalization_block().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                            "we should have a last finalization block".to_string(),
+                                                        )))?,
+                                                    ));
+                                            contenders = finalized_contested_document_vote_poll_stored_info
+                                                        .contender_votes_in_vec_of_contender_with_serialized_document().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                        "we should have a last contender votes".to_string(),
+                                                    )))?;
+                                        }
+                                    } else {
                                         // We should find a sum tree paired with this document
                                         if let Some((
                                             path_tally,
-                                            _,
+                                            second_key,
                                             Element::SumTree(_, sum_tree_value, _),
                                         )) = elements_iter.next()
                                         {
                                             if path != path_tally {
-                                                return Err(Error::Drive(DriveError::CorruptedDriveState("the two results in a chunk when requesting documents and vote tally should both have the same path".to_string())));
+                                                return Err(Error::Drive(DriveError::CorruptedDriveState(format!("the two results in a chunk when requesting documents and vote tally should both have the same path asc, got {}:{}, and {}:{}", path.iter().map(hex::encode).collect::<Vec<_>>().join("/"), hex::encode(first_key), path_tally.iter().map(hex::encode).collect::<Vec<_>>().join("/"), hex::encode(second_key)))));
                                             }
 
                                             if sum_tree_value < 0
                                                 || sum_tree_value > u32::MAX as i64
                                             {
                                                 return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                                                    "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
-                                                    sum_tree_value
-                                                ))));
+                                                            "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
+                                                            sum_tree_value
+                                                        ))));
                                             }
 
                                             let identity_id =
                                                 Identifier::from_bytes(identity_bytes)?;
                                             let contender = ContenderWithSerializedDocument {
                                                 identity_id,
-                                                serialized_document: Some(serialized_document),
+                                                serialized_document: Some(serialized_item_info),
                                                 vote_tally: Some(sum_tree_value as u32),
                                             };
                                             contenders.push(contender);
                                         } else {
-                                            return Err(Error::Drive(DriveError::CorruptedDriveState("expected a sum tree element after item element".to_string())));
+                                            return Err(Error::Drive(
+                                                DriveError::CorruptedDriveState(
+                                                    "we should have a sum item after a normal item"
+                                                        .to_string(),
+                                                ),
+                                            ));
                                         }
-                                    }
-                                    _ => {
-                                        return Err(Error::Drive(DriveError::CorruptedDriveState(
-                                            "unexpected element type in result".to_string(),
-                                        )));
                                     }
                                 }
-                            }
-                        } else {
-                            // Handle descending order
-                            let mut prev_element: Option<(Vec<Vec<u8>>, i64, Element)> = None;
-
-                            while let Some((path, _, element)) = elements_iter.next() {
-                                let Some(identity_bytes) = path.last() else {
+                                _ => {
                                     return Err(Error::Drive(DriveError::CorruptedDriveState(
-                                        "the path must have a last element".to_string(),
+                                        "unexpected element type in result".to_string(),
                                     )));
-                                };
-
-                                match element {
-                                    Element::SumTree(_, sum_tree_value, _) => {
-                                        if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
-                                            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                                                "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
-                                                sum_tree_value
-                                            ))));
-                                        }
-
-                                        match identity_bytes.get(0) {
-                                            Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
-                                                locked_vote_tally = Some(sum_tree_value as u32);
-                                            }
-                                            Some(key)
-                                                if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 =>
-                                            {
-                                                abstaining_vote_tally = Some(sum_tree_value as u32);
-                                            }
-                                            _ => {
-                                                prev_element =
-                                                    Some((path.clone(), sum_tree_value, element));
-                                            }
-                                        }
-                                    }
-                                    Element::Item(serialized_document, _) => {
-                                        if let Some((
-                                            prev_path,
-                                            sum_tree_value,
-                                            Element::SumTree(_, _, _),
-                                        )) = prev_element.take()
-                                        {
-                                            if prev_path != path {
-                                                return Err(Error::Drive(DriveError::CorruptedDriveState("the two results in a chunk when requesting documents and vote tally should both have the same path".to_string())));
-                                            }
-
-                                            let identity_id =
-                                                Identifier::from_bytes(identity_bytes)?;
-                                            let contender = ContenderWithSerializedDocument {
-                                                identity_id,
-                                                serialized_document: Some(serialized_document),
-                                                vote_tally: Some(sum_tree_value as u32),
-                                            };
-                                            contenders.push(contender);
-                                        } else {
-                                            return Err(Error::Drive(DriveError::CorruptedDriveState("expected a sum tree element before item element".to_string())));
-                                        }
-                                    }
-                                    _ => {
-                                        return Err(Error::Drive(DriveError::CorruptedDriveState(
-                                            "unexpected element type in result".to_string(),
-                                        )));
-                                    }
                                 }
                             }
                         }
@@ -911,6 +715,7 @@ impl ContestedDocumentVotePollDriveQuery {
                             contenders,
                             locked_vote_tally,
                             abstaining_vote_tally,
+                            winner,
                             skipped,
                         })
                     }
@@ -968,8 +773,6 @@ pub struct ResolvedContestedDocumentVotePollDriveQuery<'a> {
     pub limit: Option<u16>,
     /// Start at identity id, the bool is if it is also included
     pub start_at: Option<([u8; 32], bool)>,
-    /// Ascending
-    pub order_ascending: bool,
     /// Include locked and abstaining vote tally
     pub allow_include_locked_and_abstaining_vote_tally: bool,
 }
@@ -982,7 +785,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
     ) -> Result<PathQuery, Error> {
         let path = self.vote_poll.contenders_path(platform_version)?;
 
-        let mut query = Query::new_with_direction(self.order_ascending);
+        let mut query = Query::new();
 
         let allow_include_locked_and_abstaining_vote_tally = self
             .allow_include_locked_and_abstaining_vote_tally
@@ -999,31 +802,9 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
             }
             Some((starts_at_key_bytes, start_at_included)) => {
                 let starts_at_key = starts_at_key_bytes.to_vec();
-                match self.order_ascending {
-                    true => match start_at_included {
-                        true => query.insert_range_from(starts_at_key..),
-                        false => query.insert_range_after(starts_at_key..),
-                    },
-                    false => match start_at_included {
-                        true => {
-                            if allow_include_locked_and_abstaining_vote_tally {
-                                query.insert_range_to_inclusive(..=starts_at_key)
-                            } else {
-                                query.insert_range_after_to_inclusive(
-                                    vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..=starts_at_key,
-                                )
-                            }
-                        }
-                        false => {
-                            if allow_include_locked_and_abstaining_vote_tally {
-                                query.insert_range_to(..starts_at_key)
-                            } else {
-                                query.insert_range_after_to(
-                                    vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..starts_at_key,
-                                )
-                            }
-                        }
-                    },
+                match start_at_included {
+                    true => query.insert_range_from(starts_at_key..),
+                    false => query.insert_range_after(starts_at_key..),
                 }
             }
         }
@@ -1051,6 +832,11 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
             query.add_conditional_subquery(
                 QueryItem::Key(vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8]),
                 Some(vec![vec![1]]),
+                None,
+            );
+            query.add_conditional_subquery(
+                QueryItem::Key(vec![RESOURCE_STORED_INFO_KEY_U8]),
+                None,
                 None,
             );
         }

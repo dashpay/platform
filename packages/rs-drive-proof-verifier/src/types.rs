@@ -11,6 +11,7 @@ use dpp::bincode::Encode;
 use dpp::fee::Credits;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
 pub use dpp::version::ProtocolVersionVoteCount;
+use dpp::voting::contender_structs::Contender;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;

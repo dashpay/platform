@@ -23,8 +23,6 @@ pub mod paths;
 #[cfg(feature = "server")]
 mod setup;
 
-#[cfg(feature = "server")]
-mod fetch_identities_voting_for_contenders;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Resolve contested document resource vote poll module
 pub mod resolved;
@@ -34,6 +32,9 @@ pub mod storage_form;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Tree path storage form
 pub mod tree_path_storage_form;
+
+#[cfg(feature = "server")]
+mod fetch;
 
 /// A trait to convert the vote to a tree path usable in grovedb
 pub trait TreePath {

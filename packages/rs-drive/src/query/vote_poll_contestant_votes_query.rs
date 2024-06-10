@@ -220,11 +220,11 @@ impl ContestedDocumentVotePollVotesDriveQuery {
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(vec![]),
             Err(e) => Err(e),
-            Ok((query_result_elements, skipped)) => {
+            Ok((query_result_elements, _skipped)) => {
                 let voters = query_result_elements
                     .to_keys()
                     .into_iter()
-                    .map(|voter_id| Identifier::try_from(voter_id))
+                    .map(Identifier::try_from)
                     .collect::<Result<Vec<Identifier>, platform_value::Error>>()?;
 
                 Ok(voters)

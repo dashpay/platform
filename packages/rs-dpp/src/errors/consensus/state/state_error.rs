@@ -29,6 +29,8 @@ use crate::consensus::state::identity::{
 use crate::consensus::ConsensusError;
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
+use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
@@ -36,6 +38,8 @@ use crate::consensus::state::identity::invalid_identity_contract_nonce_error::In
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -59,6 +63,12 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentAlreadyPresentError(DocumentAlreadyPresentError),
+
+    #[error(transparent)]
+    DocumentContestCurrentlyLockedError(DocumentContestCurrentlyLockedError),
+
+    #[error(transparent)]
+    DocumentContestNotJoinableError(DocumentContestNotJoinableError),
 
     #[error(transparent)]
     DocumentNotFoundError(DocumentNotFoundError),
@@ -145,6 +155,12 @@ pub enum StateError {
 
     #[error(transparent)]
     MasternodeNotFoundError(MasternodeNotFoundError),
+
+    #[error(transparent)]
+    VotePollNotFoundError(VotePollNotFoundError),
+
+    #[error(transparent)]
+    VotePollNotAvailableForVotingError(VotePollNotAvailableForVotingError),
 }
 
 impl From<StateError> for ConsensusError {

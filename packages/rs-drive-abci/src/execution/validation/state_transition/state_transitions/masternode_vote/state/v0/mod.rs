@@ -1,7 +1,11 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dashcore_rpc::dashcore_rpc_json::MasternodeType;
+use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 
@@ -10,21 +14,23 @@ use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVote
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use drive::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 
+use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
+    ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfo,
+    ContestedDocumentVotePollStoredInfoV0Getters,
+};
+use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
+use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
+use drive::drive::votes::resolved::votes::resolved_resource_vote::ResolvedResourceVote;
+use drive::drive::votes::resolved::votes::ResolvedVote;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::masternode_vote) trait MasternodeVoteStateTransitionStateValidationV0
 {
     fn validate_state_v0<C>(
-        &self,
-        platform: &PlatformRef<C>,
-        tx: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
-
-    fn transform_into_action_v0<C>(
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
@@ -39,39 +45,61 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        self.transform_into_action_v0(platform, tx, platform_version)
-    }
+        let result = self.transform_into_action_v0(platform, tx, platform_version)?;
 
-    fn transform_into_action_v0<C>(
-        &self,
-        platform: &PlatformRef<C>,
-        tx: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let Some(masternode) = platform
-            .state
-            .full_masternode_list()
-            .get(&ProTxHash::from_byte_array(self.pro_tx_hash().to_buffer()))
-        else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                MasternodeNotFoundError::new(self.pro_tx_hash()).into(),
-            ));
-        };
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+        }
 
-        let strength = match masternode.node_type {
-            MasternodeType::Regular => 1,
-            MasternodeType::Evo => 4,
-        };
+        let action = result.into_data()?;
 
-        Ok(ConsensusValidationResult::new_with_data(
-            MasternodeVoteTransitionAction::transform_from_transition(
-                self,
-                strength,
-                platform.drive,
-                tx,
-                platform_version,
-            )?
-            .into(),
-        ))
+        // We need to make sure that the vote poll exists and is in started state
+        match action.vote_ref() {
+            ResolvedVote::ResolvedResourceVote(resource_vote) => {
+                let vote_poll = resource_vote.vote_poll();
+                match vote_poll {
+                    ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
+                        contested_document_resource_vote_poll,
+                    ) => {
+                        let Some(stored_info) = platform
+                            .drive
+                            .fetch_contested_document_vote_poll_stored_info(
+                                contested_document_resource_vote_poll,
+                                None,
+                                tx,
+                                platform_version,
+                            )?
+                            .1
+                        else {
+                            return Ok(ConsensusValidationResult::new_with_error(
+                                ConsensusError::StateError(StateError::VotePollNotFoundError(
+                                    VotePollNotFoundError::new(vote_poll.into()),
+                                )),
+                            ));
+                        };
+                        let vote_poll_status = stored_info.vote_poll_status();
+                        match &vote_poll_status {
+                            ContestedDocumentVotePollStatus::NotStarted
+                            | ContestedDocumentVotePollStatus::Awarded(_)
+                            | ContestedDocumentVotePollStatus::Locked => {
+                                Ok(ConsensusValidationResult::new_with_error(
+                                    ConsensusError::StateError(
+                                        StateError::VotePollNotAvailableForVotingError(
+                                            VotePollNotAvailableForVotingError::new(
+                                                vote_poll.into(),
+                                                vote_poll_status,
+                                            ),
+                                        ),
+                                    ),
+                                ))
+                            }
+                            ContestedDocumentVotePollStatus::Started(_) => {
+                                Ok(ConsensusValidationResult::new_with_data(action.into()))
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

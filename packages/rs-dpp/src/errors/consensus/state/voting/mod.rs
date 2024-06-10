@@ -1,1 +1,3 @@
 pub mod masternode_not_found_error;
+pub mod vote_poll_not_available_for_voting_error;
+pub mod vote_poll_not_found_error;

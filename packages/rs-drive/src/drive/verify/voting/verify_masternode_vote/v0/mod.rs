@@ -11,7 +11,7 @@ use crate::query::Query;
 use dpp::voting::votes::Vote;
 
 impl Drive {
-    /// Verifies the balance of an identity by their identity ID.
+    /// Verifies the masternode vote.
     ///
     /// `verify_subset_of_proof` is used to indicate if we want to verify a subset of a bigger proof.
     /// For example, if the proof can prove the balance and the revision, but here we are only interested

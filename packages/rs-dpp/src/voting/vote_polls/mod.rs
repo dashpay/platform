@@ -1,5 +1,4 @@
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
-use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::ProtocolError;
 use derive_more::From;
@@ -7,7 +6,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 #[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::fmt;
 
 pub mod contested_document_resource_vote_poll;
 
@@ -21,6 +20,16 @@ pub mod contested_document_resource_vote_poll;
 #[platform_serialize(limit = 100000)]
 pub enum VotePoll {
     ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll),
+}
+
+impl fmt::Display for VotePoll {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            VotePoll::ContestedDocumentResourceVotePoll(poll) => {
+                write!(f, "ContestedDocumentResourceVotePoll({})", poll)
+            }
+        }
+    }
 }
 
 impl Default for VotePoll {

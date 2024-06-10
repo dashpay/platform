@@ -501,10 +501,10 @@ mod test {
         };
 
         let result = create_domain_data_trigger_v0(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
-                document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None,
+                                                                                                           document_create_transition, &BlockInfo::default(), |_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
-                }).expect("expected to create action").into(),
+                }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )

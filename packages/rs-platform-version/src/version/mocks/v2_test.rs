@@ -10,7 +10,7 @@ use crate::version::dpp_versions::{
     IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
     RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
     StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
-    VotingVersions,
+    VotingValidationVersions, VotingVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
@@ -70,8 +70,9 @@ use crate::version::drive_versions::{
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions,
     DriveVerifyVoteMethodVersions, DriveVersion, DriveVoteCleanupMethodVersions,
-    DriveVoteContestedResourceInsertMethodVersions, DriveVoteInsertMethodVersions,
-    DriveVoteMethodVersions, DriveVoteSetupMethodVersions, DriveVoteStorageFormMethodVersions,
+    DriveVoteContestedResourceInsertMethodVersions, DriveVoteFetchMethodVersions,
+    DriveVoteInsertMethodVersions, DriveVoteMethodVersions, DriveVoteSetupMethodVersions,
+    DriveVoteStorageFormMethodVersions,
 };
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
@@ -231,14 +232,18 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions {
                     register_contested_resource_identity_vote: 0,
+                    insert_stored_info_for_contested_resource_vote_poll: 0,
                     register_identity_vote: 0,
                     add_vote_poll_end_date_query_operations: 0,
-                    remove_contested_resource_vote_poll_end_date_query_operations: 0,
-                    remove_contested_resource_vote_poll_votes_operations: 0,
                 },
                 cleanup: DriveVoteCleanupMethodVersions {
                     add_lock_for_contested_document_resource_vote_poll: 0,
-                    remove_votes_for_identity: 0,
+                    remove_all_votes_given_by_identity: 0,
+                    remove_specific_votes_given_by_identity: 0,
+                    remove_contested_resource_vote_poll_end_date_query_operations: 0,
+                    remove_contested_resource_vote_poll_votes_operations: 0,
+                    remove_contested_resource_vote_poll_documents_operations: 0,
+                    remove_contested_resource_vote_poll_contenders_operations: 0,
                 },
                 setup: DriveVoteSetupMethodVersions {
                     add_initial_vote_tree_main_structure_operations: 0,
@@ -246,7 +251,10 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 storage_form: DriveVoteStorageFormMethodVersions {
                     resolve_with_contract: 0,
                 },
-                fetch_identities_voting_for_contenders: 0,
+                fetch: DriveVoteFetchMethodVersions {
+                    fetch_identities_voting_for_contenders: 0,
+                    fetch_contested_document_vote_poll_stored_info: 0,
+                },
             },
             contract: DriveContractMethodVersions {
                 prove: DriveContractProveMethodVersions {
@@ -638,7 +646,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 append_signatures_and_broadcast_withdrawal_transactions: 0,
             },
             voting: DriveAbciVotingMethodVersions {
-                keep_record_of_vote_poll: 0,
+                keep_record_of_finished_contested_resource_vote_poll: 0,
                 clean_up_after_vote_poll_end: 0,
                 clean_up_after_contested_resources_vote_poll_end: 0,
                 check_for_ended_vote_polls: 0,
@@ -957,6 +965,9 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 validate_property_definition: 0,
             },
             document_type: DocumentTypeValidationVersions { validate_update: 0 },
+            voting: VotingValidationVersions {
+                allow_other_contenders_time_ms: 604_800_000, // 1 week in ms
+            },
         },
         state_transition_serialization_versions: StateTransitionSerializationVersions {
             identity_public_key_in_creation: FeatureVersionBounds {
@@ -1180,6 +1191,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         },
         voting_versions: VotingVersions {
             default_vote_poll_time_duration_ms: 1_209_600_000, //2 weeks
+            contested_document_vote_poll_stored_info_version: 0,
         },
         asset_lock_versions: AssetLockVersions {
             reduced_asset_lock_value: FeatureVersionBounds {

@@ -12,7 +12,6 @@ use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -25,6 +24,7 @@ impl Drive {
             &TimestampMillis,
             &BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
         )],
+        remove_vote_tree_too: bool,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -33,11 +33,12 @@ impl Drive {
             .drive
             .methods
             .vote
-            .contested_resource_insert
+            .cleanup
             .remove_contested_resource_vote_poll_votes_operations
         {
             0 => self.remove_contested_resource_vote_poll_votes_operations_v0(
                 vote_polls,
+                remove_vote_tree_too,
                 batch_operations,
                 transaction,
                 platform_version,
