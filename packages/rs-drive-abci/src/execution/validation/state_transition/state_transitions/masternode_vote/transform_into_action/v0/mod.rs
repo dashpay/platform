@@ -1,7 +1,10 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dashcore_rpc::dashcore_rpc_json::MasternodeType;
+use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
+use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 
@@ -12,8 +15,10 @@ use drive::state_transition_action::identity::masternode_vote::MasternodeVoteTra
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dpp::voting::votes::Vote;
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::masternode_vote) trait MasternodeVoteStateTransitionTransformIntoActionValidationV0
 {
@@ -32,6 +37,47 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<MasternodeVoteTransitionAction>, Error> {
+        let mut previous_resource_vote_choice_to_remove = None;
+        // Before we transform into action we want to make sure that we have not yet voted
+        match self.vote() {
+            Vote::ResourceVote(resource_vote) => {
+                match resource_vote.vote_poll() {
+                    VotePoll::ContestedDocumentResourceVotePoll(vote_poll) => {
+                        let vote_id = vote_poll.unique_id()?;
+                        let maybe_existing_resource_vote_choice =
+                            platform.drive.fetch_identity_contested_resource_vote(
+                                self.pro_tx_hash(),
+                                vote_id,
+                                tx,
+                                &mut vec![],
+                                platform_version,
+                            )?;
+                        if let Some(existing_resource_vote_choice) =
+                            maybe_existing_resource_vote_choice
+                        {
+                            if existing_resource_vote_choice == resource_vote.resource_vote_choice()
+                            {
+                                // We are submitting a vote for something we already have
+                                return Ok(ConsensusValidationResult::new_with_error(
+                                    ConsensusError::StateError(
+                                        StateError::MasternodeVoteAlreadyPresentError(
+                                            MasternodeVoteAlreadyPresentError::new(
+                                                self.pro_tx_hash(),
+                                                resource_vote.vote_poll().clone(),
+                                            ),
+                                        ),
+                                    ),
+                                ));
+                            } else {
+                                previous_resource_vote_choice_to_remove =
+                                    Some(existing_resource_vote_choice);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let Some(masternode) = platform
             .state
             .full_masternode_list()
@@ -51,6 +97,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
             MasternodeVoteTransitionAction::transform_from_transition(
                 self,
                 strength,
+                previous_resource_vote_choice_to_remove,
                 platform.drive,
                 tx,
                 platform_version,

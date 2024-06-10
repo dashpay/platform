@@ -3,6 +3,7 @@ mod transformer;
 use crate::drive::votes::resolved::votes::ResolvedVote;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 
 /// action v0
 #[derive(Debug, Clone)]
@@ -13,6 +14,8 @@ pub struct MasternodeVoteTransitionActionV0 {
     pub vote_strength: u8,
     /// the resource votes
     pub vote: ResolvedVote,
+    /// vote choice to remove
+    pub previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
     /// nonce
     pub nonce: IdentityNonce,
 }

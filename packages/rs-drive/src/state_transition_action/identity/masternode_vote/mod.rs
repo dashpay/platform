@@ -8,6 +8,7 @@ use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVot
 use derive_more::From;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -49,6 +50,15 @@ impl MasternodeVoteTransitionAction {
     pub fn vote_strength(&self) -> u8 {
         match self {
             MasternodeVoteTransitionAction::V0(transition) => transition.vote_strength,
+        }
+    }
+
+    /// The previous resource vote choice that needs to be removed
+    pub fn previous_resource_vote_choice_to_remove(&self) -> Option<ResourceVoteChoice> {
+        match self {
+            MasternodeVoteTransitionAction::V0(transition) => {
+                transition.previous_resource_vote_choice_to_remove
+            }
         }
     }
 }

@@ -3800,6 +3800,7 @@ mod tests {
         }
         mod changing_vote {
             use super::*;
+            use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::Abstain;
             #[test]
             fn test_masternode_vote_again_same_vote_should_return_error() {
                 let platform_version = PlatformVersion::latest();
@@ -3898,6 +3899,129 @@ mod tests {
                     &voting_key,
                     2,
                     None,
+                    platform_version,
+                );
+
+                let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                    &platform,
+                    &platform_state,
+                    &dpns_contract,
+                    "quantum",
+                    None,
+                    true,
+                    None,
+                    ResultType::DocumentsAndVoteTally,
+                    platform_version,
+                );
+
+                assert_eq!(finished_vote_info, None);
+
+                assert_eq!(contenders.len(), 2);
+
+                let first_contender = contenders.first().unwrap();
+
+                let second_contender = contenders.last().unwrap();
+
+                assert_ne!(first_contender.document, second_contender.document);
+
+                assert_eq!(first_contender.identity_id, contender_1.id());
+
+                assert_eq!(second_contender.identity_id, contender_2.id());
+
+                assert_eq!(first_contender.vote_tally, Some(0));
+
+                assert_eq!(second_contender.vote_tally, Some(1));
+            }
+
+            #[test]
+            fn test_masternode_vote_again_different_choice_too_many_times() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (masternode, signer, voting_key) =
+                    setup_masternode_identity(&mut platform, 10, platform_version);
+
+                let platform_state = platform.state.load();
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    1,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    2,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    Lock,
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    3,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    Abstain,
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    4,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    5,
+                    Some(""),
                     platform_version,
                 );
             }

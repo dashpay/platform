@@ -3,6 +3,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVoteTransitionActionV0;
 use dpp::state_transition::state_transitions::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
@@ -10,6 +11,7 @@ impl MasternodeVoteTransitionActionV0 {
     pub(crate) fn transform_from_owned_transition(
         value: MasternodeVoteTransitionV0,
         masternode_strength: u8,
+        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -25,6 +27,7 @@ impl MasternodeVoteTransitionActionV0 {
             pro_tx_hash,
             vote_strength: masternode_strength,
             vote: resolved_vote,
+            previous_resource_vote_choice_to_remove,
             nonce,
         })
     }
@@ -32,6 +35,7 @@ impl MasternodeVoteTransitionActionV0 {
     pub(crate) fn transform_from_transition(
         value: &MasternodeVoteTransitionV0,
         masternode_strength: u8,
+        previous_resource_vote_choice_to_remove: Option<ResourceVoteChoice>,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -47,6 +51,7 @@ impl MasternodeVoteTransitionActionV0 {
             pro_tx_hash: *pro_tx_hash,
             vote_strength: masternode_strength,
             vote: resolved_vote,
+            previous_resource_vote_choice_to_remove,
             nonce: *nonce,
         })
     }

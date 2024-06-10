@@ -41,44 +41,6 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        // Before we transform into action we want to make sure that we have not yet voted
-
-        match self.vote() {
-            Vote::ResourceVote(resource_vote) => {
-                match resource_vote.vote_poll() {
-                    VotePoll::ContestedDocumentResourceVotePoll(vote_poll) => {
-                        let vote_id = vote_poll.unique_id()?;
-                        let maybe_existing_resource_vote_choice =
-                            platform.drive.fetch_identity_contested_resource_vote(
-                                self.pro_tx_hash(),
-                                vote_id,
-                                tx,
-                                &mut vec![],
-                                platform_version,
-                            )?;
-                        if let Some(existing_resource_vote_choice) =
-                            maybe_existing_resource_vote_choice
-                        {
-                            if existing_resource_vote_choice == resource_vote.resource_vote_choice()
-                            {
-                                // We are submitting a vote for something we already have
-                                return Ok(ConsensusValidationResult::new_with_error(
-                                    ConsensusError::StateError(
-                                        StateError::MasternodeVoteAlreadyPresentError(
-                                            MasternodeVoteAlreadyPresentError::new(
-                                                self.pro_tx_hash(),
-                                                resource_vote.vote_poll().clone(),
-                                            ),
-                                        ),
-                                    ),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         let result = self.transform_into_action_v0(platform, tx, platform_version)?;
 
         if !result.is_valid() {
