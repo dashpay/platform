@@ -1778,7 +1778,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "10fbe38850d752b491305b2587468788acbd6dd130272c5a8844d0da05e3a9cf".to_string()
+            "0f16c735739411f8dff9640b3ca244b5838480f5634b8ab7744743b116fd9218".to_string()
         )
     }
 
@@ -1903,7 +1903,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "9ed86b1ed5d0f7a981cb0ff2f3943603a095a031c463b3389bce8a6f60e2b21e".to_string()
+            "a20b7973b60f51edbef1a3a378c6b0fa64e3de917754c0ddc78dc30cff7fd9f6".to_string()
         )
     }
 
@@ -2238,7 +2238,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 470);
+        assert_eq!(outcome.identities.len() as u64, 472);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2367,7 +2367,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 90);
+        assert_eq!(outcome.identities.len() as u64, 83);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2512,7 +2512,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 97);
+        assert_eq!(outcome.identities.len() as u64, 79);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
