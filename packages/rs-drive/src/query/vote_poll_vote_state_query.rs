@@ -12,7 +12,6 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
-#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;

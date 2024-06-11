@@ -40,11 +40,15 @@ where
             }
         }
 
-        // Call the function to clean up contested document resource vote polls
-        self.clean_up_after_contested_resources_vote_polls_end(
-            contested_polls,
-            transaction,
-            platform_version,
-        )
+        if !contested_polls.is_empty() {
+            // Call the function to clean up contested document resource vote polls
+            self.clean_up_after_contested_resources_vote_polls_end(
+                contested_polls,
+                transaction,
+                platform_version,
+            )
+        } else {
+            Ok(())
+        }
     }
 }

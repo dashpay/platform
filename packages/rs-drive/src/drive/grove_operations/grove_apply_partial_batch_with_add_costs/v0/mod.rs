@@ -27,7 +27,9 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         if ops.is_empty() {
-            return Err(Error::Drive(DriveError::BatchIsEmpty()));
+            return Err(Error::Drive(DriveError::BatchIsEmpty(
+                "batch is empty when trying to apply partial batch with add costs".to_string(),
+            )));
         }
         // println!("batch {:#?}", ops);
         if self.config.batching_consistency_verification {

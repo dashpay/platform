@@ -174,7 +174,13 @@ where
 
         // We need to clean up the vote polls
         // This means removing it and also removing all current votes
-        self.clean_up_after_vote_polls_end(&vote_polls_with_info, transaction, platform_version)?;
+        if !vote_polls_with_info.is_empty() {
+            self.clean_up_after_vote_polls_end(
+                &vote_polls_with_info,
+                transaction,
+                platform_version,
+            )?;
+        }
 
         Ok(())
     }
