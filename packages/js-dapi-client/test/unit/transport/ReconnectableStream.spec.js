@@ -273,6 +273,7 @@ describe('ReconnectableStream', () => {
 
   describe('#endHandler', () => {
     it('should handle end event', async () => {
+      reconnectableStream.stream = {};
       reconnectableStream.endHandler();
       expect(reconnectableStream.stopAutoReconnect)
         .to
