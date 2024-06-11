@@ -135,8 +135,7 @@ impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializ
 #[derive(Debug, PartialEq, Clone, Default)]
 #[cfg_attr(
     feature = "document-serde-conversion",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(tag = "$version")
+    derive(serde::Serialize, serde::Deserialize)
 )]
 pub struct Contender {
     /// The identity ID of the contender.
