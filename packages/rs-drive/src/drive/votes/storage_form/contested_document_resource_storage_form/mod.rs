@@ -65,6 +65,7 @@ impl ContestedDocumentResourceVoteStorageForm {
             document_type_name,
             index_values,
             resource_vote_choice,
+            ..
         } = self;
 
         let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;

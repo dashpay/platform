@@ -5,7 +5,6 @@ mod finalize_task;
 mod identity;
 mod prefunded_specialized_balance;
 mod system;
-mod voting;
 mod withdrawals;
 
 use crate::drive::batch::GroveDbOpBatch;

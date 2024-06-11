@@ -81,6 +81,8 @@ pub struct DataContractValidationVersions {
 pub struct VotingValidationVersions {
     /// How long do we allow other contenders to join a contest after the first contender
     pub allow_other_contenders_time_ms: u64,
+    /// How many votes do we allow from the same masternode?
+    pub votes_allowed_per_masternode: u16,
 }
 
 #[derive(Clone, Debug, Default)]

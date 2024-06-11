@@ -1,4 +1,5 @@
 use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
+use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 #[cfg(feature = "server")]
@@ -16,7 +17,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
-use grovedb::reference_path::ReferencePathType;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{PathQuery, SizedQuery};
@@ -154,7 +154,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                             let bincode_config = bincode::config::standard()
                                 .with_big_endian()
                                 .with_no_limit();
-                            let reference: ReferencePathType =
+                            let reference: ContestedDocumentResourceVoteReferenceStorageForm =
                                 bincode::decode_from_slice(&serialized_reference, bincode_config)
                                     .map_err(|e| {
                                         Error::Drive(DriveError::CorruptedSerialization(format!(
@@ -164,8 +164,9 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                                         )))
                                     })?
                                     .0;
-                            let absolute_path =
-                                reference.absolute_path(path.as_slice(), Some(key.as_slice()))?;
+                            let absolute_path = reference
+                                .reference_path_type
+                                .absolute_path(path.as_slice(), Some(key.as_slice()))?;
                             let vote_id = Identifier::from_vec(key)?;
                             Ok((
                                 vote_id,

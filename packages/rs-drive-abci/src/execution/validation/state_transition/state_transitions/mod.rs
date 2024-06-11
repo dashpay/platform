@@ -108,7 +108,7 @@ mod tests {
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{SuccessfulExecution, UnpaidConsensusError};
 
     pub(in crate::execution::validation::state_transition::state_transitions) fn setup_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -916,6 +916,7 @@ mod tests {
         masternode_id: Identifier,
         voting_key: &IdentityPublicKey,
         nonce: IdentityNonce,
+        expect_error: Option<&str>,
         platform_version: &PlatformVersion,
     ) {
         // Let's vote for contender 1
@@ -971,7 +972,15 @@ mod tests {
             .expect("expected to commit transaction");
 
         let execution_result = processing_result.into_execution_results().remove(0);
-        assert_matches!(execution_result, SuccessfulExecution(..));
+        if let Some(error_msg) = expect_error {
+            assert_matches!(execution_result, UnpaidConsensusError(..));
+            let UnpaidConsensusError(consensus_error) = execution_result else {
+                panic!()
+            };
+            assert_eq!(consensus_error.to_string(), error_msg)
+        } else {
+            assert_matches!(execution_result, SuccessfulExecution(..));
+        }
     }
 
     pub(in crate::execution::validation::state_transition::state_transitions) fn perform_votes(
@@ -999,6 +1008,7 @@ mod tests {
                 masternode.id(),
                 &voting_key,
                 1,
+                None,
                 platform_version,
             );
         }

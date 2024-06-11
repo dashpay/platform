@@ -4,10 +4,13 @@ pub mod transformer;
 pub mod v0;
 
 use crate::drive::votes::resolved::votes::ResolvedVote;
-use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVoteTransitionActionV0;
+use crate::state_transition_action::identity::masternode_vote::v0::{
+    MasternodeVoteTransitionActionV0, PreviousVoteCount,
+};
 use derive_more::From;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -49,6 +52,28 @@ impl MasternodeVoteTransitionAction {
     pub fn vote_strength(&self) -> u8 {
         match self {
             MasternodeVoteTransitionAction::V0(transition) => transition.vote_strength,
+        }
+    }
+
+    /// The previous resource vote choice that needs to be removed
+    pub fn take_previous_resource_vote_choice_to_remove(
+        &mut self,
+    ) -> Option<(ResourceVoteChoice, PreviousVoteCount)> {
+        match self {
+            MasternodeVoteTransitionAction::V0(transition) => {
+                transition.previous_resource_vote_choice_to_remove.take()
+            }
+        }
+    }
+
+    /// The previous resource vote choice that needs to be removed
+    pub fn previous_resource_vote_choice_to_remove(
+        &self,
+    ) -> &Option<(ResourceVoteChoice, PreviousVoteCount)> {
+        match self {
+            MasternodeVoteTransitionAction::V0(transition) => {
+                &transition.previous_resource_vote_choice_to_remove
+            }
         }
     }
 }

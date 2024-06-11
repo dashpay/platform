@@ -1,8 +1,6 @@
 mod v0;
 
 use crate::drive::Drive;
-use grovedb::batch::KeyInfoPath;
-use std::collections::HashMap;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -11,10 +9,11 @@ use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::fee::op::LowLevelDriveOperation;
+use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Registers a vote for a contested resource based on the voter's identifier,
@@ -49,8 +48,8 @@ impl Drive {
         strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         block_info: &BlockInfo,
-        apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
@@ -66,8 +65,8 @@ impl Drive {
                 strength,
                 vote_poll,
                 vote_choice,
+                previous_resource_vote_choice_to_remove,
                 block_info,
-                apply,
                 transaction,
                 platform_version,
             ),
@@ -111,10 +110,7 @@ impl Drive {
         strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
-        block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -130,8 +126,7 @@ impl Drive {
                 strength,
                 vote_poll,
                 vote_choice,
-                block_info,
-                estimated_costs_only_with_layer_info,
+                previous_resource_vote_choice_to_remove,
                 transaction,
                 platform_version,
             ),

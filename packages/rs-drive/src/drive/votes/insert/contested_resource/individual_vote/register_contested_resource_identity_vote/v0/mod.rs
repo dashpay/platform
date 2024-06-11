@@ -1,4 +1,4 @@
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
+use crate::drive::grove_operations::{BatchDeleteApplyType, BatchInsertTreeApplyType};
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::object_size_info::PathKeyInfo;
 use crate::drive::votes::paths::{
@@ -6,18 +6,18 @@ use crate::drive::votes::paths::{
     vote_contested_resource_identity_votes_tree_path_vec, VotePollPaths,
 };
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::{bincode, ProtocolError};
-use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn register_contested_resource_identity_vote_v0(
@@ -26,31 +26,24 @@ impl Drive {
         strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         block_info: &BlockInfo,
-        apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
-
         let batch_operations = self.register_contested_resource_identity_vote_operations_v0(
             voter_pro_tx_hash,
             strength,
             vote_poll,
             vote_choice,
-            block_info,
-            &mut estimated_costs_only_with_layer_info,
+            previous_resource_vote_choice_to_remove,
             transaction,
             platform_version,
         )?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.apply_batch_low_level_drive_operations(
-            estimated_costs_only_with_layer_info,
+            None,
             transaction,
             batch_operations,
             &mut drive_operations,
@@ -73,10 +66,7 @@ impl Drive {
         strength: u8,
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
-        block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -100,6 +90,30 @@ impl Drive {
             &platform_version.drive,
         )?;
 
+        let mut identity_vote_times = 1;
+
+        if let Some((previous_resource_vote_choice_to_remove, previous_vote_count)) =
+            previous_resource_vote_choice_to_remove
+        {
+            let previous_voting_path = vote_poll.contender_voting_path(
+                &previous_resource_vote_choice_to_remove,
+                platform_version,
+            )?;
+
+            self.batch_delete(
+                previous_voting_path.as_slice().into(),
+                voter_pro_tx_hash.as_slice(),
+                BatchDeleteApplyType::StatefulBatchDelete {
+                    is_known_to_be_subtree_with_sum: Some((false, true)),
+                },
+                transaction,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?;
+
+            identity_vote_times += previous_vote_count;
+        }
+
         let votes_identities_path = vote_contested_resource_identity_votes_tree_path_vec();
 
         self.batch_insert_empty_tree_if_not_exists(
@@ -121,17 +135,23 @@ impl Drive {
         voting_path.remove(0); // we remove the top (root tree vote key)
         voting_path.remove(0); // contested resource
 
-        let reference =
+        let reference_path_type =
             ReferencePathType::UpstreamRootHeightWithParentPathAdditionReference(2, voting_path);
         let config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
-        let encoded_reference = bincode::encode_to_vec(reference, config).map_err(|e| {
+
+        let storage_form = ContestedDocumentResourceVoteReferenceStorageForm {
+            reference_path_type,
+            identity_vote_times,
+        };
+        let encoded_reference = bincode::encode_to_vec(storage_form, config).map_err(|e| {
             Error::Protocol(ProtocolError::CorruptedSerialization(format!(
                 "can not encode reference: {}",
                 e
             )))
         })?;
+
         self.batch_insert::<0>(
             PathKeyElement((
                 path,

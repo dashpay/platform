@@ -1,8 +1,11 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::state_transition_action::identity::masternode_vote::v0::MasternodeVoteTransitionActionV0;
+use crate::state_transition_action::identity::masternode_vote::v0::{
+    MasternodeVoteTransitionActionV0, PreviousVoteCount,
+};
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
@@ -23,6 +26,7 @@ impl MasternodeVoteTransitionAction {
     pub fn transform_from_owned_transition(
         value: MasternodeVoteTransition,
         masternode_strength: u8,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -32,6 +36,7 @@ impl MasternodeVoteTransitionAction {
                 MasternodeVoteTransitionActionV0::transform_from_owned_transition(
                     v0,
                     masternode_strength,
+                    previous_resource_vote_choice_to_remove,
                     drive,
                     transaction,
                     platform_version,
@@ -57,6 +62,7 @@ impl MasternodeVoteTransitionAction {
     pub fn transform_from_transition(
         value: &MasternodeVoteTransition,
         masternode_strength: u8,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -66,6 +72,7 @@ impl MasternodeVoteTransitionAction {
                 Ok(MasternodeVoteTransitionActionV0::transform_from_transition(
                     v0,
                     masternode_strength,
+                    previous_resource_vote_choice_to_remove,
                     drive,
                     transaction,
                     platform_version,

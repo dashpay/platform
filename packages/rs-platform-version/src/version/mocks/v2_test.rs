@@ -237,7 +237,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     add_vote_poll_end_date_query_operations: 0,
                 },
                 cleanup: DriveVoteCleanupMethodVersions {
-                    add_lock_for_contested_document_resource_vote_poll: 0,
                     remove_all_votes_given_by_identity: 0,
                     remove_specific_votes_given_by_identity: 0,
                     remove_contested_resource_vote_poll_end_date_query_operations: 0,
@@ -254,6 +253,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 fetch: DriveVoteFetchMethodVersions {
                     fetch_identities_voting_for_contenders: 0,
                     fetch_contested_document_vote_poll_stored_info: 0,
+                    fetch_identity_contested_resource_vote: 0,
                 },
             },
             contract: DriveContractMethodVersions {
@@ -652,7 +652,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 check_for_ended_vote_polls: 0,
                 tally_votes_for_contested_document_resource_vote_poll: 0,
                 award_document_to_winner: 0,
-                lock_contested_resource: 0,
                 delay_vote_poll: 0,
             },
             state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
@@ -967,6 +966,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             document_type: DocumentTypeValidationVersions { validate_update: 0 },
             voting: VotingValidationVersions {
                 allow_other_contenders_time_ms: 604_800_000, // 1 week in ms
+                votes_allowed_per_masternode: 5,
             },
         },
         state_transition_serialization_versions: StateTransitionSerializationVersions {

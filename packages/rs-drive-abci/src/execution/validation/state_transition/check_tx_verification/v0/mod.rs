@@ -29,6 +29,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
+    #[allow(unreachable_patterns)]
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
             // Only identity top up and identity create do not have nonces validation

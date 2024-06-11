@@ -4,12 +4,12 @@ use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn register_identity_vote_v0(
@@ -17,8 +17,8 @@ impl Drive {
         voter_pro_tx_hash: [u8; 32],
         strength: u8,
         vote: ResolvedVote,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         block_info: &BlockInfo,
-        apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
@@ -33,8 +33,8 @@ impl Drive {
                         strength,
                         contested_document_resource_vote_poll,
                         vote_choice,
+                        previous_resource_vote_choice_to_remove,
                         block_info,
-                        apply,
                         transaction,
                         platform_version,
                     ),
@@ -48,10 +48,7 @@ impl Drive {
         voter_pro_tx_hash: [u8; 32],
         strength: u8,
         vote: ResolvedVote,
-        block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -66,8 +63,7 @@ impl Drive {
                         strength,
                         contested_document_resource_vote_poll,
                         vote_choice,
-                        block_info,
-                        estimated_costs_only_with_layer_info,
+                        previous_resource_vote_choice_to_remove,
                         transaction,
                         platform_version,
                     ),

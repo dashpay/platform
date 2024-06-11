@@ -285,7 +285,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (identity_1, identity_2, dpns_contract) = create_dpns_name_contest(
+                let (_identity_1, _identity_2, _dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     7,
@@ -293,7 +293,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (identity_3, identity_4, dpns_contract) = create_dpns_name_contest(
+                let (_identity_3, _identity_4, dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     8,
@@ -407,6 +407,7 @@ mod tests {
                     masternode_1.id(),
                     &voting_key_1,
                     1,
+                    None,
                     platform_version,
                 );
 
@@ -477,6 +478,7 @@ mod tests {
                     masternode_1.id(),
                     &voting_key_1,
                     1,
+                    None,
                     platform_version,
                 );
 
@@ -957,6 +959,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -977,6 +980,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -997,6 +1001,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1078,6 +1083,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1113,6 +1119,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1195,6 +1202,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1215,6 +1223,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1235,6 +1244,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -1467,7 +1477,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (contender_1_quantum, contender_2_quantum, dpns_contract) =
+                let (contender_1_quantum, _contender_2_quantum, _dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1476,7 +1486,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (contender_1_cooldog, contender_2_cooldog, dpns_contract) =
+                let (_contender_1_cooldog, contender_2_cooldog, _dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1485,7 +1495,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (contender_1_superman, contender_2_superman, dpns_contract) =
+                let (_contender_1_superman, _contender_2_superman, dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1511,6 +1521,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     1,
+                    None,
                     platform_version,
                 );
 
@@ -1526,6 +1537,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     2,
+                    None,
                     platform_version,
                 );
 
@@ -1541,6 +1553,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     3,
+                    None,
                     platform_version,
                 );
 
@@ -1626,7 +1639,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (contender_1_quantum, contender_2_quantum, dpns_contract) =
+                let (contender_1_quantum, _contender_2_quantum, _dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1635,7 +1648,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (contender_1_cooldog, contender_2_cooldog, dpns_contract) =
+                let (_contender_1_cooldog, contender_2_cooldog, _dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1644,7 +1657,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (contender_1_superman, contender_2_superman, dpns_contract) =
+                let (_contender_1_superman, _contender_2_superman, dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1670,6 +1683,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     1,
+                    None,
                     platform_version,
                 );
 
@@ -1685,6 +1699,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     2,
+                    None,
                     platform_version,
                 );
 
@@ -1700,6 +1715,7 @@ mod tests {
                     masternode.id(),
                     &voting_key,
                     3,
+                    None,
                     platform_version,
                 );
 
@@ -3193,7 +3209,7 @@ mod tests {
 
                 assert_eq!(start_balance, dash_to_credits!(0.4));
 
-                let (contender_3, contender_4, _) = create_dpns_name_contest(
+                let (_contender_3, _contender_4, _) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     9,
@@ -3227,6 +3243,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -3257,6 +3274,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -3299,7 +3317,7 @@ mod tests {
 
                 assert_eq!(start_balance, dash_to_credits!(0.4));
 
-                let (contender_3, contender_4, _) = create_dpns_name_contest(
+                let (_contender_3, _contender_4, _) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     9,
@@ -3333,6 +3351,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -3363,6 +3382,7 @@ mod tests {
                         masternode.id(),
                         &voting_key,
                         1,
+                        None,
                         platform_version,
                     );
                 }
@@ -3780,6 +3800,248 @@ mod tests {
 
                     assert_eq!(locking, Some(60));
                 }
+            }
+        }
+        mod changing_vote {
+            use super::*;
+            use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::Abstain;
+            #[test]
+            fn test_masternode_vote_again_same_vote_should_return_error() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, _contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (masternode, signer, voting_key) =
+                    setup_masternode_identity(&mut platform, 10, platform_version);
+
+                let platform_state = platform.state.load();
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    1,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    2,
+                    Some("Masternode vote is already present for masternode 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R voting for ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] })"),
+                    platform_version,
+                );
+            }
+
+            #[test]
+            fn test_masternode_vote_again_different_choice() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (masternode, signer, voting_key) =
+                    setup_masternode_identity(&mut platform, 10, platform_version);
+
+                let platform_state = platform.state.load();
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    1,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    2,
+                    None,
+                    platform_version,
+                );
+
+                let (contenders, _abstaining, _locking, finished_vote_info) = get_vote_states(
+                    &platform,
+                    &platform_state,
+                    &dpns_contract,
+                    "quantum",
+                    None,
+                    true,
+                    None,
+                    ResultType::DocumentsAndVoteTally,
+                    platform_version,
+                );
+
+                assert_eq!(finished_vote_info, None);
+
+                assert_eq!(contenders.len(), 2);
+
+                let first_contender = contenders.first().unwrap();
+
+                let second_contender = contenders.last().unwrap();
+
+                assert_ne!(first_contender.document, second_contender.document);
+
+                assert_eq!(first_contender.identity_id, contender_1.id());
+
+                assert_eq!(second_contender.identity_id, contender_2.id());
+
+                assert_eq!(first_contender.vote_tally, Some(0));
+
+                assert_eq!(second_contender.vote_tally, Some(1));
+            }
+
+            #[test]
+            fn test_masternode_vote_again_different_choice_too_many_times() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (masternode, signer, voting_key) =
+                    setup_masternode_identity(&mut platform, 10, platform_version);
+
+                let platform_state = platform.state.load();
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    1,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    2,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    Lock,
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    3,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    Abstain,
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    4,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    5,
+                    None,
+                    platform_version,
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2.id()),
+                    "quantum",
+                    &signer,
+                    masternode.id(),
+                    &voting_key,
+                    6,
+                    Some("Masternode with id: 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R already voted 5 times and is trying to vote again, they can only vote 5 times"),
+                    platform_version,
+                );
             }
         }
     }

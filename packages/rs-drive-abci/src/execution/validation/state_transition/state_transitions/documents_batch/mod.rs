@@ -681,6 +681,12 @@ mod tests {
                 panic!("expected contenders")
             };
 
+            assert_eq!(abstain_vote_tally, None);
+
+            assert_eq!(lock_vote_tally, None);
+
+            assert_eq!(finished_vote_info, None);
+
             assert_eq!(contenders.len(), 2);
 
             let first_contender = contenders.first().unwrap();
@@ -852,7 +858,7 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let contender_3 = add_contender_to_dpns_name_contest(
+            let _contender_3 = add_contender_to_dpns_name_contest(
                 &mut platform,
                 &platform_state,
                 4,
@@ -912,7 +918,7 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let contender_3 = add_contender_to_dpns_name_contest(
+            let _contender_3 = add_contender_to_dpns_name_contest(
                 &mut platform,
                 &platform_state,
                 4,
