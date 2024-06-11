@@ -567,6 +567,12 @@ impl TryFrom<&[(Value, Value)]> for Index {
             }
         }
 
+        if contested_index.is_some() && !unique {
+            return Err(DataContractError::InvalidContractStructure(
+                "contest supported only for unique indexes".to_string(),
+            ));
+        }
+
         // if the index didn't have a name let's make one
         //todo: we should remove the name altogether
         let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));

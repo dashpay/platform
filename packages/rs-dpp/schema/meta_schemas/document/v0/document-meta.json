@@ -494,6 +494,11 @@
                   0
                 ],
                 "description": "Resolution. 0 - Masternode Vote"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
               }
             },
             "required": ["resolution"],
