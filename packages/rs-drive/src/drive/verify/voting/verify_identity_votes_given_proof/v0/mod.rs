@@ -1,4 +1,5 @@
 use crate::drive::verify::RootHash;
+use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 use crate::error::drive::DriveError;
@@ -8,7 +9,6 @@ use crate::query::ContractLookupFn;
 use dpp::bincode;
 use dpp::identifier::Identifier;
 use dpp::voting::votes::resource_vote::ResourceVote;
-use grovedb::reference_path::ReferencePathType;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -32,7 +32,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                 let bincode_config = bincode::config::standard()
                     .with_big_endian()
                     .with_no_limit();
-                let reference: ReferencePathType =
+                let reference_storage_form: ContestedDocumentResourceVoteReferenceStorageForm =
                     bincode::decode_from_slice(&serialized_reference, bincode_config)
                         .map_err(|e| {
                             Error::Drive(DriveError::CorruptedSerialization(format!(
@@ -42,8 +42,9 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                             )))
                         })?
                         .0;
-                let absolute_path =
-                    reference.absolute_path(path.as_slice(), Some(key.as_slice()))?;
+                let absolute_path = reference_storage_form
+                    .reference_path_type
+                    .absolute_path(path.as_slice(), Some(key.as_slice()))?;
                 let vote_id = Identifier::from_vec(key)?;
                 let vote_storage_form =
                     ContestedDocumentResourceVoteStorageForm::try_from_tree_path(absolute_path)?;
