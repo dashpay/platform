@@ -15,10 +15,10 @@ use std::collections::BTreeMap;
 
 impl ContestedResourceVotesGivenByIdentityQuery {
     #[inline(always)]
-    pub(super) fn verify_identity_votes_given_proof_v0<'a>(
+    pub(super) fn verify_identity_votes_given_proof_v0(
         &self,
         proof: &[u8],
-        contract_lookup_fn: &'a ContractLookupFn<'a>,
+        contract_lookup_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<Identifier, ResourceVote>), Error> {
         let path_query = self.construct_path_query()?;

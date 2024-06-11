@@ -76,7 +76,7 @@ pub trait ContestedDocumentResourceVotePollResolver {
     /// Resolves into a struct, the contract itself will be held with Arc
     fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &'a ContractLookupFn<'a>,
+        known_contracts_provider_fn: &ContractLookupFn,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
     #[cfg(any(feature = "verify", feature = "server"))]
@@ -185,7 +185,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
     #[cfg(feature = "verify")]
     fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &'a ContractLookupFn<'a>,
+        known_contracts_provider_fn: &ContractLookupFn,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error> {
         let ContestedDocumentResourceVotePoll {
             contract_id,

@@ -34,10 +34,10 @@ impl ContestedResourceVotesGivenByIdentityQuery {
     /// This function will return an `Error` if:
     /// * The proof verification fails.
     /// * A deserialization error occurs when parsing the serialized document(s).
-    pub fn verify_identity_votes_given_proof<'a>(
+    pub fn verify_identity_votes_given_proof(
         &self,
         proof: &[u8],
-        contract_lookup_fn: &'a ContractLookupFn<'a>,
+        contract_lookup_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<Identifier, ResourceVote>), Error> {
         match platform_version

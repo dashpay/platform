@@ -94,7 +94,7 @@ impl ContestedDocumentVotePollVotesDriveQuery {
     #[cfg(feature = "verify")]
     pub fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider: &'a ContractLookupFn<'a>,
+        known_contracts_provider: &ContractLookupFn,
     ) -> Result<ResolvedContestedDocumentVotePollVotesDriveQuery<'a>, Error> {
         let ContestedDocumentVotePollVotesDriveQuery {
             vote_poll,
