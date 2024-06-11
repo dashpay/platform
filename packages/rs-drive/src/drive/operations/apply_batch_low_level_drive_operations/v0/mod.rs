@@ -19,8 +19,10 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let grove_db_operations =
-            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
+        let (grove_db_operations, mut other_operations) =
+            LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(
+                batch_operations,
+            );
         self.apply_batch_grovedb_operations(
             estimated_costs_only_with_layer_info,
             transaction,
@@ -28,10 +30,7 @@ impl Drive {
             drive_operations,
             drive_version,
         )?;
-        batch_operations.into_iter().for_each(|op| match op {
-            GroveOperation(_) => (),
-            _ => drive_operations.push(op),
-        });
+        drive_operations.append(&mut other_operations);
         Ok(())
     }
 }

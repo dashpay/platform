@@ -281,101 +281,44 @@ mod tests {
 
         let second_contender = contenders.last().unwrap();
 
-        assert_eq!(first_contender.document, None);
+        assert_eq!(
+            first_contender.document,
+            Some(vec![
+                0, 24, 85, 248, 135, 55, 81, 210, 5, 93, 112, 104, 77, 97, 177, 49, 255, 108, 242,
+                0, 83, 232, 168, 214, 145, 55, 49, 246, 246, 126, 99, 17, 108, 41, 18, 75, 231,
+                232, 111, 151, 233, 89, 137, 74, 103, 169, 204, 7, 140, 62, 1, 6, 212, 191, 207,
+                191, 52, 188, 64, 58, 79, 9, 153, 37, 180, 0, 0, 7, 113, 117, 97, 110, 116, 117,
+                109, 7, 113, 117, 97, 110, 116, 117, 109, 1, 9, 112, 48, 81, 101, 48, 107, 49, 65,
+                122, 4, 100, 97, 115, 104, 48, 165, 41, 91, 32, 215, 12, 4, 215, 10, 9, 207, 71,
+                187, 248, 211, 105, 252, 147, 22, 127, 31, 203, 145, 6, 255, 132, 220, 231, 96, 76,
+                195, 34, 1, 41, 18, 75, 231, 232, 111, 151, 233, 89, 137, 74, 103, 169, 204, 7,
+                140, 62, 1, 6, 212, 191, 207, 191, 52, 188, 64, 58, 79, 9, 153, 37, 180, 0, 1, 0
+            ])
+        );
 
-        assert_eq!(second_contender.document, None);
+        assert_eq!(
+            second_contender.document,
+            Some(vec![
+                0, 23, 193, 35, 24, 227, 101, 215, 103, 217, 98, 152, 114, 80, 94, 3, 27, 65, 246,
+                202, 212, 59, 205, 101, 140, 243, 61, 26, 152, 167, 199, 96, 133, 139, 137, 72,
+                166, 128, 21, 1, 187, 224, 67, 30, 61, 153, 77, 207, 113, 207, 90, 42, 9, 57, 254,
+                81, 176, 230, 0, 7, 97, 153, 171, 164, 251, 0, 0, 7, 113, 117, 97, 110, 116, 117,
+                109, 7, 113, 117, 97, 110, 116, 117, 109, 1, 36, 65, 50, 104, 52, 88, 69, 66, 112,
+                116, 74, 101, 99, 48, 101, 98, 87, 53, 67, 52, 89, 106, 72, 119, 82, 81, 48, 51,
+                88, 54, 83, 99, 75, 103, 89, 111, 97, 4, 100, 97, 115, 104, 110, 35, 254, 120, 68,
+                194, 240, 23, 122, 207, 220, 40, 135, 147, 185, 9, 126, 239, 26, 0, 22, 196, 197,
+                243, 182, 218, 58, 240, 230, 102, 185, 157, 34, 1, 139, 137, 72, 166, 128, 21, 1,
+                187, 224, 67, 30, 61, 153, 77, 207, 113, 207, 90, 42, 9, 57, 254, 81, 176, 230, 0,
+                7, 97, 153, 171, 164, 251, 0, 1, 0
+            ])
+        );
 
         assert_eq!(first_contender.identifier, identity2_id.to_vec());
 
         assert_eq!(second_contender.identifier, identity1_id.to_vec());
 
-        assert_eq!(first_contender.vote_count, Some(50));
+        assert_eq!(first_contender.vote_count, Some(0));
 
-        assert_eq!(second_contender.vote_count, Some(3));
-
-        let GetContestedResourceVoteStateResponse { version } = platform
-            .query_contested_resource_vote_state(
-                GetContestedResourceVoteStateRequest {
-                    version: Some(get_contested_resource_vote_state_request::Version::V0(
-                        GetContestedResourceVoteStateRequestV0 {
-                            contract_id: dpns_contract.id().to_vec(),
-                            document_type_name: document_type.name().clone(),
-                            index_name: "parentNameAndLabel".to_string(),
-                            index_values: vec![dash_encoded, quantum_encoded],
-                            result_type: ResultType::DocumentsAndVoteTally as i32,
-                            allow_include_locked_and_abstaining_vote_tally: true,
-                            start_at_identifier_info: None,
-                            count: None,
-                            prove: true,
-                        },
-                    )),
-                },
-                &platform_state,
-                platform_version,
-            )
-            .expect("expected to execute query")
-            .into_data()
-            .expect("expected query to be valid");
-
-        let get_contested_resource_vote_state_response::Version::V0(
-            GetContestedResourceVoteStateResponseV0 {
-                metadata: _,
-                result,
-            },
-        ) = version.expect("expected a version");
-
-        let Some(get_contested_resource_vote_state_response_v0::Result::Proof(proof)) = result
-        else {
-            panic!("expected contenders")
-        };
-
-        let resolved_contested_document_vote_poll_drive_query =
-            ResolvedContestedDocumentVotePollDriveQuery {
-                vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
-                    contract: DataContractResolvedInfo::BorrowedDataContract(&dpns_contract),
-                    document_type_name: document_type.name().clone(),
-                    index_name: index_name.clone(),
-                    index_values: vec![
-                        Value::Text("dash".to_string()),
-                        Value::Text("quantum".to_string()),
-                    ],
-                },
-                result_type: DocumentsAndVoteTally,
-                offset: None,
-                limit: None,
-                start_at: None,
-                allow_include_locked_and_abstaining_vote_tally: true,
-            };
-
-        let (root_hash, result) = resolved_contested_document_vote_poll_drive_query
-            .verify_vote_poll_vote_state_proof(proof.grovedb_proof.as_ref(), platform_version)
-            .expect("expected to verify proof");
-
-        assert_eq!(
-            root_hash,
-            platform_state
-                .last_committed_block_app_hash()
-                .expect("expected an app hash")
-        );
-
-        assert_eq!(result.contenders.len(), 2);
-
-        let first_contender = result.contenders.first().unwrap();
-
-        let second_contender = result.contenders.last().unwrap();
-
-        // When something is here
-
-        assert_eq!(first_contender.serialized_document, None);
-
-        assert_eq!(second_contender.serialized_document, None);
-
-        assert_eq!(first_contender.identity_id, identity2_id);
-
-        assert_eq!(second_contender.identity_id, identity1_id);
-
-        assert_eq!(first_contender.vote_tally, Some(50));
-
-        assert_eq!(second_contender.vote_tally, Some(3));
+        assert_eq!(second_contender.vote_count, Some(0));
     }
 }

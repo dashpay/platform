@@ -166,8 +166,8 @@ pub enum DriveError {
     CorruptedGenesisTimeInvalidItemLength(String),
 
     /// Error
-    #[error("batch is empty")]
-    BatchIsEmpty(),
+    #[error("batch is empty: {0}")]
+    BatchIsEmpty(String),
 
     /// Error
     #[error("unexpected element type: {0}")]

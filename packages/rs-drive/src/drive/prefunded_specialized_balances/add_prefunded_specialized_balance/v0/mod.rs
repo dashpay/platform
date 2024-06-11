@@ -39,7 +39,7 @@ impl Drive {
             platform_version,
         )?;
         let grove_db_operations =
-            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
+            LowLevelDriveOperation::grovedb_operations_batch_consume(batch_operations);
         self.grove_apply_batch_with_add_costs(
             grove_db_operations,
             false,
