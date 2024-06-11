@@ -129,7 +129,7 @@ pub enum RootTree {
     TokenBalances = 16,
     /// Versions desired by proposers
     Versions = 120,
-    /// Registered vote_choices
+    /// Registered votes
     Votes = 112,
 }
 

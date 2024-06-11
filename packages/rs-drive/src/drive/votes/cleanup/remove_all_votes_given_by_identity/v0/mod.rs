@@ -17,7 +17,7 @@ use grovedb::reference_path::path_from_reference_path_type;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
 impl Drive {
-    /// We remove vote_choices for an identity when that identity is somehow disabled. Currently there is
+    /// We remove votes for an identity when that identity is somehow disabled. Currently there is
     /// no way to "disable" identities except for masternodes being removed from the list
     pub(super) fn remove_all_votes_given_by_identity_v0(
         &self,

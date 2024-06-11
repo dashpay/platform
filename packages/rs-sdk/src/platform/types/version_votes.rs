@@ -1,4 +1,4 @@
-//! Helpers for managing platform version vote_choices
+//! Helpers for managing platform version votes
 
 use crate::platform::fetch_many::FetchMany;
 use crate::{platform::LimitQuery, Error, Sdk};
@@ -11,14 +11,14 @@ use drive_proof_verifier::types::{MasternodeProtocolVote, MasternodeProtocolVote
 /// Helper trait for managing MasternodeProtocolVote objects
 #[async_trait]
 pub trait MasternodeProtocolVoteEx<K: Ord> {
-    /// Fetch masternode vote_choices for version update from the platform.
+    /// Fetch masternode votes for version update from the platform.
     ///
     /// ## Parameters
     ///
     /// - `sdk`: An instance of [Sdk].
-    /// - `start_protxhash`: [ProTxHash] of the first masternode to fetch vote_choices for.
+    /// - `start_protxhash`: [ProTxHash] of the first masternode to fetch votes for.
     /// Use `None` to start from the beginning.
-    /// - `limit`: Maximum number of vote_choices to fetch. Defaults to
+    /// - `limit`: Maximum number of votes to fetch. Defaults to
     /// [DEFAULT_NODES_VOTING_LIMIT](crate::platform::query::DEFAULT_NODES_VOTING_LIMIT)
     ///
     /// ## See also

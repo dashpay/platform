@@ -480,11 +480,13 @@
                       "maxLength": 256
                     }
                   },
+                  "additionalProperties": false,
                   "required": [
                     "field",
                     "regexPattern"
                   ]
-                }
+                },
+                "minItems": 1
               },
               "resolution": {
                 "type": "integer",
@@ -493,7 +495,9 @@
                 ],
                 "description": "Resolution. 0 - Masternode Vote"
               }
-            }
+            },
+            "required": ["resolution"],
+            "additionalProperties": false
           }
         },
         "required": [

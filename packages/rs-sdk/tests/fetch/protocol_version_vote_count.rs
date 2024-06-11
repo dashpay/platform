@@ -12,7 +12,7 @@ async fn test_protocol_version_vote_count() {
 
     let votings = ProtocolVersionVoteCount::fetch_many(&sdk, ())
         .await
-        .expect("fetch protocol version vote_choices");
+        .expect("fetch protocol version votes");
 
     println!("votings: {:?}", votings);
 
