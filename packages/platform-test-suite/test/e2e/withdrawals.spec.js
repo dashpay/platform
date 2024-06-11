@@ -1,5 +1,4 @@
 const { expect } = require('chai');
-const { Mnemonic } = require('@dashevo/dashcore-lib');
 
 const wait = require('@dashevo/dapi-client/lib/utils/wait');
 const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platform/methods/identities/creditWithdrawal');
