@@ -75,6 +75,8 @@ use dpp::consensus::state::identity::master_public_key_update_error::MasterPubli
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
+use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
@@ -268,6 +270,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::VotePollNotAvailableForVotingError(e) => {
             generic_consensus_error!(VotePollNotAvailableForVotingError, e).into()
+        }
+        StateError::MasternodeVotedTooManyTimesError(e) => {
+            generic_consensus_error!(MasternodeVotedTooManyTimesError, e).into()
+        }
+        StateError::MasternodeVoteAlreadyPresentError(e) => {
+            generic_consensus_error!(MasternodeVoteAlreadyPresentError, e).into()
         }
     }
 }
