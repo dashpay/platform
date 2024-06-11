@@ -16,7 +16,7 @@ pub struct DriveCache {
     /// Genesis time in ms
     pub genesis_time_ms: parking_lot::RwLock<Option<TimestampMillis>>,
     // TODO: Make protocol versions cache thread-safe
-    /// Lazy loaded counter of vote_choices to upgrade protocol version
+    /// Lazy loaded counter of votes to upgrade protocol version
     pub protocol_versions_counter: parking_lot::RwLock<ProtocolVersionsCache>,
     /// Versioned system data contracts
     pub system_data_contracts: SystemDataContracts,

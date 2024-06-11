@@ -10,18 +10,18 @@ use dpp::util::deserializer::ProtocolVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Fetch validator vote_choices for versions
+    /// Fetch validator votes for versions
     ///
     /// # Arguments
     ///
-    /// * `start_protx_hash` - The first identifier to get vote_choices from. If none is set start from the
+    /// * `start_protx_hash` - The first identifier to get votes from. If none is set start from the
     ///     first item by ordered hash.
     /// * `count` - How many max items to retrieve.
     /// * `transaction` - A `TransactionArg` object representing the transaction.
     ///
     /// # Returns
     ///
-    /// * `Result<BTreeMap<[u8;32], ProtocolVersion>, Error>` - If successful, returns an `Ok(BTreeMap<[u8;32], ProtocolVersion>)` which contains the versions vote_choices by validators. If an error occurs during the operation, returns an `Error`.
+    /// * `Result<BTreeMap<[u8;32], ProtocolVersion>, Error>` - If successful, returns an `Ok(BTreeMap<[u8;32], ProtocolVersion>)` which contains the versions votes by validators. If an error occurs during the operation, returns an `Error`.
     ///
     /// # Errors
     ///

@@ -24,7 +24,7 @@ impl Drive {
     ) -> Result<BTreeMap<[u8; 32], ProtocolVersion>, Error> {
         if count == 0 {
             return Err(Error::Query(QuerySyntaxError::NoQueryItems(
-                "We did not ask for the vote_choices of any validators",
+                "We did not ask for the votes of any validators",
             )));
         }
         let path = desired_version_for_validators_path_vec();
