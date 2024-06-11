@@ -89,7 +89,7 @@ impl DocumentsBatchTransitionAction {
     }
 
     /// The sum of all conflicting index collateral voting funds for all document create transitions in the batch
-    fn all_conflicting_index_collateral_voting_funds(
+    pub fn all_conflicting_index_collateral_voting_funds(
         &self,
     ) -> Result<Option<Credits>, ProtocolError> {
         match self {

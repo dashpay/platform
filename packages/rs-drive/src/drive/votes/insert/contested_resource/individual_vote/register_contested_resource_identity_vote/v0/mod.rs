@@ -6,7 +6,6 @@ use crate::drive::votes::paths::{
     vote_contested_resource_identity_votes_tree_path_vec, VotePollPaths,
 };
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
-use crate::drive::votes::storage_form;
 use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -16,11 +15,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::{bincode, ProtocolError};
-use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn register_contested_resource_identity_vote_v0(
@@ -31,31 +28,22 @@ impl Drive {
         vote_choice: ResourceVoteChoice,
         previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         block_info: &BlockInfo,
-        apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
-
         let batch_operations = self.register_contested_resource_identity_vote_operations_v0(
             voter_pro_tx_hash,
             strength,
             vote_poll,
             vote_choice,
             previous_resource_vote_choice_to_remove,
-            block_info,
-            &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
         )?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.apply_batch_low_level_drive_operations(
-            estimated_costs_only_with_layer_info,
+            None,
             transaction,
             batch_operations,
             &mut drive_operations,
@@ -79,10 +67,6 @@ impl Drive {
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
         previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
-        block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

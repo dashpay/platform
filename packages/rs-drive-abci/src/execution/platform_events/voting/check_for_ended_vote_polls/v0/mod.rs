@@ -139,12 +139,7 @@ where
                             // let's check to make sure the lock votes didn't win it
                             // if the lock is tied with the top contender the top contender gets it
                             if result.locked_vote_tally > top_contender.final_vote_tally {
-                                self.lock_contested_resource(
-                                    block_info,
-                                    &resolved_contested_document_resource_vote_poll,
-                                    transaction,
-                                    platform_version,
-                                )?;
+                                // the record will show it's locked
                                 ContestedDocumentVotePollWinnerInfo::Locked
                             } else {
                                 let contender_id = top_contender.identity_id;

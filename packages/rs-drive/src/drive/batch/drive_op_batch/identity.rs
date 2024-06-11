@@ -200,16 +200,18 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 strength,
                 vote,
                 previous_resource_vote_choice_to_remove,
-            } => drive.register_identity_vote_operations(
-                voter_pro_tx_hash,
-                strength,
-                vote,
-                previous_resource_vote_choice_to_remove,
-                block_info,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            ),
+            } => {
+                // No need to have estimated_costs_only_with_layer_info and block_info here
+                // This is because voting is a special operation with a fixed cost
+                drive.register_identity_vote_operations(
+                    voter_pro_tx_hash,
+                    strength,
+                    vote,
+                    previous_resource_vote_choice_to_remove,
+                    transaction,
+                    platform_version,
+                )
+            }
             IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id,
                 contract_id,

@@ -237,7 +237,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     add_vote_poll_end_date_query_operations: 0,
                 },
                 cleanup: DriveVoteCleanupMethodVersions {
-                    add_lock_for_contested_document_resource_vote_poll: 0,
                     remove_all_votes_given_by_identity: 0,
                     remove_specific_votes_given_by_identity: 0,
                     remove_contested_resource_vote_poll_end_date_query_operations: 0,
@@ -653,7 +652,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 check_for_ended_vote_polls: 0,
                 tally_votes_for_contested_document_resource_vote_poll: 0,
                 award_document_to_winner: 0,
-                lock_contested_resource: 0,
                 delay_vote_poll: 0,
             },
             state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {

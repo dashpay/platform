@@ -285,7 +285,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (identity_1, identity_2, dpns_contract) = create_dpns_name_contest(
+                let (_identity_1, _identity_2, _dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     7,
@@ -293,7 +293,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (identity_3, identity_4, dpns_contract) = create_dpns_name_contest(
+                let (_identity_3, _identity_4, dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     8,
@@ -1473,7 +1473,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (contender_1_quantum, contender_2_quantum, dpns_contract) =
+                let (contender_1_quantum, _contender_2_quantum, _dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1482,7 +1482,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (contender_1_cooldog, contender_2_cooldog, dpns_contract) =
+                let (_contender_1_cooldog, contender_2_cooldog, _dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1491,7 +1491,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (contender_1_superman, contender_2_superman, dpns_contract) =
+                let (_contender_1_superman, _contender_2_superman, dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1635,7 +1635,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (contender_1_quantum, contender_2_quantum, dpns_contract) =
+                let (contender_1_quantum, _contender_2_quantum, _dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1644,7 +1644,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (contender_1_cooldog, contender_2_cooldog, dpns_contract) =
+                let (_contender_1_cooldog, contender_2_cooldog, _dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -1653,7 +1653,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (contender_1_superman, contender_2_superman, dpns_contract) =
+                let (_contender_1_superman, _contender_2_superman, dpns_contract) =
                     create_dpns_name_contest(
                         &mut platform,
                         &platform_state,
@@ -3205,7 +3205,7 @@ mod tests {
 
                 assert_eq!(start_balance, dash_to_credits!(0.4));
 
-                let (contender_3, contender_4, _) = create_dpns_name_contest(
+                let (_contender_3, _contender_4, _) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     9,
@@ -3313,7 +3313,7 @@ mod tests {
 
                 assert_eq!(start_balance, dash_to_credits!(0.4));
 
-                let (contender_3, contender_4, _) = create_dpns_name_contest(
+                let (_contender_3, _contender_4, _) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     9,
@@ -3810,7 +3810,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                let (contender_1, _contender_2, dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     7,
@@ -3902,7 +3902,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                let (contenders, _abstaining, _locking, finished_vote_info) = get_vote_states(
                     &platform,
                     &platform_state,
                     &dpns_contract,

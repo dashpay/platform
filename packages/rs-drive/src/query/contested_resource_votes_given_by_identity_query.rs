@@ -17,7 +17,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
-use grovedb::reference_path::ReferencePathType;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{PathQuery, SizedQuery};

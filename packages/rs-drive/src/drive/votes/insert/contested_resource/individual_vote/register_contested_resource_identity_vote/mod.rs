@@ -1,8 +1,6 @@
 mod v0;
 
 use crate::drive::Drive;
-use grovedb::batch::KeyInfoPath;
-use std::collections::HashMap;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -15,7 +13,7 @@ use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteC
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Registers a vote for a contested resource based on the voter's identifier,
@@ -52,7 +50,6 @@ impl Drive {
         vote_choice: ResourceVoteChoice,
         previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
         block_info: &BlockInfo,
-        apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
@@ -70,7 +67,6 @@ impl Drive {
                 vote_choice,
                 previous_resource_vote_choice_to_remove,
                 block_info,
-                apply,
                 transaction,
                 platform_version,
             ),
@@ -115,10 +111,6 @@ impl Drive {
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         vote_choice: ResourceVoteChoice,
         previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
-        block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -135,8 +127,6 @@ impl Drive {
                 vote_poll,
                 vote_choice,
                 previous_resource_vote_choice_to_remove,
-                block_info,
-                estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             ),

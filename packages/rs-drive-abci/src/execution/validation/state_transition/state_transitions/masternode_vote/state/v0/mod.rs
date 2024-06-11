@@ -1,13 +1,11 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 use dpp::consensus::ConsensusError;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 
 use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
@@ -15,9 +13,6 @@ use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
-use dpp::voting::vote_polls::VotePoll;
-use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
-use dpp::voting::votes::Vote;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
 use drive::drive::votes::resolved::votes::ResolvedVote;

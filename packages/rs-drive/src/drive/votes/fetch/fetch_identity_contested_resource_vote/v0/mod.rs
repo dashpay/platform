@@ -9,10 +9,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::identifier::Identifier;
-use dpp::prelude::DataContract;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
-use grovedb::reference_path::ReferencePathType;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
