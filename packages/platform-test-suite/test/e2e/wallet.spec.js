@@ -11,15 +11,6 @@ describe('e2e', function e2eTest() {
   this.bail(true);
 
   describe('Wallet', function main() {
-    // TODO: temporarily disabled on browser because of header stream is not syncing
-    //   headers at some point. Our theory is that because wallets aren't offloading properly
-    //   and we have too many streams open.
-    if (typeof window !== 'undefined') {
-      this.skip('temporarily disabled on browser because of header stream is not syncing' +
-        ' headers at some point. Our theory is that because wallets aren\'t offloading properly' +
-        ' and we have too many streams open.');
-    }
-
     this.timeout(950000);
 
     let fundedWallet;
@@ -34,6 +25,15 @@ describe('e2e', function e2eTest() {
     let secondTransaction;
 
     before(async () => {
+      // TODO: temporarily disabled on browser because of header stream is not syncing
+      //   headers at some point. Our theory is that because wallets aren't offloading properly
+      //   and we have too many streams open.
+      if (typeof window !== 'undefined') {
+        this.skip('temporarily disabled on browser because of header stream is not syncing' +
+          ' headers at some point. Our theory is that because wallets aren\'t offloading properly' +
+          ' and we have too many streams open.');
+      }
+
       fundedWallet = await createClientWithFundedWallet(10000);
       const network = process.env.NETWORK;
       emptyWallet = new Dash.Client({

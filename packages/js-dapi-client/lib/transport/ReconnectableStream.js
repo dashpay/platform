@@ -306,8 +306,8 @@ class ReconnectableStream extends EventEmitter {
     const { stream } = this;
     setTimeout(() => {
       stream.removeListener(EVENTS.ERROR, this.errorHandler);
-      // endHa
-      // this.stream = null;
+      // endHandler
+      this.stream = null;
     }, 1000);
     return this.stream.cancel();
   }
