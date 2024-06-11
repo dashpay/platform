@@ -108,13 +108,15 @@ where
             )?;
         }
 
-        self.drive.apply_batch_low_level_drive_operations(
-            None,
-            transaction,
-            operations,
-            &mut vec![],
-            &platform_version.drive,
-        )?;
+        if !operations.is_empty() {
+            self.drive.apply_batch_low_level_drive_operations(
+                None,
+                transaction,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+        }
 
         Ok(())
     }

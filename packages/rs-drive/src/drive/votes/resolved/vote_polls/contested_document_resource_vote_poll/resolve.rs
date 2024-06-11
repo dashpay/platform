@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use crate::drive::contract::DataContractFetchInfo;
 #[cfg(feature = "server")]
 use crate::drive::object_size_info::DataContractOwnedResolvedInfo;
@@ -19,7 +20,7 @@ use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDoc
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use std::sync::Arc;
 
 /// A trait for resolving information related to a contested document resource vote poll.
@@ -98,14 +99,14 @@ pub trait ContestedDocumentResourceVotePollResolver {
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>, Error>;
 
     /// Resolve owned into a struct that allows for a borrowed contract
-    #[cfg(any(feature = "verify", feature = "server"))]
+    #[cfg(feature = "server")]
     fn resolve_with_provided_arc_contract_fetch_info(
         &self,
         data_contract: Arc<DataContractFetchInfo>,
     ) -> Result<ContestedDocumentResourceVotePollWithContractInfo, Error>;
 
     /// Resolve owned into a struct that allows for a borrowed contract
-    #[cfg(any(feature = "verify", feature = "server"))]
+    #[cfg(feature = "server")]
     fn resolve_owned_with_provided_arc_contract_fetch_info(
         self,
         data_contract: Arc<DataContractFetchInfo>,
@@ -212,7 +213,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         )
     }
 
-    #[cfg(any(feature = "verify", feature = "server"))]
+    #[cfg(feature = "server")]
     fn resolve_with_provided_arc_contract_fetch_info(
         &self,
         data_contract: Arc<DataContractFetchInfo>,
@@ -241,7 +242,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
         })
     }
 
-    #[cfg(any(feature = "verify", feature = "server"))]
+    #[cfg(feature = "server")]
     fn resolve_owned_with_provided_arc_contract_fetch_info(
         self,
         data_contract: Arc<DataContractFetchInfo>,
