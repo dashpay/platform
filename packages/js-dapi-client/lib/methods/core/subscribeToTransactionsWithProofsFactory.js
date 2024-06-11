@@ -10,10 +10,9 @@ const DAPIClientError = require('../../errors/DAPIClientError');
 
 /**
  * @param {GrpcTransport} grpcTransport
- * @param logger
  * @returns {subscribeToTransactionsWithProofs}
  */
-function subscribeToTransactionsWithProofsFactory(grpcTransport, logger) {
+function subscribeToTransactionsWithProofsFactory(grpcTransport) {
   /**
    * @typedef {subscribeToTransactionsWithProofs}
    * @param {object} bloomFilter

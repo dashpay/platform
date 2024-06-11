@@ -56,7 +56,7 @@ class DAPIClient extends EventEmitter {
       this.options,
     );
 
-    this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport, this.logger);
+    this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport);
     this.platform = new PlatformMethodsFacade(grpcTransport);
     this.logger = logger.getForId(
       this.options.loggerOptions.identifier,
