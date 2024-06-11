@@ -17,7 +17,7 @@ use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDoc
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use std::sync::Arc;
 
 /// A trait for resolving information related to a contested document resource vote poll.

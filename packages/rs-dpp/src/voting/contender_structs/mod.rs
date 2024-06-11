@@ -132,7 +132,12 @@ impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializ
 ///
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
-#[derive(Debug, PartialEq, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Clone, Default)]
+#[cfg_attr(
+    feature = "document-serde-conversion",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(tag = "$version")
+)]
 pub struct Contender {
     /// The identity ID of the contender.
     pub identity_id: Identifier,
