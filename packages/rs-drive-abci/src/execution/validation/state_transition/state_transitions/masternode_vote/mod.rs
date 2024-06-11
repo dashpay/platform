@@ -3689,7 +3689,7 @@ mod tests {
                         signature: [0u8; 96],
                         round: 0,
                     }
-                        .into(),
+                    .into(),
                 ));
 
                 platform.state.store(Arc::new(platform_state));
@@ -3728,7 +3728,7 @@ mod tests {
                         finished_vote_info,
                         Some(FinishedVoteInfo {
                             finished_vote_outcome:
-                            finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
                             won_by_identity_id: Some(contender_1.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
@@ -3891,7 +3891,7 @@ mod tests {
                         signature: [0u8; 96],
                         round: 0,
                     }
-                        .into(),
+                    .into(),
                 ));
 
                 platform.state.store(Arc::new(platform_state));
@@ -3930,7 +3930,7 @@ mod tests {
                         finished_vote_info,
                         Some(FinishedVoteInfo {
                             finished_vote_outcome:
-                            finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
                             won_by_identity_id: Some(contender_1.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
@@ -4091,7 +4091,7 @@ mod tests {
                         signature: [0u8; 96],
                         round: 0,
                     }
-                        .into(),
+                    .into(),
                 ));
 
                 platform.state.store(Arc::new(platform_state));
@@ -4130,7 +4130,7 @@ mod tests {
                         finished_vote_info,
                         Some(FinishedVoteInfo {
                             finished_vote_outcome:
-                            finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
                             won_by_identity_id: Some(contender_1.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
@@ -4224,7 +4224,7 @@ mod tests {
                     "quantum",
                     platform_version,
                 );
-                
+
                 let platform_state = platform.state.load();
 
                 let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
@@ -4275,7 +4275,6 @@ mod tests {
                     platform_version,
                 );
 
-
                 let mut platform_state = (**platform_state).clone();
 
                 let block_info = BlockInfo {
@@ -4294,7 +4293,7 @@ mod tests {
                         signature: [0u8; 96],
                         round: 0,
                     }
-                        .into(),
+                    .into(),
                 ));
 
                 platform.state.store(Arc::new(platform_state));
@@ -4333,7 +4332,7 @@ mod tests {
                         finished_vote_info,
                         Some(FinishedVoteInfo {
                             finished_vote_outcome:
-                            finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
                             won_by_identity_id: Some(contender_1.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
