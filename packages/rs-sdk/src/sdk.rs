@@ -2,8 +2,9 @@
 
 use std::collections::btree_map::Entry;
 use std::sync::Arc;
-use std::{fmt::Debug, num::NonZeroUsize};
-
+use std::fmt::Debug;
+#[cfg(feature = "mocks")]
+use std::num::NonZeroUsize;
 use crate::error::Error;
 use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
@@ -514,8 +515,11 @@ pub struct SdkBuilder {
     /// Platform version to use in this Sdk
     version: &'static PlatformVersion,
 
-    /// Cache settings
+    /// Cache size for data contracts. Used by mock [GrpcContextProvider].
+    #[cfg(feature = "mocks")]
     data_contract_cache_size: NonZeroUsize,
+    #[cfg(feature = "mocks")]
+    /// Cache size for quorum public keys. Used by mock [GrpcContextProvider].
     quorum_public_keys_cache_size: NonZeroUsize,
 
     /// Context provider used by the SDK.
@@ -542,8 +546,10 @@ impl Default for SdkBuilder {
 
             proofs: true,
 
+            #[cfg(feature = "mocks")]
             data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
                 .expect("data conttact cache size must be positive"),
+            #[cfg(feature = "mocks")]
             quorum_public_keys_cache_size: NonZeroUsize::new(DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE)
                 .expect("quorum public keys cache size must be positive"),
 
@@ -690,7 +696,8 @@ impl SdkBuilder {
                 let dapi = DapiClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
-
+                
+                #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,

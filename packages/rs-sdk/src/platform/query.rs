@@ -1,7 +1,6 @@
 //! Query trait representing criteria for fetching data from the platform.
 //!
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
-use bincode::{Decode, Encode};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::{
@@ -381,7 +380,8 @@ impl Query<GetPrefundedSpecializedBalanceRequest> for Identifier {
 }
 
 /// Query for single vote.
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "mocks", derive(bincode::Encode, bincode::Decode))]
 pub struct VoteQuery {
     pub identity_id: Identifier,
     pub vote_poll_id: Identifier,
