@@ -29,9 +29,9 @@ describe('e2e', function e2eTest() {
       //   headers at some point. Our theory is that because wallets aren't offloading properly
       //   and we have too many streams open.
       if (typeof window !== 'undefined') {
-        this.skip('temporarily disabled on browser because of header stream is not syncing' +
-          ' headers at some point. Our theory is that because wallets aren\'t offloading properly' +
-          ' and we have too many streams open.');
+        this.skip('temporarily disabled on browser because of header stream is not syncing'
+          + ' headers at some point. Our theory is that because wallets aren\'t offloading'
+          + ' properly and we have too many streams open.');
       }
 
       fundedWallet = await createClientWithFundedWallet(10000);
