@@ -14,7 +14,7 @@ authors = [
 [dependencies]
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
-base64 = "0.22.0"
+base64 = "0.22.1"
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "v1.3.1", optional = true }
 bs58 = "0.4.0"
 byteorder = { version = "1.4" }
@@ -44,7 +44,7 @@ log = { version = "0.4.6" }
 num_enum = "0.5.7"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 rand = { version = "0.8.4", features = ["small_rng"] }
-regex = { version = "1.5" }
+regex = { version = "1.10.4" }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
@@ -115,6 +115,7 @@ all_features = [
   "random-document-types",
   "fee-distribution",
   "client",
+  "vote-serialization",
 ]
 
 dash-sdk-features = [
@@ -125,6 +126,7 @@ dash-sdk-features = [
   "validation",
   "identity-hashing",
   "identity-serialization",
+  "vote-serialization",
   "document-value-conversion",
   "data-contract-value-conversion",
   "identity-value-conversion",
@@ -175,6 +177,8 @@ all_features_without_client = [
   "random-documents",
   "random-document-types",
   "fee-distribution",
+  "vote-serialization",
+  "vote-serde-conversion",
 ]
 abci = [
   "state-transitions",
@@ -182,6 +186,7 @@ abci = [
   "validation",
   "random-public-keys",
   "identity-serialization",
+  "vote-serialization",
   "platform-value-cbor",
 ]
 cbor = ["ciborium"]
@@ -229,7 +234,7 @@ identity-cbor-conversion = [
   "platform-value-cbor",
 ]
 index-serde-conversion = []
-state-transition-serde-conversion = ["data-contract-serde-conversion"]
+state-transition-serde-conversion = ["data-contract-serde-conversion", "vote-serde-conversion"]
 state-transition-value-conversion = [
   "platform-value",
   "state-transition-serde-conversion",
@@ -250,6 +255,8 @@ state-transition-signing = [
   "message-signing",
   "state-transition-validation",
 ]
+vote-serialization = []
+vote-serde-conversion = []
 state-transitions = []
 system_contracts = ["factories", "data-contracts", "platform-value-json"]
 fixtures-and-mocks = ["system_contracts", "platform-value/json"]

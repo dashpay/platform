@@ -9,6 +9,9 @@ use std::collections::BTreeMap;
 
 use dpp::prelude::IdentityNonce;
 pub use dpp::version::ProtocolVersionVoteCount;
+use dpp::voting::contender_structs::Contender;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     dashcore::ProTxHash,
@@ -45,6 +48,12 @@ pub type DataContractHistory = BTreeMap<u64, DataContract>;
 /// If data contract is not found, it is represented as `None`.
 pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 
+/// Multiple contenders for a vote resolution.
+///
+/// Mapping between the contenders identity IDs and their info.
+/// If a contender is not found, it is represented as `None`.
+pub type Contenders = RetrievedObjects<Identifier, Contender>;
+
 /// Multiple grovedb elements.
 ///
 /// Mapping between the key id and associated elements.
@@ -55,6 +64,9 @@ pub type Elements = RetrievedObjects<Vec<u8>, Element>;
 pub type IdentityBalance = u64;
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
+
+/// A contested vote for querying
+pub type ContestedVote = (ContestedDocumentResourceVotePoll, ResourceVoteChoice);
 
 /// An identity nonce
 #[derive(Debug)]
@@ -77,13 +89,13 @@ pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
 
 /// Results of protocol version upgrade voting.
 ///
-/// Information about the protocol version upgrade states and number of received votes, indexed by protocol version.
+/// Information about the protocol version upgrade states and number of received vote_choices, indexed by protocol version.
 /// Returned by [ProtocolVersionVoteCount::fetch_many()].
 ///
 /// ## Data Structure
 ///
 /// * [`ProtocolVersion`] - key determining protocol version
-/// * [`ProtocolVersionVoteCount`] - value, number of votes for the protocol version upgrade
+/// * [`ProtocolVersionVoteCount`] - value, number of vote_choices for the protocol version upgrade
 pub type ProtocolVersionUpgrades = RetrievedObjects<ProtocolVersion, ProtocolVersionVoteCount>;
 
 /// Vote of a masternode for a protocol version.

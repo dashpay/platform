@@ -28,6 +28,7 @@ mod query;
 mod strategy;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
+mod voting_tests;
 
 pub type BlockHeight = u64;
 
@@ -498,7 +499,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864825980)
+        assert_eq!(balance, 99864759120)
     }
 
     #[test]
@@ -1088,7 +1089,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "3beaf287fb5fb712715e688ef3cf642e3e4042270907ebd022050b06af0cb433".to_string()
+            "437e90db3d155d1a2db90d21c2a1996c02ee1853e1da5a1b6805f6ce5260890a".to_string()
         )
     }
 
@@ -1778,7 +1779,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "10fbe38850d752b491305b2587468788acbd6dd130272c5a8844d0da05e3a9cf".to_string()
+            "8bb1546dba61beb571cd289b2f4e872900776d2c73fe698d14e8124de6bf9e57".to_string()
         )
     }
 
@@ -1903,7 +1904,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "9ed86b1ed5d0f7a981cb0ff2f3943603a095a031c463b3389bce8a6f60e2b21e".to_string()
+            "3e0e25e19ab7f517d0256e53b85bdfecdc1614014fc0ef02b4698c270a47442a".to_string()
         )
     }
 

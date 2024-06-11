@@ -2,7 +2,7 @@ use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::SingleDocumentDriveQuery;
+use crate::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, TransactionArg};
@@ -17,6 +17,8 @@ impl Drive {
     /// - `contract_ids`: A list of Data Contract IDs to prove
     /// - `document_queries`: A list of [SingleDocumentDriveQuery]. These specify the documents
     ///   to be proven.
+    /// - `vote_queries`: A list of [IdentityBasedVoteDriveQuery]. These would be to figure out the
+    ///   result of votes based on identities making them.
     /// - `transaction`: An optional grovedb transaction
     /// - `platform_version`: A reference to the [PlatformVersion] object that specifies the version of
     ///   the function to call.
@@ -30,6 +32,7 @@ impl Drive {
         identity_queries: &[IdentityDriveQuery],
         contract_ids: &[([u8; 32], Option<bool>)], //bool is history
         document_queries: &[SingleDocumentDriveQuery],
+        vote_queries: &[IdentityBasedVoteDriveQuery],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -87,13 +90,26 @@ impl Drive {
             count += historical_contract_ids.len();
         }
         if !document_queries.is_empty() {
-            path_queries.extend(document_queries.iter().map(|drive_query| {
-                let mut path_query = drive_query.construct_path_query();
+            path_queries.extend(document_queries.iter().filter_map(|drive_query| {
+                // The path query construction can only fail in extremely rare circumstances.
+                let mut path_query = drive_query.construct_path_query().ok()?;
                 path_query.query.limit = None;
-                path_query
+                Some(path_query)
             }));
             count += document_queries.len();
         }
+
+        if !vote_queries.is_empty() {
+            path_queries.extend(vote_queries.iter().filter_map(|vote_query| {
+                // The path query construction can only fail if the serialization fails.
+                // Because the serialization will pretty much never fail, we can do this.
+                let mut path_query = vote_query.construct_path_query().ok()?;
+                path_query.query.limit = None;
+                Some(path_query)
+            }));
+            count += path_queries.len();
+        }
+
         let verbose = match count {
             0 => {
                 return Err(Error::Query(QuerySyntaxError::NoQueryItems(

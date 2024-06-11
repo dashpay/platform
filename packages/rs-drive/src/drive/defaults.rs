@@ -50,6 +50,9 @@ pub const BASE_CONTRACT_DOCUMENTS_PATH: u32 = 34;
 pub const BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH: u32 = 35;
 /// Default hash size
 pub const DEFAULT_HASH_SIZE: u32 = 32;
+
+/// Default hash size
+pub const DEFAULT_HASH_SIZE_USIZE: usize = 32;
 /// Default hash 160 size as u8
 pub const DEFAULT_HASH_160_SIZE_U8: u8 = 20;
 /// Default hash size as u8
@@ -74,6 +77,12 @@ pub const U32_SIZE: u32 = 4;
 
 /// u32 size
 pub const U32_SIZE_U16: u16 = 4;
+
+/// u8 size
+pub const U8_SIZE_U8: u8 = 1;
+
+/// u32 size
+pub const U8_SIZE_U32: u32 = 1;
 
 /// u32 size
 pub const U32_SIZE_U8: u8 = 4;
@@ -116,3 +125,25 @@ pub const ESTIMATED_AVERAGE_INDEX_NAME_SIZE: u8 = 16;
 
 /// The estimated count of identities having the same key if they are not unique
 pub const ESTIMATED_NON_UNIQUE_KEY_DUPLICATES: u32 = 2;
+
+/// The average size of an item that is acting as a tree reference towards the contested item vote
+pub const AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE: u32 = 150;
+
+/// Contested document reference size
+// we need to construct the reference from the split height of the contract document
+// type which is at 4
+// 0 represents document storage
+// Then we add document id
+// Then we add 0 if the document type keys history
+// vec![vec![0], Vec::from(document.id)];
+// 1 (vec size) + 1 (subvec size) + 32 (document id size) = 34
+// + 6 = 40
+// 6 because of:
+// 1 for type reference
+// 1 for reference type
+// 1 for root height offset
+// reference path size
+// 1 reference_hops options
+// 1 reference_hops count
+// 1 element flags option
+pub const CONTESTED_DOCUMENT_REFERENCE_SIZE: u32 = 40;

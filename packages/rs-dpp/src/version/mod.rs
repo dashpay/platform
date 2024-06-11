@@ -10,7 +10,7 @@ lazy_static! {
         RwLock::new(None);
 }
 
-/// Number of votes for a protocol version upgrade.
+/// Number of vote_choices for a protocol version upgrade.
 pub type ProtocolVersionVoteCount = u64;
 
 pub trait PlatformVersionCurrentVersion {

@@ -769,7 +769,7 @@ pub fn create_identities_state_transitions(
 /// - Conversion and encoding errors related to the cryptographic data.
 pub fn create_state_transitions_for_identities(
     identities: Vec<Identity>,
-    signer: &mut SimpleSigner,
+    signer: &SimpleSigner,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> Vec<(Identity, StateTransition)> {

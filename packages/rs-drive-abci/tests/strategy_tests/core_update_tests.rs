@@ -220,11 +220,13 @@ mod tests {
                 updated_hpmns: Default::default(),
                 banned_hpmns: Frequency {
                     times_per_block_range: 1..2,
-                    chance_per_block: Some(0.1), //lower chance of banning
+                    chance_per_block: Some(0.1),
+                    //lower chance of banning
                 },
                 unbanned_hpmns: Frequency {
                     times_per_block_range: 1..2,
-                    chance_per_block: Some(0.3), //higher chance of unbanning
+                    chance_per_block: Some(0.3),
+                    //higher chance of unbanning
                 },
                 changed_ip_hpmns: Default::default(),
                 changed_p2p_port_hpmns: Default::default(),

@@ -224,9 +224,9 @@ mod test {
         };
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None, document_create_transition, &BlockInfo::default(), |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
-            }).expect("expected to create action").into(),
+            }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )
@@ -335,9 +335,9 @@ mod test {
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None, document_create_transition, &BlockInfo::default(), |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
-            }).expect("expected to create action").into(),
+            }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )
@@ -441,9 +441,9 @@ mod test {
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None, document_create_transition, &BlockInfo::default(), |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
-            }).expect("expected to create action").into(),
+            }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )

@@ -30,8 +30,12 @@ use dpp::state_transition::documents_batch_transition::document_replace_transiti
 use dpp::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
+use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedPartialIdentity};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity};
+use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dpp::voting::votes::Vote;
 use platform_version::TryIntoPlatformVersioned;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
@@ -39,7 +43,7 @@ use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
 use crate::error::Error;
 use crate::error::proof::ProofError;
-use crate::query::SingleDocumentDriveQuery;
+use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 
 impl Drive {
     #[inline(always)]
@@ -120,12 +124,33 @@ impl Drive {
                         )))
                     })?;
 
+                let contested_status =
+                    if let DocumentTransition::Create(create_transition) = transition {
+                        if create_transition.prefunded_voting_balance().is_some() {
+                            SingleDocumentDriveQueryContestedStatus::Contested
+                        } else {
+                            SingleDocumentDriveQueryContestedStatus::NotContested
+                        }
+                    } else {
+                        SingleDocumentDriveQueryContestedStatus::NotContested
+                    };
+
+                match transition {
+                    DocumentTransition::Create(_) => {}
+                    DocumentTransition::Replace(_) => {}
+                    DocumentTransition::Delete(_) => {}
+                    DocumentTransition::Transfer(_) => {}
+                    DocumentTransition::UpdatePrice(_) => {}
+                    DocumentTransition::Purchase(_) => {}
+                }
+
                 let query = SingleDocumentDriveQuery {
                     contract_id: transition.data_contract_id().into_buffer(),
                     document_type_name: transition.document_type_name().clone(),
                     document_type_keeps_history: document_type.documents_keep_history(),
                     document_id: transition.base().id().into_buffer(),
                     block_time_ms: None, //None because we want latest
+                    contested_status,
                 };
                 let (root_hash, document) =
                     query.verify_proof(false, proof, document_type, platform_version)?;
@@ -351,6 +376,41 @@ impl Drive {
                         },
                     ),
                 ))
+            }
+            StateTransition::MasternodeVote(masternode_vote) => {
+                let pro_tx_hash = masternode_vote.pro_tx_hash();
+                let vote = masternode_vote.vote();
+                let (contract, document_type_name) = match vote {
+                    Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
+                        VotePoll::ContestedDocumentResourceVotePoll(
+                            contested_document_resource_vote_poll,
+                        ) => (
+                            known_contracts_provider_fn(
+                                &contested_document_resource_vote_poll.contract_id,
+                            )?
+                            .ok_or(Error::Proof(
+                                ProofError::UnknownContract(format!(
+                                    "unknown contract with id {}",
+                                    contested_document_resource_vote_poll.contract_id
+                                )),
+                            ))?,
+                            contested_document_resource_vote_poll
+                                .document_type_name
+                                .as_str(),
+                        ),
+                    },
+                };
+
+                // we expect to get an identity that matches the state transition
+                let (root_hash, vote) = Drive::verify_masternode_vote(
+                    proof,
+                    pro_tx_hash.to_buffer(),
+                    vote,
+                    false,
+                    platform_version,
+                )?;
+                let vote = vote.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain actual vote for masternode {} expected to exist because of state transition (masternode vote)", masternode_vote.pro_tx_hash()))))?;
+                Ok((root_hash, VerifiedMasternodeVote(vote)))
             }
         }
     }

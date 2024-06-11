@@ -14,7 +14,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
  */
 function getIdentityContractNonceFactory(grpcTransport) {
   /**
-   * Fetch the version upgrade vote status
+   * Fetch the version upgrade votes status
    * @typedef {getIdentityContractNonce}
    * @param {Buffer} identityId
    * @param {Buffer} contractId

@@ -1,4 +1,4 @@
-use dpp::block::epoch::Epoch;
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -24,7 +24,7 @@ pub(super) trait DocumentDeleteTransitionActionStateValidationV0 {
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -35,7 +35,7 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        _epoch: &Epoch,
+        _block_info: &BlockInfo,
         _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

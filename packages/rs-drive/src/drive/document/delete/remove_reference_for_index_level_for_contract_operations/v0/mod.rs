@@ -5,6 +5,8 @@ use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use dpp::data_contract::document_type::IndexType;
+use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
@@ -27,7 +29,7 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        unique: bool,
+        index_type: IndexType,
         any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
@@ -45,7 +47,7 @@ impl Drive {
 
         // unique indexes will be stored under key "0"
         // non unique indices should have a tree at key "0" that has all elements based off of primary key
-        if !unique || any_fields_null {
+        if index_type == NonUniqueIndex || index_type == ContestedResourceIndex || any_fields_null {
             key_info_path.push(KnownKey(vec![0]));
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info

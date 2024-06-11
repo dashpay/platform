@@ -157,7 +157,7 @@ impl<'a> ExecutionEvent<'a> {
             }
             StateTransitionAction::DocumentsBatchAction(document_batch_action) => {
                 let user_fee_increase = action.user_fee_increase();
-                let removed_balance = document_batch_action.all_purchases_amount();
+                let removed_balance = document_batch_action.all_used_balances()?;
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
@@ -173,6 +173,11 @@ impl<'a> ExecutionEvent<'a> {
                         "partial identity should be present for other state transitions",
                     )))
                 }
+            }
+            StateTransitionAction::MasternodeVoteAction(_) => {
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::Free { operations })
             }
             _ => {
                 let user_fee_increase = action.user_fee_increase();

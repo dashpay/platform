@@ -4,6 +4,7 @@ use crate::version::fee::processing::FeeProcessingVersion;
 use crate::version::fee::signature::FeeSignatureVersion;
 use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
 use crate::version::fee::storage::FeeStorageVersion;
+use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
 
 mod data_contract;
 mod hashing;
@@ -12,6 +13,7 @@ pub mod signature;
 pub mod state_transition_min_fees;
 pub mod storage;
 pub mod v1;
+pub mod vote_resolution_fund_fees;
 
 #[derive(Clone, Debug, Default)]
 pub struct FeeVersion {
@@ -21,4 +23,5 @@ pub struct FeeVersion {
     pub processing: FeeProcessingVersion,
     pub data_contract: FeeDataContractValidationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
+    pub vote_resolution_fund_fees: VoteResolutionFundFees,
 }

@@ -461,7 +461,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         assert_eq!(1305, added_bytes);
-        assert_eq!(142936800, processing_fee);
+        assert_eq!(144784800, processing_fee);
     }
 
     #[test]
@@ -703,7 +703,7 @@ mod tests {
     fn test_add_dashpay_many_non_conflicting_documents() {
         let (drive, dashpay) = setup_dashpay("add_no_conflict", true);
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let platform_version = PlatformVersion::first();
 
@@ -807,7 +807,7 @@ mod tests {
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let platform_version = PlatformVersion::first();
 

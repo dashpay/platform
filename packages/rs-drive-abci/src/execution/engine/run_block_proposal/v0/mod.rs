@@ -313,6 +313,10 @@ where
             platform_version,
         )?;
 
+        // Check for any vote polls that might have ended
+
+        self.check_for_ended_vote_polls(&block_info, Some(transaction), platform_version)?;
+
         // Create a new block execution context
 
         let mut block_execution_context: BlockExecutionContext =

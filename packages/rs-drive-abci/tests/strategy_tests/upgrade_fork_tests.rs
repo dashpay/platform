@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn run_chain_on_epoch_change_with_new_version_and_removing_votes() {
-        // Add a new version to upgrade to new protocol version only with one vote
+        // Add a new version to upgrade to new protocol version only with one votes
         const TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE: u32 =
             (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 4;
 

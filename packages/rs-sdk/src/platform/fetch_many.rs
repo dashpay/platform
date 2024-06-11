@@ -12,8 +12,8 @@ use crate::{
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetIdentitiesContractKeysRequest, GetIdentityKeysRequest,
+    GetContestedResourceVoteStateRequest, GetDataContractsRequest, GetDocumentsResponse,
+    GetEpochsInfoRequest, GetIdentitiesContractKeysRequest, GetIdentityKeysRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
@@ -25,6 +25,8 @@ use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use drive::query::vote_poll_vote_state_query::Contender;
 use drive_proof_verifier::types::{MasternodeProtocolVote, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
@@ -263,7 +265,7 @@ impl FetchMany<EpochIndex> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
 }
 
-/// Fetch information about number of votes for each protocol version upgrade.
+/// Fetch information about number of vote_choices for each protocol version upgrade.
 ///
 /// Returns [ProtocolVersionUpgrades](drive_proof_verifier::types::ProtocolVersionUpgrades)
 /// indexed by [ProtocolVersion](dpp::util::deserializer::ProtocolVersion).
@@ -310,4 +312,11 @@ impl FetchMany<ProTxHash> for MasternodeProtocolVote {
 /// Returns [DataContracts](drive_proof_verifier::types::DataContracts) indexed by [Identifier](dpp::prelude::Identifier).
 impl FetchMany<Identifier> for DataContract {
     type Request = GetDataContractsRequest;
+}
+
+/// Fetch multiple contenders for a contested document resource vote poll.
+///
+/// Returns [Contender](drive_proof_verifier::types::Contenders) indexed by [Identifier](dpp::prelude::Identifier).
+impl FetchMany<ContestedDocumentResourceVotePoll> for Contender {
+    type Request = GetContestedResourceVoteStateRequest;
 }

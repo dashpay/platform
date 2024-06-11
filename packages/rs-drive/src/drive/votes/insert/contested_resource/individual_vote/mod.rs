@@ -1,0 +1,1 @@
+mod register_contested_resource_identity_vote;

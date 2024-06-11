@@ -60,6 +60,7 @@ use crate::consensus::basic::state_transition::{
 use crate::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
 use crate::consensus::ConsensusError;
 
+use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
 #[cfg(feature = "json-schema-validation")]
@@ -69,7 +70,9 @@ use crate::consensus::basic::{
 use crate::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use crate::data_contract::errors::DataContractError;
 
-#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
+#[derive(
+    Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
+)]
 pub enum BasicError {
     /*
 
@@ -372,6 +375,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     IncompatibleDocumentTypeSchemaError(IncompatibleDocumentTypeSchemaError),
+
+    #[error(transparent)]
+    OverflowError(OverflowError),
 }
 
 impl From<BasicError> for ConsensusError {

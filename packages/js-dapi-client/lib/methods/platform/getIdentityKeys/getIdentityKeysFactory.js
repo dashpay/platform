@@ -17,7 +17,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
  */
 function getIdentityKeysFactory(grpcTransport) {
   /**
-   * Fetch the version upgrade vote status
+   * Fetch the version upgrade votes status
    * @typedef {getIdentityKeys}
    * @param {Buffer} identityId
    * @param {number[]} keyIds

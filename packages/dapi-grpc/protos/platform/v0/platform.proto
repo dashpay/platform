@@ -34,6 +34,17 @@ service Platform {
   rpc getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse);
   rpc getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse);
   rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
+  // What votes are currently happening for a specific contested index
+  rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
+  // What's the state of a contested resource vote? (ie who is winning?)
+  rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
+  // Who voted for a contested resource to go to a specific identity?
+  rpc getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse);
+  // How did an identity vote?
+  rpc getContestedResourceIdentityVotes(GetContestedResourceIdentityVotesRequest) returns (GetContestedResourceIdentityVotesResponse);
+  // What vote polls will end soon?
+  rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
+  rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
 }
 
@@ -288,10 +299,16 @@ message GetIdentitiesContractKeysResponse {
 message GetProofsRequest {
   message GetProofsRequestV0 {
     message DocumentRequest {
+      enum DocumentContestedStatus {
+        NOT_CONTESTED = 0;
+        MAYBE_CONTESTED = 1;
+        CONTESTED = 2;
+      }
       bytes contract_id = 1;
       string document_type = 2;
       bool document_type_keeps_history = 3;
       bytes document_id = 4;
+      DocumentContestedStatus document_contested_status = 5;
     }
 
     message IdentityRequest {
@@ -307,9 +324,22 @@ message GetProofsRequest {
 
     message ContractRequest { bytes contract_id = 1; }
 
+    message VoteStatusRequest {
+      message ContestedResourceVoteStatusRequest {
+        bytes contract_id = 1;
+        string document_type_name = 2;
+        string index_name = 3;
+        repeated bytes index_values = 4;
+        bytes voter_identifier = 5;
+      }
+
+      oneof request_type { ContestedResourceVoteStatusRequest contested_resource_vote_status_request = 1; }
+    }
+
     repeated IdentityRequest identities = 1;
     repeated ContractRequest contracts = 2;
     repeated DocumentRequest documents = 3;
+    repeated VoteStatusRequest votes = 4;
   }
 
   oneof version { GetProofsRequestV0 v0 = 1; }
@@ -607,6 +637,287 @@ message GetEpochsInfoResponse {
   }
 }
 
+message GetContestedResourcesRequest {
+  message GetContestedResourcesRequestV0 {
+    message StartAtValueInfo {
+      bytes start_value = 1;
+      bool start_value_included = 2;
+    }
+
+    bytes contract_id = 1;
+    string document_type_name = 2;
+    string index_name = 3;
+    repeated bytes start_index_values = 4;
+    repeated bytes end_index_values = 5;
+    optional StartAtValueInfo start_at_value_info = 6;
+    optional uint32 count = 7;
+    bool order_ascending = 8;
+    bool prove = 9;
+  }
+
+  oneof version {
+    GetContestedResourcesRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourcesResponse {
+  message GetContestedResourcesResponseV0 {
+    message ContestedResourceValues {
+      repeated bytes contested_resource_values = 1;
+    }
+
+    oneof result {
+      ContestedResourceValues contested_resource_values = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourcesResponseV0 v0 = 1;
+  }
+}
+
+message GetVotePollsByEndDateRequest {
+  message GetVotePollsByEndDateRequestV0 {
+    message StartAtTimeInfo {
+      uint64 start_time_ms = 1;
+      bool start_time_included = 2;
+    }
+    message EndAtTimeInfo {
+      uint64 end_time_ms = 1;
+      bool end_time_included = 2;
+    }
+    optional StartAtTimeInfo start_time_info = 1;
+    optional EndAtTimeInfo end_time_info = 2;
+    optional uint32 limit = 3;
+    optional uint32 offset = 4;
+    bool ascending = 5;
+    bool prove = 6;
+  }
+
+  oneof version {
+    GetVotePollsByEndDateRequestV0 v0 = 1;
+  }
+}
+
+message GetVotePollsByEndDateResponse {
+  message GetVotePollsByEndDateResponseV0 {
+    message SerializedVotePollsByTimestamp {
+      uint64 timestamp = 1;
+      repeated bytes serialized_vote_polls = 2;
+    }
+
+    message SerializedVotePollsByTimestamps {
+      repeated SerializedVotePollsByTimestamp vote_polls_by_timestamps = 1;
+      bool finished_results = 2;
+    }
+
+    oneof result {
+      SerializedVotePollsByTimestamps vote_polls_by_timestamps = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetVotePollsByEndDateResponseV0 v0 = 1;
+  }
+}
+
+// What's the state of a contested resource vote? (ie who is winning?)
+message GetContestedResourceVoteStateRequest {
+  message GetContestedResourceVoteStateRequestV0 {
+    message StartAtIdentifierInfo {
+      bytes start_identifier = 1;
+      bool start_identifier_included = 2;
+    }
+    enum ResultType {
+      IDENTITY_IDS_ONLY = 0;
+      DOCUMENTS = 1;
+      VOTE_TALLY = 2;
+      DOCUMENTS_AND_VOTE_TALLY = 3;
+    }
+
+    bytes contract_id = 1;
+    string document_type_name = 2;
+    string index_name = 3;
+    repeated bytes index_values = 4;
+    ResultType result_type = 5;
+    bool allow_include_locked_and_abstaining_vote_tally = 6;
+    optional StartAtIdentifierInfo start_at_identifier_info = 7;
+    optional uint32 count = 8;
+    bool prove = 9;
+  }
+
+  oneof version {
+    GetContestedResourceVoteStateRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceVoteStateResponse {
+  message GetContestedResourceVoteStateResponseV0 {
+    message FinishedVoteInfo {
+      enum FinishedVoteOutcome {
+        TOWARDS_IDENTITY = 0;
+        LOCKED = 1;
+        NO_PREVIOUS_WINNER = 2;
+      }
+      FinishedVoteOutcome finished_vote_outcome = 1;
+      optional bytes won_by_identity_id = 2; // Only used when vote_choice_type is TOWARDS_IDENTITY
+      uint64 finished_at_block_height = 3;
+      uint32 finished_at_core_block_height = 4;
+      uint64 finished_at_block_time_ms = 5;
+      uint32 finished_at_epoch = 6;
+    }
+
+    message ContestedResourceContenders {
+      repeated Contender contenders = 1;
+      optional uint32 abstain_vote_tally = 2;
+      optional uint32 lock_vote_tally = 3;
+      optional FinishedVoteInfo finished_vote_info = 4;
+    }
+
+    message Contender {
+      bytes identifier = 1;
+      optional uint32 vote_count = 2;
+      optional bytes document = 3;
+    }
+
+    oneof result {
+      ContestedResourceContenders contested_resource_contenders = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourceVoteStateResponseV0 v0 = 1;
+  }
+}
+
+// Who voted for a contested resource to go to a specific identity?
+message GetContestedResourceVotersForIdentityRequest {
+  message GetContestedResourceVotersForIdentityRequestV0 {
+    message StartAtIdentifierInfo {
+      bytes start_identifier = 1;
+      bool start_identifier_included = 2;
+    }
+    bytes contract_id = 1;
+    string document_type_name = 2;
+    string index_name = 3;
+    repeated bytes index_values = 4;
+    bytes contestant_id = 5;
+    optional StartAtIdentifierInfo start_at_identifier_info = 6;
+    optional uint32 count = 7;
+    bool order_ascending = 8;
+    bool prove = 9;
+  }
+
+  oneof version {
+    GetContestedResourceVotersForIdentityRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceVotersForIdentityResponse {
+  message GetContestedResourceVotersForIdentityResponseV0 {
+    message ContestedResourceVoters {
+      repeated bytes voters = 1;
+      bool finished_results = 2;
+    }
+
+    oneof result {
+      ContestedResourceVoters contested_resource_voters = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourceVotersForIdentityResponseV0 v0 = 1;
+  }
+}
+
+// How did an identity vote?
+message GetContestedResourceIdentityVotesRequest {
+  message GetContestedResourceIdentityVotesRequestV0 {
+    message StartAtVotePollIdInfo {
+      bytes start_at_poll_identifier = 1;
+      bool start_poll_identifier_included = 2;
+    }
+    bytes identity_id = 1;
+    google.protobuf.UInt32Value limit = 2;
+    google.protobuf.UInt32Value offset = 3;
+    bool order_ascending = 4;
+    optional StartAtVotePollIdInfo start_at_vote_poll_id_info = 5;
+    bool prove = 6;
+  }
+
+  oneof version {
+    GetContestedResourceIdentityVotesRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceIdentityVotesResponse {
+  message GetContestedResourceIdentityVotesResponseV0 {
+    message ContestedResourceIdentityVotes {
+      repeated ContestedResourceIdentityVote contested_resource_identity_votes = 1;
+      bool finished_results = 2;
+    }
+
+    message ResourceVoteChoice {
+      enum VoteChoiceType {
+        TOWARDS_IDENTITY = 0;
+        ABSTAIN = 1;
+        LOCK = 2;
+      }
+      VoteChoiceType vote_choice_type = 1;
+      optional bytes identity_id = 2; // Only used when vote_choice_type is TOWARDS_IDENTITY
+    }
+
+    message ContestedResourceIdentityVote {
+      bytes contract_id = 1;
+      string document_type_name = 2;
+      repeated bytes serialized_index_storage_values = 3;
+      ResourceVoteChoice vote_choice = 4;
+    }
+
+    oneof result {
+      ContestedResourceIdentityVotes votes = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourceIdentityVotesResponseV0 v0 = 1;
+  }
+}
+
+message GetPrefundedSpecializedBalanceRequest {
+
+  message GetPrefundedSpecializedBalanceRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetPrefundedSpecializedBalanceRequestV0 v0 = 1; }
+}
+
+message GetPrefundedSpecializedBalanceResponse {
+
+  message GetPrefundedSpecializedBalanceResponseV0 {
+    oneof result {
+      uint64 balance = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetPrefundedSpecializedBalanceResponseV0 v0 = 1; }
+}
+
+
 message GetPathElementsRequest {
   message GetPathElementsRequestV0 {
     repeated bytes path = 1;
@@ -627,6 +938,7 @@ message GetPathElementsResponse {
 
     oneof result {
       Elements elements = 1;
+
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
@@ -636,4 +948,3 @@ message GetPathElementsResponse {
     GetPathElementsResponseV0 v0 = 1;
   }
 }
-

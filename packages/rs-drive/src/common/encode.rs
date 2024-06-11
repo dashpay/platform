@@ -32,7 +32,9 @@
 //! This module defines encoding functions.
 //!
 
-use byteorder::{BigEndian, WriteBytesExt};
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 
 /// Encodes an unsigned integer on 64 bits.
 pub fn encode_u64(val: u64) -> Vec<u8> {
@@ -58,6 +60,74 @@ pub fn encode_u64(val: u64) -> Vec<u8> {
     wtr[0] ^= 0b1000_0000;
 
     wtr
+}
+
+/// Decodes a 64-bit unsigned integer from a vector of bytes encoded with `encode_u64`.
+///
+/// # Arguments
+///
+/// * `bytes` - A vector of bytes representing the encoded 64-bit unsigned integer.
+///
+/// # Returns
+///
+/// * A 64-bit unsigned integer decoded from the input bytes.
+///
+/// # Panics
+///
+/// This function will panic if the input vector does not have exactly 8 bytes.
+pub fn decode_u64_owned(mut bytes: Vec<u8>) -> Result<u64, Error> {
+    // Ensure the input vector has exactly 8 bytes
+    if bytes.len() != 8 {
+        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+            "Trying to decode a u64 from {} bytes {}",
+            bytes.len(),
+            hex::encode(bytes)
+        ))));
+    }
+
+    // Flip the sign bit back to its original state
+    // This reverses the transformation done in `encode_u64`
+    bytes[0] ^= 0b1000_0000;
+
+    // Read the integer from the modified bytes
+    // The bytes are in big endian form, which preserves the correct order
+    // when they were written in the encode function
+    Ok(BigEndian::read_u64(&bytes))
+}
+
+/// Decodes a 64-bit unsigned integer from a vector of bytes encoded with `encode_u64`.
+///
+/// # Arguments
+///
+/// * `bytes` - A vector of bytes representing the encoded 64-bit unsigned integer.
+///
+/// # Returns
+///
+/// * A 64-bit unsigned integer decoded from the input bytes.
+///
+/// # Panics
+///
+/// This function will panic if the input vector does not have exactly 8 bytes.
+pub fn decode_u64(bytes: &[u8]) -> Result<u64, Error> {
+    // Ensure the input vector has exactly 8 bytes
+    if bytes.len() != 8 {
+        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+            "Trying to decode a u64 from {} bytes {}",
+            bytes.len(),
+            hex::encode(bytes)
+        ))));
+    }
+
+    let mut wtr = bytes.to_vec();
+
+    // Flip the sign bit back to its original state
+    // This reverses the transformation done in `encode_u64`
+    wtr[0] ^= 0b1000_0000;
+
+    // Read the integer from the modified bytes
+    // The bytes are in big endian form, which preserves the correct order
+    // when they were written in the encode function
+    Ok(BigEndian::read_u64(&wtr))
 }
 
 /// Encodes a signed integer on 64 bits.

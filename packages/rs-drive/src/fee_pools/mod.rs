@@ -33,6 +33,7 @@ use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
 #[cfg(feature = "server")]
 use crate::drive::credit_pools::paths::pools_vec_path;
+use crate::drive::Drive;
 #[cfg(feature = "server")]
 use crate::error::Error;
 #[cfg(feature = "server")]
@@ -63,35 +64,37 @@ pub mod epochs;
 /// Epochs root tree key constants module
 pub mod epochs_root_tree_key_constants;
 
-#[cfg(feature = "server")]
-/// Adds the operations to groveDB op batch to create the fee pool trees
-pub fn add_create_fee_pool_trees_operations(
-    batch: &mut GroveDbOpBatch,
-    epochs_per_era: u16,
-    protocol_version: ProtocolVersion,
-) -> Result<(), Error> {
-    // Init storage credit pool
-    batch.push(update_storage_fee_distribution_pool_operation(0)?);
+impl Drive {
+    #[cfg(feature = "server")]
+    /// Adds the operations to groveDB op batch to create the fee pool trees
+    pub fn add_create_fee_pool_trees_operations(
+        batch: &mut GroveDbOpBatch,
+        epochs_per_era: u16,
+        protocol_version: ProtocolVersion,
+    ) -> Result<(), Error> {
+        // Init storage credit pool
+        batch.push(update_storage_fee_distribution_pool_operation(0)?);
 
-    // Init next epoch to pay
-    batch.push(update_unpaid_epoch_index_operation(GENESIS_EPOCH_INDEX));
+        // Init next epoch to pay
+        batch.push(update_unpaid_epoch_index_operation(GENESIS_EPOCH_INDEX));
 
-    add_create_pending_epoch_refunds_tree_operations(batch);
+        add_create_pending_epoch_refunds_tree_operations(batch);
 
-    // We need to insert 50 era worth of epochs,
-    // with 40 epochs per era that's 2000 epochs
-    // however this is configurable
-    for i in GENESIS_EPOCH_INDEX..perpetual_storage_epochs(epochs_per_era) {
-        let epoch = Epoch::new(i)?;
-        epoch.add_init_empty_operations(batch)?;
+        // We need to insert 50 era worth of epochs,
+        // with 40 epochs per era that's 2000 epochs
+        // however this is configurable
+        for i in GENESIS_EPOCH_INDEX..perpetual_storage_epochs(epochs_per_era) {
+            let epoch = Epoch::new(i)?;
+            epoch.add_init_empty_operations(batch)?;
+        }
+
+        let genesis_epoch = Epoch::new(GENESIS_EPOCH_INDEX)?;
+
+        // Initial protocol version for genesis epoch
+        batch.push(genesis_epoch.update_protocol_version_operation(protocol_version));
+
+        Ok(())
     }
-
-    let genesis_epoch = Epoch::new(GENESIS_EPOCH_INDEX)?;
-
-    // Initial protocol version for genesis epoch
-    batch.push(genesis_epoch.update_protocol_version_operation(protocol_version));
-
-    Ok(())
 }
 
 #[cfg(feature = "server")]

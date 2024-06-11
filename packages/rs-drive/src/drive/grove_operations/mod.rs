@@ -134,6 +134,7 @@ pub mod grove_batch_operations_costs;
 /// Clear a subtree in grovedb
 pub mod grove_clear;
 
+mod grove_get_path_query_serialized_or_sum_results;
 /// Proved path query in grovedb with a conditional query
 pub mod grove_get_proved_path_query_with_conditional;
 
@@ -180,6 +181,7 @@ pub type IsSumSubTree = bool;
 pub type IsSumTree = bool;
 
 /// Batch delete apply type
+#[derive(Debug, Copy, Clone)]
 pub enum BatchDeleteApplyType {
     /// Stateless batch delete
     StatelessBatchDelete {
@@ -195,6 +197,7 @@ pub enum BatchDeleteApplyType {
     },
 }
 
+#[derive(Clone)]
 /// Batch delete up tree apply type
 pub enum BatchDeleteUpTreeApplyType {
     /// Stateless batch delete

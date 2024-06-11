@@ -25,6 +25,14 @@ impl RetrieveIdentityInfo {
         }
     }
 
+    pub fn one_key() -> Self {
+        RetrieveIdentityInfo {
+            query_by_key_id_key_count: 1,
+            request_balance: false,
+            request_revision: false,
+        }
+    }
+
     pub fn one_key_and_balance_and_revision() -> Self {
         RetrieveIdentityInfo {
             query_by_key_id_key_count: 1,
@@ -40,6 +48,14 @@ impl RetrieveIdentityInfo {
             request_revision: false,
         }
     }
+
+    pub fn one_key_and_revision() -> Self {
+        RetrieveIdentityInfo {
+            query_by_key_id_key_count: 1,
+            request_balance: false,
+            request_revision: true,
+        }
+    }
 }
 
 pub type HashBlockCount = u16;
@@ -50,6 +66,7 @@ pub const SHA256_BLOCK_SIZE: u16 = 64;
 pub enum ValidationOperation {
     Protocol(ProtocolValidationOperation),
     RetrieveIdentity(RetrieveIdentityInfo),
+    RetrievePrefundedSpecializedBalance,
     DoubleSha256(HashBlockCount),
     ValidateKeyStructure(KeyCount), // This is extremely cheap
     SignatureVerification(SignatureVerificationOperation),
@@ -137,6 +154,19 @@ impl ValidationOperation {
                             .ok_or(ExecutionError::Overflow(
                                 "execution processing fee overflow error",
                             ))?;
+
+                    fee_result.processing_fee = fee_result
+                        .processing_fee
+                        .checked_add(operation_cost)
+                        .ok_or(ExecutionError::Overflow(
+                            "execution processing fee overflow error",
+                        ))?;
+                }
+                ValidationOperation::RetrievePrefundedSpecializedBalance => {
+                    let operation_cost = platform_version
+                        .fee_version
+                        .processing
+                        .fetch_prefunded_specialized_balance_processing_cost;
 
                     fee_result.processing_fee = fee_result
                         .processing_fee

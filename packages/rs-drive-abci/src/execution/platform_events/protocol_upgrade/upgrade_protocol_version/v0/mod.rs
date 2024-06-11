@@ -79,7 +79,7 @@ impl<C> Platform<C> {
 
             // We clean voting counter cache only on finalize block because:
             // 1. The voting counter global cache uses for querying of voting information in Drive queries
-            // 2. There might be multiple rounds so on the next round we will lose all previous epoch votes
+            // 2. There might be multiple rounds so on the next round we will lose all previous epoch vote_choices
             //
             // Instead of clearing cache, the further block processing logic is using `get_if_enabled`
             // to get a version counter from the global cache. We disable this getter here to prevent

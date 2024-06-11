@@ -19,7 +19,9 @@ use thiserror::Error;
 )]
 #[error("Invalid State Transition signature")]
 #[platform_serialize(unversioned)]
-pub struct InvalidStateTransitionSignatureError;
+pub struct InvalidStateTransitionSignatureError {
+    message: String,
+}
 
 /*
 
@@ -28,8 +30,12 @@ DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 */
 
 impl InvalidStateTransitionSignatureError {
-    pub fn new() -> Self {
-        Self
+    pub fn new(message: String) -> Self {
+        Self { message }
+    }
+
+    pub fn message(&self) -> &String {
+        &self.message
     }
 }
 

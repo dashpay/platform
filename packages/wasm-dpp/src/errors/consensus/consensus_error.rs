@@ -64,11 +64,21 @@ use wasm_bindgen::{JsError, JsValue};
 use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
 use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
+use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
+use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
+use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
+use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
+use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
+use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
@@ -237,8 +247,35 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::DocumentIncorrectPurchasePriceError(e) => {
             generic_consensus_error!(DocumentIncorrectPurchasePriceError, e).into()
         }
+        StateError::PrefundedSpecializedBalanceInsufficientError(e) => {
+            generic_consensus_error!(PrefundedSpecializedBalanceInsufficientError, e).into()
+        }
+        StateError::PrefundedSpecializedBalanceNotFoundError(e) => {
+            generic_consensus_error!(PrefundedSpecializedBalanceNotFoundError, e).into()
+        }
         StateError::DataContractUpdatePermissionError(e) => {
             DataContractUpdatePermissionErrorWasm::from(e).into()
+        }
+        StateError::MasternodeNotFoundError(e) => {
+            generic_consensus_error!(MasternodeNotFoundError, e).into()
+        }
+        StateError::DocumentContestCurrentlyLockedError(e) => {
+            generic_consensus_error!(DocumentContestCurrentlyLockedError, e).into()
+        }
+        StateError::DocumentContestNotJoinableError(e) => {
+            generic_consensus_error!(DocumentContestNotJoinableError, e).into()
+        }
+        StateError::VotePollNotFoundError(e) => {
+            generic_consensus_error!(VotePollNotFoundError, e).into()
+        }
+        StateError::VotePollNotAvailableForVotingError(e) => {
+            generic_consensus_error!(VotePollNotAvailableForVotingError, e).into()
+        }
+        StateError::MasternodeVotedTooManyTimesError(e) => {
+            generic_consensus_error!(MasternodeVotedTooManyTimesError, e).into()
+        }
+        StateError::MasternodeVoteAlreadyPresentError(e) => {
+            generic_consensus_error!(MasternodeVoteAlreadyPresentError, e).into()
         }
     }
 }
@@ -480,6 +517,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::DocumentCreationNotAllowedError(e) => {
             generic_consensus_error!(DocumentCreationNotAllowedError, e).into()
         }
+        BasicError::OverflowError(e) => generic_consensus_error!(OverflowError, e).into(),
     }
 }
 

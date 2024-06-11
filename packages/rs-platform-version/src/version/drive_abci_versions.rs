@@ -14,9 +14,16 @@ pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersionBounds,
     pub document_query: FeatureVersionBounds,
+    pub prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
     pub data_contract_based_queries: DriveAbciQueryDataContractVersions,
+    pub voting_based_queries: DriveAbciQueryVotingVersions,
     pub system: DriveAbciQuerySystemVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryPrefundedSpecializedBalancesVersions {
+    pub balance: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -29,6 +36,15 @@ pub struct DriveAbciQueryIdentityVersions {
     pub balance: FeatureVersionBounds,
     pub balance_and_revision: FeatureVersionBounds,
     pub identity_by_public_key_hash: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryVotingVersions {
+    pub vote_polls_by_end_date_query: FeatureVersionBounds,
+    pub contested_resource_vote_state: FeatureVersionBounds,
+    pub contested_resource_voters_for_identity: FeatureVersionBounds,
+    pub contested_resource_identity_vote_status: FeatureVersionBounds,
+    pub contested_resources: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -67,6 +83,7 @@ pub struct DriveAbciMethodVersions {
     pub fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions,
     pub fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions,
     pub withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions,
+    pub voting: DriveAbciVotingMethodVersions,
     pub state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions,
     pub epoch: DriveAbciEpochMethodVersions,
     pub block_start: DriveAbciBlockStartMethodVersions,
@@ -80,6 +97,13 @@ pub struct DriveAbciValidationVersions {
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,
+    pub event_constants: DriveAbciValidationConstants,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciValidationConstants {
+    pub maximum_vote_polls_to_process: u16,
+    pub maximum_contenders_to_consider: u16,
 }
 
 /// All of these penalty amounts are in credits
@@ -157,6 +181,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
@@ -271,6 +296,17 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub update_state_cache: FeatureVersion,
     pub update_drive_cache: FeatureVersion,
     pub validator_set_update: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciVotingMethodVersions {
+    pub keep_record_of_finished_contested_resource_vote_poll: FeatureVersion,
+    pub clean_up_after_vote_poll_end: FeatureVersion,
+    pub clean_up_after_contested_resources_vote_poll_end: FeatureVersion,
+    pub check_for_ended_vote_polls: FeatureVersion,
+    pub tally_votes_for_contested_document_resource_vote_poll: FeatureVersion,
+    pub award_document_to_winner: FeatureVersion,
+    pub delay_vote_poll: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

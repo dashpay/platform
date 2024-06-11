@@ -6,8 +6,9 @@ use std::fmt::Debug;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeVoteStatusRequest, KeyRequestType,
+    AllKeys, GetContestedResourceVoteStateRequest, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
+    KeyRequestType,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
@@ -168,6 +169,12 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct QueryStartInfo {
+    pub start_key: Vec<u8>,
+    pub start_included: bool,
+}
+
 /// Wrapper around query that allows to specify limit.
 ///
 /// A query that can be used specify limit when fetching multiple objects from the platform
@@ -184,6 +191,7 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
 /// let sdk = Sdk::new_mock();
 /// let query = LimitQuery {
 ///    query: 1,
+///    start_info: None,
 ///    limit: Some(10),
 /// };
 /// let epoch = ExtendedEpochInfo::fetch_many(&sdk, query);
@@ -192,13 +200,19 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
 pub struct LimitQuery<Q> {
     /// Actual query to execute
     pub query: Q,
+    /// Start info
+    pub start_info: Option<QueryStartInfo>,
     /// Max number of records returned
     pub limit: Option<u32>,
 }
 
 impl<Q> From<Q> for LimitQuery<Q> {
     fn from(query: Q) -> Self {
-        Self { query, limit: None }
+        Self {
+            query,
+            start_info: None,
+            limit: None,
+        }
     }
 }
 
@@ -225,6 +239,7 @@ impl Query<GetEpochsInfoRequest> for EpochIndex {
     fn query(self, prove: bool) -> Result<GetEpochsInfoRequest, Error> {
         LimitQuery {
             query: self,
+            start_info: None,
             limit: Some(1),
         }
         .query(prove)
@@ -275,8 +290,11 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash>
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         LimitQuery {
             query: Some(self.query),
+            start_info: None,
             limit: self.limit,
         }
         .query(prove)
     }
 }
+
+impl Query<GetContestedResourceVoteStateRequest> for LimitQuery {}
