@@ -429,7 +429,9 @@ impl ContestedDocumentVotePollDriveQuery {
             | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
                 Ok(ContestedDocumentVotePollDriveQueryExecutionResult::default())
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                Err(e)
+            },
             Ok((query_result_elements, skipped)) => {
                 match self.result_type {
                     ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly => {
