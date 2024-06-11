@@ -1,10 +1,9 @@
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::query::VoteQuery;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
-use crate::{Error, Sdk};
-
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Fetch;
+use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
