@@ -70,7 +70,11 @@ class DAPIClient extends EventEmitter {
    * @private
    */
   initBlockHeadersProvider() {
-    this.blockHeadersProvider = createBlockHeadersProviderFromOptions(this.options, this.core, this.logger);
+    this.blockHeadersProvider = createBlockHeadersProviderFromOptions(
+      this.options,
+      this.core,
+      this.logger,
+    );
 
     this.blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
       this.emit(EVENTS.ERROR, e);
