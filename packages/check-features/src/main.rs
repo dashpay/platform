@@ -4,7 +4,7 @@ use toml::Value;
 
 fn main() {
     let crates = [
-        //("rs-sdk", vec![]),
+        ("rs-sdk", vec![]),
         ("rs-drive-abci", vec![]),
         ("rs-dpp", vec!["documents-faker"]),
         ("rs-drive", vec![]),
