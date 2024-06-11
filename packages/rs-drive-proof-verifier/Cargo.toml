@@ -8,7 +8,13 @@ crate-type = ["cdylib"]
 
 [features]
 default = ["mocks"]
-mocks = ["dep:serde", "json", "dep:bincode"]
+mocks = [
+  "dep:serde",
+  "json",
+  "dep:bincode",
+  "dpp/document-serde-conversion",
+  "dpp/document-value-conversion",
+]
 json = ["dep:serde_json"]
 
 [dependencies]

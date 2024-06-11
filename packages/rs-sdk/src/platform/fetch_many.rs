@@ -319,7 +319,8 @@ impl FetchMany<ProTxHash, MasternodeProtocolVotes> for MasternodeProtocolVote {
 ///
 /// ## Supported query types
 ///
-/// TODO: Document supported query types
+/// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of data contracts to fetch
+///
 impl FetchMany<Identifier, DataContracts> for DataContract {
     type Request = GetDataContractsRequest;
 }
@@ -328,7 +329,7 @@ impl FetchMany<Identifier, DataContracts> for DataContract {
 ///
 /// ## Supported query types
 ///
-/// TODO: Document supported query types
+/// * [VotePollsByDocumentTypeQuery]
 impl FetchMany<Identifier, ContestedResources> for ContestedResource {
     type Request = GetContestedResourcesRequest;
 }
@@ -339,7 +340,7 @@ impl FetchMany<Identifier, ContestedResources> for ContestedResource {
 ///
 /// ## Supported query types
 ///
-/// TODO: Document supported query types
+/// * [ContestedDocumentVotePollDriveQuery]
 #[async_trait::async_trait]
 impl FetchMany<Identifier, Contenders> for Contender {
     type Request = GetContestedResourceVoteStateRequest;
@@ -347,18 +348,27 @@ impl FetchMany<Identifier, Contenders> for Contender {
 ///  Fetch voters
 /// ## Supported query types
 ///
-/// TODO: Document supported query types
+/// * [ContestedDocumentVotePollVotesDriveQuery]
 impl FetchMany<usize, Voters> for Voter {
     type Request = GetContestedResourceVotersForIdentityRequest;
 }
 
 //   GetContestedResourceIdentityVoteStatus
-
+/// Fetch votes of some identity for a contested document resource vote poll.
+///
+/// ## Supported query types
+///
+/// * [ContestedResourceVotesGivenByIdentityQuery]
 impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
     type Request = GetContestedResourceIdentityVotesRequest;
 }
 
-// GetVotePollsByEndDateRequest
+//
+/// Fetch multiple vote polls grouped by timestamp.
+///
+/// ## Supported query types
+///
+/// * [VotePollsByEndDateDriveQuery]
 impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
     type Request = GetVotePollsByEndDateRequest;
 }

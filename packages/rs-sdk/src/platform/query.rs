@@ -400,7 +400,7 @@ impl Query<GetContestedResourceIdentityVotesRequest> for VoteQuery {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
-        use         proto::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
+        use proto::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
 
         Ok(GetContestedResourceIdentityVotesRequestV0 {
             identity_id: self.identity_id.to_vec(),

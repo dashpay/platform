@@ -1320,7 +1320,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         // Decode request to get drive query
         let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
 
-        // Parse request to get resolved contract that implements verify_*_proof
+        // Resolve request to get verify_*_proof
         let contracts_provider = known_contracts_provider_fn(provider);
         let resolved_request =
             drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
@@ -1356,7 +1356,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
             abstain_vote_tally: contested_resource_vote_state.abstaining_vote_tally,
             lock_vote_tally: contested_resource_vote_state.locked_vote_tally,
         };
-        Ok((Some(response), mtd.clone()))
+        Ok((response.into_option(), mtd.clone()))
     }
 }
 
@@ -1402,7 +1402,7 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         }
         let result: Voters = voters.into_iter().map(Voter::from).collect();
 
-        Ok((Some(result), mtd.clone()))
+        Ok((result.into_option(), mtd.clone()))
     }
 }
 
@@ -1424,8 +1424,6 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
 
         // Decode request to get drive query
         let drive_query = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)?;
-
-        // Parse request to get resolved contract that implements verify_*_proof
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -1669,14 +1667,21 @@ macro_rules! define_length {
 
 define_length!(DataContract);
 define_length!(DataContractHistory, |d: &DataContractHistory| d.len());
-// define_length!(DataContracts, |d: &DataContracts| d.count_some());
 define_length!(Document);
-// define_length!(Documents, |x: &Documents| x.len());
 define_length!(Identity);
 define_length!(IdentityBalance);
 define_length!(IdentityBalanceAndRevision);
-// define_length!(IdentityPublicKeys, |d: &IdentityPublicKeys| d.count_some());
-
+define_length!(IdentitiesContractKeys, |x: &IdentitiesContractKeys| x
+    .values()
+    .map(|v| v.count_some())
+    .sum());
+define_length!(ContestedResources, |x: &ContestedResources| x.0.len());
+define_length!(Contenders, |x: &Contenders| x.contenders.len());
+define_length!(Voters, |x: &Voters| x.0.len());
+define_length!(
+    VotePollsGroupedByTimestamp,
+    |x: &VotePollsGroupedByTimestamp| x.0.values().map(|v| v.len()).sum()
+);
 trait IntoOption
 where
     Self: Sized,

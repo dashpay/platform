@@ -1,10 +1,5 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::collections::btree_map::Entry;
-use std::sync::Arc;
-use std::fmt::Debug;
-#[cfg(feature = "mocks")]
-use std::num::NonZeroUsize;
 use crate::error::Error;
 use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
@@ -30,8 +25,13 @@ use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
     DapiClient, DapiClientError, DapiRequestExecutor,
 };
+use std::collections::btree_map::Entry;
+use std::fmt::Debug;
+#[cfg(feature = "mocks")]
+use std::num::NonZeroUsize;
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
@@ -518,8 +518,9 @@ pub struct SdkBuilder {
     /// Cache size for data contracts. Used by mock [GrpcContextProvider].
     #[cfg(feature = "mocks")]
     data_contract_cache_size: NonZeroUsize,
-    #[cfg(feature = "mocks")]
+
     /// Cache size for quorum public keys. Used by mock [GrpcContextProvider].
+    #[cfg(feature = "mocks")]
     quorum_public_keys_cache_size: NonZeroUsize,
 
     /// Context provider used by the SDK.
@@ -696,7 +697,7 @@ impl SdkBuilder {
                 let dapi = DapiClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
-                
+
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },

@@ -91,11 +91,7 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
                         })?,
                         document_type_name: v.document_type_name.clone(),
                         index_name: v.index_name.clone(),
-                        index_values: bincode_decode_values(v.index_values.iter()).map_err(
-                            |e| Error::RequestError {
-                                error: format!("cannot decode index_values: {}", e),
-                            },
-                        )?,
+                        index_values: bincode_decode_values(v.index_values.iter())?,
                     },
                     result_type:  match v.result_type() {
                         get_contested_resource_vote_state_request_v0::ResultType::Documents => {
@@ -113,14 +109,7 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
                     },
                     start_at: v
                         .start_at_identifier_info
-                        .map(|v| {
-                            let result: Result<[u8; 32], std::array::TryFromSliceError> =
-                                v.start_identifier.as_slice().try_into();
-                            match result {
-                                Ok(id) => Ok((id, v.start_identifier_included)),
-                                Err(e) => Err(e.to_string()),
-                            }
-                        })
+                        .map(|v| to_bytes32(&v.start_identifier).map(|id| (id, v.start_identifier_included)))
                         .transpose()
                         .map_err(|e| {
                             Error::RequestError {
@@ -171,8 +160,8 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
     }
 }
 
-fn to_bytes32(v: Vec<u8>) -> Result<[u8; 32], Error> {
-    let result: Result<[u8; 32], std::array::TryFromSliceError> = v.as_slice().try_into();
+fn to_bytes32(v: &[u8]) -> Result<[u8; 32], Error> {
+    let result: Result<[u8; 32], std::array::TryFromSliceError> = v.try_into();
     match result {
         Ok(id) => Ok(id),
         Err(e) => Err(Error::RequestError {
@@ -192,7 +181,7 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
         let start_at = value
             .start_at_vote_poll_id_info
             .map(|v| {
-                to_bytes32(v.start_at_poll_identifier)
+                to_bytes32(&v.start_at_poll_identifier)
                     .map(|id| (id, v.start_poll_identifier_included))
             })
             .transpose()?;
@@ -252,11 +241,7 @@ impl TryFromRequest<GetContestedResourceVotersForIdentityRequest>
                         })?,
                         document_type_name: v.document_type_name.clone(),
                         index_name: v.index_name.clone(),
-                        index_values: bincode_decode_values(v.index_values.iter()).map_err(
-                            |e| Error::RequestError {
-                                error: format!("cannot decode index values: {}", e),
-                            },
-                        )?,
+                        index_values: bincode_decode_values(v.index_values.iter())?,
                     },
                     contestant_id: Identifier::from_bytes(&v.contestant_id).map_err(|e| {
                         Error::RequestError {
@@ -268,12 +253,8 @@ impl TryFromRequest<GetContestedResourceVotersForIdentityRequest>
                     start_at: v
                         .start_at_identifier_info
                         .map(|v| {
-                            let result: Result<[u8; 32], std::array::TryFromSliceError> =
-                                v.start_identifier.as_slice().try_into();
-                            match result {
-                                Ok(id) => Ok((id, v.start_identifier_included)),
-                                Err(e) => Err(e.to_string()),
-                            }
+                            to_bytes32(&v.start_identifier)
+                                .map(|id| (id, v.start_identifier_included))
                         })
                         .transpose()
                         .map_err(|e| Error::RequestError {
@@ -326,16 +307,8 @@ impl TryFromRequest<GetContestedResourcesRequest> for VotePollsByDocumentTypeQue
                 start_at_value: req
                     .start_at_value_info
                     .map(|i| (i.start_value, i.start_value_included)),
-                start_index_values: bincode_decode_values(req.start_index_values.iter()).map_err(
-                    |e| Error::RequestError {
-                        error: format!("cannot decode contract id: {}", e),
-                    },
-                )?,
-                end_index_values: bincode_decode_values(req.end_index_values.iter()).map_err(
-                    |e| Error::RequestError {
-                        error: format!("cannot decode contract id: {}", e),
-                    },
-                )?,
+                start_index_values: bincode_decode_values(req.start_index_values.iter())?,
+                end_index_values: bincode_decode_values(req.end_index_values.iter())?,
                 limit: req.count.map(|v| v as u16),
                 order_ascending: req.order_ascending,
             },
@@ -459,6 +432,9 @@ fn bincode_decode_values<V: AsRef<[u8]>, T: IntoIterator<Item = V>>(
         .collect()
 }
 
+/// Convert a sequence of [values](platform_value::Value) into a sequence of byte vectors.
+///
+/// Small utility function to encode a sequence of [values](platform_value::Value) into a sequence of byte vectors.
 fn bincode_encode_values<'a, T: IntoIterator<Item = &'a Value>>(
     values: T,
 ) -> Result<Vec<Vec<u8>>, Error> {

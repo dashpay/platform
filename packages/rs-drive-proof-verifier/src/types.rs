@@ -5,7 +5,6 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
-use crate::proof::Length;
 use bincode::Decode;
 use dpp::bincode::Encode;
 use dpp::fee::Credits;
@@ -68,6 +67,9 @@ pub struct Contenders {
     pub lock_vote_tally: Option<u32>,
 }
 
+/// Create Contenders from an iterator of tuples.
+///
+/// This trait is a requirement of the [FetchMany](crate::FetchMany) trait.
 impl FromIterator<(Identifier, Option<Contender>)> for Contenders {
     fn from_iter<T: IntoIterator<Item = (Identifier, Option<Contender>)>>(iter: T) -> Self {
         Self {
@@ -96,6 +98,9 @@ pub struct Voter(pub Identifier);
 )]
 pub struct Voters(pub BTreeSet<Voter>);
 
+/// Create [Voters] from an iterator of tuples.
+///
+/// This trait is a requirement of the [FetchMany](crate::FetchMany) trait.
 impl<A> FromIterator<(A, Option<Voter>)> for Voters {
     fn from_iter<T: IntoIterator<Item = (A, Option<Voter>)>>(iter: T) -> Self {
         Self::from_iter(iter.into_iter().filter_map(|(_, v)| v))
@@ -133,6 +138,9 @@ pub enum ContestedResource {
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContestedResources(pub BTreeMap<Identifier, ContestedResource>);
 
+/// Create [ContestedResources] from an iterator of tuples.
+///
+/// This trait is a requirement of the [FetchMany](crate::FetchMany) trait.
 impl FromIterator<(Identifier, Option<ContestedResource>)> for ContestedResources {
     fn from_iter<T: IntoIterator<Item = (Identifier, Option<ContestedResource>)>>(iter: T) -> Self {
         Self::from_iter(iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))))
@@ -141,12 +149,6 @@ impl FromIterator<(Identifier, Option<ContestedResource>)> for ContestedResource
 impl FromIterator<(Identifier, ContestedResource)> for ContestedResources {
     fn from_iter<T: IntoIterator<Item = (Identifier, ContestedResource)>>(iter: T) -> Self {
         Self(iter.into_iter().collect())
-    }
-}
-
-impl Length for ContestedResources {
-    fn count_some(&self) -> usize {
-        self.0.len()
     }
 }
 
@@ -198,6 +200,11 @@ impl FromIterator<(u64, VotePoll)> for VotePollsGroupedByTimestamp {
     }
 }
 
+/// Create [VotePollsGroupedByTimestamp] from an iterator of tuples.
+///
+/// If multiple vote polls are found for the same timestamp, they are appended to the same vector.
+///
+/// This trait is a requirement of the [FetchMany](crate::FetchMany) trait.
 impl FromIterator<(u64, Option<VotePoll>)> for VotePollsGroupedByTimestamp {
     fn from_iter<T: IntoIterator<Item = (u64, Option<VotePoll>)>>(iter: T) -> Self {
         Self::from_iter(iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))))
@@ -210,12 +217,6 @@ impl IntoIterator for VotePollsGroupedByTimestamp {
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
-    }
-}
-
-impl Length for VotePollsGroupedByTimestamp {
-    fn count_some(&self) -> usize {
-        self.0.values().map(|v| v.len()).sum()
     }
 }
 
