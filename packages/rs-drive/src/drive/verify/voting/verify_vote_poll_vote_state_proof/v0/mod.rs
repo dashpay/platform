@@ -14,7 +14,9 @@ use crate::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery,
 };
 use dpp::version::PlatformVersion;
-use dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dpp::voting::contender_structs::{
+    ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
+};
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStoredInfo, ContestedDocumentVotePollStoredInfoV0Getters,
 };
@@ -55,11 +57,12 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                 let contenders = proved_key_values
                     .into_iter()
                     .map(|(_, identity_id, _)| {
-                        Ok(ContenderWithSerializedDocument {
+                        Ok(ContenderWithSerializedDocumentV0 {
                             identity_id: Identifier::try_from(identity_id)?,
                             serialized_document: None,
                             vote_tally: None,
-                        })
+                        }
+                        .into())
                     })
                     .collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()?;
 
@@ -78,13 +81,14 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                 let contenders = proved_key_values
                     .into_iter()
                     .map(|(_, identity_id, document)| {
-                        Ok(ContenderWithSerializedDocument {
+                        Ok(ContenderWithSerializedDocumentV0 {
                             identity_id: Identifier::try_from(identity_id)?,
                             serialized_document: document
                                 .map(|document| document.into_item_bytes())
                                 .transpose()?,
                             vote_tally: None,
-                        })
+                        }
+                        .into())
                     })
                     .collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()?;
 
@@ -179,11 +183,14 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                                 ))));
                             }
                             let identity_id = Identifier::try_from(key)?;
-                            contenders.push(ContenderWithSerializedDocument {
-                                identity_id,
-                                serialized_document: None,
-                                vote_tally: Some(sum_tree_value as u32),
-                            });
+                            contenders.push(
+                                ContenderWithSerializedDocumentV0 {
+                                    identity_id,
+                                    serialized_document: None,
+                                    vote_tally: Some(sum_tree_value as u32),
+                                }
+                                .into(),
+                            );
                         }
                     }
                 }
@@ -307,11 +314,12 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                                     }
 
                                     let identity_id = Identifier::from_bytes(identity_bytes)?;
-                                    let contender = ContenderWithSerializedDocument {
+                                    let contender = ContenderWithSerializedDocumentV0 {
                                         identity_id,
                                         serialized_document: Some(serialized_item_info),
                                         vote_tally: Some(sum_tree_value as u32),
-                                    };
+                                    }
+                                    .into();
                                     contenders.push(contender);
                                 } else {
                                     return Err(Error::Drive(DriveError::CorruptedDriveState(

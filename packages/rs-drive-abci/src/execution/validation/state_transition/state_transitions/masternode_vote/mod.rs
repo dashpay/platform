@@ -431,15 +431,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(1));
+                assert_eq!(first_contender.vote_tally(), Some(1));
 
-                assert_eq!(second_contender.vote_tally, Some(0));
+                assert_eq!(second_contender.vote_tally(), Some(0));
 
                 assert_eq!(abstaining, Some(0));
 
@@ -502,15 +502,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(1));
+                assert_eq!(first_contender.vote_tally(), Some(1));
 
-                assert_eq!(second_contender.vote_tally, Some(0));
+                assert_eq!(second_contender.vote_tally(), Some(0));
 
                 assert_eq!(abstaining, Some(0));
 
@@ -568,15 +568,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(50));
+                assert_eq!(first_contender.vote_tally(), Some(50));
 
-                assert_eq!(second_contender.vote_tally, Some(5));
+                assert_eq!(second_contender.vote_tally(), Some(5));
 
                 assert_eq!(abstaining, Some(10));
 
@@ -604,15 +604,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(50));
+                assert_eq!(first_contender.vote_tally(), Some(50));
 
-                assert_eq!(second_contender.vote_tally, Some(5));
+                assert_eq!(second_contender.vote_tally(), Some(5));
 
                 assert_eq!(abstaining, None);
 
@@ -670,15 +670,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(50));
+                assert_eq!(first_contender.vote_tally(), Some(50));
 
-                assert_eq!(second_contender.vote_tally, Some(5));
+                assert_eq!(second_contender.vote_tally(), Some(5));
 
                 assert_eq!(abstaining, Some(10));
 
@@ -706,15 +706,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(50));
+                assert_eq!(first_contender.vote_tally(), Some(50));
 
-                assert_eq!(second_contender.vote_tally, Some(5));
+                assert_eq!(second_contender.vote_tally(), Some(5));
 
                 assert_eq!(abstaining, None);
 
@@ -3451,15 +3451,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(50));
+                assert_eq!(first_contender.vote_tally(), Some(50));
 
-                assert_eq!(second_contender.vote_tally, Some(5));
+                assert_eq!(second_contender.vote_tally(), Some(5));
 
                 assert_eq!(abstaining, Some(10));
 
@@ -3537,17 +3537,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(50));
+                    assert_eq!(first_contender.vote_tally(), Some(50));
 
-                    assert_eq!(second_contender.vote_tally, Some(5));
+                    assert_eq!(second_contender.vote_tally(), Some(5));
 
                     assert_eq!(abstaining, Some(10));
 
@@ -3582,17 +3582,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(50));
+                    assert_eq!(first_contender.vote_tally(), Some(50));
 
-                    assert_eq!(second_contender.vote_tally, Some(5));
+                    assert_eq!(second_contender.vote_tally(), Some(5));
 
                     assert_eq!(abstaining, Some(10));
 
@@ -3653,15 +3653,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(50));
+                assert_eq!(first_contender.vote_tally(), Some(50));
 
-                assert_eq!(second_contender.vote_tally, Some(5));
+                assert_eq!(second_contender.vote_tally(), Some(5));
 
                 assert_eq!(abstaining, Some(60));
 
@@ -3739,17 +3739,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(50));
+                    assert_eq!(first_contender.vote_tally(), Some(50));
 
-                    assert_eq!(second_contender.vote_tally, Some(5));
+                    assert_eq!(second_contender.vote_tally(), Some(5));
 
                     assert_eq!(abstaining, Some(60));
 
@@ -3784,17 +3784,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(50));
+                    assert_eq!(first_contender.vote_tally(), Some(50));
 
-                    assert_eq!(second_contender.vote_tally, Some(5));
+                    assert_eq!(second_contender.vote_tally(), Some(5));
 
                     assert_eq!(abstaining, Some(60));
 
@@ -3855,15 +3855,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(1));
+                assert_eq!(first_contender.vote_tally(), Some(1));
 
-                assert_eq!(second_contender.vote_tally, Some(1));
+                assert_eq!(second_contender.vote_tally(), Some(1));
 
                 assert_eq!(abstaining, Some(1));
 
@@ -3941,17 +3941,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(1));
+                    assert_eq!(first_contender.vote_tally(), Some(1));
 
-                    assert_eq!(second_contender.vote_tally, Some(1));
+                    assert_eq!(second_contender.vote_tally(), Some(1));
 
                     assert_eq!(abstaining, Some(1));
 
@@ -3986,17 +3986,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(1));
+                    assert_eq!(first_contender.vote_tally(), Some(1));
 
-                    assert_eq!(second_contender.vote_tally, Some(1));
+                    assert_eq!(second_contender.vote_tally(), Some(1));
 
                     assert_eq!(abstaining, Some(1));
 
@@ -4055,15 +4055,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(1));
+                assert_eq!(first_contender.vote_tally(), Some(1));
 
-                assert_eq!(second_contender.vote_tally, Some(0));
+                assert_eq!(second_contender.vote_tally(), Some(0));
 
                 assert_eq!(abstaining, Some(0));
 
@@ -4141,17 +4141,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(1));
+                    assert_eq!(first_contender.vote_tally(), Some(1));
 
-                    assert_eq!(second_contender.vote_tally, Some(0));
+                    assert_eq!(second_contender.vote_tally(), Some(0));
 
                     assert_eq!(abstaining, Some(0));
 
@@ -4186,17 +4186,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(1));
+                    assert_eq!(first_contender.vote_tally(), Some(1));
 
-                    assert_eq!(second_contender.vote_tally, Some(0));
+                    assert_eq!(second_contender.vote_tally(), Some(0));
 
                     assert_eq!(abstaining, Some(0));
 
@@ -4243,15 +4243,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(0));
+                assert_eq!(first_contender.vote_tally(), Some(0));
 
-                assert_eq!(second_contender.vote_tally, Some(0));
+                assert_eq!(second_contender.vote_tally(), Some(0));
 
                 assert_eq!(abstaining, Some(0));
 
@@ -4343,17 +4343,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(0));
+                    assert_eq!(first_contender.vote_tally(), Some(0));
 
-                    assert_eq!(second_contender.vote_tally, Some(0));
+                    assert_eq!(second_contender.vote_tally(), Some(0));
 
                     assert_eq!(abstaining, Some(0));
 
@@ -4388,17 +4388,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(0));
+                    assert_eq!(first_contender.vote_tally(), Some(0));
 
-                    assert_eq!(second_contender.vote_tally, Some(0));
+                    assert_eq!(second_contender.vote_tally(), Some(0));
 
                     assert_eq!(abstaining, Some(0));
 
@@ -4459,15 +4459,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(20));
+                assert_eq!(first_contender.vote_tally(), Some(20));
 
-                assert_eq!(second_contender.vote_tally, Some(5));
+                assert_eq!(second_contender.vote_tally(), Some(5));
 
                 assert_eq!(abstaining, Some(10));
 
@@ -4544,17 +4544,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(20));
+                    assert_eq!(first_contender.vote_tally(), Some(20));
 
-                    assert_eq!(second_contender.vote_tally, Some(5));
+                    assert_eq!(second_contender.vote_tally(), Some(5));
 
                     assert_eq!(abstaining, Some(10));
 
@@ -4586,17 +4586,17 @@ mod tests {
 
                     let second_contender = contenders.last().unwrap();
 
-                    assert_eq!(first_contender.document, None);
+                    assert_eq!(first_contender.document(), &None);
 
-                    assert_eq!(second_contender.document, None);
+                    assert_eq!(second_contender.document(), &None);
 
-                    assert_eq!(first_contender.identity_id, contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                    assert_eq!(second_contender.identity_id, contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                    assert_eq!(first_contender.vote_tally, Some(20));
+                    assert_eq!(first_contender.vote_tally(), Some(20));
 
-                    assert_eq!(second_contender.vote_tally, Some(5));
+                    assert_eq!(second_contender.vote_tally(), Some(5));
 
                     assert_eq!(abstaining, Some(10));
 
@@ -4728,15 +4728,15 @@ mod tests {
 
                 let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document, second_contender.document);
+                assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id, contender_1.id());
+                assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id, contender_2.id());
+                assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally, Some(0));
+                assert_eq!(first_contender.vote_tally(), Some(0));
 
-                assert_eq!(second_contender.vote_tally, Some(1));
+                assert_eq!(second_contender.vote_tally(), Some(1));
             }
 
             #[test]

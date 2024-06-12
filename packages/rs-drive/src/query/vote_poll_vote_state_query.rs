@@ -17,7 +17,8 @@ use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::voting::contender_structs::{
-    ContenderWithSerializedDocument, FinalizedContenderWithSerializedDocument,
+    ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
+    FinalizedContenderWithSerializedDocument,
 };
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStoredInfo, ContestedDocumentVotePollStoredInfoV0Getters,
@@ -437,11 +438,12 @@ impl ContestedDocumentVotePollDriveQuery {
                             .to_keys()
                             .into_iter()
                             .map(|identity_id| {
-                                Ok(ContenderWithSerializedDocument {
+                                Ok(ContenderWithSerializedDocumentV0 {
                                     identity_id: Identifier::try_from(identity_id)?,
                                     serialized_document: None,
                                     vote_tally: None,
-                                })
+                                }
+                                .into())
                             })
                             .collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()?;
 
@@ -464,11 +466,12 @@ impl ContestedDocumentVotePollDriveQuery {
                                         "the path must have a last element".to_string(),
                                     ),
                                 ))?;
-                                Ok(ContenderWithSerializedDocument {
+                                Ok(ContenderWithSerializedDocumentV0 {
                                     identity_id: Identifier::try_from(identity_id)?,
                                     serialized_document: Some(document.into_item_bytes()?),
                                     vote_tally: None,
-                                })
+                                }
+                                .into())
                             })
                             .collect::<Result<Vec<ContenderWithSerializedDocument>, Error>>()?;
 
@@ -564,11 +567,14 @@ impl ContestedDocumentVotePollDriveQuery {
                                         ))));
                                     }
                                     let identity_id = Identifier::try_from(key)?;
-                                    contenders.push(ContenderWithSerializedDocument {
-                                        identity_id,
-                                        serialized_document: None,
-                                        vote_tally: Some(sum_tree_value as u32),
-                                    });
+                                    contenders.push(
+                                        ContenderWithSerializedDocumentV0 {
+                                            identity_id,
+                                            serialized_document: None,
+                                            vote_tally: Some(sum_tree_value as u32),
+                                        }
+                                        .into(),
+                                    );
                                 }
                             }
                         }
@@ -686,11 +692,12 @@ impl ContestedDocumentVotePollDriveQuery {
 
                                             let identity_id =
                                                 Identifier::from_bytes(identity_bytes)?;
-                                            let contender = ContenderWithSerializedDocument {
+                                            let contender = ContenderWithSerializedDocumentV0 {
                                                 identity_id,
                                                 serialized_document: Some(serialized_item_info),
                                                 vote_tally: Some(sum_tree_value as u32),
-                                            };
+                                            }
+                                            .into();
                                             contenders.push(contender);
                                         } else {
                                             return Err(Error::Drive(
