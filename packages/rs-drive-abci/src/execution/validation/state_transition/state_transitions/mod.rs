@@ -93,7 +93,7 @@ mod tests {
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
-    use dpp::voting::contender_structs::Contender;
+    use dpp::voting::contender_structs::{Contender, ContenderV0};
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -875,7 +875,7 @@ mod tests {
 
         let first_contender_document = Document::from_bytes(
             first_contender
-                .serialized_document
+                .serialized_document()
                 .as_ref()
                 .expect("expected a document")
                 .as_slice(),
@@ -886,7 +886,7 @@ mod tests {
 
         let second_contender_document = Document::from_bytes(
             second_contender
-                .serialized_document
+                .serialized_document()
                 .as_ref()
                 .expect("expected a document")
                 .as_slice(),
@@ -897,13 +897,13 @@ mod tests {
 
         assert_ne!(first_contender_document, second_contender_document);
 
-        assert_eq!(first_contender.identity_id, identity_1.id());
+        assert_eq!(first_contender.identity_id(), identity_1.id());
 
-        assert_eq!(second_contender.identity_id, identity_2.id());
+        assert_eq!(second_contender.identity_id(), identity_2.id());
 
-        assert_eq!(first_contender.vote_tally, Some(0));
+        assert_eq!(first_contender.vote_tally(), Some(0));
 
-        assert_eq!(second_contender.vote_tally, Some(0));
+        assert_eq!(second_contender.vote_tally(), Some(0));
     }
 
     pub(in crate::execution::validation::state_transition::state_transitions) fn perform_vote(
@@ -1121,13 +1121,20 @@ mod tests {
         (
             contenders
                 .into_iter()
-                .map(|contender| Contender {
-                    identity_id: contender.identifier.try_into().expect("expected 32 bytes"),
-                    document: contender.document.map(|document_bytes| {
-                        Document::from_bytes(document_bytes.as_slice(), domain, platform_version)
+                .map(|contender| {
+                    ContenderV0 {
+                        identity_id: contender.identifier.try_into().expect("expected 32 bytes"),
+                        document: contender.document.map(|document_bytes| {
+                            Document::from_bytes(
+                                document_bytes.as_slice(),
+                                domain,
+                                platform_version,
+                            )
                             .expect("expected to deserialize document")
-                    }),
-                    vote_tally: contender.vote_count,
+                        }),
+                        vote_tally: contender.vote_count,
+                    }
+                    .into()
                 })
                 .collect(),
             abstain_vote_tally,
@@ -1242,13 +1249,23 @@ mod tests {
         (
             contenders
                 .into_iter()
-                .map(|contender| Contender {
-                    identity_id: contender.identity_id,
-                    document: contender.serialized_document.map(|document_bytes| {
-                        Document::from_bytes(document_bytes.as_slice(), domain, platform_version)
-                            .expect("expected to deserialize document")
-                    }),
-                    vote_tally: contender.vote_tally,
+                .map(|contender| {
+                    ContenderV0 {
+                        identity_id: contender.identity_id(),
+                        document: contender
+                            .serialized_document()
+                            .as_ref()
+                            .map(|document_bytes| {
+                                Document::from_bytes(
+                                    document_bytes.as_slice(),
+                                    domain,
+                                    platform_version,
+                                )
+                                .expect("expected to deserialize document")
+                            }),
+                        vote_tally: contender.vote_tally(),
+                    }
+                    .into()
                 })
                 .collect(),
             abstaining_vote_tally,

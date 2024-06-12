@@ -16,7 +16,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::{check_validation_result_with_data, platform_value};
-use dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dpp::voting::contender_structs::{ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0};
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::error::query::QuerySyntaxError;
 use drive::query::vote_poll_vote_state_query::{
@@ -217,19 +217,17 @@ impl<C> Platform<C> {
             let contenders = results
                 .contenders
                 .into_iter()
-                .map(
-                    |ContenderWithSerializedDocument {
-                         identity_id,
-                         serialized_document,
-                         vote_tally,
-                     }| {
-                        get_contested_resource_vote_state_response_v0::Contender {
-                            identifier: identity_id.to_vec(),
-                            vote_count: vote_tally,
-                            document: serialized_document,
-                        }
+                .map(|contender| match contender {
+                    ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+                        identity_id,
+                        serialized_document,
+                        vote_tally,
+                    }) => get_contested_resource_vote_state_response_v0::Contender {
+                        identifier: identity_id.to_vec(),
+                        vote_count: vote_tally,
+                        document: serialized_document,
                     },
-                )
+                })
                 .collect();
 
             GetContestedResourceVoteStateResponseV0 {

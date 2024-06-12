@@ -1,6 +1,7 @@
 use crate::block::block_info::BlockInfo;
 use crate::voting::contender_structs::{
-    ContenderWithSerializedDocument, FinalizedResourceVoteChoicesWithVoterInfo,
+    ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
+    FinalizedResourceVoteChoicesWithVoterInfo,
 };
 use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStatus;
@@ -272,11 +273,14 @@ impl ContestedDocumentVotePollStoredInfoV0Getters for ContestedDocumentVotePollS
                         if let ResourceVoteChoice::TowardsIdentity(identity_id) =
                             &choice.resource_vote_choice
                         {
-                            Some(ContenderWithSerializedDocument {
-                                identity_id: *identity_id,
-                                serialized_document: None,
-                                vote_tally: Some(choice.voters.len() as u32),
-                            })
+                            Some(
+                                ContenderWithSerializedDocumentV0 {
+                                    identity_id: *identity_id,
+                                    serialized_document: None,
+                                    vote_tally: Some(choice.voters.len() as u32),
+                                }
+                                .into(),
+                            )
                         } else {
                             None
                         }

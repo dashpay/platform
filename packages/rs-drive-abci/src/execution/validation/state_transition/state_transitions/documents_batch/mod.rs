@@ -792,7 +792,7 @@ mod tests {
 
             let first_contender_document = Document::from_bytes(
                 first_contender
-                    .serialized_document
+                    .serialized_document()
                     .as_ref()
                     .expect("expected a document")
                     .as_slice(),
@@ -803,7 +803,7 @@ mod tests {
 
             let second_contender_document = Document::from_bytes(
                 second_contender
-                    .serialized_document
+                    .serialized_document()
                     .as_ref()
                     .expect("expected a document")
                     .as_slice(),
@@ -814,13 +814,13 @@ mod tests {
 
             assert_ne!(first_contender_document, second_contender_document);
 
-            assert_eq!(first_contender.identity_id, identity_1.id());
+            assert_eq!(first_contender.identity_id(), identity_1.id());
 
-            assert_eq!(second_contender.identity_id, identity_2.id());
+            assert_eq!(second_contender.identity_id(), identity_2.id());
 
-            assert_eq!(first_contender.vote_tally, Some(0));
+            assert_eq!(first_contender.vote_tally(), Some(0));
 
-            assert_eq!(second_contender.vote_tally, Some(0));
+            assert_eq!(second_contender.vote_tally(), Some(0));
         }
 
         #[test]
