@@ -90,8 +90,45 @@ export default function getBaseConfigFactory(homeDir) {
         rpc: {
           host: '127.0.0.1',
           port: 9998,
-          user: 'dashrpc',
-          password: 'rpcpassword',
+          users: {
+            dashmate: {
+              password: 'rpcpassword',
+              whitelist: null,
+              lowPriority: false,
+            },
+            dapi: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestblockhash', 'getblockhash', 'sendrawtransaction', 'getrawtransaction',
+                'getblockstats', 'getmerkleblocks', 'getrawtransactionmulti', 'getrawmempool',
+                'getblockcount', 'getbestchainlock', 'getblock', 'getblockheader', 'getblockheaders',
+                'protx diff', 'getnetworkinfo', 'getblockchaininfo', 'mnsync status', 'masternode status',
+              ],
+              lowPriority: true,
+            },
+            drive_consensus: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
+                'verifychainlock', 'protx listdiff', 'quorum listextended', 'quorum info',
+                'getassetunlockstatuses', 'sendrawtransaction', 'mnsync status',
+              ],
+              lowPriority: false,
+            },
+            drive_other: {
+              password: 'rpcpassword',
+              whitelist: ['getrawtransaction'],
+              lowPriority: true,
+            },
+            tenderdash: {
+              password: 'rpcpassword',
+              whitelist: [
+                'quorum info', 'quorum verify', 'quorum sign', 'masternode status', 'masternodelist',
+                'ping', 'getnetworkinfo',
+              ],
+              lowPriority: false,
+            },
+          },
           allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
         },
         spork: {

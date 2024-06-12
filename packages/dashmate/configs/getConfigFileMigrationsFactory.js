@@ -613,6 +613,18 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '1.0.0-dev.16': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.rpc.users = base.get('core.rpc.users');
+            options.core.rpc.users.dashmate = options.core.rpc.password;
+
+            delete options.core.rpc.user;
+            delete options.core.rpc.password;
+          });
+
+        return configFile;
+      },
     };
   }
 

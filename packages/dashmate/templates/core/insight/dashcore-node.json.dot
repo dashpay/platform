@@ -12,8 +12,8 @@
       "connect": [{
         "rpchost": "core",
         "rpcport": {{= it.core.rpc.port }},
-        "rpcuser": "{{= it.core.rpc.user }}",
-        "rpcpassword": "{{= it.core.rpc.password }}",
+        "rpcuser": "dashmate",
+        "rpcpassword": "{{= it.core.rpc.users.dashmate.password }}",
         "zmqpubrawtx": "tcp://core:29998",
         "zmqpubhashblock": "tcp://core:29998"
       }]
