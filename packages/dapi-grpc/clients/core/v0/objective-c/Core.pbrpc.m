@@ -235,5 +235,25 @@
              responseClass:[TransactionsWithProofsResponse class]];
 }
 
+#pragma mark subscribeToMasternodeList(MasternodeListRequest) returns (stream MasternodeListResponse)
+
+- (void)subscribeToMasternodeListWithRequest:(MasternodeListRequest *)request eventHandler:(void(^)(BOOL done, MasternodeListResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+  [[self RPCTosubscribeToMasternodeListWithRequest:request eventHandler:eventHandler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTosubscribeToMasternodeListWithRequest:(MasternodeListRequest *)request eventHandler:(void(^)(BOOL done, MasternodeListResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+  return [self RPCToMethod:@"subscribeToMasternodeList"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[MasternodeListResponse class]
+        responsesWriteable:[GRXWriteable writeableWithEventHandler:eventHandler]];
+}
+- (GRPCUnaryProtoCall *)subscribeToMasternodeListWithMessage:(MasternodeListRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"subscribeToMasternodeList"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[MasternodeListResponse class]];
+}
+
 @end
 #endif

@@ -91,6 +91,15 @@ Core.subscribeToTransactionsWithProofs = {
   responseType: core_pb.TransactionsWithProofsResponse
 };
 
+Core.subscribeToMasternodeList = {
+  methodName: "subscribeToMasternodeList",
+  service: Core,
+  requestStream: false,
+  responseStream: true,
+  requestType: core_pb.MasternodeListRequest,
+  responseType: core_pb.MasternodeListResponse
+};
+
 exports.Core = Core;
 
 function CoreClient(serviceHost, options) {
@@ -361,6 +370,45 @@ CoreClient.prototype.subscribeToTransactionsWithProofs = function subscribeToTra
     status: []
   };
   var client = grpc.invoke(Core.subscribeToTransactionsWithProofs, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onMessage: function (responseMessage) {
+      listeners.data.forEach(function (handler) {
+        handler(responseMessage);
+      });
+    },
+    onEnd: function (status, statusMessage, trailers) {
+      listeners.status.forEach(function (handler) {
+        handler({ code: status, details: statusMessage, metadata: trailers });
+      });
+      listeners.end.forEach(function (handler) {
+        handler({ code: status, details: statusMessage, metadata: trailers });
+      });
+      listeners = null;
+    }
+  });
+  return {
+    on: function (type, handler) {
+      listeners[type].push(handler);
+      return this;
+    },
+    cancel: function () {
+      listeners = null;
+      client.close();
+    }
+  };
+};
+
+CoreClient.prototype.subscribeToMasternodeList = function subscribeToMasternodeList(requestMessage, metadata) {
+  var listeners = {
+    data: [],
+    end: [],
+    status: []
+  };
+  var client = grpc.invoke(Core.subscribeToMasternodeList, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

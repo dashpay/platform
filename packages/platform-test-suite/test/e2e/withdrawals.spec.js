@@ -8,10 +8,20 @@ const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
 describe('Withdrawals', function withdrawalsTest() {
   this.bail(true);
+
   let client;
   let identity;
 
-  before(async () => {
+  before(async function createClients() {
+    // TODO: temporarily disabled on browser because of header stream is not syncing
+    //   headers at some point. Our theory is that because wallets aren't offloading properly
+    //   and we have too many streams open.
+    if (typeof window !== 'undefined') {
+      this.skip('temporarily disabled on browser because of header stream is not syncing'
+        + ' headers at some point. Our theory is that because wallets aren\'t offloading properly'
+        + ' and we have too many streams open.');
+    }
+
     client = await createClientWithFundedWallet(
       10000000,
     );

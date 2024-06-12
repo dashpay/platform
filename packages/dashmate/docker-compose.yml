@@ -129,10 +129,7 @@ services:
       - DASHCORE_RPC_PASS=${CORE_RPC_PASSWORD:?err}
       - DASHCORE_ZMQ_HOST=core
       - DASHCORE_ZMQ_PORT=29998
-      - DASHCORE_P2P_HOST=core
-      - DASHCORE_P2P_PORT=${CORE_P2P_PORT:?err}
-      - DASHCORE_P2P_NETWORK=devnet
-      - NETWORK=devnet
+      - NETWORK=${NETWORK:?err}
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
@@ -162,10 +159,7 @@ services:
       - DASHCORE_RPC_PASS=${CORE_RPC_PASSWORD:?err}
       - DASHCORE_ZMQ_HOST=core
       - DASHCORE_ZMQ_PORT=29998
-      - DASHCORE_P2P_HOST=core
-      - DASHCORE_P2P_PORT=${CORE_P2P_PORT:?err}
-      - DASHCORE_P2P_NETWORK=devnet
-      - NETWORK=devnet
+      - NETWORK=${NETWORK:?err}
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
       - DRIVE_RPC_HOST=drive_abci
