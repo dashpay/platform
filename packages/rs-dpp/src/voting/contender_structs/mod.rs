@@ -1,3 +1,5 @@
+mod contender;
+
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::Document;
@@ -9,20 +11,8 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::fmt;
 
-/// Represents a contender in the contested document vote poll.
-/// This is for internal use where the document is in serialized form
-///
-/// This struct holds the identity ID of the contender, the serialized document,
-/// and the vote tally.
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub struct ContenderWithSerializedDocument {
-    /// The identity ID of the contender.
-    pub identity_id: Identifier,
-    /// The serialized document associated with the contender.
-    pub serialized_document: Option<Vec<u8>>,
-    /// The vote tally for the contender.
-    pub vote_tally: Option<u32>,
-}
+pub use contender::v0::{ContenderV0, ContenderWithSerializedDocumentV0};
+pub use contender::{Contender, ContenderWithSerializedDocument};
 
 /// Represents a finalized contender in the contested document vote poll.
 /// This is for internal use where the document is in serialized form
@@ -110,11 +100,16 @@ impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializ
     type Error = ProtocolError;
 
     fn try_from(value: ContenderWithSerializedDocument) -> Result<Self, Self::Error> {
-        let ContenderWithSerializedDocument {
-            identity_id,
-            serialized_document,
-            vote_tally,
-        } = value;
+        let (identity_id, serialized_document, vote_tally) = match value {
+            ContenderWithSerializedDocument::V0(v0) => {
+                let ContenderWithSerializedDocumentV0 {
+                    identity_id,
+                    serialized_document,
+                    vote_tally,
+                } = v0;
+                (identity_id, serialized_document, vote_tally)
+            }
+        };
 
         Ok(FinalizedContenderWithSerializedDocument {
             identity_id,
@@ -126,18 +121,4 @@ impl TryFrom<ContenderWithSerializedDocument> for FinalizedContenderWithSerializ
             ))?,
         })
     }
-}
-
-/// Represents a contender in the contested document vote poll.
-///
-/// This struct holds the identity ID of the contender, the serialized document,
-/// and the vote tally.
-#[derive(Debug, PartialEq, Clone, Default)]
-pub struct Contender {
-    /// The identity ID of the contender.
-    pub identity_id: Identifier,
-    /// The document associated with the contender.
-    pub document: Option<Document>,
-    /// The vote tally for the contender.
-    pub vote_tally: Option<u32>,
 }
