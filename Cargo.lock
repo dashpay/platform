@@ -1702,6 +1702,8 @@ dependencies = [
  "dpp",
  "drive",
  "hex",
+ "platform-serialization",
+ "platform-serialization-derive",
  "serde",
  "serde_json",
  "tenderdash-abci",

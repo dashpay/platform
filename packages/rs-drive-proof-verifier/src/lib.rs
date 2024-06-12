@@ -14,3 +14,6 @@ pub use provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use provider::MockContextProvider;
 pub mod from_request;
+
+// Needed for #[derive(PlatformSerialize, PlatformDeserialize)]
+use dpp::{serialization, version};

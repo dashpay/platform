@@ -10,12 +10,12 @@ crate-type = ["cdylib"]
 default = ["mocks"]
 mocks = [
   "dep:serde",
-  "json",
+  "dep:serde_json",
   "dep:bincode",
+  "dep:platform-serialization-derive",
+  "dep:platform-serialization",
   "dpp/document-serde-conversion",
-  "dpp/document-value-conversion",
 ]
-json = ["dep:serde_json"]
 
 [dependencies]
 
@@ -26,8 +26,11 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 dpp = { path = "../rs-dpp", features = [
   "bls-signatures",
+  "document-value-conversion",
 ], default-features = false }
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
+platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
+platform-serialization = { path = "../rs-platform-serialization", optional = true }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.12", features = [
   "crypto",
 ], default-features = false }

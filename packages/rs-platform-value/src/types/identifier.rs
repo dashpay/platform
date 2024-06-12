@@ -47,6 +47,16 @@ impl platform_serialization::PlatformVersionEncode for Identifier {
     }
 }
 
+impl platform_serialization::PlatformVersionedDecode for Identifier {
+    fn platform_versioned_decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+        _platform_version: &platform_version::version::PlatformVersion,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let bytes = <[u8; 32]>::decode(decoder)?;
+        Ok(Identifier::new(bytes))
+    }
+}
+
 impl AsRef<[u8]> for Identifier {
     fn as_ref(&self) -> &[u8] {
         &(self.0 .0)

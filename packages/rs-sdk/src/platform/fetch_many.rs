@@ -18,7 +18,7 @@ use dapi_grpc::platform::v0::{
     GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
-use dpp::document::Document;
+use dpp::data_contract::DataContract;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
@@ -27,7 +27,7 @@ use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
 };
-use dpp::{data_contract::DataContract, voting::contender_structs::Contender};
+use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
 use drive_proof_verifier::types::{
     Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
     IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades,
@@ -342,9 +342,10 @@ impl FetchMany<Identifier, ContestedResources> for ContestedResource {
 ///
 /// * [ContestedDocumentVotePollDriveQuery]
 #[async_trait::async_trait]
-impl FetchMany<Identifier, Contenders> for Contender {
+impl FetchMany<Identifier, Contenders> for ContenderWithSerializedDocument {
     type Request = GetContestedResourceVoteStateRequest;
 }
+
 ///  Fetch voters
 /// ## Supported query types
 ///

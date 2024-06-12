@@ -37,7 +37,6 @@ use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
-use dpp::voting::contender_structs::Contender;
 use dpp::voting::votes::Vote;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
@@ -1271,6 +1270,17 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
+        let (contract_id, doctype_name) =
+            match request.version.as_ref().ok_or(Error::EmptyVersion)? {
+                platform::get_contested_resources_request::Version::V0(v0) => {
+                    (&v0.contract_id, v0.document_type_name.clone())
+                }
+            };
+
+        let contract_id = Identifier::from_bytes(contract_id).map_err(|e| Error::RequestError {
+            error: format!("contract id {:?} is invalid: {}", &contract_id, e),
+        })?;
+
         // Decode request to get drive query
         let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
         let resolved_request = drive_query
@@ -1288,11 +1298,26 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
+        let data_contract =
+            provider
+                .get_data_contract(&contract_id)?
+                .ok_or(Error::ResponseDecodeError {
+                    error: format!("data contract {} not found", contract_id),
+                })?;
+
         let resources: ContestedResources = items
             .into_iter()
             .map(|v| {
-                Document::from_platform_value(v, platform_version)
-                    .map(|doc| (doc.id(), ContestedResource::from(doc)))
+                Document::from_platform_value(v, platform_version).map(|doc| {
+                    (
+                        doc.id(),
+                        ContestedResource::Document {
+                            document: doc,
+                            document_type_name: doctype_name.clone(),
+                            data_contract: data_contract.clone(),
+                        },
+                    )
+                })
             })
             .collect::<Result<_, _>>()?;
 
@@ -1337,19 +1362,11 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let document_type = resolved_request.vote_poll.document_type()?;
         let contenders = contested_resource_vote_state
             .contenders
             .into_iter()
-            .map(|v| {
-                Contender::try_from_contender_with_serialized_document(
-                    v,
-                    document_type,
-                    platform_version,
-                )
-                .map(|c| (c.identity_id, c))
-            })
-            .collect::<Result<_, _>>()?;
+            .map(|v| (v.identity_id(), v))
+            .collect();
 
         let response = Contenders {
             contenders,

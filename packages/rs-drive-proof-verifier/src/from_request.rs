@@ -29,7 +29,7 @@ use drive::query::{
 
 use crate::Error;
 
-const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
+const BINCODE_CONFIG: dpp::bincode::config::Configuration = dpp::bincode::config::standard();
 
 /// Conver a gRPC request into a query object.
 ///
@@ -146,7 +146,7 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
             document_type_name: self.vote_poll.document_type_name.clone(),
             index_name: self.vote_poll.index_name.clone(),
             index_values: self.vote_poll.index_values.iter().map(|v|
-                bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e|Error::RequestError { error: e.to_string() } )).collect::<Result<Vec<_>,_>>()?,
+                dpp::bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e|Error::RequestError { error: e.to_string() } )).collect::<Result<Vec<_>,_>>()?,
             result_type:match self.result_type {
                 ContestedDocumentVotePollDriveQueryResultType::Documents => GrpcResultType::Documents.into(),
                 ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => GrpcResultType::DocumentsAndVoteTally.into(),
@@ -279,7 +279,7 @@ impl TryFromRequest<GetContestedResourceVotersForIdentityRequest>
             document_type_name: self.vote_poll.document_type_name.clone(),
             index_name: self.vote_poll.index_name.clone(),
             index_values: self.vote_poll.index_values.iter().map(|v|
-                bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e|
+                dpp::bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e|
                     Error::RequestError { error: e.to_string()})).collect::<Result<Vec<_>,_>>()?,
             order_ascending: self.order_ascending,
             count: self.limit.map(|v| v as u32),
