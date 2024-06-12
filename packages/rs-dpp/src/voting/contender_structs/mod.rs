@@ -146,23 +146,6 @@ pub struct Contender {
     pub vote_tally: Option<u32>,
 }
 
-impl From<FinalizedContender> for Contender {
-    fn from(value: FinalizedContender) -> Self {
-        let FinalizedContender {
-            identity_id,
-            document,
-            final_vote_tally,
-            ..
-        } = value;
-
-        Contender {
-            identity_id,
-            document: Some(document),
-            vote_tally: Some(final_vote_tally),
-        }
-    }
-}
-
 impl Contender {
     /// Try to get the finalized contender from a finalized contender with a serialized document
     pub fn try_from_contender_with_serialized_document(
