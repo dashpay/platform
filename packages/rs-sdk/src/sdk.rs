@@ -668,8 +668,7 @@ impl SdkBuilder {
     /// This function will create the directory if it does not exist and save dumps of
     /// * all requests and responses - in files named `msg-*.json`
     /// * retrieved quorum public keys - in files named `quorum_pubkey-*.json`
-    ///
-    /// Data is saved in JSON format.
+    /// * retrieved data contracts - in files named `data_contract-*.json`
     ///
     /// These files can be used together with [MockDashPlatformSdk] to replay the requests and responses.
     /// See [MockDashPlatformSdk::load_expectations()] for more information.

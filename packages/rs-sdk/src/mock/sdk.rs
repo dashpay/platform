@@ -104,7 +104,7 @@ impl MockDashPlatformSdk {
 
         for filename in &files {
             let basename = filename.file_name().unwrap().to_str().unwrap();
-            let request_type = basename.split('_').nth(2).unwrap_or_default();
+            let request_type = basename.split('_').nth(1).unwrap_or_default();
 
             match request_type {
                 "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,

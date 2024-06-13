@@ -5,7 +5,7 @@ use dpp::{
     data_contract::DataContract,
     document::Document,
     voting::{
-        contender_structs::{Contender, ContenderWithSerializedDocument},
+        contender_structs::ContenderWithSerializedDocument,
         vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
     },
 };

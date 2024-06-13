@@ -107,19 +107,16 @@ impl<T: TransportRequest> DumpData<T> {
     /// Filename consists of:
     ///
     /// * [DapiClient::DUMP_FILE_PREFIX]
-    /// * current timestamp
     /// * basename of the type of request, like `GetIdentityRequest`
     /// * unique identifier (hash) of the request
     pub fn filename(&self) -> Result<String, std::io::Error> {
-        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
         let key = Key::try_new(&self.serialized_request)?;
         // get request type without underscores (which we use as a file name separator)
         let request_type = Self::request_type().replace('_', "-");
 
         let file = format!(
-            "{}_{}_{}_{}.json",
+            "{}_{}_{}.json",
             DapiClient::DUMP_FILE_PREFIX,
-            now,
             request_type,
             key
         );
