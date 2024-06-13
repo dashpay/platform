@@ -1,0 +1,18 @@
+[package]
+name = "random-document"
+version = "1.0.0-dev.15"
+edition = "2021"
+rust-version = "1.76"
+authors = [
+  "Anton Suprunchuk <anton.suprunchuk@gmail.com>",
+  "Samuel Westrich <sam@dash.org>",
+  "Ivan Shumkov <ivan@shumkov.ru>",
+  "Djavid Gabibiyan <djavid@dash.org>",
+  "Igor Markin <igor.markin@dash.org>",
+]
+
+[dependencies]
+json-schema-faker = { git = "https://github.com/fominok/json-schema-faker-rs", rev = "2dd1cf7" }
+dpp = { path = "../rs-dpp", features = ["system_contracts", "document-value-conversion"] }
+platform-value = { path = "../rs-platform-value", features = ["json"]}
+anyhow = "1.0.86"

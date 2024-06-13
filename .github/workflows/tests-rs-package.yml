@@ -42,11 +42,11 @@ jobs:
           components: clippy
 
       - name: Setup Node.JS, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
+        if: inputs.package == 'random-document'
         uses: ./.github/actions/nodejs
 
       - name: Setup Javy, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
+        if: inputs.package == 'random-document'
         uses: ./.github/actions/javy
 
       - uses: clechasseur/rs-clippy-check@v3
@@ -189,11 +189,11 @@ jobs:
         uses: ./.github/actions/rust
 
       - name: Setup Node.JS, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
+        if: inputs.package == 'random-document'
         uses: ./.github/actions/nodejs
 
       - name: Setup Javy, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
+        if: inputs.package == 'random-document'
         uses: ./.github/actions/javy
 
       - name: Run tests
@@ -222,11 +222,11 @@ jobs:
         uses: ./.github/actions/rust
 
       - name: Setup Node.JS, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
+        if: inputs.package == 'random-document'
         uses: ./.github/actions/nodejs
 
       - name: Setup Javy, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
+        if: inputs.package == 'random-document'
         uses: ./.github/actions/javy
 
       - name: Get crate ${{ runner.arch }} info
