@@ -12,18 +12,19 @@ dapi-grpc = { path = "../dapi-grpc" }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
-  "serde",
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
-bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
+bincode = { version = "2.0.0-rc.3", optional = true }
 thiserror = "1.0.58"
 tokio = { version = "1.36.0", features = ["macros"] }
 tokio-util = { version = "0.7.10" }
 async-trait = { version = "0.1.79" }
 http = { version = "0.2.12" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
-serde = { version = "1.0.197", default-features = false, features = ["rc"] }
+serde = { version = "1.0.197", default-features = false, features = [
+  "rc",
+], optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.40" }
 hex = { version = "0.4.3", optional = true }
@@ -56,12 +57,13 @@ sanitize-filename = { version = "0.5.0" }
 default = ["mocks", "offline-testing"]
 
 mocks = [
+  "dep:serde",
   "dep:serde_json",
   "rs-dapi-client/mocks",
   "rs-dapi-client/dump",
   "dpp/document-cbor-conversion",
-  "dpp/identity-value-conversion",
   "dpp/random-identities",
+  "drive/serde",
   "drive-proof-verifier/mocks",
   "dep:bincode",
   "dep:hex",

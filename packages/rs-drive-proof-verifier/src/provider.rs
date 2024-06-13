@@ -177,7 +177,7 @@ impl ContextProvider for MockContextProvider {
         &self,
         _data_contract_id: &Identifier,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        todo!("not implemented yet");
+        todo!("get_data_contract not implemented in MockContextProvider");
     }
 }
 // the trait `std::convert::AsRef<(dyn drive_proof_verifier::ContextProvider + 'static)>`

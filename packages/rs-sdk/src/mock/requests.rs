@@ -1,20 +1,22 @@
 use super::MockDashPlatformSdk;
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo,
+    dashcore::{hashes::Hash, ProTxHash},
     document::{serialization_traits::DocumentCborMethodsV0, Document},
+    identifier::Identifier,
+    identity::IdentityPublicKey,
     platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
     serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializable,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
-    voting::votes::Vote,
+    voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, IdentityBalanceAndRevision, PrefundedSpecializedBalance,
-    VotePollsGroupedByTimestamp, Voters,
+    Contenders, ContestedResources, IdentityBalanceAndRevision, MasternodeProtocolVote,
+    PrefundedSpecializedBalance, VotePollsGroupedByTimestamp, Voters,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
@@ -85,20 +87,26 @@ impl<T: MockResponse> MockResponse for Vec<T> {
     }
 }
 
-impl<K: Ord + Serialize + for<'de> Deserialize<'de>, V: Serialize + for<'de> Deserialize<'de>>
-    MockResponse for BTreeMap<K, V>
-{
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+impl<K: Ord + MockResponse, V: MockResponse> MockResponse for BTreeMap<K, V> {
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        bincode::serde::decode_from_slice(buf, BINCODE_CONFIG)
-            .expect("decode vec of data")
-            .0
+        let (data, _): (BTreeMap<Vec<u8>, Vec<u8>>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode BTreeMap");
+
+        data.into_iter()
+            .map(|(k, v)| (K::mock_deserialize(sdk, &k), V::mock_deserialize(sdk, &v)))
+            .collect()
     }
 
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, BINCODE_CONFIG).expect("encode btreemap data")
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let data: BTreeMap<Vec<u8>, Vec<u8>> = self
+            .iter()
+            .map(|(k, v)| (k.mock_serialize(sdk), v.mock_serialize(sdk)))
+            .collect();
+
+        bincode::encode_to_vec(data, BINCODE_CONFIG).expect("encode BTreeMap")
     }
 }
 
@@ -154,19 +162,6 @@ impl MockResponse for Document {
     }
 }
 
-impl MockResponse for drive_proof_verifier::types::IdentityBalance {
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        (*self).to_be_bytes().to_vec()
-    }
-
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        Self::from_be_bytes(buf.try_into().expect("balance should be 8 bytes"))
-    }
-}
-
 impl MockResponse for drive_proof_verifier::types::IdentityNonceFetcher {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         (self.0).to_be_bytes().to_vec()
@@ -198,8 +193,29 @@ impl MockResponse for drive_proof_verifier::types::IdentityContractNonceFetcher 
         ))
     }
 }
+impl MockResponse for ProTxHash {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let data = self.as_raw_hash().as_byte_array();
+        platform_encode_to_vec(data, BINCODE_CONFIG, sdk.version()).expect("encode ProTxHash")
+    }
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let data = platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+            .expect("decode ProTxHash");
+        ProTxHash::from_raw_hash(Hash::from_byte_array(data))
+    }
+}
 
 impl_mock_response!(Identity);
+impl_mock_response!(IdentityPublicKey);
+impl_mock_response!(Identifier);
+impl_mock_response!(MasternodeProtocolVote);
+impl_mock_response!(ResourceVote);
+impl_mock_response!(u16);
+impl_mock_response!(u32);
+impl_mock_response!(u64);
 impl_mock_response!(Vote);
 impl_mock_response!(ExtendedEpochInfo);
 impl_mock_response!(ContestedResources);
