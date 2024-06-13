@@ -115,7 +115,7 @@ export default function getBaseConfigFactory(homeDir) {
               ],
               lowPriority: false,
             },
-            drive_other: {
+            drive_check_tx: {
               password: 'rpcpassword',
               whitelist: ['getrawtransaction'],
               lowPriority: true,
