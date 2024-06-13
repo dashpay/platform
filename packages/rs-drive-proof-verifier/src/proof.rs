@@ -27,7 +27,7 @@ use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
-use dpp::document::{Document, DocumentV0Getters, ExtendedDocument};
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
 use dpp::platform_value::{self};
@@ -37,7 +37,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
-use dpp::ProtocolError;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
@@ -1270,14 +1269,6 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
-        let contract_id = match request.version.as_ref().ok_or(Error::EmptyVersion)? {
-            platform::get_contested_resources_request::Version::V0(v0) => &v0.contract_id,
-        };
-
-        let contract_id = Identifier::from_bytes(contract_id).map_err(|e| Error::RequestError {
-            error: format!("contract id {:?} is invalid: {}", &contract_id, e),
-        })?;
-
         // Decode request to get drive query
         let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
         let resolved_request = drive_query
@@ -1295,25 +1286,8 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let data_contract =
-            provider
-                .get_data_contract(&contract_id)?
-                .ok_or(Error::ResponseDecodeError {
-                    error: format!("data contract {} not found", contract_id),
-                })?;
-
-        let resources: ContestedResources = items
-            .into_iter()
-            .map(|doc| {
-                let ed = ExtendedDocument::from_untrusted_platform_value(
-                    doc,
-                    data_contract.as_ref().clone(),
-                    platform_version,
-                )?;
-
-                Ok((ed.id(), ContestedResource::Document(ed)))
-            })
-            .collect::<Result<_, ProtocolError>>()?;
+        let resources: ContestedResources =
+            items.into_iter().map(ContestedResource::Value).collect();
 
         Ok((resources.into_option(), mtd.clone()))
     }

@@ -6,8 +6,8 @@
 //! defined in this module.
 
 use dpp::data_contract::document_type::DocumentType;
-use dpp::document::ExtendedDocument;
 use dpp::fee::Credits;
+use dpp::platform_value::Value;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
 use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
@@ -159,11 +159,10 @@ pub type IdentityBalance = u64;
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
 /// Contested resource values.
-/// At this point, only Documents are supported
 #[derive(Debug, derive_more::From, Clone)]
 pub enum ContestedResource {
-    /// Contested document
-    Document(ExtendedDocument),
+    /// Generic [Value]
+    Value(Value),
 }
 
 #[cfg(feature = "mocks")]
@@ -171,12 +170,10 @@ impl PlatformVersionEncode for ContestedResource {
     fn platform_encode<E: bincode::enc::Encoder>(
         &self,
         encoder: &mut E,
-        platform_version: &platform_version::PlatformVersion,
+        _platform_version: &platform_version::PlatformVersion,
     ) -> Result<(), bincode::error::EncodeError> {
         match self {
-            ContestedResource::Document(document) => {
-                document.platform_encode(encoder, platform_version)
-            }
+            ContestedResource::Value(document) => document.encode(encoder),
         }
     }
 }
@@ -185,17 +182,15 @@ impl PlatformVersionEncode for ContestedResource {
 impl PlatformVersionedDecode for ContestedResource {
     fn platform_versioned_decode<D: bincode::de::Decoder>(
         decoder: &mut D,
-        platform_version: &platform_version::PlatformVersion,
+        _platform_version: &platform_version::PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {
-        Ok(ContestedResource::Document(
-            ExtendedDocument::platform_versioned_decode(decoder, platform_version)?,
-        ))
+        Ok(ContestedResource::Value(Value::decode(decoder)?))
     }
 }
 
 /// Contested resources
 #[derive(derive_more::From, Clone, Debug, Default)]
-pub struct ContestedResources(pub BTreeMap<Identifier, ContestedResource>);
+pub struct ContestedResources(pub Vec<ContestedResource>);
 
 #[cfg(feature = "mocks")]
 impl PlatformVersionEncode for ContestedResources {
@@ -214,24 +209,22 @@ impl PlatformVersionedDecode for ContestedResources {
         decoder: &mut D,
         platform_version: &platform_version::PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {
-        let map = BTreeMap::<Identifier, ContestedResource>::platform_versioned_decode(
-            decoder,
-            platform_version,
-        )?;
-        Ok(Self(map))
+        let inner = <Vec<ContestedResource>>::platform_versioned_decode(decoder, platform_version)?;
+        Ok(Self(inner))
     }
 }
 
 /// Create [ContestedResources] from an iterator of tuples.
 ///
 /// This trait is a requirement of the [FetchMany](crate::FetchMany) trait.
-impl FromIterator<(Identifier, Option<ContestedResource>)> for ContestedResources {
-    fn from_iter<T: IntoIterator<Item = (Identifier, Option<ContestedResource>)>>(iter: T) -> Self {
-        Self::from_iter(iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))))
+impl<A> FromIterator<(A, Option<ContestedResource>)> for ContestedResources {
+    fn from_iter<T: IntoIterator<Item = (A, Option<ContestedResource>)>>(iter: T) -> Self {
+        Self::from_iter(iter.into_iter().filter_map(|(_k, v)| v))
     }
 }
-impl FromIterator<(Identifier, ContestedResource)> for ContestedResources {
-    fn from_iter<T: IntoIterator<Item = (Identifier, ContestedResource)>>(iter: T) -> Self {
+
+impl FromIterator<ContestedResource> for ContestedResources {
+    fn from_iter<T: IntoIterator<Item = ContestedResource>>(iter: T) -> Self {
         Self(iter.into_iter().collect())
     }
 }
