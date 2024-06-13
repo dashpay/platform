@@ -381,7 +381,6 @@ impl Query<GetPrefundedSpecializedBalanceRequest> for Identifier {
 
 /// Query for single vote.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "mocks", derive(bincode::Encode, bincode::Decode))]
 pub struct VoteQuery {
     pub identity_id: Identifier,
     pub vote_poll_id: Identifier,

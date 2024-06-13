@@ -5,16 +5,9 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
-use dpp::dashcore::hashes::Hash;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentType;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::fee::Credits;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
-use dpp::serialization::{
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-    PlatformSerializableWithPlatformVersion,
-};
 use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
@@ -33,7 +26,16 @@ use dpp::{
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::{version as platform_version, ProtocolError},
+    dpp::{
+        dashcore::hashes::Hash,
+        data_contract::accessors::v0::DataContractV0Getters,
+        document::serialization_traits::DocumentPlatformConversionMethodsV0,
+        serialization::{
+            PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+            PlatformSerializableWithPlatformVersion,
+        },
+        version as platform_version, ProtocolError,
+    },
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };

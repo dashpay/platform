@@ -1,8 +1,8 @@
-use std::{ops::Deref, sync::Arc};
-
 use crate::error::ContextProviderError;
 use dpp::prelude::{DataContract, Identifier};
+#[cfg(feature = "mocks")]
 use hex::ToHex;
+use std::{ops::Deref, sync::Arc};
 
 /// Interface between the Sdk and state of the application.
 ///

@@ -1,5 +1,6 @@
 use super::MockDashPlatformSdk;
 use dpp::{
+    bincode,
     block::extended_epoch_info::ExtendedEpochInfo,
     dashcore::{hashes::Hash, ProTxHash},
     document::{serialization_traits::DocumentCborMethodsV0, Document},

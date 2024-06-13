@@ -1311,7 +1311,6 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "base64 0.22.1",
- "bincode 2.0.0-rc.3",
  "bip37-bloom-filter",
  "ciborium",
  "clap 4.5.6",
