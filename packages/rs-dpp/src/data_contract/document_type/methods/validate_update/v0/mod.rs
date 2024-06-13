@@ -1,9 +1,11 @@
 use crate::consensus::basic::data_contract::IncompatibleDocumentTypeSchemaError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
+use crate::util::json_schema::JsonSchemaExt;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -224,7 +226,7 @@ impl<'a> DocumentTypeRef<'a> {
         )?;
 
         // Convert the compatibility errors to consensus errors
-        let errors = compatibility_validation_result
+        let mut errors: Vec<ConsensusError> = compatibility_validation_result
             .errors
             .into_iter()
             .map(|operation| {
@@ -236,6 +238,34 @@ impl<'a> DocumentTypeRef<'a> {
                 .into()
             })
             .collect();
+
+        // Make sure system required fields aren't removed
+        // We don't use `required_fields` method because it contains required fields from the entire schema,
+        // but we are looking at the root level only
+        let old_required_field = old_document_schema_json.get_schema_required_fields()?;
+        if !old_required_field.is_empty() {
+            let removed_system_field =
+                old_required_field
+                    .iter()
+                    .enumerate()
+                    .find(|(_, field_name)| {
+                        field_name.starts_with('$')
+                            && !new_document_type
+                                .required_fields()
+                                .contains(&field_name.to_string())
+                    });
+
+            if let Some((i, _)) = removed_system_field {
+                errors.push(
+                    IncompatibleDocumentTypeSchemaError::new(
+                        self.name().clone(),
+                        "remove",
+                        format!("/required/{}", i),
+                    )
+                    .into(),
+                );
+            }
+        }
 
         Ok(SimpleConsensusValidationResult::new_with_errors(errors))
     }
@@ -1012,6 +1042,76 @@ mod tests {
                 [ConsensusError::BasicError(
                     BasicError::IncompatibleDocumentTypeSchemaError(e)
                 )] if e.operation() == "replace" && e.property_path() == "/properties/test/type"
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_system_field_changed_to_optional() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "required": ["$createdAt"],
+                "additionalProperties": false,
+            });
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema.clone(),
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                document_type_name,
+                schema,
+                None,
+                false,
+                false,
+                false,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.operation() == "remove" && e.property_path() == "/required/0"
             );
         }
     }
