@@ -93,12 +93,6 @@
         "contains": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/applicator#/properties/contains"
         },
-        "maxProperties": {
-          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxProperties"
-        },
-        "minProperties": {
-          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minProperties"
-        },
         "required": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/required"
         },
