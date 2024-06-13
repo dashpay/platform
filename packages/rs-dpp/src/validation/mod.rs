@@ -13,7 +13,7 @@ use crate::ProtocolError;
 #[cfg(feature = "validation")]
 pub(crate) mod byte_array_meta;
 #[cfg(feature = "validation")]
-mod json_schema_validator;
+pub mod json_schema_validator;
 #[cfg(feature = "validation")]
 pub(crate) mod meta_validators;
 pub mod operations;

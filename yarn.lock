@@ -1546,6 +1546,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/dapi@workspace:packages/dapi"
   dependencies:
+    "@babel/core": "npm:^7.23.3"
+    "@babel/eslint-parser": "npm:^7.23.3"
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
@@ -1820,6 +1822,7 @@ __metadata:
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
     semver: "npm:^7.5.3"
+    setimmediate: "npm:^1.0.5"
     sinon: "npm:^17.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"

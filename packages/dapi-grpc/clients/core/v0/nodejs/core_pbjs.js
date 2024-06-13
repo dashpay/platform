@@ -383,6 +383,39 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Core#subscribeToMasternodeList}.
+                         * @memberof org.dash.platform.dapi.v0.Core
+                         * @typedef subscribeToMasternodeListCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.MasternodeListResponse} [response] MasternodeListResponse
+                         */
+
+                        /**
+                         * Calls subscribeToMasternodeList.
+                         * @function subscribeToMasternodeList
+                         * @memberof org.dash.platform.dapi.v0.Core
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListRequest} request MasternodeListRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Core.subscribeToMasternodeListCallback} callback Node-style callback called with the error, if any, and MasternodeListResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Core.prototype.subscribeToMasternodeList = function subscribeToMasternodeList(request, callback) {
+                            return this.rpcCall(subscribeToMasternodeList, $root.org.dash.platform.dapi.v0.MasternodeListRequest, $root.org.dash.platform.dapi.v0.MasternodeListResponse, request, callback);
+                        }, "name", { value: "subscribeToMasternodeList" });
+
+                        /**
+                         * Calls subscribeToMasternodeList.
+                         * @function subscribeToMasternodeList
+                         * @memberof org.dash.platform.dapi.v0.Core
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListRequest} request MasternodeListRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.MasternodeListResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Core;
                     })();
 
@@ -6714,6 +6747,362 @@ $root.org = (function() {
                         };
 
                         return InstantSendLockMessages;
+                    })();
+
+                    v0.MasternodeListRequest = (function() {
+
+                        /**
+                         * Properties of a MasternodeListRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IMasternodeListRequest
+                         */
+
+                        /**
+                         * Constructs a new MasternodeListRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a MasternodeListRequest.
+                         * @implements IMasternodeListRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListRequest=} [properties] Properties to set
+                         */
+                        function MasternodeListRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * Creates a new MasternodeListRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.MasternodeListRequest} MasternodeListRequest instance
+                         */
+                        MasternodeListRequest.create = function create(properties) {
+                            return new MasternodeListRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified MasternodeListRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.MasternodeListRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListRequest} message MasternodeListRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        MasternodeListRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified MasternodeListRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.MasternodeListRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListRequest} message MasternodeListRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        MasternodeListRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a MasternodeListRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.MasternodeListRequest} MasternodeListRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        MasternodeListRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.MasternodeListRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a MasternodeListRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.MasternodeListRequest} MasternodeListRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        MasternodeListRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a MasternodeListRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        MasternodeListRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a MasternodeListRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.MasternodeListRequest} MasternodeListRequest
+                         */
+                        MasternodeListRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.MasternodeListRequest)
+                                return object;
+                            return new $root.org.dash.platform.dapi.v0.MasternodeListRequest();
+                        };
+
+                        /**
+                         * Creates a plain object from a MasternodeListRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.MasternodeListRequest} message MasternodeListRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        MasternodeListRequest.toObject = function toObject() {
+                            return {};
+                        };
+
+                        /**
+                         * Converts this MasternodeListRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        MasternodeListRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return MasternodeListRequest;
+                    })();
+
+                    v0.MasternodeListResponse = (function() {
+
+                        /**
+                         * Properties of a MasternodeListResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IMasternodeListResponse
+                         * @property {Uint8Array|null} [masternodeListDiff] MasternodeListResponse masternodeListDiff
+                         */
+
+                        /**
+                         * Constructs a new MasternodeListResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a MasternodeListResponse.
+                         * @implements IMasternodeListResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListResponse=} [properties] Properties to set
+                         */
+                        function MasternodeListResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * MasternodeListResponse masternodeListDiff.
+                         * @member {Uint8Array} masternodeListDiff
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @instance
+                         */
+                        MasternodeListResponse.prototype.masternodeListDiff = $util.newBuffer([]);
+
+                        /**
+                         * Creates a new MasternodeListResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.MasternodeListResponse} MasternodeListResponse instance
+                         */
+                        MasternodeListResponse.create = function create(properties) {
+                            return new MasternodeListResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified MasternodeListResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.MasternodeListResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListResponse} message MasternodeListResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        MasternodeListResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.masternodeListDiff != null && Object.hasOwnProperty.call(message, "masternodeListDiff"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.masternodeListDiff);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified MasternodeListResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.MasternodeListResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IMasternodeListResponse} message MasternodeListResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        MasternodeListResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a MasternodeListResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.MasternodeListResponse} MasternodeListResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        MasternodeListResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.MasternodeListResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.masternodeListDiff = reader.bytes();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a MasternodeListResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.MasternodeListResponse} MasternodeListResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        MasternodeListResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a MasternodeListResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        MasternodeListResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.masternodeListDiff != null && message.hasOwnProperty("masternodeListDiff"))
+                                if (!(message.masternodeListDiff && typeof message.masternodeListDiff.length === "number" || $util.isString(message.masternodeListDiff)))
+                                    return "masternodeListDiff: buffer expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a MasternodeListResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.MasternodeListResponse} MasternodeListResponse
+                         */
+                        MasternodeListResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.MasternodeListResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.MasternodeListResponse();
+                            if (object.masternodeListDiff != null)
+                                if (typeof object.masternodeListDiff === "string")
+                                    $util.base64.decode(object.masternodeListDiff, message.masternodeListDiff = $util.newBuffer($util.base64.length(object.masternodeListDiff)), 0);
+                                else if (object.masternodeListDiff.length >= 0)
+                                    message.masternodeListDiff = object.masternodeListDiff;
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a MasternodeListResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.MasternodeListResponse} message MasternodeListResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        MasternodeListResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults)
+                                if (options.bytes === String)
+                                    object.masternodeListDiff = "";
+                                else {
+                                    object.masternodeListDiff = [];
+                                    if (options.bytes !== Array)
+                                        object.masternodeListDiff = $util.newBuffer(object.masternodeListDiff);
+                                }
+                            if (message.masternodeListDiff != null && message.hasOwnProperty("masternodeListDiff"))
+                                object.masternodeListDiff = options.bytes === String ? $util.base64.encode(message.masternodeListDiff, 0, message.masternodeListDiff.length) : options.bytes === Array ? Array.prototype.slice.call(message.masternodeListDiff) : message.masternodeListDiff;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this MasternodeListResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.MasternodeListResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        MasternodeListResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return MasternodeListResponse;
                     })();
 
                     return v0;
