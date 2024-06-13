@@ -102,7 +102,10 @@ async fn test_data_contracts_2_nx() {
 // and stored as a test vector for offline testing only.
 // #[cfg(not(feature = "network-testing"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore = "This test requires special procedure to regenerate test vectors"]
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "This test requires special procedure to regenerate test vectors"
+)]
 async fn test_data_contract_history_read() {
     let cfg = Config::new();
     let id = Identifier::from_string(

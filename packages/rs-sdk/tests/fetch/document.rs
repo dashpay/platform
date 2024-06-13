@@ -103,8 +103,6 @@ async fn document_read_no_document() {
 
 /// Given some data contract ID and document type with at least one document, when I fetch many documents using DriveQuery
 /// as a query, then I get one or more items.
-///
-/// This test is ignored because it requires a running Platform. To run it, set constants in `common.rs` and run:
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn document_list_drive_query() {
     setup_logs();

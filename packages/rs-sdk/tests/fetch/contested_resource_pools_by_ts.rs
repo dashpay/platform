@@ -7,12 +7,16 @@ use drive::query::VotePollsByEndDateDriveQuery;
 use crate::fetch::{common::setup_logs, config::Config};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn test_vote_polls_by_ts_not_found() {
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "requires a DPNS name to be registered"
+)]
+async fn test_vote_polls_by_ts_ok() {
     setup_logs();
 
     let cfg = Config::new();
 
-    let sdk = cfg.setup_api("test_vote_polls_by_ts_not_found").await;
+    let sdk = cfg.setup_api("test_vote_polls_by_ts_ok").await;
 
     let query = VotePollsByEndDateDriveQuery {
         limit: None,
@@ -25,6 +29,6 @@ async fn test_vote_polls_by_ts_not_found() {
     let rss = VotePoll::fetch_many(&sdk, query)
         .await
         .expect("fetch contested resources");
-
-    assert!(rss.0.is_empty());
+    tracing::info!("vote polls retrieved: {:?}", rss);
+    assert!(!rss.0.is_empty());
 }

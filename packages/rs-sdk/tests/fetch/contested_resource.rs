@@ -5,13 +5,18 @@ use dash_sdk::platform::FetchMany;
 use dpp::platform_value::Value;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive_proof_verifier::types::ContestedResource;
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn test_contested_resources_not_found() {
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "requires a DPNS name to be registered"
+)]
+async fn test_contested_resources_ok() {
     setup_logs();
 
     let cfg = Config::new();
 
-    let sdk = cfg.setup_api("test_contested_resources_not_found").await;
+    let sdk = cfg.setup_api("test_contested_resources_ok").await;
 
     let index_name = "parentNameAndLabel";
 
@@ -30,5 +35,5 @@ async fn test_contested_resources_not_found() {
         .await
         .expect("fetch contested resources");
 
-    assert!(rss.0.is_empty());
+    assert!(!rss.0.is_empty());
 }
