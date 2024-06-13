@@ -27,8 +27,7 @@ use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
-use dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::{Document, DocumentV0Getters, ExtendedDocument};
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
 use dpp::platform_value::{self};
@@ -38,6 +37,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
+use dpp::ProtocolError;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
@@ -1270,12 +1270,9 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
-        let (contract_id, doctype_name) =
-            match request.version.as_ref().ok_or(Error::EmptyVersion)? {
-                platform::get_contested_resources_request::Version::V0(v0) => {
-                    (&v0.contract_id, v0.document_type_name.clone())
-                }
-            };
+        let contract_id = match request.version.as_ref().ok_or(Error::EmptyVersion)? {
+            platform::get_contested_resources_request::Version::V0(v0) => &v0.contract_id,
+        };
 
         let contract_id = Identifier::from_bytes(contract_id).map_err(|e| Error::RequestError {
             error: format!("contract id {:?} is invalid: {}", &contract_id, e),
@@ -1307,19 +1304,16 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         let resources: ContestedResources = items
             .into_iter()
-            .map(|v| {
-                Document::from_platform_value(v, platform_version).map(|doc| {
-                    (
-                        doc.id(),
-                        ContestedResource::Document {
-                            document: doc,
-                            document_type_name: doctype_name.clone(),
-                            data_contract: data_contract.clone(),
-                        },
-                    )
-                })
+            .map(|doc| {
+                let ed = ExtendedDocument::from_untrusted_platform_value(
+                    doc,
+                    data_contract.as_ref().clone(),
+                    platform_version,
+                )?;
+
+                Ok((ed.id(), ContestedResource::Document(ed)))
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_, ProtocolError>>()?;
 
         Ok((resources.into_option(), mtd.clone()))
     }

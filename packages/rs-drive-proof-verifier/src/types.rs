@@ -6,6 +6,7 @@
 //! defined in this module.
 
 use dpp::data_contract::document_type::DocumentType;
+use dpp::document::ExtendedDocument;
 use dpp::fee::Credits;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
 use dpp::version::PlatformVersion;
@@ -23,26 +24,15 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
+use drive::grovedb::Element;
+use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::{
-        dashcore::hashes::Hash,
-        data_contract::accessors::v0::DataContractV0Getters,
-        document::serialization_traits::DocumentPlatformConversionMethodsV0,
-        serialization::{
-            PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-            PlatformSerializableWithPlatformVersion,
-        },
-        version as platform_version, ProtocolError,
-    },
+    dpp::{dashcore::hashes::Hash, version as platform_version, ProtocolError},
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
-
-use drive::grovedb::Element;
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -170,26 +160,10 @@ pub type IdentityBalanceAndRevision = (u64, Revision);
 
 /// Contested resource values.
 /// At this point, only Documents are supported
-#[derive(derive_more::From, Clone, Debug)]
+#[derive(Debug, derive_more::From, Clone)]
 pub enum ContestedResource {
     /// Contested document
-    Document {
-        /// Contested document
-        document: Document,
-        /// Name of the document type
-        document_type_name: String,
-        /// Data contract for which the document is contested
-        data_contract: Arc<DataContract>,
-    },
-}
-#[cfg(feature = "mocks")]
-#[derive(Encode, Decode, Clone, Debug)]
-enum ContestedResourceSerialized {
-    Document {
-        serialized_document: Vec<u8>,
-        document_type_name: String,
-        serialized_data_contract: Vec<u8>,
-    },
+    Document(ExtendedDocument),
 }
 
 #[cfg(feature = "mocks")]
@@ -199,46 +173,11 @@ impl PlatformVersionEncode for ContestedResource {
         encoder: &mut E,
         platform_version: &platform_version::PlatformVersion,
     ) -> Result<(), bincode::error::EncodeError> {
-        let serialized = match self {
-            ContestedResource::Document {
-                document,
-                document_type_name,
-                data_contract,
-            } => {
-                let document_type = data_contract
-                    .document_type_borrowed_for_name(document_type_name)
-                    .map_err(|e| {
-                        bincode::error::EncodeError::OtherString(format!(
-                            "Failed to get document type: {}",
-                            e
-                        ))
-                    })?;
-                let serialized_data_contract = data_contract
-                    .serialize_to_bytes_with_platform_version(platform_version)
-                    .map_err(|e| {
-                        bincode::error::EncodeError::OtherString(format!(
-                            "Failed to serialize data contract: {}",
-                            e
-                        ))
-                    })?;
-                let serialized_document = document
-                    .serialize(document_type.as_ref(), platform_version)
-                    .map_err(|e| {
-                        bincode::error::EncodeError::OtherString(format!(
-                            "Failed to serialize document: {}",
-                            e
-                        ))
-                    })?;
-
-                ContestedResourceSerialized::Document {
-                    serialized_document,
-                    document_type_name: document_type_name.clone(),
-                    serialized_data_contract,
-                }
+        match self {
+            ContestedResource::Document(document) => {
+                document.platform_encode(encoder, platform_version)
             }
-        };
-
-        serialized.encode(encoder)
+        }
     }
 }
 
@@ -248,51 +187,12 @@ impl PlatformVersionedDecode for ContestedResource {
         decoder: &mut D,
         platform_version: &platform_version::PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {
-        let serialized = ContestedResourceSerialized::decode(decoder)?;
-
-        match serialized {
-            ContestedResourceSerialized::Document {
-                serialized_document,
-                document_type_name,
-                serialized_data_contract,
-            } => {
-                let data_contract = DataContract::versioned_deserialize(
-                    &serialized_data_contract,
-                    true,
-                    platform_version,
-                )
-                .map_err(|e| {
-                    bincode::error::DecodeError::OtherString(format!(
-                        "Failed to deserialize data contract: {}",
-                        e
-                    ))
-                })?;
-
-                let document_type = data_contract
-                    .document_type_for_name(&document_type_name)
-                    .map_err(|e| {
-                        bincode::error::DecodeError::OtherString(format!(
-                            "Unknown document type {}: {}",
-                            document_type_name, e
-                        ))
-                    })?;
-                let document =
-                    Document::from_bytes(&serialized_document, document_type, platform_version)
-                        .map_err(|e| {
-                            bincode::error::DecodeError::OtherString(format!(
-                                "Failed to deserialize document: {}",
-                                e
-                            ))
-                        })?;
-                Ok(ContestedResource::Document {
-                    document,
-                    document_type_name,
-                    data_contract: Arc::new(data_contract),
-                })
-            }
-        }
+        Ok(ContestedResource::Document(
+            ExtendedDocument::platform_versioned_decode(decoder, platform_version)?,
+        ))
     }
 }
+
 /// Contested resources
 #[derive(derive_more::From, Clone, Debug, Default)]
 pub struct ContestedResources(pub BTreeMap<Identifier, ContestedResource>);

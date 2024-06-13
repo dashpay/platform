@@ -4,6 +4,9 @@ use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMet
 use crate::prelude::ExtendedDocument;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use bincode::enc::Encoder;
+use bincode::error::EncodeError;
+use platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode};
 use platform_version::version::FeatureVersion;
 
 impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
@@ -64,5 +67,34 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
                 received: version,
             }),
         }
+    }
+}
+
+impl PlatformVersionEncode for ExtendedDocument {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
+        let serialized = self.serialize_to_bytes(platform_version).map_err(|e| {
+            EncodeError::OtherString(format!("Failed to serialize ExtendedDocument: {}", e))
+        })?;
+
+        serialized.platform_encode(encoder, platform_version)
+    }
+}
+
+impl PlatformVersionedDecode for ExtendedDocument {
+    fn platform_versioned_decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let bytes = Vec::<u8>::platform_versioned_decode(decoder, platform_version)?;
+
+        Self::from_bytes(&bytes, platform_version)
+            .map_err(|e| {
+                EncodeError::OtherString(format!("Failed to serialize ExtendedDocument: {}", e))
+            })
+            .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))
     }
 }
