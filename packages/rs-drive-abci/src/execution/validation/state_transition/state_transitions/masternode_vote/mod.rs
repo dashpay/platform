@@ -3858,7 +3858,6 @@ mod tests {
 
         mod document_distribution {
             use super::*;
-            use drive::grovedb::Element;
 
             #[test]
             fn test_document_distribution() {
@@ -4715,20 +4714,6 @@ mod tests {
                 assert_eq!(abstaining, Some(0));
 
                 assert_eq!(locking, Some(0));
-
-                perform_votes_multi(
-                    &mut platform,
-                    dpns_contract.as_ref(),
-                    vec![
-                        (TowardsIdentity(contender_1.id()), 1),
-                        (TowardsIdentity(contender_2.id()), 5),
-                        (ResourceVoteChoice::Abstain, 60),
-                        (ResourceVoteChoice::Lock, 3),
-                    ],
-                    "quantum",
-                    10,
-                    platform_version,
-                );
 
                 let mut platform_state = (**platform_state).clone();
 
