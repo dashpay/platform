@@ -411,39 +411,118 @@ mod tests {
                     platform_version,
                 );
 
-                let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
-                    &platform,
-                    &platform_state,
-                    &dpns_contract,
-                    "quantum",
-                    None,
-                    true,
-                    None,
-                    ResultType::DocumentsAndVoteTally,
-                    platform_version,
-                );
+                // Documents and Tally
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
 
-                assert_eq!(finished_vote_info, None);
+                    assert_eq!(finished_vote_info, None);
 
-                assert_eq!(contenders.len(), 2);
+                    assert_eq!(contenders.len(), 2);
 
-                let first_contender = contenders.first().unwrap();
+                    let first_contender = contenders.first().unwrap();
 
-                let second_contender = contenders.last().unwrap();
+                    let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document(), second_contender.document());
+                    assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id(), contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id(), contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally(), Some(1));
+                    assert_eq!(first_contender.vote_tally(), Some(1));
 
-                assert_eq!(second_contender.vote_tally(), Some(0));
+                    assert_eq!(second_contender.vote_tally(), Some(0));
 
-                assert_eq!(abstaining, Some(0));
+                    assert_eq!(abstaining, Some(0));
 
-                assert_eq!(locking, Some(0));
+                    assert_eq!(locking, Some(0));
+                }
+
+                // Documents
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::Documents,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_ne!(first_contender.document(), second_contender.document());
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), None);
+
+                    assert_eq!(second_contender.vote_tally(), None);
+
+                    assert_eq!(abstaining, None);
+
+                    assert_eq!(locking, None);
+                }
+
+                // VoteTally
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::VoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(1));
+
+                    assert_eq!(second_contender.vote_tally(), Some(0));
+
+                    assert_eq!(abstaining, Some(0));
+
+                    assert_eq!(locking, Some(0));
+                }
             }
 
             #[test]
@@ -482,39 +561,115 @@ mod tests {
                     platform_version,
                 );
 
-                let (contenders, abstaining, locking, finished_info) = get_proved_vote_states(
-                    &platform,
-                    &platform_state,
-                    &dpns_contract,
-                    "quantum",
-                    None,
-                    true,
-                    None,
-                    ResultType::DocumentsAndVoteTally,
-                    platform_version,
-                );
+                {
+                    let (contenders, abstaining, locking, finished_info) = get_proved_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
 
-                assert_eq!(finished_info, None);
+                    assert_eq!(finished_info, None);
 
-                assert_eq!(contenders.len(), 2);
+                    assert_eq!(contenders.len(), 2);
 
-                let first_contender = contenders.first().unwrap();
+                    let first_contender = contenders.first().unwrap();
 
-                let second_contender = contenders.last().unwrap();
+                    let second_contender = contenders.last().unwrap();
 
-                assert_ne!(first_contender.document(), second_contender.document());
+                    assert_ne!(first_contender.document(), second_contender.document());
 
-                assert_eq!(first_contender.identity_id(), contender_1.id());
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
 
-                assert_eq!(second_contender.identity_id(), contender_2.id());
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
 
-                assert_eq!(first_contender.vote_tally(), Some(1));
+                    assert_eq!(first_contender.vote_tally(), Some(1));
 
-                assert_eq!(second_contender.vote_tally(), Some(0));
+                    assert_eq!(second_contender.vote_tally(), Some(0));
 
-                assert_eq!(abstaining, Some(0));
+                    assert_eq!(abstaining, Some(0));
 
-                assert_eq!(locking, Some(0));
+                    assert_eq!(locking, Some(0));
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_info) = get_proved_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::Documents,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_ne!(first_contender.document(), second_contender.document());
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), None);
+
+                    assert_eq!(second_contender.vote_tally(), None);
+
+                    assert_eq!(abstaining, None);
+
+                    assert_eq!(locking, None);
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_info) = get_proved_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::VoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(1));
+
+                    assert_eq!(second_contender.vote_tally(), Some(0));
+
+                    assert_eq!(abstaining, Some(0));
+
+                    assert_eq!(locking, Some(0));
+                }
             }
 
             #[test]
@@ -3397,6 +3552,7 @@ mod tests {
 
         mod document_distribution {
             use super::*;
+            use drive::grovedb::Element;
 
             #[test]
             fn test_document_distribution() {
@@ -4024,10 +4180,7 @@ mod tests {
                 perform_votes_multi(
                     &mut platform,
                     dpns_contract.as_ref(),
-                    vec![
-                        (TowardsIdentity(contender_1.id()), 1),
-                        (TowardsIdentity(contender_2.id()), 1),
-                    ],
+                    vec![(TowardsIdentity(contender_1.id()), 1)],
                     "quantum",
                     10,
                     platform_version,

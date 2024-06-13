@@ -241,6 +241,14 @@ impl TryFrom<&[u8]> for Identifier {
     }
 }
 
+impl TryFrom<&Vec<u8>> for Identifier {
+    type Error = Error;
+
+    fn try_from(bytes: &Vec<u8>) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes.as_slice())
+    }
+}
+
 impl TryFrom<Vec<u8>> for Identifier {
     type Error = Error;
 

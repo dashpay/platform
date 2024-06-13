@@ -70,8 +70,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        //todo estimated costs
-        // let's start by creating a batch of operations
+        // We do not have to do estimated costs because voting does not use them and is fixed cost
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         // The vote at this point will have been verified as valid by rs-drive-abci
