@@ -196,7 +196,7 @@ where
                     // so there is no previous quorums to update
                     block_platform_state
                         .chain_lock_validating_quorums_mut()
-                        .set_last_quorums(quorums)
+                        .set_current_quorums(quorums)
                 }
             }
         } else {
@@ -220,7 +220,7 @@ where
             // Remove chain_lock_validating_quorums entries that are no longer valid for the core block height
             block_platform_state
                 .chain_lock_validating_quorums_mut()
-                .last_quorums_mut()
+                .current_quorums_mut()
                 .retain(|quorum_hash, _| {
                     let retain = chain_lock_quorums_list.contains_key::<QuorumHash>(quorum_hash);
                     if !retain {
@@ -242,7 +242,7 @@ where
                 .filter(|(key, _)| {
                     !block_platform_state
                         .chain_lock_validating_quorums()
-                        .last_quorums()
+                        .current_quorums()
                         .contains_key::<QuorumHash>(key)
                 })
                 .map(|(key, _)| {
@@ -286,18 +286,18 @@ where
                 // Add new validator_sets entries
                 block_platform_state
                     .chain_lock_validating_quorums_mut()
-                    .last_quorums_mut()
+                    .current_quorums_mut()
                     .extend(new_chain_lock_quorums);
             }
 
             if added_a_chain_lock_validating_quorum || removed_a_chain_lock_validating_quorum {
                 if let Some(old_state) = platform_state {
                     let previous_chain_lock_validating_quorums =
-                        old_state.chain_lock_validating_quorums().last_quorums();
+                        old_state.chain_lock_validating_quorums().current_quorums();
 
                     block_platform_state
                         .chain_lock_validating_quorums_mut()
-                        .update_previous_quorums(
+                        .set_previous_past_quorums(
                             previous_chain_lock_validating_quorums.clone(),
                             last_committed_core_height,
                             core_block_height,

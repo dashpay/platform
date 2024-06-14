@@ -177,7 +177,7 @@ where
                 }
             } else if platform_state
                 .chain_lock_validating_quorums()
-                .previous_quorums()
+                .previous_past_quorums()
                 .is_none()
             {
                 // we don't have old quorums, this means our node is very new.

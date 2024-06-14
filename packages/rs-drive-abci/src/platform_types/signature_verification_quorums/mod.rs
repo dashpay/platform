@@ -1,12 +1,14 @@
 mod v0;
 
 use crate::platform_types::signature_verification_quorums::v0::{
-    PreviousQuorums, SelectedVerificationQuorumSets,
+    PreviousPastQuorums, SelectedVerificationQuorumSets,
 };
 use bincode::{Decode, Encode};
 use derive_more::From;
 use dpp::version::PlatformVersion;
-pub use v0::{QuorumKeys, SignatureVerificationQuorumsV0, SignatureVerificationQuorumsV0Methods};
+pub use v0::{
+    QuorumKeysByQuorumHash, SignatureVerificationQuorumsV0, SignatureVerificationQuorumsV0Methods,
+};
 
 /// Quorums with keys for signature verification
 #[derive(Debug, Clone, Encode, Decode, From)]
@@ -25,33 +27,33 @@ impl SignatureVerificationQuorums {
 }
 
 impl SignatureVerificationQuorumsV0Methods for SignatureVerificationQuorums {
-    fn set_last_quorums(&mut self, quorums: QuorumKeys) {
+    fn set_current_quorums(&mut self, quorums: QuorumKeysByQuorumHash) {
         match self {
-            Self::V0(v0) => v0.set_last_quorums(quorums),
+            Self::V0(v0) => v0.set_current_quorums(quorums),
         }
     }
 
-    fn last_quorums(&self) -> &QuorumKeys {
+    fn current_quorums(&self) -> &QuorumKeysByQuorumHash {
         match self {
-            Self::V0(v0) => v0.last_quorums(),
+            Self::V0(v0) => v0.current_quorums(),
         }
     }
 
-    fn last_quorums_mut(&mut self) -> &mut QuorumKeys {
+    fn current_quorums_mut(&mut self) -> &mut QuorumKeysByQuorumHash {
         match self {
-            Self::V0(v0) => v0.last_quorums_mut(),
+            Self::V0(v0) => v0.current_quorums_mut(),
         }
     }
 
-    fn previous_quorums(&self) -> Option<&PreviousQuorums> {
+    fn previous_past_quorums(&self) -> Option<&PreviousPastQuorums> {
         match self {
-            Self::V0(v0) => v0.previous_quorums(),
+            Self::V0(v0) => v0.previous_past_quorums(),
         }
     }
 
     fn rotate_quorums(
         &mut self,
-        quorums: QuorumKeys,
+        quorums: QuorumKeysByQuorumHash,
         last_active_core_height: u32,
         updated_at_core_height: u32,
     ) {
@@ -62,14 +64,14 @@ impl SignatureVerificationQuorumsV0Methods for SignatureVerificationQuorums {
         }
     }
 
-    fn update_previous_quorums(
+    fn set_previous_past_quorums(
         &mut self,
-        previous_quorums: QuorumKeys,
+        previous_quorums: QuorumKeysByQuorumHash,
         last_active_core_height: u32,
         updated_at_core_height: u32,
     ) {
         match self {
-            Self::V0(v0) => v0.update_previous_quorums(
+            Self::V0(v0) => v0.set_previous_past_quorums(
                 previous_quorums,
                 last_active_core_height,
                 updated_at_core_height,
