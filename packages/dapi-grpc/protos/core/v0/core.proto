@@ -12,6 +12,7 @@ service Core {
   rpc getEstimatedTransactionFee (GetEstimatedTransactionFeeRequest) returns (GetEstimatedTransactionFeeResponse);
   rpc subscribeToBlockHeadersWithChainLocks (BlockHeadersWithChainLocksRequest) returns (stream BlockHeadersWithChainLocksResponse);
   rpc subscribeToTransactionsWithProofs (TransactionsWithProofsRequest) returns (stream TransactionsWithProofsResponse);
+  rpc subscribeToMasternodeList (MasternodeListRequest) returns (stream MasternodeListResponse);
 }
 
 message GetBlockchainStatusRequest {
@@ -194,4 +195,12 @@ message RawTransactions {
 
 message InstantSendLockMessages {
   repeated bytes messages = 1;
+}
+
+message MasternodeListRequest {
+
+}
+
+message MasternodeListResponse {
+  bytes masternode_list_diff = 1;
 }

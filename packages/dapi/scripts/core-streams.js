@@ -19,9 +19,12 @@ const {
 
 const {
   v0: {
+    MasternodeListRequest,
     TransactionsWithProofsRequest,
     BlockHeadersWithChainLocksRequest,
     pbjs: {
+      MasternodeListRequest: PBJSMasternodeListRequest,
+      MasternodeListResponse: PBJSMasternodeListResponse,
       TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
       TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
       BlockHeadersWithChainLocksRequest: PBJSBlockHeadersWithChainLocksRequest,
@@ -58,6 +61,8 @@ const subscribeToNewBlockHeaders = require('../lib/grpcServer/handlers/blockhead
 const subscribeToNewTransactions = require('../lib/transactionsFilter/subscribeToNewTransactions');
 const getHistoricalTransactionsIteratorFactory = require('../lib/transactionsFilter/getHistoricalTransactionsIteratorFactory');
 const getMemPoolTransactionsFactory = require('../lib/transactionsFilter/getMemPoolTransactionsFactory');
+const MasternodeListSync = require('../lib/MasternodeListSync');
+const subscribeToMasternodeListHandlerFactory = require('../lib/grpcServer/handlers/core/subscribeToMasternodeListHandlerFactory');
 
 async function main() {
   // Validate config
@@ -110,7 +115,7 @@ async function main() {
   );
 
   // TODO: check if we can receive this event before 'rawtx', and if we can,
-  // we need to test tx in this message first before emitng lock to the bloom
+  // we need to test tx in this message first before emitting lock to the bloom
   // filter collection
   // Send transaction instant locks via `subscribeToTransactionsWithProofs` stream
   dashCoreZmqClient.on(
@@ -125,7 +130,16 @@ async function main() {
     dashCoreZmqClient,
     blockHeadersCache,
   );
+
   await chainDataProvider.init();
+
+  const masternodeListSync = new MasternodeListSync(
+    dashCoreRpcClient,
+    chainDataProvider,
+    config.network,
+  );
+
+  await masternodeListSync.init();
 
   // Start GRPC server
   logger.info('Starting GRPC server');
@@ -187,11 +201,27 @@ async function main() {
     wrapInErrorHandler(subscribeToBlockHeadersWithChainLocksHandler),
   );
 
+  const subscribeToMasternodeListHandler = subscribeToMasternodeListHandlerFactory(
+    masternodeListSync,
+  );
+
+  const wrappedSubscribeToMasternodeListHandler = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      MasternodeListRequest,
+      PBJSMasternodeListRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSMasternodeListResponse,
+    ),
+    wrapInErrorHandler(subscribeToMasternodeListHandler),
+  );
+
   const grpcServer = createServer(
     getCoreDefinition(0),
     {
       subscribeToTransactionsWithProofs: wrappedSubscribeToTransactionsWithProofs,
       subscribeToBlockHeadersWithChainLocks: wrappedSubscribeToBlockHeadersWithChainLocks,
+      subscribeToMasternodeList: wrappedSubscribeToMasternodeListHandler,
     },
   );
 

@@ -19,24 +19,27 @@ Returns : Promise<EventEmitter>|!grpc.web.ClientReadableStream<!TransactionsWith
 Example :
 
 ```js
-const filter; // A BloomFilter object
+const { BloomFilter, Transaction, MerkleBlock } = require('@dashevo/dashcore-lib');
+
+const filter = BloomFilter.create(1, 0.001); // A BloomFilter object
 const stream = await client.subscribeToTransactionsWithProofs(filter, { fromBlockHeight: 0 });
 
 stream
       .on('data', (response) => {
-        const merkleBlock = response.getRawMerkleBlock();
-        const transactions = response.getRawTransactions();
+        const rawMerkleBlock = response.getRawMerkleBlock();
+        const rawTransactions = response.getRawTransactions();
 
         if (merkleBlock) {
-          const merkleBlockHex = Buffer.from(merkleBlock).toString('hex');
+          const merkleBlock = new MerkleBlock(rawMerkleBlock);
+          console.dir(merkleBlock);
         }
 
-        if (transactions) {
-          transactions.getTransactionsList()
-              .forEach((tx) => {
-                  // tx are probabilistic, so you will have to verify it's yours
-                  const tx = new Transaction(Buffer.from(tx));
-              });
+        if (transactions.length > 0) {
+          // tx are probabilistic, so you will have to verify it's yours
+          const transactions = transactions.getTransactionsList()
+              .map((tx) => new Transaction(Buffer.from(tx)));
+          
+          console.dir(transactions);
         }
       })
     .on('error', (err) => {

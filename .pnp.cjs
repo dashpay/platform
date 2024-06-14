@@ -252,10 +252,10 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "SOFT"\
       }],\
-      ["virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:7.23.3", {\
-        "packageLocation": "./.yarn/__virtual__/@babel-eslint-parser-virtual-fb9593e0e4/0/cache/@babel-eslint-parser-npm-7.23.3-4d4192b444-bc487f67aa.zip/node_modules/@babel/eslint-parser/",\
+      ["virtual:6c6296bde00603e266f7d80babe1e01aa0c19f626934f58fe08f890a291bb1a38fcee25bf30c24857d5cfba290f01209decc48384318fd6815c5a514cb48be25#npm:7.23.3", {\
+        "packageLocation": "./.yarn/__virtual__/@babel-eslint-parser-virtual-6366d88438/0/cache/@babel-eslint-parser-npm-7.23.3-4d4192b444-bc487f67aa.zip/node_modules/@babel/eslint-parser/",\
         "packageDependencies": [\
-          ["@babel/eslint-parser", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:7.23.3"],\
+          ["@babel/eslint-parser", "virtual:6c6296bde00603e266f7d80babe1e01aa0c19f626934f58fe08f890a291bb1a38fcee25bf30c24857d5cfba290f01209decc48384318fd6815c5a514cb48be25#npm:7.23.3"],\
           ["@babel/core", "npm:7.23.3"],\
           ["@nicolo-ribaudo/eslint-scope-5-internals", "npm:5.1.1-v1"],\
           ["@types/babel__core", null],\
@@ -2584,6 +2584,8 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./packages/dapi/",\
         "packageDependencies": [\
           ["@dashevo/dapi", "workspace:packages/dapi"],\
+          ["@babel/core", "npm:7.23.3"],\
+          ["@babel/eslint-parser", "virtual:6c6296bde00603e266f7d80babe1e01aa0c19f626934f58fe08f890a291bb1a38fcee25bf30c24857d5cfba290f01209decc48384318fd6815c5a514cb48be25#npm:7.23.3"],\
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
@@ -2979,6 +2981,7 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["semver", "npm:7.5.3"],\
+          ["setimmediate", "npm:1.0.5"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
@@ -8451,7 +8454,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["dashmate", "workspace:packages/dashmate"],\
           ["@babel/core", "npm:7.23.3"],\
-          ["@babel/eslint-parser", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:7.23.3"],\
+          ["@babel/eslint-parser", "virtual:6c6296bde00603e266f7d80babe1e01aa0c19f626934f58fe08f890a291bb1a38fcee25bf30c24857d5cfba290f01209decc48384318fd6815c5a514cb48be25#npm:7.23.3"],\
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dashcore-lib", "npm:0.21.1"],\
