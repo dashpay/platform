@@ -50,13 +50,13 @@ pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY: char = 'k';
 pub const RESOURCE_LOCK_VOTE_TREE_KEY_U8: u8 = b'l';
 
 /// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
-pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = b'k';
+pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = b'k'; // 107 decimal
 
 /// The finished info
-pub const RESOURCE_STORED_INFO_KEY: char = 'b';
+pub const RESOURCE_STORED_INFO_KEY: char = 'b'; // 62 hex 98 decimal
 
 /// The finished info
-pub const RESOURCE_STORED_INFO_KEY_U8: u8 = b'b'; //62
+pub const RESOURCE_STORED_INFO_KEY_U8: u8 = b'b'; // 62 hex 98 decimal
 
 /// The tree key for storage
 pub const VOTING_STORAGE_TREE_KEY: u8 = 1;
