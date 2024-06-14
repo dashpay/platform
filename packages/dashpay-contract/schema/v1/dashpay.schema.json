@@ -57,6 +57,12 @@
         "position": 4
       }
     },
+    "minProperties": 1,
+    "dependentRequired": {
+      "avatarUrl": ["avatarHash", "avatarFingerprint"],
+      "avatarHash": ["avatarUrl", "avatarFingerprint"],
+      "avatarFingerprint": ["avatarUrl", "avatarHash"]
+    },
     "required": [
       "$createdAt",
       "$updatedAt"
