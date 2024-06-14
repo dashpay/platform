@@ -146,12 +146,18 @@ where
                     .validator_sets()
                     .contains_key::<QuorumHash>(key)
             })
-            .map(|(key, _)| {
-                let quorum_info_result = self.core_rpc.get_quorum_info(
+            .map(|(key, details)| {
+                let mut quorum_info_result = self.core_rpc.get_quorum_info(
                     self.config.validator_set.quorum_type,
                     &key,
                     None,
                 )?;
+
+                // In case if current chain locked height so far in the past,
+                // long enough for a new quorum to be formed, quorum info (which is not
+                // based on chain locked height) will respond with altered quorum index,
+                // so we need to use quorum index from the deterministic `quorum listextended` response
+                quorum_info_result.quorum_index = details.quorum_index.unwrap_or(0);
 
                 Ok((key, quorum_info_result))
             })
@@ -171,10 +177,6 @@ where
         let new_validator_sets = quorum_infos
             .into_iter()
             .map(|(quorum_hash, info_result)| {
-                // TODO: There is a non-determinism here because quorum info is not based on core chain locked height
-                //  so you will might get different members and tenderdash will fail when you will try to update
-                //  validator set with different memebers.
-
                 let validator_set = ValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
                     info_result,
                     block_platform_state,
