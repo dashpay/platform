@@ -94,13 +94,14 @@ where
 
         // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 
-        let quorums = selected_quorums.next().ok_or_else(|| {
+        let probable_quorums = selected_quorums.next().ok_or_else(|| {
             Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "No quorums selected for chain lock signature verification for specified height",
             ))
         })?;
 
-        let Some((quorum_hash, quorum)) = quorums.choose_quorum(request_id.as_ref()) else {
+        let Some((quorum_hash, quorum)) = probable_quorums.choose_quorum(request_id.as_ref())
+        else {
             return Ok(None);
         };
 
