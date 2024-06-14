@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::signature_verification_quorums::SignatureVerificationQuorumsV0Methods;
 use std::collections::BTreeMap;
 
 use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
@@ -37,13 +38,15 @@ where
     ) -> Result<(), Error> {
         let _span = tracing::span!(Level::TRACE, "update_quorum_info", core_block_height).entered();
 
+        let last_committed_core_height = block_platform_state.last_committed_core_height();
+
         if start_from_scratch {
             tracing::debug!("update quorum info from scratch up to {core_block_height}");
-        } else if core_block_height != block_platform_state.last_committed_core_height() {
+        } else if core_block_height != last_committed_core_height {
             tracing::debug!(
-                previous_core_block_height = block_platform_state.last_committed_core_height(),
+                previous_core_block_height = last_committed_core_height,
                 "update quorum info from {} to {}",
-                block_platform_state.last_committed_core_height(),
+                last_committed_core_height,
                 core_block_height
             );
         } else {
@@ -173,26 +176,27 @@ where
         if validator_set_quorum_type == chain_lock_quorum_type {
             // Remove validator_sets entries that are no longer valid for the core block height
             if removed_a_validator_set || added_a_validator_set {
-                let chain_lock_validating_quorums = block_platform_state
+                let quorums = block_platform_state
                     .validator_sets()
                     .iter()
                     .map(|(quorum_hash, validator_set)| {
                         (*quorum_hash, validator_set.threshold_public_key().clone())
                     })
                     .collect();
-                let previous_quorums = block_platform_state
-                    .replace_chain_lock_validating_quorums(chain_lock_validating_quorums);
-                tracing::trace!("updated chain lock validating quorums to current validator set",);
-                // the only case where there will be no platform_state is init chain where we
+
+                tracing::trace!("updated chain lock validating quorums to current validator set");
+
                 if platform_state.is_some() {
-                    block_platform_state.set_previous_chain_lock_validating_quorums(
-                        block_platform_state.last_committed_core_height(),
-                        core_block_height,
-                        block_platform_state
-                            .previous_height_chain_lock_validating_quorums()
-                            .map(|(_, previous_change_height, _, _)| *previous_change_height),
-                        previous_quorums,
-                    );
+                    // we already have state, so we update last and previous quorums
+                    block_platform_state
+                        .chain_lock_validating_quorums_mut()
+                        .rotate_quorums(quorums, last_committed_core_height, core_block_height);
+                } else {
+                    // the only case where there will be no platform_state is init chain,
+                    // so there is no previous quorums to update
+                    block_platform_state
+                        .chain_lock_validating_quorums_mut()
+                        .set_current_quorums(quorums)
                 }
             }
         } else {
@@ -216,6 +220,7 @@ where
             // Remove chain_lock_validating_quorums entries that are no longer valid for the core block height
             block_platform_state
                 .chain_lock_validating_quorums_mut()
+                .current_quorums_mut()
                 .retain(|quorum_hash, _| {
                     let retain = chain_lock_quorums_list.contains_key::<QuorumHash>(quorum_hash);
                     if !retain {
@@ -237,6 +242,7 @@ where
                 .filter(|(key, _)| {
                     !block_platform_state
                         .chain_lock_validating_quorums()
+                        .current_quorums()
                         .contains_key::<QuorumHash>(key)
                 })
                 .map(|(key, _)| {
@@ -280,21 +286,22 @@ where
                 // Add new validator_sets entries
                 block_platform_state
                     .chain_lock_validating_quorums_mut()
+                    .current_quorums_mut()
                     .extend(new_chain_lock_quorums);
             }
 
             if added_a_chain_lock_validating_quorum || removed_a_chain_lock_validating_quorum {
                 if let Some(old_state) = platform_state {
                     let previous_chain_lock_validating_quorums =
-                        old_state.chain_lock_validating_quorums().clone();
-                    block_platform_state.set_previous_chain_lock_validating_quorums(
-                        block_platform_state.last_committed_core_height(),
-                        core_block_height,
-                        block_platform_state
-                            .previous_height_chain_lock_validating_quorums()
-                            .map(|(_, previous_change_height, _, _)| *previous_change_height),
-                        previous_chain_lock_validating_quorums,
-                    );
+                        old_state.chain_lock_validating_quorums().current_quorums();
+
+                    block_platform_state
+                        .chain_lock_validating_quorums_mut()
+                        .set_previous_past_quorums(
+                            previous_chain_lock_validating_quorums.clone(),
+                            last_committed_core_height,
+                            core_block_height,
+                        );
                 }
             }
         }

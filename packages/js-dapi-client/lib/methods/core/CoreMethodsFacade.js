@@ -1,16 +1,15 @@
 const broadcastTransactionFactory = require('./broadcastTransactionFactory');
-const generateToAddressFactory = require('./generateToAddressFactory');
 const getBestBlockHashFactory = require('./getBestBlockHashFactory');
 const getBestBlockHeightFactory = require('./getBestBlockHeightFactory');
 const getBlockByHashFactory = require('./getBlockByHashFactory');
 const getBlockByHeightFactory = require('./getBlockByHeightFactory');
 const getBlockHashFactory = require('./getBlockHashFactory');
-const getMnListDiffFactory = require('./getMnListDiffFactory');
 const getBlockchainStatusFactory = require('./getBlockchainStatusFactory');
 const getMasternodeStatusFactory = require('./getMasternodeStatusFactory');
 const getTransactionFactory = require('./getTransaction/getTransactionFactory');
 const subscribeToTransactionsWithProofsFactory = require('./subscribeToTransactionsWithProofsFactory');
 const subscribeToBlockHeadersWithChainLocksFactory = require('./subscribeToBlockHeadersWithChainLocksFactory');
+const subscribeToToMasternodeListFactory = require('./subscribeToMasternodeListFactory');
 
 class CoreMethodsFacade {
   /**
@@ -19,13 +18,11 @@ class CoreMethodsFacade {
    */
   constructor(jsonRpcTransport, grpcTransport) {
     this.broadcastTransaction = broadcastTransactionFactory(grpcTransport);
-    this.generateToAddress = generateToAddressFactory(jsonRpcTransport);
     this.getBestBlockHash = getBestBlockHashFactory(jsonRpcTransport);
     this.getBestBlockHeight = getBestBlockHeightFactory(grpcTransport);
     this.getBlockByHash = getBlockByHashFactory(grpcTransport);
     this.getBlockByHeight = getBlockByHeightFactory(grpcTransport);
     this.getBlockHash = getBlockHashFactory(jsonRpcTransport);
-    this.getMnListDiff = getMnListDiffFactory(jsonRpcTransport);
     this.getBlockchainStatus = getBlockchainStatusFactory(grpcTransport);
     this.getMasternodeStatus = getMasternodeStatusFactory(grpcTransport);
     this.getTransaction = getTransactionFactory(grpcTransport);
@@ -33,6 +30,9 @@ class CoreMethodsFacade {
       grpcTransport,
     );
     this.subscribeToBlockHeadersWithChainLocks = subscribeToBlockHeadersWithChainLocksFactory(
+      grpcTransport,
+    );
+    this.subscribeToMasternodeList = subscribeToToMasternodeListFactory(
       grpcTransport,
     );
   }

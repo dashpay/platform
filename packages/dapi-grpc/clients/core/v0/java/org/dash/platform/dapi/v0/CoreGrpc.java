@@ -294,6 +294,37 @@ public final class CoreGrpc {
     return getSubscribeToTransactionsWithProofsMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> getSubscribeToMasternodeListMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "subscribeToMasternodeList",
+      requestType = org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest.class,
+      responseType = org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> getSubscribeToMasternodeListMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest, org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> getSubscribeToMasternodeListMethod;
+    if ((getSubscribeToMasternodeListMethod = CoreGrpc.getSubscribeToMasternodeListMethod) == null) {
+      synchronized (CoreGrpc.class) {
+        if ((getSubscribeToMasternodeListMethod = CoreGrpc.getSubscribeToMasternodeListMethod) == null) {
+          CoreGrpc.getSubscribeToMasternodeListMethod = getSubscribeToMasternodeListMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest, org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "subscribeToMasternodeList"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("subscribeToMasternodeList"))
+              .build();
+        }
+      }
+    }
+    return getSubscribeToMasternodeListMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -405,6 +436,13 @@ public final class CoreGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSubscribeToTransactionsWithProofsMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void subscribeToMasternodeList(org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSubscribeToMasternodeListMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -470,6 +508,13 @@ public final class CoreGrpc {
                 org.dash.platform.dapi.v0.CoreOuterClass.TransactionsWithProofsRequest,
                 org.dash.platform.dapi.v0.CoreOuterClass.TransactionsWithProofsResponse>(
                   this, METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS)))
+          .addMethod(
+            getSubscribeToMasternodeListMethod(),
+            io.grpc.stub.ServerCalls.asyncServerStreamingCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest,
+                org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse>(
+                  this, METHODID_SUBSCRIBE_TO_MASTERNODE_LIST)))
           .build();
     }
   }
@@ -559,6 +604,14 @@ public final class CoreGrpc {
       io.grpc.stub.ClientCalls.asyncServerStreamingCall(
           getChannel().newCall(getSubscribeToTransactionsWithProofsMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void subscribeToMasternodeList(org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncServerStreamingCall(
+          getChannel().newCall(getSubscribeToMasternodeListMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -638,6 +691,14 @@ public final class CoreGrpc {
         org.dash.platform.dapi.v0.CoreOuterClass.TransactionsWithProofsRequest request) {
       return io.grpc.stub.ClientCalls.blockingServerStreamingCall(
           getChannel(), getSubscribeToTransactionsWithProofsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public java.util.Iterator<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> subscribeToMasternodeList(
+        org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest request) {
+      return io.grpc.stub.ClientCalls.blockingServerStreamingCall(
+          getChannel(), getSubscribeToMasternodeListMethod(), getCallOptions(), request);
     }
   }
 
@@ -721,6 +782,7 @@ public final class CoreGrpc {
   private static final int METHODID_GET_ESTIMATED_TRANSACTION_FEE = 6;
   private static final int METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS = 7;
   private static final int METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS = 8;
+  private static final int METHODID_SUBSCRIBE_TO_MASTERNODE_LIST = 9;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -774,6 +836,10 @@ public final class CoreGrpc {
         case METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS:
           serviceImpl.subscribeToTransactionsWithProofs((org.dash.platform.dapi.v0.CoreOuterClass.TransactionsWithProofsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.TransactionsWithProofsResponse>) responseObserver);
+          break;
+        case METHODID_SUBSCRIBE_TO_MASTERNODE_LIST:
+          serviceImpl.subscribeToMasternodeList((org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -845,6 +911,7 @@ public final class CoreGrpc {
               .addMethod(getGetEstimatedTransactionFeeMethod())
               .addMethod(getSubscribeToBlockHeadersWithChainLocksMethod())
               .addMethod(getSubscribeToTransactionsWithProofsMethod())
+              .addMethod(getSubscribeToMasternodeListMethod())
               .build();
         }
       }

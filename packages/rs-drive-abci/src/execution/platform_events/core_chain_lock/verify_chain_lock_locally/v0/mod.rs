@@ -9,8 +9,10 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 
+use crate::error::execution::ExecutionError;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::signature_verification_quorums::SignatureVerificationQuorumsV0Methods;
 use dpp::version::PlatformVersion;
 
 const CHAIN_LOCK_REQUEST_ID_PREFIX: &str = "clsig";
@@ -61,55 +63,9 @@ where
             return Ok(None); // the chain lock is too far in the future or the past to verify locally
         }
 
-        let (probable_quorums, second_to_check_quorums, should_be_verifiable) = if let Some((
-            previous_quorum_height,
-            change_quorum_height,
-            previous_quorums_change_height,
-            previous_quorums,
-        )) =
-            platform_state.previous_height_chain_lock_validating_quorums()
-        {
-            if chain_lock_height > 8 && verification_height >= *change_quorum_height {
-                // in this case we are sure that we should be targeting the current quorum
-                // We updated core chain lock height from 100 to 105, new chain lock comes in for block 114
-                //  ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height) ------ 106 (new chain lock verification height 114 - 8)
-                // We are sure that we should use current quorums
-                // If we have
-                //  ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height) ------ 105 (new chain lock verification height 113 - 8)
-                // We should also use current quorums, this is because at 105 we are sure new chain lock validating quorums are active
-                (platform_state.chain_lock_validating_quorums(), None, true)
-            } else if chain_lock_height > 8 && verification_height <= *previous_quorum_height {
-                let should_be_verifiable = previous_quorums_change_height
-                    .map(|previous_quorums_change_height| {
-                        verification_height > previous_quorums_change_height
-                    })
-                    .unwrap_or(false);
-                // In this case the quorums were changed recently meaning that we should use the previous quorums to verify the chain lock
-                // We updated core chain lock height from 100 to 105, new chain lock comes in for block 106
-                // -------- 98 (new chain lock verification height 106 - 8) ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height)
-                // We are sure that we should use previous quorums
-                // If we have
-                // -------- 100 (new chain lock verification height 108 - 8) ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height)
-                // We should also use previous quorums, this is because at 100 we are sure the old quorum set was active
-                (previous_quorums, None, should_be_verifiable)
-            } else {
-                let should_be_verifiable = previous_quorums_change_height
-                    .map(|previous_quorums_change_height| {
-                        verification_height > previous_quorums_change_height
-                    })
-                    .unwrap_or(false);
-                // we are in between, so we don't actually know if it was the old one or the new one to be used.
-                //  ------- 100 (previous_quorum_height) ------ 104 (new chain lock verification height 112 - 8) -------105 (change_quorum_height)
-                // we should just try both, starting with the current quorums
-                (
-                    platform_state.chain_lock_validating_quorums(),
-                    Some(previous_quorums),
-                    should_be_verifiable,
-                )
-            }
-        } else {
-            (platform_state.chain_lock_validating_quorums(), None, false)
-        };
+        let mut selected_quorum_sets = platform_state
+            .chain_lock_validating_quorums()
+            .select_quorums(chain_lock_height, verification_height);
 
         // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
         // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
@@ -130,6 +86,11 @@ where
         );
 
         // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
+        let probable_quorums = selected_quorum_sets.next().ok_or_else(|| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "at lest one set of quorums must be selected",
+            ))
+        })?;
 
         let quorum = Platform::<C>::choose_quorum(
             self.config.chain_lock_quorum_type(),
@@ -172,7 +133,7 @@ where
 
         if !chain_lock_verified {
             // We should also check the other quorum, as there could be the situation where the core height wasn't updated every block.
-            if let Some(second_to_check_quorums) = second_to_check_quorums {
+            if let Some(second_to_check_quorums) = selected_quorum_sets.next() {
                 let quorum = Platform::<C>::choose_quorum(
                     self.config.chain_lock_quorum_type(),
                     second_to_check_quorums,
@@ -215,7 +176,8 @@ where
                     );
                 }
             } else if platform_state
-                .previous_height_chain_lock_validating_quorums()
+                .chain_lock_validating_quorums()
+                .previous_past_quorums()
                 .is_none()
             {
                 // we don't have old quorums, this means our node is very new.
@@ -223,7 +185,7 @@ where
                     "we had no previous quorums locally, we should validate through core",
                 );
                 return Ok(None);
-            } else if !should_be_verifiable {
+            } else if !selected_quorum_sets.should_be_verifiable {
                 tracing::debug!(
                     "we were in a situation where it would be possible we didn't have all quorums and we couldn't verify locally, we should validate through core",
                 );

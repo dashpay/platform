@@ -3,7 +3,6 @@ const errorHandlerDecorator = require('./errorHandlerDecorator');
 
 const getBestBlockHash = require('./commands/getBestBlockHash');
 const getBlockHash = require('./commands/getBlockHash');
-const getMnListDiff = require('./commands/getMnListDiff');
 
 // Following commands are not implemented yet:
 // const getVersion = require('./commands/getVersion');
@@ -11,7 +10,6 @@ const getMnListDiff = require('./commands/getMnListDiff');
 const createCommands = (dashcoreAPI, coreZmqClient) => ({
   getBestBlockHash: getBestBlockHash(dashcoreAPI, coreZmqClient),
   getBlockHash: getBlockHash(dashcoreAPI),
-  getMnListDiff: getMnListDiff(dashcoreAPI),
 });
 
 /**
