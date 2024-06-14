@@ -71,7 +71,7 @@ where
 
                         let (restrict_to_only_fetch_contenders, mut other_contenders) = if contenders_with_no_votes.is_empty()
                         {
-                            (None, contenders_with_no_votes.into_iter().map(|contender| (TowardsIdentity(contender.identity_id), vec![])).collect())
+                            (None, BTreeMap::new())
                         } else {
                             // Collect all identity_ids from contenders_with_votes
                             let restrict_to_only_fetch_contenders = Some(
