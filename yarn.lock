@@ -1550,7 +1550,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.21.1"
-    "@dashevo/dashd-rpc": "npm:^18.3.0"
+    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#feat/add-descriptors"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
@@ -1642,13 +1642,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashd-rpc@npm:^18.3.0":
+"@dashevo/dashd-rpc@github:dashpay/dashd-rpc#feat/add-descriptors":
   version: 18.3.0
-  resolution: "@dashevo/dashd-rpc@npm:18.3.0"
+  resolution: "@dashevo/dashd-rpc@https://github.com/dashpay/dashd-rpc.git#commit=8aaa899d6f7bffb01b1deef2ef6981302e4b4034"
   dependencies:
     async: "npm:^3.2.4"
     bluebird: "npm:^3.7.2"
-  checksum: b83fbdb14940e18a6759dfb10313f8b6eaa1d11f584a6fd378c5d6bd1ae2f9519e59f6114b692e24b77d81c0b8b275f2c408fe3500144f1aadf5e6b270a76ff7
+  checksum: 877060fe5b769d5cb04fb9bc686a38b61c40c54c7736f0facf920fcd5f7c7e609a57439d6eba0471c978e1aa06e1e8fc5f67df2019317ce3c4c8dc5706e94596
   languageName: node
   linkType: hard
 
@@ -6316,7 +6316,7 @@ __metadata:
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.21.1"
-    "@dashevo/dashd-rpc": "npm:^18.3.0"
+    "@dashevo/dashd-rpc": "github:dashpay/dashd-rpc#feat/add-descriptors"
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/docker-compose": "npm:^0.24.4"
     "@dashevo/dpns-contract": "workspace:*"

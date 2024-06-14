@@ -14,20 +14,18 @@ fallbackfee=0.00001
 
 # JSON RPC
 server=1
-rpcbind=0.0.0.0
-rpcport={{=it.core.rpc.port}}
 rpcwallet=main
 deprecatedrpc=hpmn
-rpcworkqueue=96
-rpcthreads=12
-rpcwhitelistdefault=0
+rpcworkqueue=64
+rpcthreads=16
+#rpcwhitelistdefault=0
 rpcexternaluser={{= Object.entries(it.core.rpc.users).filter(([username, options]) => options.lowPriority).map(([username, options]) => username).join(',') }}
 {{~ Object.keys(it.core.rpc.users) :user}}
 {{ salt = it.crypto.randomBytes(16).toString('hex'); }}
 {{ hmac = it.crypto.createHmac('sha256', salt).update(it.core.rpc.users[user].password); }}
 rpcauth={{=user}}:{{=salt}}${{=hmac.digest('hex') }}
 {{? it.core.rpc.users[user].whitelist !== null }}
-rpcwhitelist={{=user}}:{{=it.core.rpc.users[user].whitelist.join(',')}}
+#rpcwhitelist={{=user}}:{{=it.core.rpc.users[user].whitelist.join(',')}}
 {{?}}
 {{~}}
 
@@ -103,4 +101,6 @@ addnode={{=seed.host}}:{{=seed.port}}{{~}}
 # network
 port={{=it.core.p2p.port}}
 bind=0.0.0.0
+rpcbind=0.0.0.0
+rpcport={{=it.core.rpc.port}}
 
