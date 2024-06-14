@@ -227,7 +227,7 @@ mod tests {
     };
     use dpp::data_contracts::dpns_contract;
     use dpp::document::document_methods::DocumentMethodsV0;
-    use dpp::document::DocumentV0Setters;
+    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 
     use dpp::identity::KeyType::ECDSA_SECP256K1;
@@ -246,7 +246,7 @@ mod tests {
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-    use dpp::state_transition::{StateTransition, StateTransitionLike};
+    use dpp::state_transition::{documents_batch_transition, StateTransition, StateTransitionLike};
     use dpp::tests::fixtures::{
         get_dashpay_contract_fixture, get_dpns_data_contract_fixture,
         instant_asset_lock_proof_fixture,
@@ -255,21 +255,31 @@ mod tests {
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
     use dpp::consensus::state::state_error::StateError;
+    use dpp::data_contract::config::{
+        DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
+        DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
+    };
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
     use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::document_type::DocumentType;
+    use dpp::data_contract::{DataContract, DataContractFactory, DataContractV0};
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
-    use dpp::platform_value::Bytes32;
+    use dpp::platform_value::{platform_value, Bytes32, Value};
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use dpp::system_data_contracts::dashpay_contract;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
+    use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+    use drive::query::DriveQuery;
     use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
     use rand::rngs::StdRng;
-    use rand::SeedableRng;
+    use rand::{random, SeedableRng};
+    use serde_json::json;
     use std::collections::BTreeMap;
 
     // This test needs to be redone with new contract bytes, but is still useful for debugging
@@ -1154,6 +1164,591 @@ mod tests {
             check_result.errors.first().expect("expected an error"),
             ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
         ));
+    }
+
+    #[test]
+    fn data_contract_update_with_system_required_fields_changed() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        platform
+            .drive
+            .create_initial_state_structure(Some(&transaction), platform_version)
+            .expect("expected to create state structure");
+
+        // Create identity
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([
+                158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
+                166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
+            ]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 100000000000,
+            revision: 0,
+        }
+        .into();
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        // Create original contract with required system fields
+
+        let factory = DataContractFactory::new(protocol_version).expect("failed to create factory");
+
+        let indices = platform_value!([
+            {
+                "name": "$createdAt",
+                "properties": [{"$createdAt": "asc"}],
+            },
+            {
+                "name": "$updatedAt",
+                "properties": [{"$updatedAt": "asc"}],
+            },
+            {
+                "name": "$transferredAt",
+                "properties": [{"$transferredAt": "asc"}],
+            },
+            {
+                "name": "$createdAtBlockHeight",
+                "properties": [{"$createdAtBlockHeight": "asc"}],
+            },
+            {
+                "name": "$updatedAtBlockHeight",
+                "properties": [{"$updatedAtBlockHeight": "asc"}],
+            },
+            {
+                "name": "$transferredAtBlockHeight",
+                "properties": [{"$transferredAtBlockHeight": "asc"}],
+            },
+            {
+                "name": "$createdAtCoreBlockHeight",
+                "properties": [{"$createdAtCoreBlockHeight": "asc"}],
+            },
+            {
+                "name": "$updatedAtCoreBlockHeight",
+                "properties": [{"$updatedAtCoreBlockHeight": "asc"}]
+            },
+            {
+                "name": "$transferredAtCoreBlockHeight",
+                "properties": [{"$transferredAtCoreBlockHeight": "asc"}]
+            }
+        ]);
+
+        let schema = platform_value!({
+            "test": {
+                "type": "object",
+                "indices": indices.clone(),
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "position": 0,
+                    },
+                },
+                "required": ["$createdAt", "$updatedAt", "$transferredAt", "$createdAtBlockHeight", "$updatedAtBlockHeight", "$transferredAtBlockHeight", "$createdAtCoreBlockHeight", "$updatedAtCoreBlockHeight", "$transferredAtCoreBlockHeight"],
+                "additionalProperties": false,
+            }
+        });
+
+        let created_contract = factory
+            .create(identity.id(), 1, schema, None, None)
+            .expect("failed to create data contract");
+
+        let contract = created_contract.data_contract().clone();
+        let mut create_contract_state_transition: StateTransition = created_contract
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        // Create a document
+
+        let origin_block = BlockInfo {
+            time_ms: 100,
+            height: 1,
+            core_height: 1,
+            epoch: Default::default(),
+        };
+
+        let document_data = platform_value!({
+            "name": "test1",
+        });
+
+        let document_type = contract
+            .document_type_for_name("test")
+            .expect("test document type must be present");
+
+        let entropy = random();
+
+        let original_document = document_type
+            .create_document_from_data(
+                document_data,
+                identity.id(),
+                origin_block.height,
+                origin_block.core_height,
+                entropy,
+                platform_version,
+            )
+            .expect("failed to create document");
+
+        let mut signer = SimpleSigner::default();
+        signer.add_key(key.clone(), private_key.clone());
+
+        let documents_batch_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                original_document.clone(),
+                document_type,
+                entropy,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expected a document batch transition");
+
+        let serialized_documents_batch_transition = documents_batch_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let document_processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized_documents_batch_transition],
+                &platform_state,
+                &origin_block,
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(document_processing_result.valid_count(), 1);
+
+        // Fetch document and compare
+
+        let mut fetched_documents = platform
+            .platform
+            .drive
+            .query_documents(
+                DriveQuery::any_item_query(&contract, document_type),
+                None,
+                false,
+                Some(&transaction),
+                Some(platform_version.protocol_version),
+            )
+            .expect("expected to fetch document")
+            .documents_owned();
+
+        assert_eq!(fetched_documents.len(), 1);
+
+        let fetched_document = fetched_documents.remove(0);
+
+        assert_eq!(
+            fetched_document.get("name").and_then(|v| v.as_str()),
+            Some("test1")
+        );
+
+        assert_eq!(fetched_document.created_at(), Some(origin_block.time_ms));
+        assert_eq!(
+            fetched_document.created_at_block_height(),
+            Some(origin_block.height)
+        );
+        assert_eq!(
+            fetched_document.created_at_core_block_height(),
+            Some(origin_block.core_height)
+        );
+        assert_eq!(fetched_document.updated_at(), Some(origin_block.time_ms));
+        assert_eq!(
+            fetched_document.updated_at_block_height(),
+            Some(origin_block.height)
+        );
+        assert_eq!(
+            fetched_document.updated_at_core_block_height(),
+            Some(origin_block.core_height)
+        );
+        // TODO: This is a bug. Transferred at should be set to None
+        assert_eq!(
+            fetched_document.transferred_at(),
+            Some(origin_block.time_ms)
+        );
+        assert_eq!(
+            fetched_document.transferred_at_block_height(),
+            Some(origin_block.height)
+        );
+        assert_eq!(
+            fetched_document.transferred_at_core_block_height(),
+            Some(origin_block.core_height)
+        );
+
+        // Update contract to make system fields optional
+
+        let mut updated_contract = contract.clone();
+
+        updated_contract.set_version(2);
+
+        let schema = platform_value!({
+            "type": "object",
+            "indices": indices,
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+        });
+
+        let updated_test_document_type = DocumentType::try_from_schema(
+            contract.id(),
+            "test",
+            schema,
+            None,
+            DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
+            DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
+            DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create document type");
+
+        updated_contract
+            .document_types_mut()
+            .insert("test".to_string(), updated_test_document_type.clone())
+            .expect("test document type must be present");
+
+        let mut update_contract_state_transition: StateTransition =
+            DataContractUpdateTransition::try_from_platform_versioned(
+                (updated_contract.clone(), 3),
+                platform_version,
+            )
+            .expect("expected a state transition")
+            .into();
+
+        update_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized_update = update_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let update_processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized_update],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(update_processing_result.valid_count(), 1);
+
+        // Fetch and compare existing document with updated contract
+
+        let mut fetched_documents = platform
+            .platform
+            .drive
+            .query_documents(
+                DriveQuery::any_item_query(&updated_contract, updated_test_document_type.as_ref()),
+                None,
+                false,
+                Some(&transaction),
+                Some(platform_version.protocol_version),
+            )
+            .expect("expected to fetch document")
+            .documents_owned();
+
+        assert_eq!(fetched_documents.len(), 1);
+
+        let fetched_document = fetched_documents.remove(0);
+
+        assert_eq!(
+            fetched_document.get("name").and_then(|v| v.as_str()),
+            Some("test1")
+        );
+
+        assert_eq!(fetched_document.created_at(), Some(origin_block.time_ms));
+        assert_eq!(
+            fetched_document.created_at_block_height(),
+            Some(origin_block.height)
+        );
+        assert_eq!(
+            fetched_document.created_at_core_block_height(),
+            Some(origin_block.core_height)
+        );
+        assert_eq!(fetched_document.updated_at(), Some(origin_block.time_ms));
+        assert_eq!(
+            fetched_document.updated_at_block_height(),
+            Some(origin_block.height)
+        );
+        assert_eq!(
+            fetched_document.updated_at_core_block_height(),
+            Some(origin_block.core_height)
+        );
+        assert_eq!(
+            fetched_document.transferred_at(),
+            Some(origin_block.time_ms)
+        );
+        assert_eq!(
+            fetched_document.transferred_at_block_height(),
+            Some(origin_block.height)
+        );
+        assert_eq!(
+            fetched_document.transferred_at_core_block_height(),
+            Some(origin_block.core_height)
+        );
+
+        // Update existing document created by previous contract
+        // with updated contract
+
+        let updated_document_block = BlockInfo {
+            time_ms: 200,
+            height: 2,
+            core_height: 2,
+            epoch: Default::default(),
+        };
+
+        let mut updated_document = fetched_document.clone();
+        updated_document.set("name", "test2".into());
+        updated_document
+            .increment_revision()
+            .expect("failed to increment revision");
+
+        let documents_batch_transition =
+            DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                updated_document.clone(),
+                updated_test_document_type.as_ref(),
+                &key,
+                4,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expected a document batch transition");
+
+        let serialized_documents_batch_transition = documents_batch_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let document_processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized_documents_batch_transition],
+                &platform_state,
+                &updated_document_block,
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(document_processing_result.valid_count(), 1);
+
+        // Fetch updated document with new contract and compare
+
+        let mut fetched_documents = platform
+            .platform
+            .drive
+            .query_documents(
+                DriveQuery::any_item_query(&updated_contract, updated_test_document_type.as_ref()),
+                None,
+                false,
+                Some(&transaction),
+                Some(platform_version.protocol_version),
+            )
+            .expect("expected to fetch document")
+            .documents_owned();
+
+        assert_eq!(fetched_documents.len(), 1);
+
+        let fetched_document = fetched_documents.remove(0);
+
+        assert_eq!(
+            fetched_document.get("name").and_then(|v| v.as_str()),
+            Some("test2")
+        );
+
+        assert_eq!(fetched_document.created_at(), Some(origin_block.time_ms));
+        assert_eq!(
+            fetched_document.created_at_block_height(),
+            Some(origin_block.height)
+        );
+        assert_eq!(
+            fetched_document.created_at_core_block_height(),
+            Some(origin_block.core_height)
+        );
+        assert_eq!(fetched_document.updated_at(), None);
+        assert_eq!(fetched_document.updated_at_block_height(), None);
+        assert_eq!(fetched_document.updated_at_core_block_height(), None);
+        assert_eq!(
+            fetched_document.transferred_at(),
+            Some(origin_block.time_ms)
+        );
+        assert_eq!(
+            fetched_document.transferred_at_block_height(),
+            Some(origin_block.height)
+        );
+        assert_eq!(
+            fetched_document.transferred_at_core_block_height(),
+            Some(origin_block.core_height)
+        );
+
+        // Create one more document for updated contract
+
+        let new_document_block = BlockInfo {
+            time_ms: 300,
+            height: 3,
+            core_height: 3,
+            epoch: Default::default(),
+        };
+
+        let document_data = platform_value!({
+            "name": "test3",
+        });
+
+        let document_type = updated_contract
+            .document_type_for_name("test")
+            .expect("test document type must be present");
+
+        let entropy = random();
+
+        let document = updated_test_document_type
+            .as_ref()
+            .create_document_from_data(
+                document_data,
+                identity.id(),
+                new_document_block.height,
+                new_document_block.core_height,
+                entropy,
+                platform_version,
+            )
+            .expect("failed to create document");
+
+        let documents_batch_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                document_type,
+                entropy,
+                &key,
+                5,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expected a document batch transition");
+
+        let serialized_documents_batch_transition = documents_batch_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let document_processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized_documents_batch_transition],
+                &platform_state,
+                &new_document_block,
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(document_processing_result.valid_count(), 1);
+
+        // Fetch new document and compare
+
+        let query = DriveQuery::from_sql_expr(
+            &format!("select * from test where $id == '{}'", document.id()),
+            &updated_contract,
+            None,
+        )
+        .expect("failed to create query");
+
+        let mut fetched_documents = platform
+            .platform
+            .drive
+            .query_documents(
+                query,
+                None,
+                false,
+                Some(&transaction),
+                Some(platform_version.protocol_version),
+            )
+            .expect("expected to fetch document")
+            .documents_owned();
+
+        assert_eq!(fetched_documents.len(), 1);
+
+        let fetched_document = fetched_documents.remove(0);
+
+        assert_eq!(
+            fetched_document.get("name").and_then(|v| v.as_str()),
+            Some("test3")
+        );
+
+        assert_eq!(fetched_document.created_at(), None);
+        assert_eq!(fetched_document.created_at_block_height(), None);
+        assert_eq!(fetched_document.created_at_core_block_height(), None);
+        assert_eq!(fetched_document.updated_at(), None);
+        assert_eq!(fetched_document.updated_at_block_height(), None);
+        assert_eq!(fetched_document.updated_at_core_block_height(), None);
+        assert_eq!(fetched_document.transferred_at(), None);
+        assert_eq!(fetched_document.transferred_at_block_height(), None);
+        assert_eq!(fetched_document.transferred_at_core_block_height(), None);
     }
 
     #[test]
