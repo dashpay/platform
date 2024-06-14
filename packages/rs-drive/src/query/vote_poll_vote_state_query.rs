@@ -224,7 +224,7 @@ impl ContestedDocumentVotePollDriveQuery {
     /// Resolves with a known contract provider
     pub fn resolve_with_known_contracts_provider<'a>(
         &self,
-        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+        known_contracts_provider_fn: &super::ContractLookupFn,
     ) -> Result<ResolvedContestedDocumentVotePollDriveQuery<'a>, Error> {
         let ContestedDocumentVotePollDriveQuery {
             vote_poll,
@@ -587,7 +587,7 @@ impl ContestedDocumentVotePollDriveQuery {
                                             ))));
                                     }
 
-                                    match identity_bytes.get(0) {
+                                    match identity_bytes.first() {
                                         Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
                                             locked_vote_tally = Some(sum_tree_value as u32);
                                         }

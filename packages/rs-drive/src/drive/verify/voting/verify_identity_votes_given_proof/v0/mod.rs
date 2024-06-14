@@ -1,14 +1,14 @@
 use crate::drive::verify::RootHash;
+use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
+use crate::query::ContractLookupFn;
 use dpp::bincode;
-use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::voting::votes::resource_vote::ResourceVote;
-use grovedb::reference_path::ReferencePathType;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -18,7 +18,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
     pub(super) fn verify_identity_votes_given_proof_v0(
         &self,
         proof: &[u8],
-        data_contract: &DataContract,
+        contract_lookup_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<Identifier, ResourceVote>), Error> {
         let path_query = self.construct_path_query()?;
@@ -32,7 +32,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                 let bincode_config = bincode::config::standard()
                     .with_big_endian()
                     .with_no_limit();
-                let reference: ReferencePathType =
+                let reference_storage_form: ContestedDocumentResourceVoteReferenceStorageForm =
                     bincode::decode_from_slice(&serialized_reference, bincode_config)
                         .map_err(|e| {
                             Error::Drive(DriveError::CorruptedSerialization(format!(
@@ -42,13 +42,20 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                             )))
                         })?
                         .0;
-                let absolute_path =
-                    reference.absolute_path(path.as_slice(), Some(key.as_slice()))?;
+                let absolute_path = reference_storage_form
+                    .reference_path_type
+                    .absolute_path(path.as_slice(), Some(key.as_slice()))?;
                 let vote_id = Identifier::from_vec(key)?;
                 let vote_storage_form =
                     ContestedDocumentResourceVoteStorageForm::try_from_tree_path(absolute_path)?;
+                let data_contract = contract_lookup_fn(&vote_storage_form.contract_id)?.ok_or(
+                    Error::Drive(DriveError::DataContractNotFound(format!(
+                        "data contract with id {} not found when verifying vote {}",
+                        vote_storage_form.contract_id, vote_id
+                    ))),
+                )?;
                 let resource_vote =
-                    vote_storage_form.resolve_with_contract(data_contract, platform_version)?;
+                    vote_storage_form.resolve_with_contract(&data_contract, platform_version)?;
                 Ok((vote_id, resource_vote))
             })
             .collect::<Result<BTreeMap<Identifier, ResourceVote>, Error>>()?;

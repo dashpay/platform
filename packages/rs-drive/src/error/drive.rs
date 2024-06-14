@@ -184,4 +184,8 @@ pub enum DriveError {
     /// Error
     #[error("prefunded specialized balance does not have enough credits: we have {0}, we want to deduct {1}")]
     PrefundedSpecializedBalanceNotEnough(Credits, Credits),
+
+    /// Data Contract not found
+    #[error("data contract not found: {0}")]
+    DataContractNotFound(String),
 }

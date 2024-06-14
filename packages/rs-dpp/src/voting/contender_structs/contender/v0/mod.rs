@@ -2,12 +2,9 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::Document;
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
-use crate::prelude::ConsensusValidationResult;
-use crate::serialization::PlatformSerializable;
-use crate::voting::contender_structs::ContenderWithSerializedDocument;
 use crate::ProtocolError;
 use platform_value::Identifier;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
 
 /// Represents a contender in the contested document vote poll.
 ///

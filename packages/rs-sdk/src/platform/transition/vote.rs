@@ -1,17 +1,17 @@
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
+use crate::platform::query::VoteQuery;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
-
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
-use crate::platform::transition::put_settings::PutSettings;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use drive::drive::Drive;
 use rs_dapi_client::DapiRequest;
@@ -85,6 +85,9 @@ impl<S: Signer> PutVote<S> for Vote {
 
         let settings = settings.unwrap_or_default();
 
+        let Vote::ResourceVote(resource_vote) = self;
+        let vote_poll_id = resource_vote.vote_poll().unique_id()?;
+
         let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
             self.clone(),
             signer,
@@ -103,16 +106,18 @@ impl<S: Signer> PutVote<S> for Vote {
             //todo make this more reliable
             Err(e) => {
                 if e.to_string().contains("already exists") {
-                    let vote = Vote::fetch(sdk, voter_pro_tx_hash).await?;
+                    let vote =
+                        Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id)).await?;
                     return vote.ok_or(Error::DapiClientError(
                         "vote was proved to not exist but was said to exist".to_string(),
                     ));
+                } else {
+                    return Err(e.into());
                 }
             }
         }
 
         let request = masternode_vote_transition.wait_for_state_transition_result_request()?;
-
         let response = request.execute(sdk, settings.request_settings).await?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;

@@ -1772,6 +1772,10 @@ mod tests {
 
         mod identity_given_votes_query {
             use super::*;
+            use drive::query::{
+                contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery,
+                contract_lookup_fn_for_contract,
+            };
 
             fn get_identity_given_votes(
                 platform: &TempPlatform<MockCoreRPCLike>,
@@ -1916,7 +1920,7 @@ mod tests {
                 query
                     .verify_identity_votes_given_proof(
                         proof.grovedb_proof.as_slice(),
-                        contract,
+                        &contract_lookup_fn_for_contract(Arc::new(contract.to_owned())),
                         platform_version,
                     )
                     .expect("expected to verify proof")

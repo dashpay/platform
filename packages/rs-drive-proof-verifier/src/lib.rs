@@ -13,3 +13,8 @@ pub use proof::FromProof;
 pub use provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use provider::MockContextProvider;
+pub mod from_request;
+
+// Needed for #[derive(PlatformSerialize, PlatformDeserialize)]
+#[cfg(feature = "mocks")]
+use dpp::serialization;

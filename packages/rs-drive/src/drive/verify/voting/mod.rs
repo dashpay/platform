@@ -1,3 +1,5 @@
+//! Voting verification
+
 mod verify_contests_proof;
 mod verify_identity_votes_given_proof;
 mod verify_masternode_vote;

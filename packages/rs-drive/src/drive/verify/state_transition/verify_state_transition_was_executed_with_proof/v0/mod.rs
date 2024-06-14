@@ -1,5 +1,4 @@
-use std::collections::{BTreeMap};
-use std::sync::Arc;
+use std::collections::BTreeMap;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -10,7 +9,6 @@ use dpp::document::property_names::PRICE;
 use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -43,7 +41,7 @@ use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
 use crate::error::Error;
 use crate::error::proof::ProofError;
-use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
+use crate::query::{ContractLookupFn, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 
 impl Drive {
     #[inline(always)]
@@ -51,7 +49,7 @@ impl Drive {
         state_transition: &StateTransition,
         block_info: &BlockInfo,
         proof: &[u8],
-        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+        known_contracts_provider_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofResult), Error> {
         match state_transition {

@@ -44,6 +44,7 @@ impl MasternodeProtocolVoteEx<ProTxHash> for MasternodeProtocolVote {
             LimitQuery {
                 query: start_protxhash,
                 limit,
+                start_info: None,
             },
         )
         .await

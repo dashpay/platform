@@ -21,17 +21,8 @@ pub trait ExtendedEpochInfoEx: Sized {
 #[async_trait]
 impl ExtendedEpochInfoEx for ExtendedEpochInfo {
     async fn fetch_current(sdk: &Sdk) -> Result<Self, Error> {
-        let query = LimitQuery {
-            query: EpochQuery {
-                start: None,
-                ascending: false,
-            },
-            limit: Some(1),
-        };
-
-        let epoch = Self::fetch(sdk, query).await?;
-
-        epoch.ok_or(Error::EpochNotFound)
+        let (epoch, _) = Self::fetch_current_with_metadata(sdk).await?;
+        Ok(epoch)
     }
 
     async fn fetch_current_with_metadata(sdk: &Sdk) -> Result<(Self, ResponseMetadata), Error> {
@@ -41,6 +32,7 @@ impl ExtendedEpochInfoEx for ExtendedEpochInfo {
                 ascending: false,
             },
             limit: Some(1),
+            start_info: None,
         };
 
         let (epoch, metadata) = Self::fetch_with_metadata(sdk, query, None).await?;

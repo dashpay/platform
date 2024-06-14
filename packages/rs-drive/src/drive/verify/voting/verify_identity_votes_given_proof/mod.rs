@@ -2,8 +2,8 @@ mod v0;
 
 use crate::drive::verify::RootHash;
 use crate::error::drive::DriveError;
+use crate::query::ContractLookupFn;
 use dpp::identifier::Identifier;
-use dpp::prelude::DataContract;
 use std::collections::BTreeMap;
 
 use crate::error::Error;
@@ -20,7 +20,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
     /// # Arguments
     ///
     /// * `proof` - A byte slice representing the serialized proof to be verified.
-    /// * `data_contract` - A reference to the data contract relevant to the proof.
+    /// * `contract_lookup_fn` - Function that retrieves data contract based on its identifier.
     /// * `platform_version` - A reference to the platform version to be used for verification.
     ///
     /// # Returns
@@ -37,7 +37,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
     pub fn verify_identity_votes_given_proof(
         &self,
         proof: &[u8],
-        data_contract: &DataContract,
+        contract_lookup_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<Identifier, ResourceVote>), Error> {
         match platform_version
@@ -47,7 +47,11 @@ impl ContestedResourceVotesGivenByIdentityQuery {
             .voting
             .verify_identity_votes_given_proof
         {
-            0 => self.verify_identity_votes_given_proof_v0(proof, data_contract, platform_version),
+            0 => self.verify_identity_votes_given_proof_v0(
+                proof,
+                contract_lookup_fn,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_identity_votes_given_proof".to_string(),
                 known_versions: vec![0],

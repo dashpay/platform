@@ -1308,9 +1308,9 @@ dependencies = [
 name = "dash-sdk"
 version = "1.0.0-dev.15"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "base64 0.22.1",
- "bincode 2.0.0-rc.3",
  "bip37-bloom-filter",
  "ciborium",
  "clap 4.5.7",
@@ -1328,6 +1328,7 @@ dependencies = [
  "hex",
  "http 0.2.12",
  "lru",
+ "pollster",
  "rs-dapi-client",
  "sanitize-filename",
  "serde",
@@ -1705,10 +1706,14 @@ dependencies = [
 name = "drive-proof-verifier"
 version = "1.0.0-dev.15"
 dependencies = [
+ "bincode 2.0.0-rc.3",
  "dapi-grpc",
+ "derive_more",
  "dpp",
  "drive",
  "hex",
+ "platform-serialization",
+ "platform-serialization-derive",
  "serde",
  "serde_json",
  "tenderdash-abci",
@@ -3814,6 +3819,12 @@ dependencies = [
  "pin-project-lite",
  "windows-sys 0.48.0",
 ]
+
+[[package]]
+name = "pollster"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22686f4785f02a4fcc856d3b3bb19bf6c8160d103f7a99cc258bddd0251dc7f2"
 
 [[package]]
 name = "portable-atomic"

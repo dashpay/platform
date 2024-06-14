@@ -1,3 +1,4 @@
+use super::ContractLookupFn;
 use crate::drive::object_size_info::DataContractResolvedInfo;
 use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
 #[cfg(feature = "server")]
@@ -29,7 +30,6 @@ use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
 use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
-use std::sync::Arc;
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone)]
@@ -140,7 +140,7 @@ impl VotePollsByDocumentTypeQuery {
     /// Resolves with a known contract provider
     pub fn resolve_with_known_contracts_provider(
         &self,
-        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
+        known_contracts_provider_fn: &ContractLookupFn,
     ) -> Result<ResolvedVotePollsByDocumentTypeQuery, Error> {
         let VotePollsByDocumentTypeQuery {
             contract_id,
@@ -293,14 +293,14 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), Error> {
         let document_type = self.document_type()?;
-        let mut properties_iter = index.properties.iter();
+        let properties_iter = index.properties.iter();
         let mut start_values_iter = self.start_index_values.iter();
         let mut end_values_iter = self.end_index_values.iter();
         let mut start_values_vec = vec![];
         let mut end_values_vec = vec![];
         let mut ended_start_values = false;
         let mut started_end_values = false;
-        while let Some(index_property) = properties_iter.next() {
+        for index_property in properties_iter {
             if !ended_start_values {
                 if let Some(start_value) = start_values_iter.next() {
                     let encoded = document_type.serialize_value_for_key(

@@ -3,7 +3,6 @@ use crate::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use crate::drive::Drive;
 #[cfg(feature = "server")]
 use crate::error::drive::DriveError;
-#[cfg(feature = "server")]
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fee::op::LowLevelDriveOperation;
