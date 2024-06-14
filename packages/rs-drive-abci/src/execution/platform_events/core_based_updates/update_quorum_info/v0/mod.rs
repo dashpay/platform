@@ -405,7 +405,7 @@ where
                 let previous_validating_quorums =
                     old_state.chain_lock_validating_quorums().current_quorums();
 
-                quorum_set.update_previous_quorums(
+                quorum_set.set_previous_past_quorums(
                     previous_validating_quorums.clone(),
                     last_committed_core_height,
                     next_core_height,

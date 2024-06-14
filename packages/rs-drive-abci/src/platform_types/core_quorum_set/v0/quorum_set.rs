@@ -10,7 +10,7 @@ pub const SIGN_OFFSET: u32 = 8;
 
 /// Previously obtained quorums and heights. Required for signature verification
 #[derive(Debug, Clone)]
-pub(super) struct PreviousQuorumsV0 {
+pub(super) struct PreviousPastQuorumsV0 {
     pub(super) quorums: Quorums<VerificationQuorum>,
 
     /// The core height at which these quorums were last active
@@ -35,7 +35,7 @@ pub struct CoreQuorumSetV0 {
     /// The slightly old quorums used for validating ch ain locks (or instant locks), it's important to keep
     /// these because validation of signatures happens for the quorums that are 8 blocks before the
     /// height written in the chain lock. The same for instant locks
-    pub(super) previous: Option<PreviousQuorumsV0>,
+    pub(super) previous: Option<PreviousPastQuorumsV0>,
 }
 
 /// The trait defines methods for the signature verification quorums structure v0
@@ -53,7 +53,7 @@ pub trait CoreQuorumSetV0Methods {
     fn current_quorums_mut(&mut self) -> &mut Quorums<VerificationQuorum>;
 
     /// Has previous quorums?
-    fn has_previous_quorums(&self) -> bool;
+    fn has_previous_past_quorums(&self) -> bool;
 
     /// Set last quorums keys and update previous quorums
     fn replace_quorums(
@@ -64,7 +64,7 @@ pub trait CoreQuorumSetV0Methods {
     );
 
     /// Update previous quorums
-    fn update_previous_quorums(
+    fn set_previous_past_quorums(
         &mut self,
         previous_quorums: Quorums<VerificationQuorum>,
         last_active_core_height: u32,
@@ -166,7 +166,7 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
         &mut self.current_quorums
     }
 
-    fn has_previous_quorums(&self) -> bool {
+    fn has_previous_past_quorums(&self) -> bool {
         self.previous.is_some()
     }
 
@@ -178,16 +178,20 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
     ) {
         let previous_quorums = std::mem::replace(&mut self.current_quorums, quorums);
 
-        self.update_previous_quorums(previous_quorums, last_active_height, updated_at_core_height);
+        self.set_previous_past_quorums(
+            previous_quorums,
+            last_active_height,
+            updated_at_core_height,
+        );
     }
 
-    fn update_previous_quorums(
+    fn set_previous_past_quorums(
         &mut self,
         previous_quorums: Quorums<VerificationQuorum>,
         last_active_core_height: u32,
         updated_at_core_height: u32,
     ) {
-        self.previous = Some(PreviousQuorumsV0 {
+        self.previous = Some(PreviousPastQuorumsV0 {
             quorums: previous_quorums,
             active_core_height: last_active_core_height,
             updated_at_core_height,

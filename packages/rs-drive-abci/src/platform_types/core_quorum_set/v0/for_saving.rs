@@ -1,4 +1,4 @@
-use crate::platform_types::core_quorum_set::v0::quorum_set::{PreviousQuorumsV0, QuorumConfig};
+use crate::platform_types::core_quorum_set::v0::quorum_set::{PreviousPastQuorumsV0, QuorumConfig};
 use crate::platform_types::core_quorum_set::{
     CoreQuorumSetForSaving, CoreQuorumSetV0, Quorums, ThresholdBlsPublicKey, VerificationQuorum,
 };
@@ -15,7 +15,7 @@ pub struct CoreQuorumSetForSavingV0 {
 
     current_quorums: Vec<QuorumForSavingV0>,
 
-    previous_quorums: Option<PreviousQuorumsForSavingV0>,
+    previous_quorums: Option<PreviousPastQuorumsForSavingV0>,
 }
 
 impl From<CoreQuorumSetForSavingV0> for CoreQuorumSetForSaving {
@@ -87,16 +87,16 @@ impl From<QuorumConfigForSavingV0> for QuorumConfig {
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct PreviousQuorumsForSavingV0 {
+pub struct PreviousPastQuorumsForSavingV0 {
     quorums: Vec<QuorumForSavingV0>,
     active_core_height: u32,
     updated_at_core_height: u32,
     previous_change_height: Option<u32>,
 }
 
-impl From<PreviousQuorumsV0> for PreviousQuorumsForSavingV0 {
-    fn from(value: PreviousQuorumsV0) -> Self {
-        let PreviousQuorumsV0 {
+impl From<PreviousPastQuorumsV0> for PreviousPastQuorumsForSavingV0 {
+    fn from(value: PreviousPastQuorumsV0) -> Self {
+        let PreviousPastQuorumsV0 {
             quorums,
             active_core_height,
             updated_at_core_height,
@@ -112,9 +112,9 @@ impl From<PreviousQuorumsV0> for PreviousQuorumsForSavingV0 {
     }
 }
 
-impl From<PreviousQuorumsForSavingV0> for PreviousQuorumsV0 {
-    fn from(value: PreviousQuorumsForSavingV0) -> Self {
-        let PreviousQuorumsForSavingV0 {
+impl From<PreviousPastQuorumsForSavingV0> for PreviousPastQuorumsV0 {
+    fn from(value: PreviousPastQuorumsForSavingV0) -> Self {
+        let PreviousPastQuorumsForSavingV0 {
             quorums,
             active_core_height,
             updated_at_core_height,
@@ -152,6 +152,7 @@ impl From<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
     fn into(self) -> Vec<QuorumForSavingV0> {
         self.into_iter()

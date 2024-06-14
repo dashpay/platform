@@ -64,9 +64,9 @@ impl CoreQuorumSetV0Methods for CoreQuorumSet {
         }
     }
 
-    fn has_previous_quorums(&self) -> bool {
+    fn has_previous_past_quorums(&self) -> bool {
         match self {
-            Self::V0(v0) => v0.has_previous_quorums(),
+            Self::V0(v0) => v0.has_previous_past_quorums(),
         }
     }
 
@@ -83,14 +83,14 @@ impl CoreQuorumSetV0Methods for CoreQuorumSet {
         }
     }
 
-    fn update_previous_quorums(
+    fn set_previous_past_quorums(
         &mut self,
         previous_quorums: Quorums<VerificationQuorum>,
         last_active_core_height: u32,
         updated_at_core_height: u32,
     ) {
         match self {
-            Self::V0(v0) => v0.update_previous_quorums(
+            Self::V0(v0) => v0.set_previous_past_quorums(
                 previous_quorums,
                 last_active_core_height,
                 updated_at_core_height,

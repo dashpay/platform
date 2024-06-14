@@ -183,7 +183,7 @@ where
                 }
             } else if !platform_state
                 .chain_lock_validating_quorums()
-                .has_previous_quorums()
+                .has_previous_past_quorums()
             {
                 // we don't have old quorums, this means our node is very new.
                 tracing::debug!(
