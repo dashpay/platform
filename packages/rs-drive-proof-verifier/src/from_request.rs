@@ -58,7 +58,6 @@ impl TryFromRequest<get_contested_resource_vote_state_request_v0::ResultType>
         Ok(match grpc_request {
             GrpcResultType::Documents => DriveResultType::Documents,
             GrpcResultType::DocumentsAndVoteTally => DriveResultType::DocumentsAndVoteTally,
-            GrpcResultType::IdentityIdsOnly => DriveResultType::IdentityIdsOnly,
             GrpcResultType::VoteTally => DriveResultType::VoteTally,
         })
     }
@@ -71,7 +70,6 @@ impl TryFromRequest<get_contested_resource_vote_state_request_v0::ResultType>
         Ok(match self {
             DriveResultType::Documents => GrpcResultType::Documents,
             DriveResultType::DocumentsAndVoteTally => GrpcResultType::DocumentsAndVoteTally,
-            DriveResultType::IdentityIdsOnly => GrpcResultType::IdentityIdsOnly,
             DriveResultType::VoteTally => GrpcResultType::VoteTally,
         })
     }
@@ -99,9 +97,6 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
                         }
                         get_contested_resource_vote_state_request_v0::ResultType::DocumentsAndVoteTally => {
                             ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally
-                        }
-                        get_contested_resource_vote_state_request_v0::ResultType::IdentityIdsOnly => {
-                            ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly
                         }
                         get_contested_resource_vote_state_request_v0::ResultType::VoteTally => {
                             ContestedDocumentVotePollDriveQueryResultType::VoteTally
@@ -151,7 +146,6 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
                 ContestedDocumentVotePollDriveQueryResultType::Documents => GrpcResultType::Documents.into(),
                 ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => GrpcResultType::DocumentsAndVoteTally.into(),
                 ContestedDocumentVotePollDriveQueryResultType::VoteTally => GrpcResultType::VoteTally.into(),
-                ContestedDocumentVotePollDriveQueryResultType::IdentityIdsOnly => GrpcResultType::IdentityIdsOnly.into(),
             },
             start_at_identifier_info,
             allow_include_locked_and_abstaining_vote_tally: self.allow_include_locked_and_abstaining_vote_tally,
