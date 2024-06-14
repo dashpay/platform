@@ -125,6 +125,7 @@
     },
     "required": [
       "$createdAt",
+      "$updatedAt",
       "label",
       "normalizedLabel",
       "normalizedParentDomainName",
