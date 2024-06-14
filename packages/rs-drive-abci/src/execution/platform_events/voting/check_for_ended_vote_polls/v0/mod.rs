@@ -6,6 +6,7 @@ use dpp::document::DocumentV0Getters;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
@@ -66,31 +67,26 @@ where
                             .sorted_by(|a, b| Ord::cmp(&b.final_vote_tally, &a.final_vote_tally))
                             .collect();
 
-                        let restrict_to_only_fetch_contenders = if sorted_contenders
-                            .last()
-                            .map(|last| last.final_vote_tally > 0)
-                            .unwrap_or_default()
+                        let (contenders_with_votes, contenders_with_no_votes) : (Vec<_>, Vec<_>) = sorted_contenders.iter().partition(|a| a.final_vote_tally > 0);
+
+                        let (restrict_to_only_fetch_contenders, mut other_contenders) = if contenders_with_no_votes.is_empty()
                         {
-                            None
+                            (None, BTreeMap::new())
                         } else {
-                            // We only take the first 100
-                            Some(
-                                sorted_contenders
+                            // Collect all identity_ids from contenders_with_votes
+                            let restrict_to_only_fetch_contenders = Some(
+                                contenders_with_votes
                                     .iter()
-                                    .take(100)
-                                    .filter_map(|contender| {
-                                        if contender.final_vote_tally > 0 {
-                                            Some(contender.identity_id)
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect(),
-                            )
+                                    .map(|contender| contender.identity_id)
+                                    .collect::<Vec<_>>(),
+                            );
+
+                            // Other contenders are only those with no votes
+                            (restrict_to_only_fetch_contenders, contenders_with_no_votes.into_iter().map(|contender| (TowardsIdentity(contender.identity_id), vec![])).collect())
                         };
 
                         // We need to get the votes of the sorted contenders
-                        let identifiers_voting_for_contenders =
+                        let mut identifiers_voting_for_contenders =
                             self.drive.fetch_identities_voting_for_contenders(
                                 &resolved_contested_document_resource_vote_poll,
                                 restrict_to_only_fetch_contenders,
@@ -98,6 +94,8 @@ where
                                 transaction,
                                 platform_version,
                             )?;
+
+                        identifiers_voting_for_contenders.append(&mut other_contenders);
 
                         let highest_vote_tally = sorted_contenders
                             .first()
