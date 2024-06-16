@@ -7,11 +7,12 @@ use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error
 #[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::data_contract::{
-    DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
-    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    ContestedUniqueIndexOnMutableDocumentTypeError, DataContractHaveNewUniqueIndexError,
+    DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
+    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
@@ -375,6 +376,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     IncompatibleDocumentTypeSchemaError(IncompatibleDocumentTypeSchemaError),
+
+    #[error(transparent)]
+    ContestedUniqueIndexOnMutableDocumentTypeError(ContestedUniqueIndexOnMutableDocumentTypeError),
 
     #[error(transparent)]
     OverflowError(OverflowError),
