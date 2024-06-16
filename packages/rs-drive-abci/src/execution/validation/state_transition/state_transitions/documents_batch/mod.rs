@@ -735,7 +735,7 @@ mod tests {
                                 index_name: "parentNameAndLabel".to_string(),
                                 index_values: vec![dash_encoded, quantum_encoded],
                                 result_type: ResultType::DocumentsAndVoteTally as i32,
-                                allow_include_locked_and_abstaining_vote_tally: false,
+                                allow_include_locked_and_abstaining_vote_tally: true,
                                 start_at_identifier_info: None,
                                 count: None,
                                 prove: true,
