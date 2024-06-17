@@ -88,7 +88,6 @@
             "contentMediaType": "application/x.dash.dpp.identifier",
             "description": "Identity ID to be used to create the primary name the Identity",
             "$comment": "Must be equal to the document owner"
-
           },
           "dashAliasIdentityId": {
             "type": "array",
