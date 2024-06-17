@@ -962,7 +962,11 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 validate_not_defined_properties: 0,
                 validate_property_definition: 0,
             },
-            document_type: DocumentTypeValidationVersions { validate_update: 0 },
+            document_type: DocumentTypeValidationVersions {
+                validate_update: 0,
+                contested_index_limit: 100,
+                unique_index_limit: 100,
+            },
             voting: VotingValidationVersions {
                 allow_other_contenders_time_ms: 604_800_000, // 1 week in ms
                 votes_allowed_per_masternode: 5,
