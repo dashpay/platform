@@ -7,7 +7,7 @@ edition = "2021"
 default = ["mocks", "offline-testing"]
 mocks = ["dep:sha2", "dep:hex", "dapi-grpc/mocks"]
 # dump requests and responses to file
-dump = ["mocks", "dep:chrono"]
+dump = ["mocks"]
 # skip tests that require connection to the platform; enabled by default
 offline-testing = []
 
@@ -22,7 +22,6 @@ thiserror = "1.0.58"
 tracing = "0.1.40"
 tokio = { version = "1.32.0", default-features = false }
 sha2 = { version = "0.10", optional = true }
-chrono = { version = "0.4.31", optional = true }
 hex = { version = "0.4.3", optional = true }
 lru = { version = "0.12.3" }
 
