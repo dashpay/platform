@@ -88,6 +88,8 @@ pub struct VotingValidationVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeValidationVersions {
     pub validate_update: FeatureVersion,
+    pub unique_index_limit: u16,
+    pub contested_index_limit: u16,
 }
 
 #[derive(Clone, Debug, Default)]

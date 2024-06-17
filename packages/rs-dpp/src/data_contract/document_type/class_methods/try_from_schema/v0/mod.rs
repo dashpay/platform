@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
+use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
 #[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
@@ -51,8 +52,6 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
-
-const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
 const SYSTEM_PROPERTIES: [&str; 11] = [
@@ -307,6 +306,9 @@ impl DocumentTypeV0 {
         #[cfg(feature = "validation")]
         let mut unique_indices_count = 0;
 
+        #[cfg(feature = "validation")]
+        let mut contested_indices_count = 0;
+
         let indices: BTreeMap<String, Index> = index_values
             .map(|index_values| {
                 index_values
@@ -332,11 +334,56 @@ impl DocumentTypeV0 {
                             // so we need to limit their number to prevent of spikes and DoS attacks
                             if index.unique {
                                 unique_indices_count += 1;
-                                if unique_indices_count > UNIQUE_INDEX_LIMIT_V0 {
+                                if unique_indices_count
+                                    > platform_version
+                                        .dpp
+                                        .validation
+                                        .document_type
+                                        .unique_index_limit
+                                {
                                     return Err(ProtocolError::ConsensusError(Box::new(
                                         UniqueIndicesLimitReachedError::new(
                                             name.to_string(),
-                                            UNIQUE_INDEX_LIMIT_V0,
+                                            platform_version
+                                                .dpp
+                                                .validation
+                                                .document_type
+                                                .unique_index_limit,
+                                            false,
+                                        )
+                                        .into(),
+                                    )));
+                                }
+                            }
+
+                            if index.contested_index.is_some() {
+                                contested_indices_count += 1;
+                                if contested_indices_count
+                                    > platform_version
+                                        .dpp
+                                        .validation
+                                        .document_type
+                                        .contested_index_limit
+                                {
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        UniqueIndicesLimitReachedError::new(
+                                            name.to_string(),
+                                            platform_version
+                                                .dpp
+                                                .validation
+                                                .document_type
+                                                .contested_index_limit,
+                                            true,
+                                        )
+                                        .into(),
+                                    )));
+                                }
+
+                                if documents_mutable {
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        ContestedUniqueIndexOnMutableDocumentTypeError::new(
+                                            name.to_string(),
+                                            index.name,
                                         )
                                         .into(),
                                     )));
