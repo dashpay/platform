@@ -61,7 +61,7 @@ use dpp::consensus::state::data_trigger::DataTriggerError::{
     DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
-use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
+use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
 use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
@@ -159,6 +159,9 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
         DPPConsensusError::DefaultError => JsError::new("DefaultError").into(),
+        #[cfg(test)]
+        #[allow(unreachable_patterns)]
+        e => JsError::new(&format!("unsupported error: {:?}", e)).into(),
     }
 }
 
@@ -518,6 +521,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             generic_consensus_error!(DocumentCreationNotAllowedError, e).into()
         }
         BasicError::OverflowError(e) => generic_consensus_error!(OverflowError, e).into(),
+        BasicError::ContestedUniqueIndexOnMutableDocumentTypeError(e) => {
+            generic_consensus_error!(ContestedUniqueIndexOnMutableDocumentTypeError, e).into()
+        }
     }
 }
 
