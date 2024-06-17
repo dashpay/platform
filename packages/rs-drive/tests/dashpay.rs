@@ -10,7 +10,7 @@ mod contact_request {
     use super::*;
 
     #[test]
-    fn test_dashpay_to_user_id_query() {
+    fn test_user_id_query() {
         let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
@@ -46,7 +46,7 @@ mod contact_request {
     }
 
     #[test]
-    fn test_dashpay_to_user_id_by_created_at_query() {
+    fn test_user_id_by_created_at_query() {
         let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
@@ -82,7 +82,7 @@ mod contact_request {
     }
 
     #[test]
-    fn test_dashpay_owner_id_query() {
+    fn test_owner_id_query() {
         let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
@@ -117,9 +117,8 @@ mod contact_request {
             .expect("failed to query documents");
     }
 
-    #[cfg(feature = "server")]
     #[test]
-    fn test_dashpay_owner_id_by_created_at_query() {
+    fn test_owner_id_by_created_at_query() {
         let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
@@ -142,6 +141,43 @@ mod contact_request {
         let query = DriveQuery::from_sql_expr(
             &format!(
                 "SELECT * FROM contactRequest WHERE $ownerId == '{}' AND $createdAt > 100 ORDER BY $createdAt asc",
+                Identifier::random()
+            ),
+            &data_contract,
+            None,
+        )
+        .expect("failed to create query");
+
+        drive
+            .query_documents(query, None, false, None, None)
+            .expect("failed to query documents");
+    }
+
+    #[test]
+    fn test_owner_id_and_to_user_id_query() {
+        let drive = setup_drive_with_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Dashpay, platform_version)
+                .expect("failed to load system data contract");
+
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("should apply contract");
+
+        let query = DriveQuery::from_sql_expr(
+            &format!(
+                "SELECT * FROM contactRequest WHERE $ownerId == '{}' AND toUserId == '{}'",
+                Identifier::random(),
                 Identifier::random()
             ),
             &data_contract,
