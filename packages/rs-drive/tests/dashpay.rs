@@ -81,7 +81,6 @@ mod contact_request {
             .expect("failed to query documents");
     }
 
-    #[cfg(feature = "server")]
     #[test]
     fn test_dashpay_owner_id_query() {
         let drive = setup_drive_with_initial_state_structure();

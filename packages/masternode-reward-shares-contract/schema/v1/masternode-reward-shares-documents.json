@@ -14,14 +14,6 @@
           }
         ],
         "unique": true
-      },
-      {
-        "name": "ownerId",
-        "properties": [
-          {
-            "$ownerId": "asc"
-          }
-        ]
       }
     ],
     "properties": {
