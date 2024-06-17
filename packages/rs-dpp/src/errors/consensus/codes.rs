@@ -156,6 +156,7 @@ impl ErrorWithCode for BasicError {
 
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,
+            Self::ContestedUniqueIndexOnMutableDocumentTypeError(_) => 10701,
         }
     }
 }

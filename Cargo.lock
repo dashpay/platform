@@ -4371,7 +4371,6 @@ name = "rs-dapi-client"
 version = "1.0.0-dev.15"
 dependencies = [
  "backon",
- "chrono",
  "dapi-grpc",
  "futures",
  "hex",
