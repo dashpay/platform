@@ -850,7 +850,7 @@ impl DocumentPropertyType {
                     Ok(Value::Text(String::from_utf8(value.to_vec()).map_err(
                         |_| {
                             ProtocolError::DecodingError(
-                                "could not decode ut8 bytes into string".to_string(),
+                                "could not decode utf8 bytes into string".to_string(),
                             )
                         },
                     )?))

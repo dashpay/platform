@@ -369,6 +369,279 @@ mod tests {
 
                 assert_eq!(contests.len(), 2);
             }
+
+            #[test]
+            fn test_empty_string_start_index_value() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (_contender_1, _contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let empty_encoded = bincode::encode_to_vec(Value::Text("".to_string()), config)
+                    .expect("expected to encode value");
+
+                {
+                    let query_validation_result = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![empty_encoded.clone()],
+                                        end_index_values: vec![],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: false,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_contested_resources_response::Version::V0(
+                        GetContestedResourcesResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = query_validation_result.version.expect("expected a version");
+
+                    let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
+
+                    assert_eq!(contested_resource_values.len(), 0);
+                }
+
+                {
+                    let query_validation_result = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![empty_encoded],
+                                        end_index_values: vec![],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: true,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_contested_resources_response::Version::V0(
+                        GetContestedResourcesResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = query_validation_result.version.expect("expected a version");
+
+                    let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
+                    else {
+                        panic!("expected proof")
+                    };
+
+                    let resolved_contested_document_vote_poll_drive_query =
+                        ResolvedVotePollsByDocumentTypeQuery {
+                            contract: DataContractResolvedInfo::BorrowedDataContract(
+                                dpns_contract.as_ref(),
+                            ),
+                            document_type_name: domain.name(),
+                            index_name: &index_name,
+                            start_index_values: &vec!["".into()],
+                            end_index_values: &vec![],
+                            limit: None,
+                            order_ascending: true,
+                            start_at_value: &None,
+                        };
+
+                    let (_, contests) = resolved_contested_document_vote_poll_drive_query
+                        .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
+                        .expect("expected to verify proof");
+
+                    assert_eq!(contests.len(), 0);
+                }
+            }
+
+            #[test]
+            fn test_no_start_index_value() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (_contender_1, _contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                {
+                    let query_validation_result = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![],
+                                        end_index_values: vec![],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: false,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_contested_resources_response::Version::V0(
+                        GetContestedResourcesResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = query_validation_result.version.expect("expected a version");
+
+                    let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
+
+                    let dash_encoded =
+                        bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                            .expect("expected to encode the word dash");
+
+                    assert_eq!(
+                        contested_resource_values.first(),
+                        Some(dash_encoded).as_ref()
+                    );
+                }
+
+                {
+                    let query_validation_result = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![],
+                                        end_index_values: vec![],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: true,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_contested_resources_response::Version::V0(
+                        GetContestedResourcesResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = query_validation_result.version.expect("expected a version");
+
+                    let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
+                    else {
+                        panic!("expected proof")
+                    };
+
+                    let resolved_contested_document_vote_poll_drive_query =
+                        ResolvedVotePollsByDocumentTypeQuery {
+                            contract: DataContractResolvedInfo::BorrowedDataContract(
+                                dpns_contract.as_ref(),
+                            ),
+                            document_type_name: domain.name(),
+                            index_name: &index_name,
+                            start_index_values: &vec![],
+                            end_index_values: &vec![],
+                            limit: None,
+                            order_ascending: true,
+                            start_at_value: &None,
+                        };
+
+                    let (_, contests) = resolved_contested_document_vote_poll_drive_query
+                        .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
+                        .expect("expected to verify proof");
+
+                    assert_eq!(
+                        contests.first(),
+                        Some(Value::Text("dash".to_string())).as_ref()
+                    );
+                }
+            }
         }
 
         mod vote_state_query {
