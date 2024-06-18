@@ -312,10 +312,11 @@ where
             Some(transaction),
             platform_version,
         )?;
+        
+        // Run all dao platform events, such as vote tallying and distribution of contested documents
 
-        // Check for any vote polls that might have ended
-
-        self.check_for_ended_vote_polls(&block_info, Some(transaction), platform_version)?;
+        self.run_dao_platform_events(&block_info,             last_committed_platform_state,
+                                     &block_platform_state, Some(transaction), platform_version)?;
 
         // Create a new block execution context
 

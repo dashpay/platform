@@ -300,6 +300,21 @@ impl PlatformStateV0 {
     }
 }
 
+/// Masternode list Changes
+#[derive(Debug, Clone)]
+pub struct MasternodeListChanges {
+    /// The new masternodes
+    pub new_masternodes: Vec<ProTxHash>,
+    /// The removed masternodes
+    pub removed_masternodes: Vec<ProTxHash>,
+    /// The banned masternodes
+    pub banned_masternodes: Vec<ProTxHash>,
+    /// The unbanned masternodes
+    pub unbanned_masternodes: Vec<ProTxHash>,
+    /// the new masternodes that come in as banned
+    pub new_banned_masternodes: Vec<ProTxHash>,
+}
+
 /// Platform state methods introduced in version 0 of Platform State Struct
 pub trait PlatformStateV0Methods {
     /// The last block height or 0 for genesis
@@ -461,6 +476,12 @@ pub trait PlatformStateV0Methods {
         Option<u32>,
         BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
     )>;
+
+    /// The changes in the full masternode list between two platform states
+    fn full_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges where Self: Sized;
+
+    /// The changes in the high performance masternode list (evonodes) between two platform states
+    fn hpmn_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges where Self: Sized;
 }
 
 impl PlatformStateV0Methods for PlatformStateV0 {
@@ -783,5 +804,105 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
     )> {
         self.previous_height_chain_lock_validating_quorums.as_ref()
+    }
+
+    fn full_masternode_list_changes(&self, previous: &PlatformStateV0) -> MasternodeListChanges {
+        let mut new_masternodes = Vec::new();
+        let mut removed_masternodes = Vec::new();
+        let mut banned_masternodes = Vec::new();
+        let mut unbanned_masternodes = Vec::new();
+        let mut new_banned_masternodes = Vec::new();
+
+        // Check for new, banned/unbanned, and new banned masternodes
+        for (pro_tx_hash, current_item) in &self.full_masternode_list {
+            if let Some(previous_item) = previous.full_masternode_list.get(pro_tx_hash) {
+                let current_ban_height = current_item.state.pose_ban_height;
+                let previous_ban_height = previous_item.state.pose_ban_height;
+
+                if current_ban_height.is_some() && previous_ban_height.is_none() {
+                    // Masternode was banned
+                    banned_masternodes.push(*pro_tx_hash);
+                    if previous_item.state.pose_ban_height.is_none() {
+                        // New banned masternode
+                        new_banned_masternodes.push(*pro_tx_hash);
+                    }
+                } else if current_ban_height.is_none() && previous_ban_height.is_some() {
+                    // Masternode was unbanned
+                    unbanned_masternodes.push(*pro_tx_hash);
+                }
+            } else {
+                // New masternode
+                new_masternodes.push(*pro_tx_hash);
+                if current_item.state.pose_ban_height.is_some() {
+                    // New banned masternode
+                    new_banned_masternodes.push(*pro_tx_hash);
+                }
+            }
+        }
+
+        // Check for removed masternodes
+        for pro_tx_hash in previous.full_masternode_list.keys() {
+            if !self.full_masternode_list.contains_key(pro_tx_hash) {
+                removed_masternodes.push(*pro_tx_hash);
+            }
+        }
+
+        MasternodeListChanges {
+            new_masternodes,
+            removed_masternodes,
+            banned_masternodes,
+            unbanned_masternodes,
+            new_banned_masternodes,
+        }
+    }
+
+    fn hpmn_masternode_list_changes(&self, previous: &PlatformStateV0) -> MasternodeListChanges {
+        let mut new_masternodes = Vec::new();
+        let mut removed_masternodes = Vec::new();
+        let mut banned_masternodes = Vec::new();
+        let mut unbanned_masternodes = Vec::new();
+        let mut new_banned_masternodes = Vec::new();
+
+        // Check for new, banned/unbanned, and new banned masternodes
+        for (pro_tx_hash, current_item) in &self.hpmn_masternode_list {
+            if let Some(previous_item) = previous.hpmn_masternode_list.get(pro_tx_hash) {
+                let current_ban_height = current_item.state.pose_ban_height;
+                let previous_ban_height = previous_item.state.pose_ban_height;
+
+                if current_ban_height.is_some() && previous_ban_height.is_none() {
+                    // Masternode was banned
+                    banned_masternodes.push(*pro_tx_hash);
+                    if previous_item.state.pose_ban_height.is_none() {
+                        // New banned masternode
+                        new_banned_masternodes.push(*pro_tx_hash);
+                    }
+                } else if current_ban_height.is_none() && previous_ban_height.is_some() {
+                    // Masternode was unbanned
+                    unbanned_masternodes.push(*pro_tx_hash);
+                }
+            } else {
+                // New masternode
+                new_masternodes.push(*pro_tx_hash);
+                if current_item.state.pose_ban_height.is_some() {
+                    // New banned masternode
+                    new_banned_masternodes.push(*pro_tx_hash);
+                }
+            }
+        }
+
+        // Check for removed masternodes
+        for pro_tx_hash in previous.hpmn_masternode_list.keys() {
+            if !self.hpmn_masternode_list.contains_key(pro_tx_hash) {
+                removed_masternodes.push(*pro_tx_hash);
+            }
+        }
+
+        MasternodeListChanges {
+            new_masternodes,
+            removed_masternodes,
+            banned_masternodes,
+            unbanned_masternodes,
+            new_banned_masternodes,
+        }
     }
 }

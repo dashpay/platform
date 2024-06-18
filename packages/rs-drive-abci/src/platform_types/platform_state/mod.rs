@@ -2,9 +2,7 @@
 pub mod v0;
 
 use crate::error::Error;
-use crate::platform_types::platform_state::v0::{
-    PlatformStateForSavingV0, PlatformStateV0, PlatformStateV0Methods,
-};
+use crate::platform_types::platform_state::v0::{MasternodeListChanges, PlatformStateForSavingV0, PlatformStateV0, PlatformStateV0Methods};
 
 use crate::platform_types::validator_set::ValidatorSet;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
@@ -526,6 +524,18 @@ impl PlatformStateV0Methods for PlatformState {
     fn last_committed_block_id_hash(&self) -> [u8; 32] {
         match self {
             PlatformState::V0(v0) => v0.last_committed_block_id_hash(),
+        }
+    }
+
+    fn full_masternode_list_changes(&self, previous: &PlatformState) -> MasternodeListChanges {
+        match (self, previous) {
+            (PlatformState::V0(v0), PlatformState::V0(v0_previous)) => v0.full_masternode_list_changes(v0_previous),
+        }
+    }
+
+    fn hpmn_masternode_list_changes(&self, previous: &PlatformState) -> MasternodeListChanges {
+        match (self, previous) {
+            (PlatformState::V0(v0), PlatformState::V0(v0_previous)) => v0.hpmn_masternode_list_changes(v0_previous),
         }
     }
 }

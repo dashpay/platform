@@ -86,7 +86,6 @@ impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
 
 #[cfg(test)]
 mod tests {
-    use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
@@ -5292,6 +5291,192 @@ mod tests {
                     Some("Masternode with id: 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R already voted 5 times and is trying to vote again, they can only vote 5 times"),
                     platform_version,
                 );
+            }
+        }
+        mod masternodes_being_removed {
+            use crate::execution::validation::state_transition::state_transitions::tests::take_down_masternode_identities;
+            use super::*;
+            
+            #[test]
+            fn test_masternode_vote_removals() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let masternodes_by_vote_choice = perform_votes_multi(
+                    &mut platform,
+                    dpns_contract.as_ref(),
+                    vec![
+                        (TowardsIdentity(contender_1.id()), 20),
+                        (TowardsIdentity(contender_2.id()), 12),
+                        (ResourceVoteChoice::Abstain, 10),
+                        (ResourceVoteChoice::Lock, 3),
+                    ],
+                    "quantum",
+                    10,
+                    platform_version,
+                );
+
+                let platform_state = platform.state.load();
+
+                let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                    &platform,
+                    &platform_state,
+                    &dpns_contract,
+                    "quantum",
+                    None,
+                    true,
+                    None,
+                    ResultType::DocumentsAndVoteTally,
+                    platform_version,
+                );
+
+                assert_eq!(finished_vote_info, None);
+
+                assert_eq!(contenders.len(), 2);
+
+                let first_contender = contenders.first().unwrap();
+
+                let second_contender = contenders.last().unwrap();
+
+                assert_ne!(first_contender.document(), second_contender.document());
+
+                assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                assert_eq!(first_contender.vote_tally(), Some(20));
+
+                assert_eq!(second_contender.vote_tally(), Some(12));
+
+                assert_eq!(abstaining, Some(10));
+
+                assert_eq!(locking, Some(3));
+                
+                // now let's take down some masternodes
+
+                let voting_for_contender_1 = masternodes_by_vote_choice.get(&TowardsIdentity(contender_1.id())).expect("expected a vector of 50 masternode identities").iter().take(10).map(|(identity, _, _)| identity.id()).collect();
+
+                let platform_state_before_masternode_identity_removals = platform_state.as_ref().clone();
+                
+                take_down_masternode_identities(&mut platform, &voting_for_contender_1);
+
+                let block_platform_state = platform.state.load();
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .remove_votes_for_removed_masternodes(&platform_state_before_masternode_identity_removals, &block_platform_state, Some(&transaction), platform_version)
+                    .expect("expected to remove votes for removed masternodes");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+                
+                // let's fast-forward to make sure it's properly distributed
+
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info = BlockInfo {
+                    time_ms: 1_209_900_000, //2 weeks and 300s
+                    height: 10000,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info,
+                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                        .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(&block_info, Some(&transaction), platform_version)
+                    .expect("expected to check for ended vote polls");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // At this point the document should have been awarded to contender 2.
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some(FinishedVoteInfo {
+                            finished_vote_outcome:
+                            finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                            won_by_identity_id: Some(contender_2.id().to_vec()),
+                            finished_at_block_height: 10000,
+                            finished_at_core_block_height: 42,
+                            finished_at_block_time_ms: 1209900000,
+                            finished_at_epoch: 0
+                        })
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(10));
+
+                    assert_eq!(second_contender.vote_tally(), Some(12));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
             }
         }
     }

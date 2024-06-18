@@ -248,6 +248,23 @@ mod tests {
         (identity, signer, voting_key)
     }
 
+    pub(in crate::execution::validation::state_transition::state_transitions) fn take_down_masternode_identities(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        masternode_identities: &Vec<Identifier>,
+    ) {
+        let mut platform_state = platform.state.load().clone().deref().clone();
+        
+        let list = platform_state.full_masternode_list_mut();
+        
+        for masternode_identifiers in masternode_identities {
+            let pro_tx_hash = ProTxHash::from_byte_array(masternode_identifiers.to_buffer());
+
+            list.remove(&pro_tx_hash);
+        }
+        
+        platform.state.store(Arc::new(platform_state));
+    }
+
     pub(in crate::execution::validation::state_transition::state_transitions) fn create_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
@@ -991,7 +1008,8 @@ mod tests {
         count: u64,
         start_seed: u64,
         platform_version: &PlatformVersion,
-    ) {
+    ) -> Vec<(Identity, SimpleSigner, IdentityPublicKey)> {
+        let mut masternode_infos = vec![];
         for i in 0..count {
             let (masternode, signer, voting_key) =
                 setup_masternode_identity(platform, start_seed + i, platform_version);
@@ -1011,7 +1029,10 @@ mod tests {
                 None,
                 platform_version,
             );
+
+            masternode_infos.push((masternode, signer, voting_key));
         }
+        masternode_infos
     }
 
     pub(in crate::execution::validation::state_transition::state_transitions) fn perform_votes_multi(
@@ -1021,10 +1042,11 @@ mod tests {
         name: &str,
         start_seed: u64,
         platform_version: &PlatformVersion,
-    ) {
+    ) -> BTreeMap<ResourceVoteChoice, Vec<(Identity, SimpleSigner, IdentityPublicKey)>> {
         let mut count_aggregate = start_seed;
+        let mut masternodes_by_vote_choice = BTreeMap::new();
         for (resource_vote_choice, count) in resource_vote_choices.into_iter() {
-            perform_votes(
+            let masternode_infos = perform_votes(
                 platform,
                 dpns_contract,
                 resource_vote_choice,
@@ -1033,8 +1055,10 @@ mod tests {
                 count_aggregate,
                 platform_version,
             );
+            masternodes_by_vote_choice.insert(resource_vote_choice, masternode_infos);
             count_aggregate += count;
         }
+        masternodes_by_vote_choice
     }
 
     pub(in crate::execution::validation::state_transition::state_transitions) fn get_vote_states(
