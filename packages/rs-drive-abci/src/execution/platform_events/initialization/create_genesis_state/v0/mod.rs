@@ -179,7 +179,11 @@ impl<C> Platform<C> {
             self.register_system_identity_operations(identity, &mut operations);
         }
 
-        self.register_dpns_top_level_domain_operations(&dpns_data_contract, &mut operations)?;
+        self.register_dpns_top_level_domain_operations(
+            &dpns_data_contract,
+            genesis_time,
+            &mut operations,
+        )?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
@@ -228,6 +232,7 @@ impl<C> Platform<C> {
     fn register_dpns_top_level_domain_operations<'a>(
         &'a self,
         contract: &'a DataContract,
+        genesis_time: TimestampMillis,
         operations: &mut Vec<DriveOperation<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
@@ -255,8 +260,8 @@ impl<C> Platform<C> {
             properties: document_stub_properties,
             owner_id: contract.owner_id(),
             revision: None,
-            created_at: None,
-            updated_at: None,
+            created_at: Some(genesis_time),
+            updated_at: Some(genesis_time),
             transferred_at: None,
             created_at_block_height: None,
             updated_at_block_height: None,
@@ -315,8 +320,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    162, 81, 50, 217, 246, 11, 77, 233, 231, 192, 228, 176, 197, 102, 24, 18, 160,
-                    5, 182, 75, 119, 174, 75, 155, 86, 92, 88, 197, 201, 60, 60, 157
+                    115, 12, 128, 112, 147, 9, 54, 99, 241, 209, 128, 221, 251, 54, 5, 115, 255,
+                    226, 111, 160, 174, 221, 250, 250, 115, 229, 46, 223, 84, 36, 79, 52
                 ]
             )
         }
