@@ -360,6 +360,23 @@ impl Query<GetContestedResourceIdentityVotesRequest>
     }
 }
 
+impl Query<GetContestedResourceIdentityVotesRequest> for ProTxHash {
+    fn query(self, prove: bool) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        Ok(GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: self.to_byte_array().to_vec(),
+            prove,
+            limit: None,
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+        }
+        .into())
+    }
+}
+
 impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
     fn query(self, prove: bool) -> Result<GetVotePollsByEndDateRequest, Error> {
         if !prove {
