@@ -58,6 +58,12 @@ pub const RESOURCE_STORED_INFO_KEY: char = 'b'; // 62 hex 98 decimal
 /// The finished info
 pub const RESOURCE_STORED_INFO_KEY_U8: u8 = b'b'; // 62 hex 98 decimal
 
+/// The tree key for storage of contested documents
+pub const CONTESTED_DOCUMENT_STORAGE_TREE_KEY: u8 = 0;
+
+/// The tree key for the indexes of contested documents
+pub const CONTESTED_DOCUMENT_INDEXES_TREE_KEY: u8 = 1;
+
 /// The tree key for storage
 pub const VOTING_STORAGE_TREE_KEY: u8 = 1;
 
@@ -141,7 +147,7 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
     }
 
     fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
-        let mut root = vote_contested_resource_active_polls_contract_document_tree_path_vec(
+        let mut root = vote_contested_resource_contract_documents_indexes_path_vec(
             self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
         );
@@ -227,7 +233,7 @@ impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllo
     }
 
     fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
-        let mut root = vote_contested_resource_active_polls_contract_document_tree_path_vec(
+        let mut root = vote_contested_resource_contract_documents_indexes_path_vec(
             self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
         );
@@ -266,7 +272,7 @@ impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllo
         let key = vote_choice.to_key();
         let mut contender_voting_path = self.contenders_path(platform_version)?;
         contender_voting_path.push(key);
-        contender_voting_path.push(vec![1]);
+        contender_voting_path.push(vec![VOTING_STORAGE_TREE_KEY]);
         Ok(contender_voting_path)
     }
 }
@@ -408,7 +414,7 @@ pub fn vote_contested_resource_contract_documents_storage_path<'a>(
         &[ACTIVE_POLLS_TREE_KEY as u8],          // 1
         contract_id,                             // 32
         document_type_name.as_bytes(),
-        &[0], // 1
+        &[CONTESTED_DOCUMENT_STORAGE_TREE_KEY], // 1
     ]
 }
 
@@ -423,7 +429,37 @@ pub fn vote_contested_resource_contract_documents_storage_path_vec(
         vec![ACTIVE_POLLS_TREE_KEY as u8],
         contract_id.to_vec(),
         document_type_name.as_bytes().to_vec(),
-        vec![0],
+        vec![CONTESTED_DOCUMENT_STORAGE_TREE_KEY],
+    ]
+}
+
+/// Returns the path to the primary keys of a contract document type.
+pub fn vote_contested_resource_contract_documents_indexes_path<'a>(
+    contract_id: &'a [u8],
+    document_type_name: &'a str,
+) -> [&'a [u8]; 6] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes), // 1
+        &[CONTESTED_RESOURCE_TREE_KEY as u8],    // 1
+        &[ACTIVE_POLLS_TREE_KEY as u8],          // 1
+        contract_id,                             // 32
+        document_type_name.as_bytes(),
+        &[CONTESTED_DOCUMENT_INDEXES_TREE_KEY], // 1
+    ]
+}
+
+/// Returns the path to the primary keys of a contract document type as a vec.
+pub fn vote_contested_resource_contract_documents_indexes_path_vec(
+    contract_id: &[u8],
+    document_type_name: &str,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+        contract_id.to_vec(),
+        document_type_name.as_bytes().to_vec(),
+        vec![CONTESTED_DOCUMENT_INDEXES_TREE_KEY],
     ]
 }
 

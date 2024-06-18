@@ -113,7 +113,7 @@ impl TreePathStorageForm for ContestedDocumentResourceVoteStorageForm {
     where
         Self: Sized,
     {
-        if path.len() < 9 {
+        if path.len() < 10 {
             return Err(ProtocolError::VoteError(format!(
                 "path {} is not long enough to construct vote information",
                 path.into_iter()
@@ -174,8 +174,8 @@ impl TreePathStorageForm for ContestedDocumentResourceVoteStorageForm {
             return Err(ProtocolError::VoteError(format!("path {} 2 before last element must be an identifier or RESOURCE_ABSTAIN_VOTE_TREE_KEY/RESOURCE_LOCK_VOTE_TREE_KEY", path.into_iter().map(hex::encode).collect::<Vec<_>>().join("/"))));
         };
 
-        // 5 is the first index value, then we have 2 at the end that are not index values
-        let index_values = path.drain(5..path.len() - 3).collect::<Vec<_>>();
+        // 6 is the first index value, then we have 2 at the end that are not index values
+        let index_values = path.drain(6..path.len() - 3).collect::<Vec<_>>();
 
         Ok(ContestedDocumentResourceVoteStorageForm {
             contract_id,

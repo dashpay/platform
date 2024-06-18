@@ -142,18 +142,39 @@ impl<C> Platform<C> {
                 format!("limit greater than max limit {}", config.max_query_limit),
             )))?;
 
+        let result = start_at_value_info
+            .map(|start_at_value_info| {
+                let start = bincode::decode_from_slice(
+                    start_at_value_info.start_value.as_slice(),
+                    bincode_config,
+                )
+                .map_err(|_| {
+                    QueryError::InvalidArgument(format!(
+                        "could not convert {:?} to a value for start at",
+                        start_at_value_info.start_value
+                    ))
+                })?
+                .0;
+
+                Ok::<(dpp::platform_value::Value, bool), QueryError>((
+                    start,
+                    start_at_value_info.start_value_included,
+                ))
+            })
+            .transpose();
+
+        let start_at_value_info = match result {
+            Ok(start_at_value_info) => start_at_value_info,
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+        };
+
         let query = VotePollsByDocumentTypeQuery {
             contract_id,
             document_type_name,
             index_name,
             start_index_values,
             end_index_values,
-            start_at_value: start_at_value_info.map(|start_at_value_info| {
-                (
-                    start_at_value_info.start_value,
-                    start_at_value_info.start_value_included,
-                )
-            }),
+            start_at_value: start_at_value_info,
             limit: Some(limit),
             order_ascending,
         };

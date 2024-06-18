@@ -1,6 +1,9 @@
 use super::ContractLookupFn;
 use crate::drive::object_size_info::DataContractResolvedInfo;
-use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path_vec;
+use crate::drive::votes::paths::{
+    vote_contested_resource_active_polls_contract_document_tree_path_vec,
+    vote_contested_resource_contract_documents_indexes_path_vec,
+};
 #[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
@@ -45,7 +48,7 @@ pub struct VotePollsByDocumentTypeQuery {
     /// All values that are after the missing property number
     pub end_index_values: Vec<Value>,
     /// Start at value
-    pub start_at_value: Option<(Vec<u8>, bool)>,
+    pub start_at_value: Option<(Value, bool)>,
     /// Limit
     pub limit: Option<u16>,
     /// Ascending
@@ -66,7 +69,7 @@ pub struct ResolvedVotePollsByDocumentTypeQuery<'a> {
     /// All values that are after the missing property number
     pub end_index_values: &'a Vec<Value>,
     /// Start at value
-    pub start_at_value: &'a Option<(Vec<u8>, bool)>,
+    pub start_at_value: &'a Option<(Value, bool)>,
     /// Limit
     pub limit: Option<u16>,
     /// Ascending
@@ -287,11 +290,11 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
     }
 
     /// Creates the vectors of indexes
-    fn indexes_vectors(
+    fn indexes_vectors<'b>(
         &self,
-        index: &Index,
+        index: &'b Index,
         platform_version: &PlatformVersion,
-    ) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), Error> {
+    ) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>, &'b IndexProperty), Error> {
         let document_type = self.document_type()?;
         let properties_iter = index.properties.iter();
         let mut start_values_iter = self.start_index_values.iter();
@@ -299,7 +302,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         let mut start_values_vec = vec![];
         let mut end_values_vec = vec![];
         let mut ended_start_values = false;
-        let mut started_end_values = false;
+        let mut middle_index_property = None;
         for index_property in properties_iter {
             if !ended_start_values {
                 if let Some(start_value) = start_values_iter.next() {
@@ -311,23 +314,21 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                     start_values_vec.push(encoded);
                 } else {
                     ended_start_values = true;
+                    middle_index_property = Some(index_property);
                 }
-            } else if started_end_values {
-                if let Some(end_value) = end_values_iter.next() {
-                    let encoded = document_type.serialize_value_for_key(
-                        &index_property.name,
-                        end_value,
-                        platform_version,
-                    )?;
-                    end_values_vec.push(encoded);
-                } else {
-                    return Err(Error::Query(QuerySyntaxError::IndexValuesError("the start index values and the end index values must be equal to the amount of properties in the contested index minus one".to_string())));
-                }
+            } else if let Some(end_value) = end_values_iter.next() {
+                let encoded = document_type.serialize_value_for_key(
+                    &index_property.name,
+                    end_value,
+                    platform_version,
+                )?;
+                end_values_vec.push(encoded);
             } else {
-                started_end_values = true;
+                break;
             }
         }
-        Ok((start_values_vec, end_values_vec))
+        let middle_index_property = middle_index_property.ok_or(Error::Query(QuerySyntaxError::IndexValuesError("the start index values and the end index values must be equal to the amount of properties in the contested index minus one, no middle property".to_string())))?;
+        Ok((start_values_vec, end_values_vec, middle_index_property))
     }
 
     pub(crate) fn property_name_being_searched(
@@ -375,12 +376,12 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         index: &Index,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let mut path = vote_contested_resource_active_polls_contract_document_tree_path_vec(
+        let mut path = vote_contested_resource_contract_documents_indexes_path_vec(
             self.contract.id().as_ref(),
             self.document_type_name,
         );
 
-        let (mut start, end) = self.indexes_vectors(index, platform_version)?;
+        let (mut start, end, middle_property) = self.indexes_vectors(index, platform_version)?;
 
         if !start.is_empty() {
             path.append(&mut start);
@@ -394,7 +395,12 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                 query.insert_all();
             }
             Some((starts_at_key_bytes, start_at_included)) => {
-                let starts_at_key = starts_at_key_bytes.to_vec();
+                let starts_at_key = self.document_type()?.serialize_value_for_key(
+                    &middle_property.name,
+                    starts_at_key_bytes,
+                    platform_version,
+                )?;
+
                 match self.order_ascending {
                     true => match start_at_included {
                         true => query.insert_range_from(starts_at_key..),

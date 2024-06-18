@@ -14,7 +14,8 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::votes::paths::{
     vote_contested_resource_active_polls_contract_document_tree_path_vec,
-    RESOURCE_ABSTAIN_VOTE_TREE_KEY, RESOURCE_LOCK_VOTE_TREE_KEY,
+    vote_contested_resource_contract_documents_indexes_path_vec, RESOURCE_ABSTAIN_VOTE_TREE_KEY,
+    RESOURCE_LOCK_VOTE_TREE_KEY,
 };
 use crate::error::drive::DriveError;
 use dpp::data_contract::document_type::IndexProperty;
@@ -65,7 +66,7 @@ impl Drive {
         //  * DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
         let contract_document_type_path =
-            vote_contested_resource_active_polls_contract_document_tree_path_vec(
+            vote_contested_resource_contract_documents_indexes_path_vec(
                 document_and_contract_info.contract.id_ref().as_bytes(),
                 document_and_contract_info.document_type.name(),
             );
