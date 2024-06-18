@@ -70,7 +70,7 @@ where
 
         let mut selected_quorums = platform_state
             .chain_lock_validating_quorums()
-            .select_quorums_for_heights(chain_lock_height, verification_height);
+            .select_quorums(chain_lock_height, verification_height);
 
         // TODO: We can use chain_lock.request_id()
 

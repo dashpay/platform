@@ -39,8 +39,7 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
 
     // Based on the deterministic masternode list at the given height, a quorum must be selected
     // that was active at the time this block was mined
-    let selected_quorums =
-        quorum_set.select_quorums_for_heights(signing_height, verification_height);
+    let selected_quorums = quorum_set.select_quorums(signing_height, verification_height);
 
     if selected_quorums.is_empty() {
         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

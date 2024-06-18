@@ -72,7 +72,7 @@ pub trait CoreQuorumSetV0Methods {
     );
 
     /// Select quorums for signature verification based on sign and verification heights
-    fn select_quorums_for_heights(
+    fn select_quorums(
         &self,
         signing_height: u32,
         verification_height: u32,
@@ -202,7 +202,7 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
         });
     }
 
-    fn select_quorums_for_heights(
+    fn select_quorums(
         &self,
         signing_height: u32,
         verification_height: u32,

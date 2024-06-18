@@ -98,13 +98,13 @@ impl CoreQuorumSetV0Methods for CoreQuorumSet {
         }
     }
 
-    fn select_quorums_for_heights(
+    fn select_quorums(
         &self,
         signing_height: u32,
         verification_height: u32,
     ) -> SelectedQuorumSetIterator {
         match self {
-            Self::V0(v0) => v0.select_quorums_for_heights(signing_height, verification_height),
+            Self::V0(v0) => v0.select_quorums(signing_height, verification_height),
         }
     }
 }
