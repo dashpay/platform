@@ -75,6 +75,13 @@ pub(super) fn data_trigger_bindings_list_v0() -> Result<Vec<DataTriggerBindingV0
             transition_action_type: DocumentTransitionActionType::Delete,
             data_trigger: reject_data_trigger,
         },
+        // We can't use mutability flag otherwise documents won't have revision
+        DataTriggerBindingV0 {
+            data_contract_id: SystemDataContract::Withdrawals.id(),
+            document_type: withdrawal::NAME.to_string(),
+            transition_action_type: DocumentTransitionActionType::Replace,
+            data_trigger: reject_data_trigger,
+        },
         DataTriggerBindingV0 {
             data_contract_id: SystemDataContract::Withdrawals.id(),
             document_type: withdrawal::NAME.to_string(),

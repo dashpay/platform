@@ -2,7 +2,6 @@
   "withdrawal": {
     "description": "Withdrawal document to track underlying withdrawal transactions. Withdrawals should be created with IdentityWithdrawalTransition",
     "creationRestrictionMode": 2,
-    "documentsMutable": false,
     "type": "object",
     "indices": [
       {
