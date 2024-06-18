@@ -159,10 +159,24 @@ pub type IdentityBalance = u64;
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
 /// Contested resource values.
-#[derive(Debug, derive_more::From, Clone)]
+#[derive(Debug, derive_more::From, Clone, PartialEq)]
 pub enum ContestedResource {
     /// Generic [Value]
     Value(Value),
+}
+
+impl ContestedResource {
+    /// Get the value.
+    pub fn encode_to_vec(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, bincode::error::EncodeError> {
+        platform_serialization::platform_encode_to_vec(
+            self,
+            bincode::config::standard(),
+            platform_version,
+        )
+    }
 }
 
 #[cfg(feature = "mocks")]
@@ -173,7 +187,7 @@ impl PlatformVersionEncode for ContestedResource {
         _platform_version: &platform_version::PlatformVersion,
     ) -> Result<(), bincode::error::EncodeError> {
         match self {
-            ContestedResource::Value(document) => document.encode(encoder),
+            ContestedResource::Value(value) => value.encode(encoder),
         }
     }
 }
