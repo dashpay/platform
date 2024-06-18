@@ -28,4 +28,4 @@ pub(in crate::execution) mod block_start;
 pub(in crate::execution) mod core_chain_lock;
 
 /// Instant lock methods
-pub(in crate::execution) mod core_instant_lock;
+pub(in crate::execution) mod core_instant_send_lock;

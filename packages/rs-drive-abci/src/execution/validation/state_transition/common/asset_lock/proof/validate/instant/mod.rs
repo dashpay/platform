@@ -10,7 +10,7 @@ use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
-use crate::execution::platform_events::core_instant_lock::verify_recent_signature_locally::VerifyInstantLockSignature;
+use crate::execution::platform_events::core_instant_send_lock::verify_recent_signature_locally::VerifyInstantLockSignature;
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::ValidationMode;
