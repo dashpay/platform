@@ -114,9 +114,11 @@ export default {
         },
         dkgInterval: {
           type: 'integer',
+          minimum: 1,
         },
         activeSigners: {
           type: 'integer',
+          minimum: 1,
         },
         rotation: {
           type: 'boolean',

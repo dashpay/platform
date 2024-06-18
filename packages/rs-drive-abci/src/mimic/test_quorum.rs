@@ -1,4 +1,3 @@
-use crate::platform_types::core_quorum_set::Quorum;
 use crate::platform_types::validator::v0::ValidatorV0;
 use crate::platform_types::validator_set::v0::ValidatorSetV0;
 use dashcore_rpc::dashcore::hashes::Hash;
