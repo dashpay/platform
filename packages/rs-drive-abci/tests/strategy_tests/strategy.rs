@@ -63,7 +63,7 @@ use dpp::state_transition::documents_batch_transition::document_transition::docu
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
-use drive_abci::platform_types::verification_quorum_set::{QuorumConfig, Quorums, SigningQuorum};
+use drive_abci::platform_types::signature_verification_quorum_set::{QuorumConfig, Quorums, SigningQuorum};
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;

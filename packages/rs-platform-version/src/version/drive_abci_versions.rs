@@ -53,7 +53,7 @@ pub struct DriveAbciStructureVersions {
     pub state_transition_execution_context: FeatureVersion,
     pub commit: FeatureVersion,
     pub masternode: FeatureVersion,
-    pub verification_quorum_set: FeatureVersion,
+    pub signature_verification_quorum_set: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -65,7 +65,7 @@ pub struct DriveAbciMethodVersions {
     pub block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions,
     pub core_subsidy: DriveAbciCoreSubsidyMethodVersions,
     pub core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants,
-    pub core_instant_lock: DriveAbciCoreInstantLockMethodVersions,
+    pub core_instant_send_lock: DriveAbciCoreInstantSendLockMethodVersions,
     pub fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions,
     pub fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions,
     pub withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions,
@@ -234,7 +234,7 @@ pub struct DriveAbciCoreSubsidyMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DriveAbciCoreInstantLockMethodVersions {
+pub struct DriveAbciCoreInstantSendLockMethodVersions {
     pub verify_recent_signature_locally: FeatureVersion,
 }
 

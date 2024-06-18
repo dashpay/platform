@@ -15,7 +15,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
     DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
     DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreChainLockMethodVersionsAndConstants,
-    DriveAbciCoreInstantLockMethodVersions, DriveAbciCoreSubsidyMethodVersions,
+    DriveAbciCoreInstantSendLockMethodVersions, DriveAbciCoreSubsidyMethodVersions,
     DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
     DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
@@ -556,7 +556,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 make_sure_core_is_synced_to_chain_lock: 0,
                 recent_block_count_amount: 2,
             },
-            core_instant_lock: DriveAbciCoreInstantLockMethodVersions {
+            core_instant_send_lock: DriveAbciCoreInstantSendLockMethodVersions {
                 verify_recent_signature_locally: 0,
             },
             fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions {

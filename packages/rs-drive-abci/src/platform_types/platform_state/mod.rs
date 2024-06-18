@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
-use crate::platform_types::verification_quorum_set::VerificationQuorumSet;
+use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
@@ -321,7 +321,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums(&self) -> &VerificationQuorumSet {
+    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
         }
@@ -387,7 +387,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_chain_lock_validating_quorums(&mut self, quorums: VerificationQuorumSet) {
+    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         match self {
             PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
         }
@@ -447,7 +447,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums_mut(&mut self) -> &mut VerificationQuorumSet {
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => v0.chain_lock_validating_quorums_mut(),
         }
@@ -477,13 +477,13 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn instant_lock_validating_quorums(&self) -> &VerificationQuorumSet {
+    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => v0.instant_lock_validating_quorums(),
         }
     }
 
-    fn instant_lock_validating_quorums_mut(&mut self) -> &mut VerificationQuorumSet {
+    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
         }

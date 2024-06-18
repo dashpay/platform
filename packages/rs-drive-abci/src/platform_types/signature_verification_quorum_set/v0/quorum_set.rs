@@ -1,6 +1,6 @@
 use crate::config::{ChainLockConfig, QuorumLikeConfig};
-use crate::platform_types::verification_quorum_set::v0::quorums::Quorums;
-use crate::platform_types::verification_quorum_set::VerificationQuorum;
+use crate::platform_types::signature_verification_quorum_set::v0::quorums::Quorums;
+use crate::platform_types::signature_verification_quorum_set::VerificationQuorum;
 use dashcore_rpc::json::QuorumType;
 use dpp::dashcore::QuorumHash;
 use std::vec::IntoIter;
@@ -25,7 +25,7 @@ pub(super) struct PreviousPastQuorumsV0 {
 
 /// Quorums with keys for signature verification
 #[derive(Debug, Clone)]
-pub struct VerificationQuorumSetV0 {
+pub struct SignatureVerificationQuorumSetV0 {
     /// Quorum configuration
     pub(super) config: QuorumConfig,
 
@@ -39,7 +39,7 @@ pub struct VerificationQuorumSetV0 {
 }
 
 /// The trait defines methods for the signature verification quorums structure v0
-pub trait VerificationQuorumSetV0Methods {
+pub trait SignatureVerificationQuorumSetV0Methods {
     /// Config
     fn config(&self) -> &QuorumConfig;
 
@@ -149,7 +149,7 @@ pub struct QuorumConfig {
     pub window: u32,
 }
 
-impl VerificationQuorumSetV0Methods for VerificationQuorumSetV0 {
+impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSetV0 {
     fn config(&self) -> &QuorumConfig {
         &self.config
     }
@@ -264,10 +264,10 @@ impl VerificationQuorumSetV0Methods for VerificationQuorumSetV0 {
     }
 }
 
-impl VerificationQuorumSetV0 {
+impl SignatureVerificationQuorumSetV0 {
     /// New empty quorum set based on quorum configuration
     pub fn new(config: &impl QuorumLikeConfig) -> Self {
-        VerificationQuorumSetV0 {
+        SignatureVerificationQuorumSetV0 {
             config: QuorumConfig {
                 quorum_type: config.quorum_type(),
                 active_signers: config.quorum_active_signers(),
@@ -280,9 +280,9 @@ impl VerificationQuorumSetV0 {
     }
 }
 
-impl From<ChainLockConfig> for VerificationQuorumSetV0 {
+impl From<ChainLockConfig> for SignatureVerificationQuorumSetV0 {
     fn from(value: ChainLockConfig) -> Self {
-        VerificationQuorumSetV0 {
+        SignatureVerificationQuorumSetV0 {
             config: QuorumConfig {
                 quorum_type: value.quorum_type,
                 active_signers: value.quorum_active_signers,

@@ -13,8 +13,8 @@ use crate::platform_types::validator_set::v0::{
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 
-use crate::platform_types::verification_quorum_set::{
-    VerificationQuorum, VerificationQuorumSet, VerificationQuorumSetV0Methods,
+use crate::platform_types::signature_verification_quorum_set::{
+    SignatureVerificationQuorumSet, SignatureVerificationQuorumSetV0Methods, VerificationQuorum,
 };
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::dashcore::QuorumHash;
@@ -305,7 +305,7 @@ where
     fn update_quorums_from_quorum_list(
         &self,
         quorum_set_type: &QuorumSetType,
-        quorum_set: &mut VerificationQuorumSet,
+        quorum_set: &mut SignatureVerificationQuorumSet,
         platform_state: Option<&PlatformState>,
         full_quorum_list: &ExtendedQuorumListResult,
         last_committed_core_height: u32,
@@ -416,7 +416,7 @@ where
 fn quorum_set_by_type_mut<'p>(
     block_platform_state: &'p mut PlatformState,
     quorum_set_type: &QuorumSetType,
-) -> &'p mut VerificationQuorumSet {
+) -> &'p mut SignatureVerificationQuorumSet {
     match quorum_set_type {
         QuorumSetType::ChainLock(_) => block_platform_state.chain_lock_validating_quorums_mut(),
         QuorumSetType::InstantLock(_) => block_platform_state.instant_lock_validating_quorums_mut(),

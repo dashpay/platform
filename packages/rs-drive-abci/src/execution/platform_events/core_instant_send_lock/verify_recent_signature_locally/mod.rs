@@ -33,7 +33,7 @@ impl VerifyInstantLockSignature for InstantLock {
         match platform_version
             .drive_abci
             .methods
-            .core_instant_lock
+            .core_instant_send_lock
             .verify_recent_signature_locally
         {
             0 => v0::verify_recent_instant_lock_signature_locally_v0(self, platform_state),

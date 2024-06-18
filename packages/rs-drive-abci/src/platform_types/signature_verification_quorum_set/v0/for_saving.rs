@@ -1,9 +1,9 @@
-use crate::platform_types::verification_quorum_set::v0::quorum_set::{
+use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::{
     PreviousPastQuorumsV0, QuorumConfig,
 };
-use crate::platform_types::verification_quorum_set::{
-    Quorums, ThresholdBlsPublicKey, VerificationQuorum, VerificationQuorumSetForSaving,
-    VerificationQuorumSetV0,
+use crate::platform_types::signature_verification_quorum_set::{
+    Quorums, SignatureVerificationQuorumSetForSaving, SignatureVerificationQuorumSetV0,
+    ThresholdBlsPublicKey, VerificationQuorum,
 };
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::QuorumHash;
@@ -13,23 +13,21 @@ use dpp::platform_serialization::de::Decode;
 use dpp::platform_value::Bytes32;
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct VerificationQuorumSetForSavingV0 {
+pub struct SignatureVerificationQuorumSetForSavingV0 {
     config: QuorumConfigForSavingV0,
-
     current_quorums: Vec<QuorumForSavingV0>,
-
     previous_quorums: Option<PreviousPastQuorumsForSavingV0>,
 }
 
-impl From<VerificationQuorumSetForSavingV0> for VerificationQuorumSetForSaving {
-    fn from(value: VerificationQuorumSetForSavingV0) -> Self {
-        VerificationQuorumSetForSaving::V0(value)
+impl From<SignatureVerificationQuorumSetForSavingV0> for SignatureVerificationQuorumSetForSaving {
+    fn from(value: SignatureVerificationQuorumSetForSavingV0) -> Self {
+        SignatureVerificationQuorumSetForSaving::V0(value)
     }
 }
 
-impl From<VerificationQuorumSetV0> for VerificationQuorumSetForSavingV0 {
-    fn from(value: VerificationQuorumSetV0) -> Self {
-        let VerificationQuorumSetV0 {
+impl From<SignatureVerificationQuorumSetV0> for SignatureVerificationQuorumSetForSavingV0 {
+    fn from(value: SignatureVerificationQuorumSetV0) -> Self {
+        let SignatureVerificationQuorumSetV0 {
             config,
             current_quorums,
             previous,
@@ -43,9 +41,9 @@ impl From<VerificationQuorumSetV0> for VerificationQuorumSetForSavingV0 {
     }
 }
 
-impl From<VerificationQuorumSetForSavingV0> for VerificationQuorumSetV0 {
-    fn from(value: VerificationQuorumSetForSavingV0) -> Self {
-        let VerificationQuorumSetForSavingV0 {
+impl From<SignatureVerificationQuorumSetForSavingV0> for SignatureVerificationQuorumSetV0 {
+    fn from(value: SignatureVerificationQuorumSetForSavingV0) -> Self {
+        let SignatureVerificationQuorumSetForSavingV0 {
             config,
             current_quorums,
             previous_quorums,

@@ -3,12 +3,12 @@ mod v0;
 use crate::config::QuorumLikeConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::verification_quorum_set::v0::for_saving::VerificationQuorumSetForSavingV0;
-pub use crate::platform_types::verification_quorum_set::v0::quorum_set::{
-    QuorumConfig, QuorumsWithConfig, SelectedQuorumSetIterator, VerificationQuorumSetV0,
-    VerificationQuorumSetV0Methods, SIGN_OFFSET,
+use crate::platform_types::signature_verification_quorum_set::v0::for_saving::SignatureVerificationQuorumSetForSavingV0;
+pub use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::{
+    QuorumConfig, QuorumsWithConfig, SelectedQuorumSetIterator, SignatureVerificationQuorumSetV0,
+    SignatureVerificationQuorumSetV0Methods, SIGN_OFFSET,
 };
-pub use crate::platform_types::verification_quorum_set::v0::quorums::{
+pub use crate::platform_types::signature_verification_quorum_set::v0::quorums::{
     Quorum, Quorums, SigningQuorum, ThresholdBlsPublicKey, VerificationQuorum,
 };
 use bincode::{Decode, Encode};
@@ -17,21 +17,25 @@ use dpp::version::PlatformVersion;
 
 /// Quorums with keys for signature verification
 #[derive(Debug, Clone, From)]
-pub enum VerificationQuorumSet {
+pub enum SignatureVerificationQuorumSet {
     /// Version 0 of the signature verification quorums
-    V0(VerificationQuorumSetV0),
+    V0(SignatureVerificationQuorumSetV0),
 }
 
-impl VerificationQuorumSet {
+impl SignatureVerificationQuorumSet {
     /// Create a default SignatureVerificationQuorums
     pub fn new(
         config: &impl QuorumLikeConfig,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        match platform_version.drive_abci.structs.verification_quorum_set {
-            0 => Ok(VerificationQuorumSetV0::new(config).into()),
+        match platform_version
+            .drive_abci
+            .structs
+            .signature_verification_quorum_set
+        {
+            0 => Ok(SignatureVerificationQuorumSetV0::new(config).into()),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "VerificationQuorumSet.new".to_string(),
+                method: "SignatureVerificationQuorumSet.new".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -39,7 +43,7 @@ impl VerificationQuorumSet {
     }
 }
 
-impl VerificationQuorumSetV0Methods for VerificationQuorumSet {
+impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSet {
     fn config(&self) -> &QuorumConfig {
         match self {
             Self::V0(v0) => v0.config(),
@@ -111,23 +115,27 @@ impl VerificationQuorumSetV0Methods for VerificationQuorumSet {
 
 /// Core Quorum Set structure for saving to the database
 #[derive(Debug, Clone, Encode, Decode)]
-pub enum VerificationQuorumSetForSaving {
+pub enum SignatureVerificationQuorumSetForSaving {
     /// Version 0 of the signature verification quorums
-    V0(VerificationQuorumSetForSavingV0),
+    V0(SignatureVerificationQuorumSetForSavingV0),
 }
 
-impl From<VerificationQuorumSet> for VerificationQuorumSetForSaving {
-    fn from(value: VerificationQuorumSet) -> Self {
+impl From<SignatureVerificationQuorumSet> for SignatureVerificationQuorumSetForSaving {
+    fn from(value: SignatureVerificationQuorumSet) -> Self {
         match value {
-            VerificationQuorumSet::V0(v0) => VerificationQuorumSetForSaving::V0(v0.into()),
+            SignatureVerificationQuorumSet::V0(v0) => {
+                SignatureVerificationQuorumSetForSaving::V0(v0.into())
+            }
         }
     }
 }
 
-impl From<VerificationQuorumSetForSaving> for VerificationQuorumSet {
-    fn from(value: VerificationQuorumSetForSaving) -> Self {
+impl From<SignatureVerificationQuorumSetForSaving> for SignatureVerificationQuorumSet {
+    fn from(value: SignatureVerificationQuorumSetForSaving) -> Self {
         match value {
-            VerificationQuorumSetForSaving::V0(v0) => VerificationQuorumSet::V0(v0.into()),
+            SignatureVerificationQuorumSetForSaving::V0(v0) => {
+                SignatureVerificationQuorumSet::V0(v0.into())
+            }
         }
     }
 }
