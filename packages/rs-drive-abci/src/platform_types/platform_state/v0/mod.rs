@@ -478,10 +478,14 @@ pub trait PlatformStateV0Methods {
     )>;
 
     /// The changes in the full masternode list between two platform states
-    fn full_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges where Self: Sized;
+    fn full_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges
+    where
+        Self: Sized;
 
     /// The changes in the high performance masternode list (evonodes) between two platform states
-    fn hpmn_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges where Self: Sized;
+    fn hpmn_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges
+    where
+        Self: Sized;
 }
 
 impl PlatformStateV0Methods for PlatformStateV0 {

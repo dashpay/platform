@@ -48,7 +48,7 @@ mod tests {
 
     use dpp::block::block_info::BlockInfo;
     use rand::random;
-    
+
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};

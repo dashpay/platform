@@ -5294,9 +5294,9 @@ mod tests {
             }
         }
         mod masternodes_being_removed {
-            use crate::execution::validation::state_transition::state_transitions::tests::take_down_masternode_identities;
             use super::*;
-            
+            use crate::execution::validation::state_transition::state_transitions::tests::take_down_masternode_identities;
+
             #[test]
             fn test_masternode_vote_removals() {
                 let platform_version = PlatformVersion::latest();
@@ -5363,13 +5363,20 @@ mod tests {
                 assert_eq!(abstaining, Some(10));
 
                 assert_eq!(locking, Some(3));
-                
+
                 // now let's take down some masternodes
 
-                let voting_for_contender_1 = masternodes_by_vote_choice.get(&TowardsIdentity(contender_1.id())).expect("expected a vector of 50 masternode identities").iter().take(10).map(|(identity, _, _)| identity.id()).collect();
+                let voting_for_contender_1 = masternodes_by_vote_choice
+                    .get(&TowardsIdentity(contender_1.id()))
+                    .expect("expected a vector of 50 masternode identities")
+                    .iter()
+                    .take(10)
+                    .map(|(identity, _, _)| identity.id())
+                    .collect();
 
-                let platform_state_before_masternode_identity_removals = platform_state.as_ref().clone();
-                
+                let platform_state_before_masternode_identity_removals =
+                    platform_state.as_ref().clone();
+
                 take_down_masternode_identities(&mut platform, &voting_for_contender_1);
 
                 let block_platform_state = platform.state.load();
@@ -5377,7 +5384,12 @@ mod tests {
                 let transaction = platform.drive.grove.start_transaction();
 
                 platform
-                    .remove_votes_for_removed_masternodes(&platform_state_before_masternode_identity_removals, &block_platform_state, Some(&transaction), platform_version)
+                    .remove_votes_for_removed_masternodes(
+                        &platform_state_before_masternode_identity_removals,
+                        &block_platform_state,
+                        Some(&transaction),
+                        platform_version,
+                    )
                     .expect("expected to remove votes for removed masternodes");
 
                 platform
@@ -5386,7 +5398,7 @@ mod tests {
                     .commit_transaction(transaction)
                     .unwrap()
                     .expect("expected to commit transaction");
-                
+
                 // let's fast-forward to make sure it's properly distributed
 
                 let mut platform_state = (**platform_state).clone();
@@ -5407,7 +5419,7 @@ mod tests {
                         signature: [0u8; 96],
                         round: 0,
                     }
-                        .into(),
+                    .into(),
                 ));
 
                 platform.state.store(Arc::new(platform_state));
@@ -5446,7 +5458,7 @@ mod tests {
                         finished_vote_info,
                         Some(FinishedVoteInfo {
                             finished_vote_outcome:
-                            finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
                             won_by_identity_id: Some(contender_2.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,

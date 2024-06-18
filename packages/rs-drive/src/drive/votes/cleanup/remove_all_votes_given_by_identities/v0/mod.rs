@@ -5,13 +5,16 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::drive::grove_operations::BatchDeleteApplyType;
-use crate::drive::votes::paths::{vote_contested_resource_identity_votes_tree_path_for_identity, vote_contested_resource_identity_votes_tree_path_vec};
+use crate::drive::votes::paths::{
+    vote_contested_resource_identity_votes_tree_path_for_identity,
+    vote_contested_resource_identity_votes_tree_path_vec,
+};
+use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::query::QueryItem;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 
 impl Drive {
     /// We remove votes for an identity when that identity is somehow disabled. Currently there is
@@ -25,23 +28,16 @@ impl Drive {
         // We first query for all vote_choices that the identity has
 
         let vote_path = vote_contested_resource_identity_votes_tree_path_vec();
-        
+
         let mut query = Query::new_with_direction(true);
-        
+
         query.insert_keys(identity_ids_as_byte_arrays);
-        
+
         let subquery = Query::new_single_query_item(QueryItem::RangeFull(RangeFull));
 
         query.set_subquery(subquery);
 
-        let path_query = PathQuery::new(
-            vote_path.clone(),
-            SizedQuery::new(
-                query,
-                None,
-                None,
-            ),
-        );
+        let path_query = PathQuery::new(vote_path.clone(), SizedQuery::new(query, None, None));
 
         let votes_to_remove_by_identity_id = self
             .grove_get_raw_path_query(
@@ -60,11 +56,11 @@ impl Drive {
 
         for (identifier_bytes, votes_to_remove) in votes_to_remove_by_identity_id {
             let identity_id = Identifier::from_vec(identifier_bytes.clone())?;
-            let vote_path_ref =
-                vote_contested_resource_identity_votes_tree_path_for_identity(identity_id.as_bytes());
-            
-            for (vote_id, vote_to_remove) in votes_to_remove {
+            let vote_path_ref = vote_contested_resource_identity_votes_tree_path_for_identity(
+                identity_id.as_bytes(),
+            );
 
+            for (vote_id, vote_to_remove) in votes_to_remove {
                 // We delete the vote item as reference
                 self.batch_delete(
                     vote_path_ref.as_slice().into(),
@@ -76,7 +72,7 @@ impl Drive {
                     &mut deletion_batch,
                     &platform_version.drive,
                 )?;
-                
+
                 let serialized_reference = vote_to_remove.into_item_bytes()?;
                 let bincode_config = bincode::config::standard()
                     .with_big_endian()
@@ -97,11 +93,10 @@ impl Drive {
 
                 // we then need to add to the batch the deletion
 
-
                 absolute_path.pop(); // we need to get rid of the key (which is the identifier bytes)
 
-                let absolute_path_ref: Vec<_> = absolute_path.iter().map(|a| a.as_slice()).collect();
-
+                let absolute_path_ref: Vec<_> =
+                    absolute_path.iter().map(|a| a.as_slice()).collect();
 
                 self.batch_delete(
                     absolute_path_ref.as_slice().into(),
@@ -115,16 +110,15 @@ impl Drive {
                 )?;
             }
         }
-        
+
         if !deletion_batch.is_empty() {
-            self
-                .apply_batch_low_level_drive_operations(
-                    None,
-                    None,
-                    deletion_batch,
-                    &mut vec![],
-                    &platform_version.drive,
-                )?;
+            self.apply_batch_low_level_drive_operations(
+                None,
+                None,
+                deletion_batch,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
         }
 
         Ok(())

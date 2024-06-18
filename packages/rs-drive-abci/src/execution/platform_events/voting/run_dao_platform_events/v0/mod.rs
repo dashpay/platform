@@ -1,14 +1,14 @@
-use dpp::block::block_info::BlockInfo;
-use drive::grovedb::TransactionArg;
-use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
+use dpp::version::PlatformVersion;
+use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     pub(super) fn run_dao_platform_events_v0(
         &self,
@@ -18,7 +18,7 @@ impl<C> Platform<C>
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // Remove any votes that 
+        // Remove any votes that
 
         self.remove_votes_for_removed_masternodes(
             last_committed_platform_state,
@@ -34,4 +34,3 @@ impl<C> Platform<C>
         Ok(())
     }
 }
-

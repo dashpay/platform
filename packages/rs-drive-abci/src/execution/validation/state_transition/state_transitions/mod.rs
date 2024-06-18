@@ -253,15 +253,15 @@ mod tests {
         masternode_identities: &Vec<Identifier>,
     ) {
         let mut platform_state = platform.state.load().clone().deref().clone();
-        
+
         let list = platform_state.full_masternode_list_mut();
-        
+
         for masternode_identifiers in masternode_identities {
             let pro_tx_hash = ProTxHash::from_byte_array(masternode_identifiers.to_buffer());
 
             list.remove(&pro_tx_hash);
         }
-        
+
         platform.state.store(Arc::new(platform_state));
     }
 
