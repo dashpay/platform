@@ -99,13 +99,14 @@ where
 
         for (identity, vote_ids) in identity_to_vote_ids_map {
             // We remove the identity votes given
-            self.drive.remove_specific_votes_given_by_identity(
-                identity,
-                vote_ids.as_slice(),
-                &mut operations,
-                transaction,
-                platform_version,
-            )?;
+            self.drive
+                .remove_specific_vote_references_given_by_identity(
+                    identity,
+                    vote_ids.as_slice(),
+                    &mut operations,
+                    transaction,
+                    platform_version,
+                )?;
         }
 
         if !operations.is_empty() {

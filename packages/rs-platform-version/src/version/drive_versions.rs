@@ -292,7 +292,7 @@ pub struct DriveVoteSetupMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteCleanupMethodVersions {
-    pub remove_all_votes_given_by_identity: FeatureVersion,
+    pub remove_specific_vote_references_given_by_identity: FeatureVersion,
     pub remove_specific_votes_given_by_identity: FeatureVersion,
     pub remove_contested_resource_vote_poll_end_date_query_operations: FeatureVersion,
     pub remove_contested_resource_vote_poll_votes_operations: FeatureVersion,

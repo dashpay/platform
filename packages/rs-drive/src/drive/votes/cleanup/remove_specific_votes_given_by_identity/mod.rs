@@ -12,7 +12,7 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// We remove the references of specific votes given by an identity when the vote poll ends
-    pub fn remove_specific_votes_given_by_identity(
+    pub fn remove_specific_vote_references_given_by_identity(
         &self,
         identity_id: &Identifier,
         votes: &[&Identifier],
@@ -25,9 +25,9 @@ impl Drive {
             .methods
             .vote
             .cleanup
-            .remove_all_votes_given_by_identity
+            .remove_specific_vote_references_given_by_identity
         {
-            0 => self.remove_specific_votes_given_by_identity_v0(
+            0 => self.remove_specific_vote_references_given_by_identity_v0(
                 identity_id,
                 votes,
                 batch_operations,

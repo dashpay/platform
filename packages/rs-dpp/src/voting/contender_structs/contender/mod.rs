@@ -1,7 +1,6 @@
 pub mod v0;
 
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::Document;
 use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::voting::contender_structs::contender::v0::ContenderV0;

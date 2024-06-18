@@ -779,7 +779,7 @@ mod tests {
                     allow_include_locked_and_abstaining_vote_tally: true,
                 };
 
-            let (root_hash, result) = resolved_contested_document_vote_poll_drive_query
+            let (_root_hash, result) = resolved_contested_document_vote_poll_drive_query
                 .verify_vote_poll_vote_state_proof(proof.grovedb_proof.as_ref(), platform_version)
                 .expect("expected to verify proof");
 
