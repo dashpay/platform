@@ -146,18 +146,12 @@ where
                     .validator_sets()
                     .contains_key::<QuorumHash>(key)
             })
-            .map(|(key, details)| {
-                let mut quorum_info_result = self.core_rpc.get_quorum_info(
+            .map(|(key, _)| {
+                let quorum_info_result = self.core_rpc.get_quorum_info(
                     self.config.validator_set.quorum_type,
                     &key,
                     None,
                 )?;
-
-                // In case if current chain locked height so far in the past,
-                // long enough for a new quorum to be formed, quorum info (which is not
-                // based on chain locked height) will respond with altered quorum index,
-                // so we need to use quorum index from the deterministic `quorum listextended` response
-                quorum_info_result.quorum_index = details.quorum_index.unwrap_or(0);
 
                 Ok((key, quorum_info_result))
             })
