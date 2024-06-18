@@ -84,12 +84,11 @@ async fn contested_resources_paginate() {
         if i != 2 {
             continue;
         }
-        let start_vec = start
-            .encode_to_vec(sdk.version())
-            .expect("encode current value");
+
+        let ContestedResource::Value(start_value) = start.clone();
 
         let query = VotePollsByDocumentTypeQuery {
-            start_at_value: Some((start_vec, false)),
+            start_at_value: Some((start_value, false)),
             ..query_all.clone()
         };
 
@@ -172,12 +171,11 @@ async fn contested_resources_limit() {
             LIMIT
         };
         assert_eq!(length, expected as usize);
-
-        let ContestedResource::Value(last) = rss.0.last().expect("last contested resource");
-        let last_value = dpp::bincode::encode_to_vec(last, dpp::bincode::config::standard())
-            .expect("encode last value");
-        start_at_value = Some((last_value, false));
         tracing::debug!(contested_resources=?rss, i, "Contested resources");
+
+        let ContestedResource::Value(last) =
+            rss.0.into_iter().last().expect("last contested resource");
+        start_at_value = Some((last, false));
 
         i += length as u16;
     }
