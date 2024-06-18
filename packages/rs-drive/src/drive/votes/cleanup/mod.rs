@@ -1,4 +1,4 @@
-mod remove_all_votes_given_by_identity;
+mod remove_all_votes_given_by_identities;
 mod remove_contested_resource_vote_poll_contenders_operations;
 mod remove_contested_resource_vote_poll_documents_operations;
 mod remove_contested_resource_vote_poll_end_date_query_operations;

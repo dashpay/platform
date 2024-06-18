@@ -6,6 +6,7 @@
 
 #[cfg(feature = "server")]
 use crate::drive::flags::StorageFlags;
+use crate::drive::votes::paths::CONTESTED_DOCUMENT_STORAGE_TREE_KEY;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -82,7 +83,10 @@ fn make_document_contested_reference(
     // 0 represents document storage
     // Then we add document id
     // Then we add 0 if the document type keys history
-    let reference_path = vec![vec![0], document.id().to_vec()];
+    let reference_path = vec![
+        vec![CONTESTED_DOCUMENT_STORAGE_TREE_KEY],
+        document.id().to_vec(),
+    ];
     let max_reference_hops = 1;
     // 2 because the contract could allow for history
     // 5 because
