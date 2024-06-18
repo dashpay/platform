@@ -501,7 +501,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             state_transition_execution_context: 0,
             commit: 0,
             masternode: 0,
-            core_quorum_set: 0,
+            verification_quorum_set: 0,
         },
         methods: DriveAbciMethodVersions {
             engine: DriveAbciEngineMethodVersions {

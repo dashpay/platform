@@ -8,9 +8,9 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use crate::error::serialization::SerializationError;
-use crate::platform_types::core_quorum_set::{CoreQuorumSetV0Methods, SIGN_OFFSET};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::verification_quorum_set::{VerificationQuorumSetV0Methods, SIGN_OFFSET};
 
 #[inline(always)]
 pub(super) fn verify_recent_instant_lock_signature_locally_v0(

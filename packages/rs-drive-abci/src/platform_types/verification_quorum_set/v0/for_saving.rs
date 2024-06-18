@@ -1,6 +1,9 @@
-use crate::platform_types::core_quorum_set::v0::quorum_set::{PreviousPastQuorumsV0, QuorumConfig};
-use crate::platform_types::core_quorum_set::{
-    CoreQuorumSetForSaving, CoreQuorumSetV0, Quorums, ThresholdBlsPublicKey, VerificationQuorum,
+use crate::platform_types::verification_quorum_set::v0::quorum_set::{
+    PreviousPastQuorumsV0, QuorumConfig,
+};
+use crate::platform_types::verification_quorum_set::{
+    Quorums, ThresholdBlsPublicKey, VerificationQuorum, VerificationQuorumSetForSaving,
+    VerificationQuorumSetV0,
 };
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::QuorumHash;
@@ -10,7 +13,7 @@ use dpp::platform_serialization::de::Decode;
 use dpp::platform_value::Bytes32;
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct CoreQuorumSetForSavingV0 {
+pub struct VerificationQuorumSetForSavingV0 {
     config: QuorumConfigForSavingV0,
 
     current_quorums: Vec<QuorumForSavingV0>,
@@ -18,15 +21,15 @@ pub struct CoreQuorumSetForSavingV0 {
     previous_quorums: Option<PreviousPastQuorumsForSavingV0>,
 }
 
-impl From<CoreQuorumSetForSavingV0> for CoreQuorumSetForSaving {
-    fn from(value: CoreQuorumSetForSavingV0) -> Self {
-        CoreQuorumSetForSaving::V0(value)
+impl From<VerificationQuorumSetForSavingV0> for VerificationQuorumSetForSaving {
+    fn from(value: VerificationQuorumSetForSavingV0) -> Self {
+        VerificationQuorumSetForSaving::V0(value)
     }
 }
 
-impl From<CoreQuorumSetV0> for CoreQuorumSetForSavingV0 {
-    fn from(value: CoreQuorumSetV0) -> Self {
-        let CoreQuorumSetV0 {
+impl From<VerificationQuorumSetV0> for VerificationQuorumSetForSavingV0 {
+    fn from(value: VerificationQuorumSetV0) -> Self {
+        let VerificationQuorumSetV0 {
             config,
             current_quorums,
             previous,
@@ -40,9 +43,9 @@ impl From<CoreQuorumSetV0> for CoreQuorumSetForSavingV0 {
     }
 }
 
-impl From<CoreQuorumSetForSavingV0> for CoreQuorumSetV0 {
-    fn from(value: CoreQuorumSetForSavingV0) -> Self {
-        let CoreQuorumSetForSavingV0 {
+impl From<VerificationQuorumSetForSavingV0> for VerificationQuorumSetV0 {
+    fn from(value: VerificationQuorumSetForSavingV0) -> Self {
+        let VerificationQuorumSetForSavingV0 {
             config,
             current_quorums,
             previous_quorums,

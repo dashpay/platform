@@ -1,6 +1,6 @@
 use crate::config::{ChainLockConfig, QuorumLikeConfig};
-use crate::platform_types::core_quorum_set::v0::quorums::Quorums;
-use crate::platform_types::core_quorum_set::VerificationQuorum;
+use crate::platform_types::verification_quorum_set::v0::quorums::Quorums;
+use crate::platform_types::verification_quorum_set::VerificationQuorum;
 use dashcore_rpc::json::QuorumType;
 use dpp::dashcore::QuorumHash;
 use std::vec::IntoIter;
@@ -25,7 +25,7 @@ pub(super) struct PreviousPastQuorumsV0 {
 
 /// Quorums with keys for signature verification
 #[derive(Debug, Clone)]
-pub struct CoreQuorumSetV0 {
+pub struct VerificationQuorumSetV0 {
     /// Quorum configuration
     pub(super) config: QuorumConfig,
 
@@ -39,7 +39,7 @@ pub struct CoreQuorumSetV0 {
 }
 
 /// The trait defines methods for the signature verification quorums structure v0
-pub trait CoreQuorumSetV0Methods {
+pub trait VerificationQuorumSetV0Methods {
     /// Config
     fn config(&self) -> &QuorumConfig;
 
@@ -149,7 +149,7 @@ pub struct QuorumConfig {
     pub window: u32,
 }
 
-impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
+impl VerificationQuorumSetV0Methods for VerificationQuorumSetV0 {
     fn config(&self) -> &QuorumConfig {
         &self.config
     }
@@ -264,10 +264,10 @@ impl CoreQuorumSetV0Methods for CoreQuorumSetV0 {
     }
 }
 
-impl CoreQuorumSetV0 {
+impl VerificationQuorumSetV0 {
     /// New empty quorum set based on quorum configuration
     pub fn new(config: &impl QuorumLikeConfig) -> Self {
-        CoreQuorumSetV0 {
+        VerificationQuorumSetV0 {
             config: QuorumConfig {
                 quorum_type: config.quorum_type(),
                 active_signers: config.quorum_active_signers(),
@@ -280,9 +280,9 @@ impl CoreQuorumSetV0 {
     }
 }
 
-impl From<ChainLockConfig> for CoreQuorumSetV0 {
+impl From<ChainLockConfig> for VerificationQuorumSetV0 {
     fn from(value: ChainLockConfig) -> Self {
-        CoreQuorumSetV0 {
+        VerificationQuorumSetV0 {
             config: QuorumConfig {
                 quorum_type: value.quorum_type,
                 active_signers: value.quorum_active_signers,

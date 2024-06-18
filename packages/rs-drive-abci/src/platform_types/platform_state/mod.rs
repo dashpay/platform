@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
-use crate::platform_types::core_quorum_set::CoreQuorumSet;
+use crate::platform_types::verification_quorum_set::VerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
@@ -321,7 +321,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums(&self) -> &CoreQuorumSet {
+    fn chain_lock_validating_quorums(&self) -> &VerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
         }
@@ -387,7 +387,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_chain_lock_validating_quorums(&mut self, quorums: CoreQuorumSet) {
+    fn set_chain_lock_validating_quorums(&mut self, quorums: VerificationQuorumSet) {
         match self {
             PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
         }
@@ -447,7 +447,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums_mut(&mut self) -> &mut CoreQuorumSet {
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut VerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => v0.chain_lock_validating_quorums_mut(),
         }
@@ -477,13 +477,13 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn instant_lock_validating_quorums(&self) -> &CoreQuorumSet {
+    fn instant_lock_validating_quorums(&self) -> &VerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => v0.instant_lock_validating_quorums(),
         }
     }
 
-    fn instant_lock_validating_quorums_mut(&mut self) -> &mut CoreQuorumSet {
+    fn instant_lock_validating_quorums_mut(&mut self) -> &mut VerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
         }

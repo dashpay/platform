@@ -9,7 +9,7 @@ use std::fmt::Debug;
 pub use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
 
 use crate::error::Error;
-use crate::platform_types::core_quorum_set::QuorumConfig;
+use crate::platform_types::verification_quorum_set::QuorumConfig;
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 
 /// Quorum per hash

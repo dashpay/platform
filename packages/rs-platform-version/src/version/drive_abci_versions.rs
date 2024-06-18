@@ -53,7 +53,7 @@ pub struct DriveAbciStructureVersions {
     pub state_transition_execution_context: FeatureVersion,
     pub commit: FeatureVersion,
     pub masternode: FeatureVersion,
-    pub core_quorum_set: FeatureVersion,
+    pub verification_quorum_set: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

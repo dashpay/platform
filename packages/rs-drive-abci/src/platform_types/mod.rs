@@ -35,8 +35,6 @@ pub mod block_proposal;
 pub mod cleaned_abci_messages;
 /// The commit
 pub mod commit;
-/// Signature verification quorums for Core
-pub mod core_quorum_set;
 /// Epoch
 pub mod epoch_info;
 /// The execution event result
@@ -60,6 +58,8 @@ pub mod system_identity_public_keys;
 pub mod validator;
 /// Quorum methods
 pub mod validator_set;
+/// Signature verification quorums for Core
+pub mod verification_quorum_set;
 /// Verify chain lock result
 pub mod verify_chain_lock_result;
 /// Withdrawal types
