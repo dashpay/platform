@@ -155,6 +155,7 @@ where
         }
 
         // In production this will always be true
+        #[cfg(feature = "testing-config")]
         if self
             .config
             .testing_configs

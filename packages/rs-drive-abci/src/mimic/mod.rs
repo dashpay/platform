@@ -480,6 +480,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             threshold_vote_extensions: extensions,
         };
         //if not in testing this will default to true
+        #[cfg(feature = "testing-config")]
         if self.platform.config.testing_configs.block_signing {
             let quorum_hash: [u8; 32] = quorum_hash.try_into().expect("wrong quorum hash len");
             let digest = commit

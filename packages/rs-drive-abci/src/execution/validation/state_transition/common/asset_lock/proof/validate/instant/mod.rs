@@ -45,6 +45,7 @@ impl AssetLockProofValidation for InstantAssetLockProof {
 
         if validation_mode != ValidationMode::RecheckTx && !validation_result.has_data() {
             // We should be able to disable instant lock versification for integration tests
+            #[cfg(feature = "testing-config")]
             if platform_ref
                 .config
                 .testing_configs

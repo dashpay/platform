@@ -206,7 +206,7 @@ pub struct PlatformConfig {
     #[serde(default)]
     pub rejections_path: Option<PathBuf>,
 
-    // todo: put this in tests like #[cfg(test)]
+    #[cfg(feature = "testing-config")]
     /// This should be None, except in the case of Testing platform
     #[serde(skip)]
     pub testing_configs: PlatformTestConfig,
@@ -639,6 +639,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
@@ -679,6 +680,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
@@ -719,6 +721,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
@@ -730,6 +733,7 @@ impl PlatformConfig {
     }
 }
 
+#[cfg(feature = "testing-config")]
 /// Configs that should only happen during testing
 #[derive(Clone, Debug)]
 pub struct PlatformTestConfig {
@@ -741,6 +745,7 @@ pub struct PlatformTestConfig {
     pub disable_instant_lock_signature_verification: bool,
 }
 
+#[cfg(feature = "testing-config")]
 impl PlatformTestConfig {
     /// Much faster config for tests
     pub fn default_with_no_block_signing() -> Self {
@@ -752,6 +757,7 @@ impl PlatformTestConfig {
     }
 }
 
+#[cfg(feature = "testing-config")]
 impl Default for PlatformTestConfig {
     fn default() -> Self {
         Self {
