@@ -159,6 +159,17 @@
         "unique": true
       },
       {
+        "name": "ownerIdUserId",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "toUserId": "asc"
+          }
+        ]
+      },
+      {
         "name": "userIdCreatedAt",
         "properties": [
           {
