@@ -15,6 +15,9 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::drive::votes::paths::{
+    CONTESTED_DOCUMENT_INDEXES_TREE_KEY, CONTESTED_DOCUMENT_STORAGE_TREE_KEY,
+};
 use crate::error::contract::DataContractError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -236,34 +239,24 @@ impl Drive {
                 ];
 
                 // primary key tree
-                let key_info = Key(vec![0]);
+                let key_info_storage = Key(vec![CONTESTED_DOCUMENT_STORAGE_TREE_KEY]);
                 self.batch_insert_empty_tree(
                     type_path,
-                    key_info,
+                    key_info_storage,
                     storage_flags.as_ref(),
                     &mut batch_operations,
                     &platform_version.drive,
                 )?;
 
-                let mut index_cache: HashSet<&[u8]> = HashSet::new();
-                // for each type we should insert the indices that are top level
-                for index in document_type
-                    .as_ref()
-                    .top_level_indices_of_contested_unique_indexes()
-                {
-                    // toDo: change this to be a reference by index
-                    let index_bytes = index.name.as_bytes();
-                    if !index_cache.contains(index_bytes) {
-                        self.batch_insert_empty_tree(
-                            type_path,
-                            KeyRef(index_bytes),
-                            storage_flags.as_ref(),
-                            &mut batch_operations,
-                            &platform_version.drive,
-                        )?;
-                        index_cache.insert(index_bytes);
-                    }
-                }
+                // index key tree
+                let key_info_indexes = Key(vec![CONTESTED_DOCUMENT_INDEXES_TREE_KEY]);
+                self.batch_insert_empty_tree(
+                    type_path,
+                    key_info_indexes,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
             }
         }
 

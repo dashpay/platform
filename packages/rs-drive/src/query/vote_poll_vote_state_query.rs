@@ -31,9 +31,6 @@ use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{Element, TransactionArg};
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use platform_version::version::PlatformVersion;
-use std::process::id;
-#[cfg(feature = "verify")]
-use std::sync::Arc;
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
@@ -433,7 +430,7 @@ impl ContestedDocumentVotePollDriveQuery {
                         let contenders = query_result_elements
                             .to_path_key_elements()
                             .into_iter()
-                            .map(|(mut path, key, document)| {
+                            .map(|(mut path, _key, document)| {
                                 let identity_id = path.pop().ok_or(Error::Drive(
                                     DriveError::CorruptedDriveState(
                                         "the path must have a last element".to_string(),
@@ -462,7 +459,7 @@ impl ContestedDocumentVotePollDriveQuery {
                         let mut abstaining_vote_tally: Option<u32> = None;
                         let mut winner = None;
 
-                        for (mut path, first_key, element) in
+                        for (path, first_key, element) in
                             query_result_elements.to_path_key_elements().into_iter()
                         {
                             let Some(identity_bytes) = path.last() else {

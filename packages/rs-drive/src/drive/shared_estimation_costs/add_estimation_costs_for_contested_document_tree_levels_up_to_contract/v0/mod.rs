@@ -13,7 +13,8 @@ use grovedb::EstimatedLayerSizes::AllSubtrees;
 use crate::drive::votes::paths::{
     vote_contested_resource_active_polls_contract_document_tree_path,
     vote_contested_resource_active_polls_contract_tree_path,
-    vote_contested_resource_active_polls_tree_path, vote_contested_resource_tree_path,
+    vote_contested_resource_active_polls_tree_path,
+    vote_contested_resource_contract_documents_indexes_path, vote_contested_resource_tree_path,
     vote_root_path,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -130,7 +131,25 @@ impl Drive {
                 ),
                 EstimatedLayerInformation {
                     is_sum_tree: false,
-                    estimated_layer_count: ApproximateElements(document_type_count),
+                    estimated_layer_count: ApproximateElements(2),
+                    estimated_layer_sizes: AllSubtrees(
+                        ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
+                        NoSumTrees,
+                        None,
+                    ),
+                },
+            );
+
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_path(
+                    vote_contested_resource_contract_documents_indexes_path(
+                        contract.id_ref().as_bytes(),
+                        document_type.name().as_str(),
+                    ),
+                ),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: ApproximateElements(1024), //Just a guess
                     estimated_layer_sizes: AllSubtrees(
                         ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
                         NoSumTrees,

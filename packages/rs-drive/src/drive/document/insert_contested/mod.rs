@@ -44,29 +44,17 @@ use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
     use std::option::Option::None;
 
     use dpp::block::block_info::BlockInfo;
-    use rand::{random, Rng};
+    use rand::random;
 
-    use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-    use crate::fee::op::LowLevelDriveOperation;
-
-    use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::document::Document;
 
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::document::serialization_traits::DocumentCborMethodsV0;
-    use dpp::fee::default_costs::EpochCosts;
-    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-    use dpp::fee::fee_result::FeeResult;
-    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
 

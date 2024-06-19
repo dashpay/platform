@@ -56,7 +56,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
             ContestedDocumentVotePollDriveQueryResultType::Documents => {
                 let contenders = proved_key_values
                     .into_iter()
-                    .map(|(mut path, key, document)| {
+                    .map(|(mut path, _key, document)| {
                         let identity_id =
                             path.pop()
                                 .ok_or(Error::Drive(DriveError::CorruptedDriveState(
