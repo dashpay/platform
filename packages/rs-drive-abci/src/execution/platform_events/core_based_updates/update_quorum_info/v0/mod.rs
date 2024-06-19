@@ -111,18 +111,10 @@ where
         let mut removed_a_validator_set = false;
 
         // Remove validator_sets entries that are no longer valid for the core block height
-        // and update quorum index for existing validator sets
         block_platform_state
             .validator_sets_mut()
-            .retain(|quorum_hash, validator_set| {
-                let retain = match validator_quorums_list.get(quorum_hash) {
-                    Some(quorum_details) => {
-                        validator_set.set_quorum_index(quorum_details.quorum_index);
-                        true
-                    }
-                    None => false,
-                };
-
+            .retain(|quorum_hash, _| {
+                let retain = validator_quorums_list.contains_key::<QuorumHash>(quorum_hash);
                 removed_a_validator_set |= !retain;
 
                 if !retain {
