@@ -154,15 +154,20 @@ where
             return Ok(validation_result.into());
         }
 
+        // Verify commit
+
         // In production this will always be true
+        #[cfg(not(feature = "testing-config"))]
+        let verify_commit_signature = true;
+
         #[cfg(feature = "testing-config")]
-        if self
+        let verify_commit_signature = self
             .config
             .testing_configs
-            .block_commit_signature_verification
-        {
-            // Verify commit
+            .block_commit_signature_verification;
 
+        if verify_commit_signature
+        {
             let quorum_public_key = last_committed_state
                 .current_validator_set()?
                 .threshold_public_key();
