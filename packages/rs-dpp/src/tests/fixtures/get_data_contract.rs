@@ -192,7 +192,15 @@ pub fn get_data_contract_fixture(
                             "byteArrayField": "asc"
                         }
                     ]
-                }
+                },
+                {
+                    "name": "index2",
+                    "properties": [
+                        {
+                            "identifierField": "asc"
+                        }
+                    ]
+                },
             ],
             "properties": {
                 "byteArrayField": {

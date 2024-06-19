@@ -180,7 +180,10 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::{assert_invalid_identifier, setup_platform, store_data_contract};
+    use assert_matches::assert_matches;
+    use dpp::platform_value::platform_value;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use drive::query::{OrderClause, WhereClause, WhereOperator};
 
     #[test]
     fn test_invalid_document_id() {
@@ -289,6 +292,57 @@ mod tests {
             result.errors.as_slice(),
             [QueryError::Query(QuerySyntaxError::DeserializationError(msg))] if msg == "unable to decode 'where' query from cbor"
         ))
+    }
+
+    #[test]
+    fn test_invalid_identifier_value_in_where_clause() {
+        let (platform, state, version) = setup_platform(false);
+
+        let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
+        store_data_contract(&platform, created_data_contract.data_contract(), version);
+
+        let data_contract_id = created_data_contract.data_contract().id();
+        let document_type = "withByteArrays";
+
+        let where_value = Value::Array(vec![WhereClause {
+            field: "identifierField".to_string(),
+            operator: WhereOperator::GreaterThanOrEquals,
+            value: Value::Text("lklimek".to_string()),
+        }
+        .into()]);
+
+        let where_cbor = where_value
+            .to_cbor_buffer()
+            .expect("expected cbor encoding to succeed");
+
+        let order_by_value = Value::Array(vec![OrderClause {
+            field: "identifierField".to_string(),
+            ascending: false,
+        }
+        .into()]);
+
+        let order_by_cbor = order_by_value
+            .to_cbor_buffer()
+            .expect("expected cbor encoding to succeed");
+
+        let request = GetDocumentsRequestV0 {
+            data_contract_id: data_contract_id.to_vec(),
+            document_type: document_type.to_string(),
+            r#where: where_cbor,
+            limit: 0,
+            order_by: order_by_cbor,
+            prove: true,
+            start: None,
+        };
+
+        let result = platform
+            .query_documents_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::DeserializationError(msg))] if msg == "unable to decode 'where' query from cbor"
+        )
     }
 
     #[test]
