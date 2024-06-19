@@ -4,11 +4,8 @@ version = "1.0.0-dev.15"
 edition = "2021"
 rust-version = "1.76"
 authors = [
-  "Anton Suprunchuk <anton.suprunchuk@gmail.com>",
-  "Samuel Westrich <sam@dash.org>",
-  "Ivan Shumkov <ivan@shumkov.ru>",
-  "Djavid Gabibiyan <djavid@dash.org>",
-  "Igor Markin <igor.markin@dash.org>",
+  "Ivan Shumkov <shumkov@dash.ru>",
+  "Evgeny Fomin <evgeny.fomin@dash.org>",
 ]
 
 [dependencies]
