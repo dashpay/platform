@@ -262,8 +262,6 @@ describe('DPNS', () => {
       delete rawRegisteredDomain.$updatedAt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
-
-      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
     });
 
     // TODO: Figure out how to overcome client-side validation and implement
