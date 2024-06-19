@@ -78,13 +78,7 @@ async fn contested_resources_paginate() {
 
     tracing::debug!(contested_resources=?all, "All contested resources");
     // when I set start_at_value to some value,
-
-    // for key,val in all
     for (i, start) in all.0.iter().enumerate() {
-        if i != 2 {
-            continue;
-        }
-
         let ContestedResource::Value(start_value) = start.clone();
 
         let query = VotePollsByDocumentTypeQuery {
@@ -96,10 +90,9 @@ async fn contested_resources_paginate() {
             .await
             .expect("fetch contested resources");
         tracing::debug!(?start, contested_resources=?rss, "Contested resources");
-        assert!(!rss.0.is_empty());
 
         for (j, fetched) in rss.0.into_iter().enumerate() {
-            let all_index = i + j; // we fetch exclusive
+            let all_index = i + j + 1; // we fetch exclusive
 
             assert_eq!(
                 fetched,
