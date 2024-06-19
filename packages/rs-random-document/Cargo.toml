@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.76"
 authors = [
   "Evgeny Fomin <evgeny.fomin@dash.org>",
-  "Ivan Shumkov <shumkov@dash.ru>",
+  "Ivan Shumkov <shumkov@dash.org>",
 ]
 
 [dependencies]
