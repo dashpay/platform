@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "1.0.0-dev.14",
+  "version": "1.0.0-dev.15",
   "description": "Dash Network end-to-end tests",
   "scripts": {
     "test": "yarn exec bin/test.sh",
@@ -63,6 +63,7 @@
     "path-browserify": "^1.0.1",
     "process": "^0.11.10",
     "semver": "^7.5.3",
+    "setimmediate": "^1.0.5",
     "sinon": "^17.0.1",
     "sinon-chai": "^3.7.0",
     "stream-browserify": "^3.0.0",
@@ -73,7 +74,7 @@
     "utf-8-validate": "^5.0.9",
     "util": "^0.12.4",
     "webpack": "^5.76.1",
-    "ws": "^7.5.3"
+    "ws": "^8.17.1"
   },
   "devDependencies": {
     "eslint": "^8.53.0",

@@ -1,6 +1,6 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
-use crate::metrics::{query_duration_metric, response_code_metric_label};
+use crate::metrics::{abci_response_code_metric_label, query_duration_metric};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
@@ -174,7 +174,7 @@ impl QueryService {
         let code_label = format!("{:?}", code).to_lowercase();
 
         // Add code to response duration metric
-        let label = response_code_metric_label(code);
+        let label = abci_response_code_metric_label(code);
         response_duration_metric.add_label(label);
 
         match code {

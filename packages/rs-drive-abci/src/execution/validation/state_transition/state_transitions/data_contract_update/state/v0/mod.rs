@@ -476,7 +476,6 @@ mod tests {
                 )
                 .expect("failed to apply contract");
 
-            let identity_id = data_contract.owner_id();
             let data_contract_id = data_contract.id();
 
             data_contract.set_version(2);

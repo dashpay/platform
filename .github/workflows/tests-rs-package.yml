@@ -41,6 +41,14 @@ jobs:
         with:
           components: clippy
 
+      - name: Setup Node.JS, required by json-schema-faker-rs
+        if: inputs.package == 'dpp'
+        uses: ./.github/actions/nodejs
+
+      - name: Setup Javy, required by json-schema-faker-rs
+        if: inputs.package == 'dpp'
+        uses: ./.github/actions/javy
+
       - uses: clechasseur/rs-clippy-check@v3
         with:
           args: --package ${{ inputs.package }} --all-features --locked -- --no-deps
@@ -180,6 +188,14 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
 
+      - name: Setup Node.JS, required by json-schema-faker-rs
+        if: inputs.package == 'dpp'
+        uses: ./.github/actions/nodejs
+
+      - name: Setup Javy, required by json-schema-faker-rs
+        if: inputs.package == 'dpp'
+        uses: ./.github/actions/javy
+
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features --locked
         env:
@@ -205,7 +221,15 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
 
-      - name: Get crate ${{ inputs.package }} info
+      - name: Setup Node.JS, required by json-schema-faker-rs
+        if: inputs.package == 'dpp'
+        uses: ./.github/actions/nodejs
+
+      - name: Setup Javy, required by json-schema-faker-rs
+        if: inputs.package == 'dpp'
+        uses: ./.github/actions/javy
+
+      - name: Get crate ${{ runner.arch }} info
         id: crate_info
         uses: ./.github/actions/crate_info
         with:

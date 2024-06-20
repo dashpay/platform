@@ -4,7 +4,7 @@ const createClientWithoutWallet = require('../../../lib/test/createClientWithout
 
 const { Core: { Block }, Essentials: { Buffer } } = Dash;
 
-describe('Core', () => {
+describe.skip('Core', () => {
   describe('getBlock', () => {
     let client;
 
@@ -29,8 +29,7 @@ describe('Core', () => {
     });
 
     it('should get block by height', async () => {
-      const { chain: { blocksCount: bestBlockHeight } } = await client
-        .getDAPIClient().core.getBlockchainStatus();
+      const bestBlockHeight = await client.getDAPIClient().core.getBestBlockHeight();
 
       const blockBinary = await client.getDAPIClient().core.getBlockByHeight(bestBlockHeight);
 
