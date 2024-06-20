@@ -196,7 +196,7 @@ async fn contested_resource_vote_states_with_limit() {
     let sdk = cfg
         .setup_api("contested_resource_vote_states_with_limit")
         .await;
-    check_mn_voting_prerequisities(&sdk, &cfg)
+    check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisites not met");
 
@@ -390,10 +390,7 @@ async fn contested_resource_vote_states_fields() {
     ];
 
     let cfg = Config::new();
-    let sdk = cfg
-        .setup_api("test_contested_resources_idx_value_empty_string")
-        .await;
-    check_mn_voting_prerequisities(&sdk, &cfg)
+    check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisities");
 
@@ -412,7 +409,11 @@ async fn contested_resource_vote_states_fields() {
     };
 
     // check if the base query works
-    let result = ContenderWithSerializedDocument::fetch_many(&sdk, base_query.clone()).await;
+    let base_query_sdk = cfg
+        .setup_api("contested_resource_vote_states_fields_base_query")
+        .await;
+    let result =
+        ContenderWithSerializedDocument::fetch_many(&base_query_sdk, base_query.clone()).await;
     assert!(
         result.is_ok_and(|v| !v.contenders.is_empty()),
         "base query should return some results"
@@ -423,7 +424,12 @@ async fn contested_resource_vote_states_fields() {
     for test_case in test_cases {
         tracing::debug!("Running test case: {}", test_case.name);
         // create new sdk to ensure that test cases don't interfere with each other
-        let sdk = cfg.setup_api("contested_resource_vote_states_fields").await;
+        let sdk = cfg
+            .setup_api(&format!(
+                "contested_resources_vote_states_fields_{}",
+                test_case.name
+            ))
+            .await;
 
         let mut query = base_query.clone();
         (test_case.query_mut_fn)(&mut query);

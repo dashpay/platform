@@ -22,7 +22,7 @@ async fn vote_polls_by_ts_ok() {
     let cfg = Config::new();
 
     let sdk = cfg.setup_api("vote_polls_by_ts_ok").await;
-    super::contested_resource::check_mn_voting_prerequisities(&sdk, &cfg)
+    super::contested_resource::check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisities");
 
@@ -57,7 +57,7 @@ async fn vote_polls_by_ts_order() {
 
     let cfg = Config::new();
     let sdk = cfg.setup_api("vote_polls_by_ts_order").await;
-    super::contested_resource::check_mn_voting_prerequisities(&sdk, &cfg)
+    super::contested_resource::check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisities");
 
@@ -125,7 +125,7 @@ async fn vote_polls_by_ts_limit() {
 
     let cfg = Config::new();
     let sdk = cfg.setup_api("vote_polls_by_ts_limit").await;
-    super::contested_resource::check_mn_voting_prerequisities(&sdk, &cfg)
+    super::contested_resource::check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisities");
 

@@ -36,7 +36,7 @@ async fn test_contested_resources_ok() {
     let cfg = Config::new();
 
     let sdk = cfg.setup_api("test_contested_resources_ok").await;
-    check_mn_voting_prerequisities(&sdk, &cfg)
+    check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisities");
 
@@ -76,7 +76,7 @@ async fn contested_resources_start_at_value() {
     let cfg = Config::new();
 
     let sdk = cfg.setup_api("contested_resources_start_at_value").await;
-    check_mn_voting_prerequisities(&sdk, &cfg)
+    check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisities");
 
@@ -151,7 +151,7 @@ async fn contested_resources_limit() {
 
     let cfg = Config::new();
     let sdk = cfg.setup_api("contested_resources_limit").await;
-    check_mn_voting_prerequisities(&sdk, &cfg)
+    check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisities");
 
@@ -229,7 +229,7 @@ async fn contested_resources_limit() {
 ///
 /// None
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn contested_resources_invalid_field_values() {
+async fn contested_resources_fields() {
     setup_logs();
 
     type MutFn = fn(&mut VotePollsByDocumentTypeQuery);
@@ -333,10 +333,8 @@ async fn contested_resources_invalid_field_values() {
     ];
 
     let cfg = Config::new();
-    let sdk = cfg
-        .setup_api("test_contested_resources_idx_value_empty_string")
-        .await;
-    check_mn_voting_prerequisities(&sdk, &cfg)
+
+    check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisities");
 
@@ -353,7 +351,8 @@ async fn contested_resources_invalid_field_values() {
     };
 
     // check if the base query works
-    let result = ContestedResource::fetch_many(&sdk, base_query.clone()).await;
+    let base_query_sdk = cfg.setup_api("contested_resources_fields_base_query").await;
+    let result = ContestedResource::fetch_many(&base_query_sdk, base_query.clone()).await;
     assert!(
         result.is_ok_and(|v| !v.0.is_empty()),
         "base query should return some results"
@@ -365,7 +364,7 @@ async fn contested_resources_invalid_field_values() {
         tracing::debug!("Running test case: {}", test_case.name);
         // create new sdk to ensure that test cases don't interfere with each other
         let sdk = cfg
-            .setup_api("test_contested_resources_idx_value_empty_string")
+            .setup_api(&format!("contested_resources_fields_{}", test_case.name))
             .await;
 
         let mut query = base_query.clone();
@@ -423,10 +422,8 @@ async fn contested_resources_invalid_field_values() {
 }
 
 /// Ensure prerequsities for masternode voting tests are met
-pub async fn check_mn_voting_prerequisities(
-    sdk: &dash_sdk::Sdk,
-    cfg: &Config,
-) -> Result<(), Vec<String>> {
+pub async fn check_mn_voting_prerequisities(cfg: &Config) -> Result<(), Vec<String>> {
+    let sdk = cfg.setup_api("check_mn_voting_prerequisities").await;
     let mut errors = Vec::new();
 
     let index_name = "parentNameAndLabel".to_string();
@@ -444,7 +441,7 @@ pub async fn check_mn_voting_prerequisities(
 
     // Check if we have enough contested resources; this implies that we have
     // at least 1 vote poll for each of them
-    let contested_resources = ContestedResource::fetch_many(sdk, query_contested_resources)
+    let contested_resources = ContestedResource::fetch_many(&sdk, query_contested_resources)
         .await
         .expect("fetch contested resources");
     if contested_resources.0.len() < 3 {
@@ -472,7 +469,7 @@ pub async fn check_mn_voting_prerequisities(
         result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
     };
 
-    let all_contenders = ContenderWithSerializedDocument::fetch_many(sdk, query_all.clone())
+    let all_contenders = ContenderWithSerializedDocument::fetch_many(&sdk, query_all.clone())
         .await
         .expect("fetch many contenders");
     if all_contenders.contenders.len() < 3 {
