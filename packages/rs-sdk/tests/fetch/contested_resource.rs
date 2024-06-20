@@ -1,9 +1,7 @@
 //! Tests of ContestedResource object
 
-use core::panic;
-use std::{collections::BTreeMap, fmt::Debug};
-
 use crate::fetch::{common::setup_logs, config::Config};
+use core::panic;
 use dash_sdk::platform::FetchMany;
 use dpp::{
     platform_value::Value,
