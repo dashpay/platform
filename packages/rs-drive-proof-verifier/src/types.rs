@@ -179,6 +179,16 @@ impl ContestedResource {
     }
 }
 
+impl TryInto<Value> for ContestedResource {
+    type Error = crate::Error;
+
+    fn try_into(self) -> Result<Value, Self::Error> {
+        match self {
+            ContestedResource::Value(value) => Ok(value),
+        }
+    }
+}
+
 #[cfg(feature = "mocks")]
 impl PlatformVersionEncode for ContestedResource {
     fn platform_encode<E: bincode::enc::Encoder>(
