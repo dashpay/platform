@@ -1312,6 +1312,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bip37-bloom-filter",
+ "chrono",
  "ciborium",
  "clap 4.5.7",
  "dapi-grpc",

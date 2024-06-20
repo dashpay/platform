@@ -1,5 +1,7 @@
 //! Tests for SDK requests that return one or more [Contender] objects.
-use crate::fetch::{common::setup_logs, config::Config};
+use crate::fetch::{
+    common::setup_logs, config::Config, contested_resource::check_mn_voting_prerequisities,
+};
 use dash_sdk::platform::FetchMany;
 use dpp::{
     identifier::Identifier,
@@ -165,11 +167,16 @@ async fn contested_resource_vote_states_with_limit() {
     let sdk = cfg
         .setup_api("contested_resource_vote_states_with_limit")
         .await;
+    check_mn_voting_prerequisities(&sdk, &cfg)
+        .await
+        .expect("prerequisites not met");
+
     // Given more contenders for some `label` than the limit
     let data_contract_id = cfg.existing_data_contract_id;
     let limit: u16 = 2;
     let label = Value::Text("dada".into());
     // ensure we have enough contenders
+
     let query_all = ContestedDocumentVotePollDriveQuery {
         limit: None,
         offset: None,

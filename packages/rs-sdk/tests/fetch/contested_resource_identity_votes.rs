@@ -37,6 +37,14 @@ async fn contested_resource_identity_votes_not_found() {
 }
 
 /// When we request votes for an existing identity, we should get some votes.
+///
+/// ## Preconditions
+///
+/// 1. At least one vote exists for the given masternode identity (protx hash).
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn contested_resource_identity_votes_ok() {
     setup_logs();
@@ -45,7 +53,9 @@ async fn contested_resource_identity_votes_ok() {
     let sdk = cfg.setup_api("contested_resource_identity_votes_ok").await;
 
     // Given some existing identity ID, that is, proTxHash of some Validator
-    // TODO: Fetch proTxHash from the network
+
+    // TODO: Fetch proTxHash from the network instead of hardcoding; it's not so trivial as it must support our mocking
+    // mechanisms
     let protx_hex = "7624E7D0D7C8837D4D02A19700F4116091A8AD145352420193DE8828F6D00BBF";
     let protx = ProTxHash::from_hex(protx_hex).expect("ProTxHash from hex");
 

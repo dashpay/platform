@@ -9,7 +9,7 @@ mod provider;
 pub mod types;
 mod verify;
 pub use error::Error;
-pub use proof::FromProof;
+pub use proof::{FromProof, Length};
 pub use provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use provider::MockContextProvider;

@@ -1,4 +1,5 @@
 //! Tests of ContestedResource object
+
 use crate::fetch::{common::setup_logs, config::Config};
 use dash_sdk::platform::FetchMany;
 use dpp::{
@@ -63,7 +64,6 @@ async fn test_contested_resources_ok() {
     feature = "network-testing",
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
-
 /// Test [ContestedResource] start index (`start_at_value`)
 ///
 /// ## Preconditions
@@ -207,7 +207,6 @@ async fn contested_resources_limit() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-
 /// Empty string in start_index_values should not cause an error
 ///
 /// ## Preconditions
@@ -264,7 +263,8 @@ pub async fn check_mn_voting_prerequisities(
         order_ascending: true,
     };
 
-    // Check if we have enough contested resources; this implies that we have at least 1 vote poll
+    // Check if we have enough contested resources; this implies that we have
+    // at least 1 vote poll for each of them
     let contested_resources = ContestedResource::fetch_many(sdk, query_contested_resources)
         .await
         .expect("fetch contested resources");
