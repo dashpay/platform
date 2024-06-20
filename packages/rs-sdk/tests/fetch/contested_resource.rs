@@ -1,5 +1,8 @@
 //! Tests of ContestedResource object
 
+use core::panic;
+use std::{collections::BTreeMap, fmt::Debug};
+
 use crate::fetch::{common::setup_logs, config::Config};
 use dash_sdk::platform::FetchMany;
 use dpp::{
@@ -81,52 +84,54 @@ async fn contested_resources_start_at_value() {
 
     // Given all contested resources sorted ascending
     let index_name = "parentNameAndLabel";
+    for order_ascending in [true, false] {
+        let query_all = VotePollsByDocumentTypeQuery {
+            contract_id: cfg.existing_data_contract_id,
+            document_type_name: cfg.existing_document_type_name.clone(),
+            index_name: index_name.to_string(),
+            start_at_value: None,
+            start_index_values: vec![Value::Text("dash".into())],
+            end_index_values: vec![],
+            limit: Some(50),
+            order_ascending,
+        };
 
-    let query_all = VotePollsByDocumentTypeQuery {
-        contract_id: cfg.existing_data_contract_id,
-        document_type_name: cfg.existing_document_type_name.clone(),
-        index_name: index_name.to_string(),
-        start_at_value: None,
-        start_index_values: vec![Value::Text("dash".into())],
-        end_index_values: vec![],
-        limit: Some(50),
-        order_ascending: true,
-    };
+        let all = ContestedResource::fetch_many(&sdk, query_all.clone())
+            .await
+            .expect("fetch contested resources");
 
-    let all = ContestedResource::fetch_many(&sdk, query_all.clone())
-        .await
-        .expect("fetch contested resources");
+        tracing::debug!(contested_resources=?all, order_ascending, "All contested resources");
+        for inclusive in [true, false] {
+            // when I set start_at_value to some value,
+            for (i, start) in all.0.iter().enumerate() {
+                let ContestedResource::Value(start_value) = start.clone();
 
-    tracing::debug!(contested_resources=?all, "All contested resources");
-    for inclusive in [true, false] {
-        // when I set start_at_value to some value,
-        for (i, start) in all.0.iter().enumerate() {
-            let ContestedResource::Value(start_value) = start.clone();
+                let query = VotePollsByDocumentTypeQuery {
+                    start_at_value: Some((start_value, inclusive)),
+                    ..query_all.clone()
+                };
 
-            let query = VotePollsByDocumentTypeQuery {
-                start_at_value: Some((start_value, inclusive)),
-                ..query_all.clone()
-            };
+                let rss = ContestedResource::fetch_many(&sdk, query)
+                    .await
+                    .expect("fetch contested resources");
+                tracing::debug!(?start, contested_resources=?rss, "Contested resources");
 
-            let rss = ContestedResource::fetch_many(&sdk, query)
-                .await
-                .expect("fetch contested resources");
-            tracing::debug!(?start, contested_resources=?rss, "Contested resources");
+                for (j, fetched) in rss.0.into_iter().enumerate() {
+                    let all_index = if inclusive { i + j } else { i + j + 1 };
 
-            for (j, fetched) in rss.0.into_iter().enumerate() {
-                let all_index = if inclusive { i + j } else { i + j + 1 };
-
-                assert_eq!(
+                    assert_eq!(
                 fetched,
                 (all.0[all_index]),
-                "when starting with {:?} with inclusive {}, fetched element {} ({:?}) must equal all element {} ({:?})",
+                "when starting with {:?} order ascending {} with inclusive {}, fetched element {} ({:?}) must equal all element {} ({:?})",
                 start,
+                order_ascending,
                 inclusive,
                 j,
                 fetched,
                 all_index,
                 all.0[all_index]
             );
+                }
             }
         }
     }
@@ -137,6 +142,7 @@ async fn contested_resources_start_at_value() {
 /// ## Preconditions
 ///
 /// 1. At least 3 contested resources (eg. different DPNS names) exist
+// TODO: fails due to PLAN-656, not tested enough so it can be faulty
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     feature = "network-testing",
@@ -151,96 +157,271 @@ async fn contested_resources_limit() {
         .await
         .expect("prerequisities");
 
-    // Given index with more than 2 contested resources
     const LIMIT: u16 = 2;
     const LIMIT_ALL: u16 = 100;
     let index_name = "parentNameAndLabel";
 
-    // ... and number of all contested resources
-    let query_all = VotePollsByDocumentTypeQuery {
-        contract_id: cfg.existing_data_contract_id,
-        document_type_name: cfg.existing_document_type_name.clone(),
-        index_name: index_name.to_string(),
-        start_at_value: None,
-        start_index_values: vec![Value::Text("dash".into())],
-        end_index_values: vec![],
-        limit: Some(LIMIT_ALL),
-        order_ascending: false,
-    };
-    let count_all = ContestedResource::fetch_many(&sdk, query_all.clone())
-        .await
-        .expect("fetch contested resources")
-        .0
-        .len() as u16;
-
-    // When we query for 2 contested values at a time, we get all of them
-    let mut i = 0;
-    let mut start_at_value = None;
-    while i < count_all && i < LIMIT_ALL {
-        let query = VotePollsByDocumentTypeQuery {
-            limit: Some(LIMIT),
-            start_at_value,
-            ..query_all.clone()
+    for order_ascending in [true, false] {
+        let query_all = VotePollsByDocumentTypeQuery {
+            contract_id: cfg.existing_data_contract_id,
+            document_type_name: cfg.existing_document_type_name.clone(),
+            index_name: index_name.to_string(),
+            start_at_value: None,
+            start_index_values: vec![Value::Text("dash".into())],
+            end_index_values: vec![],
+            limit: Some(LIMIT_ALL),
+            order_ascending,
         };
-
-        let rss = ContestedResource::fetch_many(&sdk, query)
+        let all = ContestedResource::fetch_many(&sdk, query_all.clone())
             .await
             .expect("fetch contested resources");
-        tracing::debug!(contested_resources=?rss, "Contested resources");
-        let length = rss.0.len();
-        let expected = if i + LIMIT > count_all {
-            count_all - i
-        } else {
-            LIMIT
-        };
-        assert_eq!(length, expected as usize);
-        tracing::debug!(contested_resources=?rss, i, "Contested resources");
+        let count_all = all.0.len() as u16;
 
-        let ContestedResource::Value(last) =
-            rss.0.into_iter().last().expect("last contested resource");
-        start_at_value = Some((last, false));
+        // When we query for 2 contested values at a time, we get all of them
+        let mut i = 0;
+        let mut start_at_value = None;
+        while i < count_all && i < LIMIT_ALL {
+            let query = VotePollsByDocumentTypeQuery {
+                limit: Some(LIMIT),
+                start_at_value,
+                order_ascending,
+                ..query_all.clone()
+            };
 
-        i += length as u16;
+            let rss = ContestedResource::fetch_many(&sdk, query)
+                .await
+                .expect("fetch contested resources");
+            tracing::debug!(contested_resources=?rss, "Contested resources");
+            let length = rss.0.len();
+            let expected = if i + LIMIT > count_all {
+                count_all - i
+            } else {
+                LIMIT
+            };
+            assert_eq!(length, expected as usize);
+            tracing::debug!(contested_resources=?rss, i, "Contested resources");
+
+            for (j, fetched) in rss.0.iter().enumerate() {
+                let all_index = i + j as u16;
+                assert_eq!(
+                    fetched,
+                    &(all.0[all_index as usize]),
+                    "fetched element {} ({:?}) must equal all element {} ({:?}) when ascending {}",
+                    j,
+                    fetched,
+                    all_index,
+                    all.0[all_index as usize],
+                    order_ascending,
+                );
+            }
+
+            let ContestedResource::Value(last) =
+                rss.0.into_iter().last().expect("last contested resource");
+            start_at_value = Some((last, false));
+
+            i += length as u16;
+        }
+        assert_eq!(i, count_all, "all contested resources fetched");
     }
-
-    assert_eq!(i, count_all, "all contested resources fetched");
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-/// Empty string in start_index_values should not cause an error
+/// Check various queries for [ContestedResource] that contain invalid field values
 ///
 /// ## Preconditions
 ///
 /// None
-async fn test_contested_resources_idx_value_empty_string() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn contested_resources_invalid_field_values() {
     setup_logs();
+
+    type MutFn = fn(&mut VotePollsByDocumentTypeQuery);
+    struct TestCase {
+        name: &'static str,
+        query_mut_fn: MutFn,
+        expect: Result<&'static str, &'static str>,
+    }
+
+    let test_cases: Vec<TestCase> = vec![
+        TestCase {
+            name: "index value empty string is Ok",
+            query_mut_fn: |q| q.start_index_values = vec![Value::Text("".to_string())],
+            expect: Ok(""),
+        },
+        TestCase {
+            name: "non existing document type returns InvalidArgument",
+            query_mut_fn: |q| q.document_type_name = "some random non-existing name".to_string(),
+            expect: Err(
+                r#"code: InvalidArgument, message: "document type some random non-existing name not found"#,
+            ),
+        },
+        TestCase {
+            name: "non existing index returns InvalidArgument",
+            query_mut_fn: |q| q.index_name = "nx index".to_string(),
+            expect: Err(
+                r#"code: InvalidArgument, message: "index with name nx index is not the contested index"#,
+            ),
+        },
+        TestCase {
+            name: "existing non-contested index returns InvalidArgument",
+            query_mut_fn: |q| q.index_name = "dashIdentityId".to_string(),
+            expect: Err(
+                r#"code: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#,
+            ),
+        },
+        TestCase {
+            // this fails with code: Internal, see PLAN-563
+            name: "start_at_value wrong index type returns InvalidArgument PLAN-563",
+            query_mut_fn: |q| q.start_at_value = Some((Value::Array(vec![]), true)),
+            expect: Err(r#"code: InvalidArgument"#),
+        },
+        TestCase {
+            name: "start_index_values empty vec returns top-level keys",
+            query_mut_fn: |q| q.start_index_values = vec![],
+            expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+        },
+        TestCase {
+            name: "start_index_values empty string returns zero results",
+            query_mut_fn: |q| q.start_index_values = vec![Value::Text("".to_string())],
+            expect: Ok(r#"ContestedResources([])"#),
+        },
+        TestCase {
+            // fails due to PLAN-662
+            name: "start_index_values with two values PLAN-662",
+            query_mut_fn: |q| {
+                q.start_index_values = vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text("dada".to_string()),
+                ]
+            },
+            expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+        },
+        TestCase {
+            // fails due to PLAN-662
+            name: "too many items in start_index_values PLAN-662",
+            query_mut_fn: |q| {
+                q.start_index_values = vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text("dada".to_string()),
+                    Value::Text("eee".to_string()),
+                ]
+            },
+            expect: Ok(
+                r#"code: InvalidArgument, message: "missing index values error: the start index values and the end index"#,
+            ),
+        },
+        TestCase {
+            // fails due to PLAN-663
+            name: "Non existing end_index_values PLAN-663",
+            query_mut_fn: |q| q.end_index_values = vec![Value::Text("non existing".to_string())],
+            expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+        },
+        TestCase {
+            // fails due to PLAN-663
+            name: "wrong type of end_index_values should return InvalidArgument PLAN-663",
+            query_mut_fn: |q| q.end_index_values = vec![Value::Array(vec![0.into(), 1.into()])],
+            expect: Ok(r#"code: InvalidArgument"#),
+        },
+        TestCase {
+            // fails due to PLAN-664
+            name: "limit 0 returns InvalidArgument PLAN-664",
+            query_mut_fn: |q| q.limit = Some(0),
+            expect: Ok(r#"code: InvalidArgument"#),
+        },
+        TestCase {
+            name: "limit std::u16::MAX returns InvalidArgument PLAN-664",
+            query_mut_fn: |q| q.limit = Some(std::u16::MAX),
+            expect: Ok(r#"code: InvalidArgument"#),
+        },
+    ];
 
     let cfg = Config::new();
     let sdk = cfg
         .setup_api("test_contested_resources_idx_value_empty_string")
         .await;
+    check_mn_voting_prerequisities(&sdk, &cfg)
+        .await
+        .expect("prerequisities");
 
-    // Given an empty string as index value
-    let index_name = "parentNameAndLabel";
-    let index_value = Value::Text("".to_string());
-
-    // When I send a VotePollsByDocumentTypeQuery with this index value
-    let query = VotePollsByDocumentTypeQuery {
+    let base_query = VotePollsByDocumentTypeQuery {
         contract_id: cfg.existing_data_contract_id,
         document_type_name: cfg.existing_document_type_name.clone(),
-        index_name: index_name.to_string(),
+        index_name: "parentNameAndLabel".to_string(),
         start_at_value: None,
         // start_index_values: vec![], // Value(Text("dash")), Value(Text(""))])
-        start_index_values: vec![index_value],
+        start_index_values: vec![Value::Text("dash".to_string())],
         end_index_values: vec![],
         limit: None,
         order_ascending: false,
     };
-    let result = ContestedResource::fetch_many(&sdk, query).await;
-    tracing::debug!(contested_resources=?result, "Contested resources");
 
-    // Then I don't get an error
-    assert!(result.is_ok(), "empty index value shall not cause an error");
+    // check if the base query works
+    let result = ContestedResource::fetch_many(&sdk, base_query.clone()).await;
+    assert!(
+        result.is_ok_and(|v| !v.0.is_empty()),
+        "base query should return some results"
+    );
+
+    let mut failures: Vec<(&'static str, String)> = Default::default();
+
+    for test_case in test_cases {
+        tracing::debug!("Running test case: {}", test_case.name);
+        // create new sdk to ensure that test cases don't interfere with each other
+        let sdk = cfg
+            .setup_api("test_contested_resources_idx_value_empty_string")
+            .await;
+
+        let mut query = base_query.clone();
+        (test_case.query_mut_fn)(&mut query);
+
+        let result = ContestedResource::fetch_many(&sdk, query).await;
+        match test_case.expect {
+            Ok(expected) if result.is_ok() => {
+                let result_string = format!("{:?}", result.as_ref().expect("result"));
+                if !result_string.contains(expected) {
+                    failures.push((
+                        test_case.name,
+                        format!("expected: {:#?}\ngot: {:?}\n", expected, result),
+                    ));
+                }
+            }
+            Err(expected) if result.is_err() => {
+                let result = result.expect_err("error");
+                if !result.to_string().contains(expected) {
+                    failures.push((
+                        test_case.name,
+                        format!("expected: {:#?}\ngot {:?}\n", expected, result),
+                    ));
+                }
+            }
+            expected => {
+                failures.push((
+                    test_case.name,
+                    format!("expected: {:#?}\ngot: {:?}\n", expected, result),
+                ));
+            }
+        }
+    }
+    if !failures.is_empty() {
+        for failure in &failures {
+            tracing::error!(?failure, "Failed: {}", failure.0);
+        }
+        let failed_cases = failures
+            .iter()
+            .map(|(name, _)| name.to_string())
+            .collect::<Vec<String>>()
+            .join("\n* ");
+
+        panic!(
+            "{} test cases failed:\n{}\n\n{}\n",
+            failures.len(),
+            failed_cases,
+            failures
+                .iter()
+                .map(|(name, msg)| format!("===========================\n{}:\n\n{:?}", name, msg))
+                .collect::<Vec<String>>()
+                .join("\n")
+        );
+    }
 }
 
 /// Ensure prerequsities for masternode voting tests are met
