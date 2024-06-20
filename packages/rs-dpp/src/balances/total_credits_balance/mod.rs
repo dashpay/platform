@@ -11,6 +11,8 @@ pub struct TotalCreditsBalance {
     pub total_in_pools: SignedCredits,
     /// all the credits in identity balances
     pub total_identity_balances: SignedCredits,
+    /// all the credits in specialized balances
+    pub total_specialized_balances: SignedCredits,
 }
 
 impl TotalCreditsBalance {
@@ -21,6 +23,7 @@ impl TotalCreditsBalance {
             total_credits_in_platform,
             total_in_pools,
             total_identity_balances,
+            total_specialized_balances,
         } = *self;
 
         if total_in_pools < 0 {
@@ -35,6 +38,12 @@ impl TotalCreditsBalance {
             ));
         }
 
+        if total_specialized_balances < 0 {
+            return Err(ProtocolError::CriticalCorruptedCreditsCodeExecution(
+                "Credits of specialized balances are less than 0".to_string(),
+            ));
+        }
+
         if total_credits_in_platform > MAX_CREDITS {
             return Err(ProtocolError::CriticalCorruptedCreditsCodeExecution(
                 "Total credits in platform more than max credits size".to_string(),
@@ -43,6 +52,7 @@ impl TotalCreditsBalance {
 
         let total_from_trees = (total_in_pools)
             .checked_add(total_identity_balances)
+            .and_then(|partial_sum| partial_sum.checked_add(total_specialized_balances))
             .ok_or(ProtocolError::CriticalCorruptedCreditsCodeExecution(
                 "Overflow of total credits".to_string(),
             ))?;
@@ -55,14 +65,16 @@ impl TotalCreditsBalance {
         let TotalCreditsBalance {
             total_in_pools,
             total_identity_balances,
+            total_specialized_balances,
             ..
         } = *self;
 
-        let total_in_trees = total_in_pools.checked_add(total_identity_balances).ok_or(
-            ProtocolError::CriticalCorruptedCreditsCodeExecution(
+        let total_in_trees = total_in_pools
+            .checked_add(total_identity_balances)
+            .and_then(|partial_sum| partial_sum.checked_add(total_specialized_balances))
+            .ok_or(ProtocolError::CriticalCorruptedCreditsCodeExecution(
                 "Overflow of total credits".to_string(),
-            ),
-        )?;
+            ))?;
 
         Ok(total_in_trees.to_unsigned())
     }
