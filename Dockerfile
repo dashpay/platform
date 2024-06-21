@@ -147,9 +147,10 @@ FROM deps-${RUSTC_WRAPPER:-base} AS deps
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
+WORKDIR /platform
+
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
-WORKDIR /platform
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
@@ -163,28 +164,50 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     # Meanwhile if you want to update wasm-bindgen you also need to update version in:
     #  - packages/wasm-dpp/Cargo.toml
     #  - packages/wasm-dpp/scripts/build-wasm.sh
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86
+    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked
 
 #
-# LOAD SOURCES
+# Rust build planner to speed up builds
 #
-FROM deps as sources
-
+FROM deps AS build-planner
 WORKDIR /platform
-
 COPY . .
+RUN source $HOME/.cargo/env && \
+    cargo chef prepare --recipe-path recipe.json
 
 #
 # STAGE: BUILD RS-DRIVE-ABCI
 #
 # This will prebuild majority of dependencies
-FROM sources AS build-drive-abci
+FROM deps AS build-drive-abci
 
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
+WORKDIR /platform
+
+COPY --from=build-planner /platform/recipe.json recipe.json
+
+# Build dependencies - this is the caching Docker layer!
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    cargo chef cook \
+        --recipe-path recipe.json \
+        --profile "$CARGO_BUILD_PROFILE" \
+        --package drive-abci \
+        --locked && \
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+
+COPY . .
+
 RUN mkdir /artifacts
 
+# Build Drive ABCI
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
@@ -202,10 +225,32 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
-FROM sources AS build-js
+FROM deps AS build-js
 
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
+
+WORKDIR /platform
+
+COPY --from=build-planner /platform/recipe.json recipe.json
+
+# Build dependencies - this is the caching Docker layer!
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    cargo chef cook \
+        --recipe-path recipe.json \
+        --profile "$CARGO_BUILD_PROFILE" \
+        --package wasm-dpp \
+        --target wasm32-unknown-unknown \
+        --locked && \
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+
+COPY . .
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
