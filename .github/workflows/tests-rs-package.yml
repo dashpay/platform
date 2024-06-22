@@ -73,13 +73,7 @@ jobs:
           cache: false
 
       - name: Check formatting
-        run: |
-          OUTPUT=$(cargo fmt --check --package=${{ inputs.package }} 2>&1) || true
-          echo "$OUTPUT"
-          if [ -n "$OUTPUT" ]; then
-              echo "Formatting issues detected."
-              exit 1
-          fi
+        run: cargo fmt --check --package=${{ inputs.package }}
 
   unused_deps:
     name: Unused dependencies
