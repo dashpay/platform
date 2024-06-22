@@ -44,4 +44,3 @@ jobs:
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           region: ${{ vars.AWS_REGION }}
-          cache_mounts: ""
