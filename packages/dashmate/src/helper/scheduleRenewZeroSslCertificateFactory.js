@@ -55,6 +55,7 @@ export default function scheduleRenewZeroSslCertificateFactory(
 
       await tasks.run({
         expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
+        noRetry: true,
       });
 
       // Write config files
