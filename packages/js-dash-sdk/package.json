@@ -78,7 +78,7 @@
     "eslint-plugin-import": "^2.29.0",
     "events": "^3.3.0",
     "https-browserify": "^1.0.0",
-    "karma": "^6.4.1",
+    "karma": "^6.4.3",
     "karma-chai": "^0.1.0",
     "karma-chrome-launcher": "^3.1.0",
     "karma-firefox-launcher": "^2.1.2",
