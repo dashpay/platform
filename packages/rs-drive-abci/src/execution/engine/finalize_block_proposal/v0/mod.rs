@@ -166,8 +166,7 @@ where
             .testing_configs
             .block_commit_signature_verification;
 
-        if verify_commit_signature
-        {
+        if verify_commit_signature {
             let quorum_public_key = last_committed_state
                 .current_validator_set()?
                 .threshold_public_key();
