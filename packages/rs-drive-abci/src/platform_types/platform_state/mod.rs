@@ -393,6 +393,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
+        match self {
+            PlatformState::V0(v0) => v0.set_instant_lock_validating_quorums(quorums),
+        }
+    }
+
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         match self {
             PlatformState::V0(v0) => v0.set_full_masternode_list(list),

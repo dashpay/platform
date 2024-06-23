@@ -7,9 +7,7 @@ use dashcore_rpc::json::{ExtendedQuorumListResult, QuorumType};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-use crate::platform_types::validator_set::v0::{
-    ValidatorSetV0, ValidatorSetV0Getters, ValidatorSetV0Setters,
-};
+use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 
@@ -20,6 +18,7 @@ use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::dashcore::QuorumHash;
 use tracing::Level;
 
+#[derive(Copy, Clone)]
 enum QuorumSetType {
     ChainLock(QuorumType),
     InstantLock(QuorumType),
@@ -205,87 +204,61 @@ where
 
         // Update Chain Lock quorums
 
-        self.update_quorums(
-            QuorumSetType::ChainLock(chain_lock_quorum_type),
-            block_platform_state,
-            platform_state,
-            &extended_quorum_list,
-            is_validator_set_updated,
-            core_block_height,
-        )?;
+        // Use already updated validator sets if we use the same quorums
+        let quorum_set_type = QuorumSetType::ChainLock(chain_lock_quorum_type);
+        let are_chainlock_quorum_updated = if chain_lock_quorum_type == validator_set_quorum_type {
+            // Update only in case if there are any changes
+            if is_validator_set_updated {
+                Self::update_quorums_from_validator_set(
+                    quorum_set_type,
+                    platform_state,
+                    block_platform_state,
+                    core_block_height,
+                );
+            }
+
+            is_validator_set_updated
+        } else {
+            self.update_quorums_from_quorum_list(
+                quorum_set_type,
+                block_platform_state.chain_lock_validating_quorums_mut(),
+                platform_state,
+                &extended_quorum_list,
+                last_committed_core_height,
+                core_block_height,
+            )?
+        };
 
         // Update Instant Lock quorums
 
-        self.update_quorums(
-            QuorumSetType::InstantLock(instant_lock_quorum_type),
-            block_platform_state,
-            platform_state,
-            &extended_quorum_list,
-            is_validator_set_updated,
-            core_block_height,
-        )?;
-
-        Ok(())
-    }
-
-    fn update_quorums(
-        &self,
-        quorum_set_type: QuorumSetType,
-        block_platform_state: &mut PlatformState,
-        platform_state: Option<&PlatformState>,
-        extended_quorum_list: &ExtendedQuorumListResult,
-        is_validator_set_updated: bool,
-        core_block_height: u32,
-    ) -> Result<(), Error> {
-        let last_committed_core_height = block_platform_state.last_committed_core_height();
-
-        // Use already updated validator sets if we use the same quorums
-        if self.config.validator_set.quorum_type == quorum_set_type.quorum_type() {
-            // Update only in case if there are any changes
-            if is_validator_set_updated {
-                let quorums = block_platform_state
-                    .validator_sets()
-                    .iter()
-                    .map(|(quorum_hash, validator_set)| {
-                        (
-                            *quorum_hash,
-                            VerificationQuorum {
-                                public_key: validator_set.threshold_public_key().clone(),
-                                index: validator_set.quorum_index(),
-                            },
-                        )
-                    })
-                    .collect();
-
+        // Use already updated chainlock quorums if we use the same quorum type
+        let quorum_set_type = QuorumSetType::InstantLock(instant_lock_quorum_type);
+        if instant_lock_quorum_type == chain_lock_quorum_type {
+            if are_chainlock_quorum_updated {
                 tracing::trace!(
-                    "updated {} validating quorums to current validator set",
-                    quorum_set_type
+                    "updated instant lock validating quorums to chain lock validating quorums",
                 );
 
-                let quorum_set = quorum_set_by_type_mut(block_platform_state, &quorum_set_type);
-
-                if platform_state.is_some() {
-                    // we already have state, so we update last and previous quorums
-                    quorum_set.replace_quorums(
-                        quorums,
-                        last_committed_core_height,
-                        core_block_height,
-                    );
-                } else {
-                    // the only case where there will be no platform_state is init chain,
-                    // so there is no previous quorums to update
-                    quorum_set.set_current_quorums(quorums)
-                }
+                block_platform_state.set_instant_lock_validating_quorums(
+                    block_platform_state.chain_lock_validating_quorums().clone(),
+                );
+            }
+        // The same for validator set quorum type
+        } else if instant_lock_quorum_type == validator_set_quorum_type {
+            if is_validator_set_updated {
+                Self::update_quorums_from_validator_set(
+                    quorum_set_type,
+                    platform_state,
+                    block_platform_state,
+                    core_block_height,
+                );
             }
         } else {
-            let quorum_set = quorum_set_by_type_mut(block_platform_state, &quorum_set_type);
-
-            // Update quorums from the extended quorum list
             self.update_quorums_from_quorum_list(
-                &quorum_set_type,
-                quorum_set,
+                quorum_set_type,
+                block_platform_state.instant_lock_validating_quorums_mut(),
                 platform_state,
-                extended_quorum_list,
+                &extended_quorum_list,
                 last_committed_core_height,
                 core_block_height,
             )?;
@@ -294,15 +267,54 @@ where
         Ok(())
     }
 
+    fn update_quorums_from_validator_set(
+        quorum_set_type: QuorumSetType,
+        platform_state: Option<&PlatformState>,
+        block_platform_state: &mut PlatformState,
+        core_block_height: u32,
+    ) {
+        let quorums = block_platform_state
+            .validator_sets()
+            .iter()
+            .map(|(quorum_hash, validator_set)| {
+                (
+                    *quorum_hash,
+                    VerificationQuorum {
+                        public_key: validator_set.threshold_public_key().clone(),
+                        index: validator_set.quorum_index(),
+                    },
+                )
+            })
+            .collect();
+
+        tracing::trace!(
+            "updated {} validating quorums to current validator set",
+            quorum_set_type
+        );
+
+        let last_committed_core_height = block_platform_state.last_committed_core_height();
+
+        let quorum_set = quorum_set_by_type_mut(block_platform_state, &quorum_set_type);
+
+        if platform_state.is_some() {
+            // we already have state, so we update last and previous quorums
+            quorum_set.replace_quorums(quorums, last_committed_core_height, core_block_height);
+        } else {
+            // the only case where there will be no platform_state is init chain,
+            // so there is no previous quorums to update
+            quorum_set.set_current_quorums(quorums)
+        }
+    }
+
     fn update_quorums_from_quorum_list(
         &self,
-        quorum_set_type: &QuorumSetType,
+        quorum_set_type: QuorumSetType,
         quorum_set: &mut SignatureVerificationQuorumSet,
         platform_state: Option<&PlatformState>,
         full_quorum_list: &ExtendedQuorumListResult,
         last_committed_core_height: u32,
         next_core_height: u32,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         let quorums_list: BTreeMap<_, _> = full_quorum_list
             .quorums_by_type
             .get(&quorum_set_type.quorum_type())
@@ -401,7 +413,7 @@ where
             }
         }
 
-        Ok(())
+        Ok(are_quorums_updated)
     }
 }
 

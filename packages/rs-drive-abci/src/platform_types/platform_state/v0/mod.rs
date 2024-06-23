@@ -345,6 +345,9 @@ pub trait PlatformStateV0Methods {
     /// Sets the current chain lock validating quorums.
     fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet);
 
+    /// Sets the current instant lock validating quorums.
+    fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet);
+
     /// Sets the full masternode list.
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>);
 
@@ -597,6 +600,11 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     /// Sets the current chain lock validating quorums.
     fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         self.chain_lock_validating_quorums = quorums;
+    }
+
+    /// Sets the current instant lock validating quorums.
+    fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
+        self.instant_lock_validating_quorums = quorums;
     }
 
     /// Sets the full masternode list.
