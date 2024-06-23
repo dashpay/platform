@@ -19,7 +19,10 @@ use dpp::block::block_info::{BlockInfo, DEFAULT_BLOCK_INFO};
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
-use crate::platform_types::signature_verification_quorums::SignatureVerificationQuorums;
+use crate::config::PlatformConfig;
+use crate::platform_types::signature_verification_quorum_set::{
+    SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
+};
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -44,8 +47,11 @@ pub struct PlatformStateV0 {
     /// all members
     pub validator_sets: IndexMap<QuorumHash, ValidatorSet>,
 
-    /// The current quorums used for validating chain locks (400 60 for mainnet)
-    pub chain_lock_validating_quorums: SignatureVerificationQuorums,
+    /// Quorums used for validating chain locks (400 60 for mainnet)
+    pub chain_lock_validating_quorums: SignatureVerificationQuorumSet,
+
+    /// Quorums used for validating instant locks
+    pub instant_lock_validating_quorums: SignatureVerificationQuorumSet,
 
     /// current full masternode list
     pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
@@ -89,6 +95,10 @@ impl Debug for PlatformStateV0 {
                 "chain_lock_validating_quorums",
                 &self.chain_lock_validating_quorums,
             )
+            .field(
+                "instant_lock_validating_quorums",
+                &self.instant_lock_validating_quorums,
+            )
             .finish()
     }
 }
@@ -122,8 +132,11 @@ pub struct PlatformStateForSavingV0 {
     #[bincode(with_serde)]
     pub validator_sets: Vec<(Bytes32, ValidatorSet)>,
 
-    /// The 400 60 quorums used for validating chain locks
-    pub chain_lock_validating_quorums: SignatureVerificationQuorums,
+    /// The quorums used for validating chain locks
+    pub chain_lock_validating_quorums: SignatureVerificationQuorumSetForSaving,
+
+    /// The quorums used for validating instant locks
+    pub instant_lock_validating_quorums: SignatureVerificationQuorumSetForSaving,
 
     /// current full masternode list
     pub full_masternode_list: BTreeMap<Bytes32, Masternode>,
@@ -154,7 +167,8 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
                 .into_iter()
                 .map(|(k, v)| (k.to_byte_array().into(), v))
                 .collect(),
-            chain_lock_validating_quorums: value.chain_lock_validating_quorums,
+            chain_lock_validating_quorums: value.chain_lock_validating_quorums.into(),
+            instant_lock_validating_quorums: value.instant_lock_validating_quorums.into(),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
@@ -197,7 +211,8 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .into_iter()
                 .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
                 .collect(),
-            chain_lock_validating_quorums: value.chain_lock_validating_quorums,
+            chain_lock_validating_quorums: value.chain_lock_validating_quorums.into(),
+            instant_lock_validating_quorums: value.instant_lock_validating_quorums.into(),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
@@ -217,23 +232,31 @@ impl PlatformStateV0 {
     pub(super) fn default_with_protocol_versions(
         current_protocol_version_in_consensus: ProtocolVersion,
         next_epoch_protocol_version: ProtocolVersion,
-    ) -> PlatformStateV0 {
-        let platform_version = PlatformVersion::get(current_protocol_version_in_consensus)
-            .expect("invalid protocol version");
+        config: &PlatformConfig,
+    ) -> Result<PlatformStateV0, Error> {
+        let platform_version = PlatformVersion::get(current_protocol_version_in_consensus)?;
 
-        PlatformStateV0 {
+        let state = PlatformStateV0 {
             last_committed_block_info: None,
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
             current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
             validator_sets: Default::default(),
-            chain_lock_validating_quorums:
-                SignatureVerificationQuorums::default_for_platform_version(platform_version),
+            chain_lock_validating_quorums: SignatureVerificationQuorumSet::new(
+                &config.chain_lock,
+                platform_version,
+            )?,
+            instant_lock_validating_quorums: SignatureVerificationQuorumSet::new(
+                &config.instant_lock,
+                platform_version,
+            )?,
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
-        }
+        };
+
+        Ok(state)
     }
 }
 
@@ -283,8 +306,11 @@ pub trait PlatformStateV0Methods {
     /// Returns the current validator sets.
     fn validator_sets(&self) -> &IndexMap<QuorumHash, ValidatorSet>;
 
-    /// Returns the current 400 60 quorums used to validate chain locks.
-    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorums;
+    /// Returns the quorums used to validate chain locks.
+    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet;
+
+    /// Returns quorums used to validate instant locks.
+    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet;
 
     /// Returns the full list of masternodes.
     fn full_masternode_list(&self) -> &BTreeMap<ProTxHash, MasternodeListItem>;
@@ -317,7 +343,10 @@ pub trait PlatformStateV0Methods {
     fn set_validator_sets(&mut self, sets: IndexMap<QuorumHash, ValidatorSet>);
 
     /// Sets the current chain lock validating quorums.
-    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorums);
+    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet);
+
+    /// Sets the current instant lock validating quorums.
+    fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet);
 
     /// Sets the full masternode list.
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>);
@@ -345,8 +374,11 @@ pub trait PlatformStateV0Methods {
     /// Returns a mutable reference to the current validator sets.
     fn validator_sets_mut(&mut self) -> &mut IndexMap<QuorumHash, ValidatorSet>;
 
-    /// Returns a mutable reference to the current chain lock validating quorums.
-    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorums;
+    /// Returns a mutable reference to the chain lock validating quorums.
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet;
+
+    /// Returns a mutable reference to the instant lock validating quorums.
+    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet;
 
     /// Returns a mutable reference to the full masternode list.
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem>;
@@ -499,9 +531,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         &self.validator_sets
     }
 
-    /// Returns the current 400 60 quorums used to validate chain locks.
-    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorums {
+    /// Returns the quorums used to validate chain locks.
+    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
         &self.chain_lock_validating_quorums
+    }
+
+    /// Returns the quorums used to validate instant locks.
+    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
+        &self.instant_lock_validating_quorums
     }
 
     /// Returns the full list of masternodes.
@@ -561,8 +598,13 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// Sets the current chain lock validating quorums.
-    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorums) {
+    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         self.chain_lock_validating_quorums = quorums;
+    }
+
+    /// Sets the current instant lock validating quorums.
+    fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
+        self.instant_lock_validating_quorums = quorums;
     }
 
     /// Sets the full masternode list.
@@ -604,8 +646,12 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         &mut self.validator_sets
     }
 
-    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorums {
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
         &mut self.chain_lock_validating_quorums
+    }
+
+    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
+        &mut self.instant_lock_validating_quorums
     }
 
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {

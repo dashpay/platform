@@ -73,7 +73,7 @@ jobs:
           cache: false
 
       - name: Check formatting
-        run: exit `cargo fmt --check --package=${{ inputs.package }} | wc -l`
+        run: cargo fmt --check --package=${{ inputs.package }}
 
   unused_deps:
     name: Unused dependencies

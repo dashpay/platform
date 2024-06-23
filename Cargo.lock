@@ -1653,6 +1653,7 @@ dependencies = [
  "dotenvy",
  "dpp",
  "drive",
+ "drive-abci",
  "envy",
  "file-rotate",
  "hex",
