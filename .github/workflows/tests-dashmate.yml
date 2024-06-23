@@ -49,10 +49,12 @@ jobs:
           key: build-js-artifacts/${{ github.sha }}
 
       - name: Unpack JS build artifacts archive
-        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
+        run: tar -xvf build-js-artifacts-${{ github.sha }}.tar
 
       - name: Replace with pre-built images
         run: |
+          set -x
+
           # Login to ECR
           DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
           aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
