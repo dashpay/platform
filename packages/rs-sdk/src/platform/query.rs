@@ -3,6 +3,8 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
+use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
     AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
@@ -15,6 +17,7 @@ use dapi_grpc::platform::v0::{
     GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
+use dpp::version::PlatformVersionError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
@@ -317,6 +320,34 @@ impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
     }
 }
 
+impl Query<GetContestedResourcesRequest> for LimitQuery<GetContestedResourcesRequest> {
+    fn query(self, prove: bool) -> Result<GetContestedResourcesRequest, Error> {
+        use proto::get_contested_resources_request::{
+            get_contested_resources_request_v0::StartAtValueInfo, Version,
+        };
+        let query = match self.query.query(prove)?.version {
+            Some(Version::V0(v0)) => GetContestedResourcesRequestV0 {
+                start_at_value_info: self.start_info.map(|v| StartAtValueInfo {
+                    start_value: v.start_key,
+                    start_value_included: v.start_included,
+                }),
+                ..v0
+            }
+            .into(),
+            None => {
+                return Err(Error::Protocol(
+                    PlatformVersionError::UnknownVersionError(
+                        "version not present in request".into(),
+                    )
+                    .into(),
+                ))
+            }
+        };
+
+        Ok(query)
+    }
+}
+
 impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDriveQuery {
     fn query(self, prove: bool) -> Result<GetContestedResourceVoteStateRequest, Error> {
         if !prove {
@@ -327,6 +358,33 @@ impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDr
             return Err(Error::Generic("ContestedDocumentVotePollDriveQuery.offset field is internal and must be set to None".into()));
         }
         self.try_to_request().map_err(|e| e.into())
+    }
+}
+
+impl Query<GetContestedResourceVoteStateRequest>
+    for LimitQuery<ContestedDocumentVotePollDriveQuery>
+{
+    fn query(self, prove: bool) -> Result<GetContestedResourceVoteStateRequest, Error> {
+        use proto::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo;
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let result = match  self.query.query(prove)?.version {
+            Some(proto::get_contested_resource_vote_state_request::Version::V0(v0)) =>
+                    proto::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0 {
+                        start_at_identifier_info: self.start_info.map(|v| StartAtIdentifierInfo {
+                            start_identifier: v.start_key,
+                            start_identifier_included: v.start_included,
+                        }),
+                        ..v0
+                    }.into(),
+
+            None =>return  Err(Error::Protocol(
+                PlatformVersionError::UnknownVersionError("version not present in request".into()).into(),
+            )),
+        };
+
+        Ok(result)
     }
 }
 
@@ -345,6 +403,36 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
     }
 }
 
+impl Query<GetContestedResourceVotersForIdentityRequest>
+    for LimitQuery<GetContestedResourceVotersForIdentityRequest>
+{
+    fn query(self, prove: bool) -> Result<GetContestedResourceVotersForIdentityRequest, Error> {
+        use proto::get_contested_resource_voters_for_identity_request::{
+            get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo, Version,
+        };
+        let query = match self.query.query(prove)?.version {
+            Some(Version::V0(v0)) => GetContestedResourceVotersForIdentityRequestV0 {
+                start_at_identifier_info: self.start_info.map(|v| StartAtIdentifierInfo {
+                    start_identifier: v.start_key,
+                    start_identifier_included: v.start_included,
+                }),
+                ..v0
+            }
+            .into(),
+            None => {
+                return Err(Error::Protocol(
+                    PlatformVersionError::UnknownVersionError(
+                        "version not present in request".into(),
+                    )
+                    .into(),
+                ))
+            }
+        };
+
+        Ok(query)
+    }
+}
+
 impl Query<GetContestedResourceIdentityVotesRequest>
     for ContestedResourceVotesGivenByIdentityQuery
 {
@@ -357,6 +445,23 @@ impl Query<GetContestedResourceIdentityVotesRequest>
         }
 
         self.try_to_request().map_err(|e| e.into())
+    }
+}
+
+impl Query<GetContestedResourceIdentityVotesRequest> for ProTxHash {
+    fn query(self, prove: bool) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        Ok(GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: self.to_byte_array().to_vec(),
+            prove,
+            limit: None,
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+        }
+        .into())
     }
 }
 

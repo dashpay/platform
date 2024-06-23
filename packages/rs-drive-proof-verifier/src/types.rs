@@ -64,7 +64,7 @@ pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 ///
 /// Mapping between the contenders identity IDs and their info.
 /// If a contender is not found, it is represented as `None`.
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 #[cfg_attr(
     feature = "mocks",
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize,),
@@ -159,10 +159,34 @@ pub type IdentityBalance = u64;
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
 /// Contested resource values.
-#[derive(Debug, derive_more::From, Clone)]
+#[derive(Debug, derive_more::From, Clone, PartialEq)]
 pub enum ContestedResource {
     /// Generic [Value]
     Value(Value),
+}
+
+impl ContestedResource {
+    /// Get the value.
+    pub fn encode_to_vec(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, bincode::error::EncodeError> {
+        platform_serialization::platform_encode_to_vec(
+            self,
+            bincode::config::standard(),
+            platform_version,
+        )
+    }
+}
+
+impl TryInto<Value> for ContestedResource {
+    type Error = crate::Error;
+
+    fn try_into(self) -> Result<Value, Self::Error> {
+        match self {
+            ContestedResource::Value(value) => Ok(value),
+        }
+    }
 }
 
 #[cfg(feature = "mocks")]
@@ -173,7 +197,7 @@ impl PlatformVersionEncode for ContestedResource {
         _platform_version: &platform_version::PlatformVersion,
     ) -> Result<(), bincode::error::EncodeError> {
         match self {
-            ContestedResource::Value(document) => document.encode(encoder),
+            ContestedResource::Value(value) => value.encode(encoder),
         }
     }
 }
@@ -248,7 +272,7 @@ pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-pub struct PrefundedSpecializedBalance(Credits);
+pub struct PrefundedSpecializedBalance(pub Credits);
 impl PrefundedSpecializedBalance {
     /// Get the balance.
     pub fn to_credits(&self) -> Credits {

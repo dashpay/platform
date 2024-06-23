@@ -51,6 +51,7 @@ data-contracts = { path = "../data-contracts" }
 tokio-test = { version = "0.4.4" }
 clap = { version = "4.5.4", features = ["derive"] }
 sanitize-filename = { version = "0.5.0" }
+chrono = { version = "0.4.38" }
 
 [features]
 default = ["mocks", "offline-testing"]

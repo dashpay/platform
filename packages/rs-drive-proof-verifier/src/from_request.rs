@@ -300,7 +300,16 @@ impl TryFromRequest<GetContestedResourcesRequest> for VotePollsByDocumentTypeQue
                 index_name: req.index_name.clone(),
                 start_at_value: req
                     .start_at_value_info
-                    .map(|i| (i.start_value, i.start_value_included)),
+                    .map(|i| {
+                        let (value, _): (Value, _) =
+                            bincode::decode_from_slice(&i.start_value, BINCODE_CONFIG).map_err(
+                                |e| Error::RequestError {
+                                    error: format!("cannot decode start value: {}", e),
+                                },
+                            )?;
+                        Ok::<_, Error>((value, i.start_value_included))
+                    })
+                    .transpose()?,
                 start_index_values: bincode_decode_values(req.start_index_values.iter())?,
                 end_index_values: bincode_decode_values(req.end_index_values.iter())?,
                 limit: req.count.map(|v| v as u16),
@@ -320,14 +329,20 @@ impl TryFromRequest<GetContestedResourcesRequest> for VotePollsByDocumentTypeQue
             start_index_values: bincode_encode_values(&self.start_index_values)?,
             index_name: self.index_name.clone(),
             order_ascending: self.order_ascending,
-            start_at_value_info: self.start_at_value.as_ref().map(
-                |(start_value, start_value_included)| {
-                    get_contested_resources_request_v0::StartAtValueInfo {
-                        start_value: start_value.clone(),
+            start_at_value_info: self
+                .start_at_value
+                .as_ref()
+                .map(|(start_value, start_value_included)| {
+                    Ok::<_, Error>(get_contested_resources_request_v0::StartAtValueInfo {
+                        start_value: bincode::encode_to_vec(start_value, BINCODE_CONFIG).map_err(
+                            |e| Error::RequestError {
+                                error: format!("cannot encode start value: {}", e),
+                            },
+                        )?,
                         start_value_included: *start_value_included,
-                    }
-                },
-            ),
+                    })
+                })
+                .transpose()?,
         }
         .into())
     }
