@@ -36,7 +36,7 @@
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dashcore-lib": "~0.21.1",
-    "@dashevo/dashd-rpc": "^18.2.0",
+    "@dashevo/dashd-rpc": "^18.3.0",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "@grpc/grpc-js": "1.4.4",
@@ -53,9 +53,11 @@
     "lru-cache": "^5.1.1",
     "pino": "^8.16.2",
     "pino-pretty": "^10.2.3",
-    "ws": "^7.5.3"
+    "ws": "^8.17.1"
   },
   "devDependencies": {
+    "@babel/core": "^7.23.3",
+    "@babel/eslint-parser": "^7.23.3",
     "@dashevo/dapi-client": "workspace:*",
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev",
     "chai": "^4.3.10",

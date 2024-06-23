@@ -1,38 +1,32 @@
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
-const sinon = require('sinon');
 const getBestBlockHashFactory = require('../../../../lib/rpcServer/commands/getBestBlockHash');
-const coreAPIFixture = require('../../../mocks/coreAPIFixture');
 
 chai.use(chaiAsPromised);
+
 const { expect } = chai;
-let spy;
 
 describe('getBestBlockHash', () => {
-  describe('#factory', () => {
-    it('should return a function', () => {
-      const getBestBlockHash = getBestBlockHashFactory(coreAPIFixture);
-      expect(getBestBlockHash).to.be.a('function');
-    });
-  });
+  let getBestBlockHash;
+  let coreRPCClientMock;
+  let zmqClientMock;
+  let blockHash;
 
-  before(() => {
-    spy = sinon.spy(coreAPIFixture, 'getBestBlockHash');
-  });
+  beforeEach(function beforeEach() {
+    blockHash = '000000000074fc08fb6a92cb8994b14307038261e4266abc6994fa03955a1a59';
 
-  beforeEach(() => {
-    spy.resetHistory();
-  });
+    coreRPCClientMock = {
+      getBestBlockHash: this.sinon.stub().resolves(blockHash),
+    };
 
-  after(() => {
-    spy.restore();
+    zmqClientMock = { on: this.sinon.stub(), topics: { hashblock: 'fake' } };
+
+    getBestBlockHash = getBestBlockHashFactory(coreRPCClientMock, zmqClientMock);
   });
 
   it('Should return a number', async () => {
-    const getBestBlockHash = getBestBlockHashFactory(coreAPIFixture);
-    expect(spy.callCount).to.be.equal(0);
     const bestBlockHash = await getBestBlockHash();
-    expect(bestBlockHash).to.be.an('string');
-    expect(spy.callCount).to.be.equal(1);
+    expect(bestBlockHash).to.equals(blockHash);
+    expect(coreRPCClientMock.getBestBlockHash).to.be.calledOnce();
   });
 });

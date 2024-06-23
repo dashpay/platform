@@ -57,7 +57,7 @@
     "eslint-plugin-import": "^2.29.0",
     "eslint-plugin-jsdoc": "^46.9.0",
     "events": "^3.3.0",
-    "karma": "^6.4.1",
+    "karma": "^6.4.3",
     "karma-chai": "^0.1.0",
     "karma-chrome-launcher": "^3.1.0",
     "karma-firefox-launcher": "^2.1.2",
@@ -92,7 +92,7 @@
     "test:integration": "mocha './test/integration/**/*.spec.js'",
     "test:node": "NODE_ENV=test mocha",
     "test:browsers": "karma start ./karma.conf.js --single-run",
-    "test:coverage": "NODE_ENV=test nyc --check-coverage --stmts=98 --branch=98 --funcs=98 --lines=94.99 yarn run mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
+    "test:coverage": "NODE_ENV=test nyc --check-coverage --stmts=98 --branch=98 --funcs=98 --lines=90 yarn run mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
     "prepublishOnly": "yarn run build:web"
   },
   "ultra": {

@@ -11,6 +11,7 @@ class DAPIClientTransport extends AbstractTransport {
   }
 }
 
+DAPIClientTransport.prototype.disconnect = require('./methods/disconnect');
 DAPIClientTransport.prototype.getBestBlock = require('./methods/getBestBlock');
 DAPIClientTransport.prototype.getBestBlockHeader = require('./methods/getBestBlockHeader');
 DAPIClientTransport.prototype.getBestBlockHash = require('./methods/getBestBlockHash');

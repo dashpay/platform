@@ -29,6 +29,11 @@ class CoreStub(object):
                 request_serializer=core__pb2.GetBlockRequest.SerializeToString,
                 response_deserializer=core__pb2.GetBlockResponse.FromString,
                 )
+        self.getBestBlockHeight = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Core/getBestBlockHeight',
+                request_serializer=core__pb2.GetBestBlockHeightRequest.SerializeToString,
+                response_deserializer=core__pb2.GetBestBlockHeightResponse.FromString,
+                )
         self.broadcastTransaction = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Core/broadcastTransaction',
                 request_serializer=core__pb2.BroadcastTransactionRequest.SerializeToString,
@@ -54,6 +59,11 @@ class CoreStub(object):
                 request_serializer=core__pb2.TransactionsWithProofsRequest.SerializeToString,
                 response_deserializer=core__pb2.TransactionsWithProofsResponse.FromString,
                 )
+        self.subscribeToMasternodeList = channel.unary_stream(
+                '/org.dash.platform.dapi.v0.Core/subscribeToMasternodeList',
+                request_serializer=core__pb2.MasternodeListRequest.SerializeToString,
+                response_deserializer=core__pb2.MasternodeListResponse.FromString,
+                )
 
 
 class CoreServicer(object):
@@ -72,6 +82,12 @@ class CoreServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getBlock(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getBestBlockHeight(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -107,6 +123,12 @@ class CoreServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def subscribeToMasternodeList(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CoreServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -124,6 +146,11 @@ def add_CoreServicer_to_server(servicer, server):
                     servicer.getBlock,
                     request_deserializer=core__pb2.GetBlockRequest.FromString,
                     response_serializer=core__pb2.GetBlockResponse.SerializeToString,
+            ),
+            'getBestBlockHeight': grpc.unary_unary_rpc_method_handler(
+                    servicer.getBestBlockHeight,
+                    request_deserializer=core__pb2.GetBestBlockHeightRequest.FromString,
+                    response_serializer=core__pb2.GetBestBlockHeightResponse.SerializeToString,
             ),
             'broadcastTransaction': grpc.unary_unary_rpc_method_handler(
                     servicer.broadcastTransaction,
@@ -149,6 +176,11 @@ def add_CoreServicer_to_server(servicer, server):
                     servicer.subscribeToTransactionsWithProofs,
                     request_deserializer=core__pb2.TransactionsWithProofsRequest.FromString,
                     response_serializer=core__pb2.TransactionsWithProofsResponse.SerializeToString,
+            ),
+            'subscribeToMasternodeList': grpc.unary_stream_rpc_method_handler(
+                    servicer.subscribeToMasternodeList,
+                    request_deserializer=core__pb2.MasternodeListRequest.FromString,
+                    response_serializer=core__pb2.MasternodeListResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -208,6 +240,23 @@ class Core(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Core/getBlock',
             core__pb2.GetBlockRequest.SerializeToString,
             core__pb2.GetBlockResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getBestBlockHeight(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Core/getBestBlockHeight',
+            core__pb2.GetBestBlockHeightRequest.SerializeToString,
+            core__pb2.GetBestBlockHeightResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -293,5 +342,22 @@ class Core(object):
         return grpc.experimental.unary_stream(request, target, '/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs',
             core__pb2.TransactionsWithProofsRequest.SerializeToString,
             core__pb2.TransactionsWithProofsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def subscribeToMasternodeList(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(request, target, '/org.dash.platform.dapi.v0.Core/subscribeToMasternodeList',
+            core__pb2.MasternodeListRequest.SerializeToString,
+            core__pb2.MasternodeListResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

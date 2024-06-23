@@ -20,6 +20,7 @@ const {
     GetBlockchainStatusRequest,
     // GetMasternodeStatusRequest,
     // GetBlockRequest,
+    GetBestBlockHeightRequest,
     pbjs: {
       BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
       BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
@@ -31,6 +32,8 @@ const {
       // GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
       // GetBlockRequest: PBJSGetBlockRequest,
       // GetBlockResponse: PBJSGetBlockResponse,
+      GetBestBlockHeightRequest: PBJSGetBestBlockHeightRequest,
+      GetBestBlockHeightResponse: PBJSGetBestBlockHeightResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -40,6 +43,9 @@ const logger = require('../../../logger');
 // const getBlockHandlerFactory = require(
 //   './getBlockHandlerFactory',
 // );
+const getBestBlockHeightHandlerFactory = require(
+  './getBestBlockHeightHandlerFactory',
+);
 const getBlockchainStatusHandlerFactory = require(
   './getBlockchainStatusHandlerFactory',
 );
@@ -56,9 +62,10 @@ const broadcastTransactionHandlerFactory = require(
 /**
  * @param {CoreRpcClient} coreRPCClient
  * @param {boolean} isProductionEnvironment
+ * @param {ZmqClient} coreZmqClient
  * @returns {Object<string, function>}
  */
-function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
+function coreHandlersFactory(coreRPCClient, isProductionEnvironment, coreZmqClient) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
   // getBlock
@@ -74,8 +81,24 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
   //   wrapInErrorHandler(getBlockHandler),
   // );
 
+  // getBestBlockHeight
+  const getBestBlockHeightHandler = getBestBlockHeightHandlerFactory(coreRPCClient, coreZmqClient);
+  const wrappedGetBestBlockHeightHandler = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetBestBlockHeightRequest,
+      PBJSGetBestBlockHeightRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetBestBlockHeightResponse,
+    ),
+    wrapInErrorHandler(getBestBlockHeightHandler),
+  );
+
   // getBlockchainStatus
-  const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(coreRPCClient);
+  const getBlockchainStatusHandler = getBlockchainStatusHandlerFactory(
+    coreRPCClient,
+    coreZmqClient,
+  );
   const wrappedGetBlockchainStatus = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       GetBlockchainStatusRequest,
@@ -129,6 +152,7 @@ function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
   return {
     // TODO: Enable when an attack resistance is proved
     // getBlock: wrappedGetBlock,
+    getBestBlockHeight: wrappedGetBestBlockHeightHandler,
     getBlockchainStatus: wrappedGetBlockchainStatus,
     // getMasternodeStatus: wrappedGetMasternodeStatus,
     getTransaction: wrappedGetTransaction,

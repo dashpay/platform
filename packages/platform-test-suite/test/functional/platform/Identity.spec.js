@@ -5,7 +5,6 @@ const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock
 const { hash, sha256 } = require('@dashevo/wasm-dpp/lib/utils/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
 const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 
 const {
@@ -661,26 +660,11 @@ describe('Platform', () => {
     });
 
     describe('Masternodes', () => {
-      let dapiClient;
-      const network = process.env.NETWORK;
-
-      beforeEach(() => {
-        dapiClient = new Dash.DAPIClient({
-          network,
-          seeds: getDAPISeeds(),
-        });
-      });
-
       it('should receive masternode identities', async () => {
         await client.platform.initialize();
 
-        const bestBlockHash = await dapiClient.core.getBestBlockHash();
-        const baseBlockHash = await dapiClient.core.getBlockHash(1);
-
-        const { mnList } = await dapiClient.core.getMnListDiff(
-          baseBlockHash,
-          bestBlockHash,
-        );
+        const { mnList } = await client.getDAPIClient().dapiAddressProvider
+          .smlProvider.getSimplifiedMNList();
 
         for (const masternodeEntry of mnList) {
           if (!masternodeEntry.isValid) {

@@ -29,7 +29,7 @@ function subscribeToTransactionsWithProofsFactory(grpcTransport) {
    *    EventEmitter|!grpc.web.ClientReadableStream<!TransactionsWithProofsResponse>
    * }
    */
-  async function subscribeToTransactionsWithProofs(bloomFilter, options = { }) {
+  async function subscribeToTransactionsWithProofs(bloomFilter, options = {}) {
     // eslint-disable-next-line no-param-reassign
     options = {
       count: 0,
