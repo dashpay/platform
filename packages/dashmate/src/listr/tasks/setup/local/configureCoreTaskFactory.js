@@ -134,6 +134,7 @@ export default function configureCoreTaskFactory(
                 const walletPassphrase = '';
                 const avoidReuse = false;
                 const loadOnStartup = true;
+                const descriptors = false;
 
                 await ctx.coreService.getRpcClient().createWallet(
                   'main',
@@ -141,6 +142,7 @@ export default function configureCoreTaskFactory(
                   createBlankWallet,
                   walletPassphrase,
                   avoidReuse,
+                  descriptors,
                   loadOnStartup,
                 );
               },

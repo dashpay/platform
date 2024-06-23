@@ -2588,7 +2588,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
           ["@dashevo/dashcore-lib", "npm:0.21.1"],\
-          ["@dashevo/dashd-rpc", "npm:18.2.0"],\
+          ["@dashevo/dashd-rpc", "https://github.com/dashpay/dashd-rpc.git#commit=8aaa899d6f7bffb01b1deef2ef6981302e4b4034"],\
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -2772,10 +2772,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@dashevo/dashd-rpc", [\
-      ["npm:18.2.0", {\
-        "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-18.2.0-194a5d4c4b-38341b8d5a.zip/node_modules/@dashevo/dashd-rpc/",\
+      ["https://github.com/dashpay/dashd-rpc.git#commit=8aaa899d6f7bffb01b1deef2ef6981302e4b4034", {\
+        "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-https-add9a74649-877060fe5b.zip/node_modules/@dashevo/dashd-rpc/",\
         "packageDependencies": [\
-          ["@dashevo/dashd-rpc", "npm:18.2.0"],\
+          ["@dashevo/dashd-rpc", "https://github.com/dashpay/dashd-rpc.git#commit=8aaa899d6f7bffb01b1deef2ef6981302e4b4034"],\
           ["async", "npm:3.2.4"],\
           ["bluebird", "npm:3.7.2"]\
         ],\
@@ -8402,7 +8402,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dashcore-lib", "npm:0.21.1"],\
-          ["@dashevo/dashd-rpc", "npm:18.2.0"],\
+          ["@dashevo/dashd-rpc", "https://github.com/dashpay/dashd-rpc.git#commit=8aaa899d6f7bffb01b1deef2ef6981302e4b4034"],\
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
           ["@dashevo/docker-compose", "npm:0.24.4"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
