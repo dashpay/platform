@@ -106,6 +106,7 @@ use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
     v0::DocumentTypeV0, DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
+use crate::data_contract::document_type::{ByteArrayPropertySizes, StringPropertySizes};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -145,14 +146,17 @@ impl DocumentTypeV0 {
             let random_weight = rng.gen_range(0..total_weight);
             let document_type = if random_weight < field_weights.string_weight {
                 let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);
-                let min_len = if has_min_len {
+                let min_length = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.string_min_len.clone()))
                 } else {
                     None
                 };
                 // If a string property is used in an index it must have maxLength 63 or less (v1.0-dev)
-                let max_len = Some(63);
-                DocumentPropertyType::String(min_len, max_len)
+                let max_length = Some(63);
+                DocumentPropertyType::String(StringPropertySizes {
+                    min_length,
+                    max_length,
+                })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
                 DocumentPropertyType::Integer
             } else if random_weight
@@ -179,14 +183,14 @@ impl DocumentTypeV0 {
             } else {
                 let has_min_len =
                     rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
-                let min_len = if has_min_len {
+                let min_size = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.byte_array_min_len.clone()))
                 } else {
                     None
                 };
                 // Indexed arrays must have maxItems 255 or less (v1.0-dev)
-                let max_len = Some(255);
-                DocumentPropertyType::ByteArray(min_len, max_len)
+                let max_size = Some(255);
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes { min_size, max_size })
             };
 
             DocumentProperty {
@@ -263,14 +267,14 @@ impl DocumentTypeV0 {
         let mut position_counter = 0;
         let properties_json_schema = properties.iter().map(|(key, prop)| {
             let mut schema_part = match &prop.property_type {
-                DocumentPropertyType::String(min, max) => {
+                DocumentPropertyType::String(sizes) => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("string".to_owned()));
-                    if let Some(min_len) = min {
-                        schema.insert("minLength".to_string(), serde_json::Value::Number(serde_json::Number::from(*min_len)));
+                    if let Some(min_len) = sizes.min_length {
+                        schema.insert("minLength".to_string(), serde_json::Value::Number(serde_json::Number::from(min_len)));
                     }
-                    if let Some(max_len) = max {
-                        schema.insert("maxLength".to_string(), serde_json::Value::Number(serde_json::Number::from(*max_len)));
+                    if let Some(max_len) = sizes.max_length {
+                        schema.insert("maxLength".to_string(), serde_json::Value::Number(serde_json::Number::from(max_len)));
                     }
                     serde_json::Value::Object(schema)
                 },
@@ -305,14 +309,14 @@ impl DocumentTypeV0 {
                 DocumentPropertyType::Boolean => {
                     serde_json::json!({"type": "boolean"})
                 },
-                DocumentPropertyType::ByteArray(min, max) => {
+                DocumentPropertyType::ByteArray(sizes) => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("array".to_owned()));
-                    if let Some(min_len) = min {
-                        schema.insert("minItems".to_string(), serde_json::Value::Number(serde_json::Number::from(*min_len)));
+                    if let Some(min_len) = sizes.min_size {
+                        schema.insert("minItems".to_string(), serde_json::Value::Number(serde_json::Number::from(min_len)));
                     }
-                    if let Some(max_len) = max {
-                        schema.insert("maxItems".to_string(), serde_json::Value::Number(serde_json::Number::from(*max_len)));
+                    if let Some(max_len) = sizes.max_size {
+                        schema.insert("maxItems".to_string(), serde_json::Value::Number(serde_json::Number::from(max_len)));
                     }
                     schema.insert("byteArray".to_string(), serde_json::Value::Bool(true));
                     serde_json::Value::Object(schema)
@@ -463,14 +467,17 @@ impl DocumentTypeV0 {
             let random_weight = rng.gen_range(0..total_weight);
             let document_type = if random_weight < field_weights.string_weight {
                 let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);
-                let min_len = if has_min_len {
+                let min_length = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.string_min_len.clone()))
                 } else {
                     None
                 };
                 // If a string property is used in an index it must have maxLength 63 or less (v1.0-dev)
-                let max_len = Some(63);
-                DocumentPropertyType::String(min_len, max_len)
+                let max_length = Some(63);
+                DocumentPropertyType::String(StringPropertySizes {
+                    min_length,
+                    max_length,
+                })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
                 DocumentPropertyType::Integer
             } else if random_weight
@@ -497,14 +504,14 @@ impl DocumentTypeV0 {
             } else {
                 let has_min_len =
                     rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
-                let min_len = if has_min_len {
+                let min_size = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.byte_array_min_len.clone()))
                 } else {
                     None
                 };
                 // Indexed arrays must have maxItems 255 or less (v1.0-dev)
-                let max_len = Some(255);
-                DocumentPropertyType::ByteArray(min_len, max_len)
+                let max_size = Some(255);
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes { min_size, max_size })
             };
 
             DocumentProperty {
