@@ -20,8 +20,9 @@ use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVer
 use dpp::ProtocolError;
 use indexmap::IndexMap;
 
+use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
-use crate::platform_types::signature_verification_quorums::SignatureVerificationQuorums;
+use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
@@ -119,13 +120,17 @@ impl PlatformState {
     pub fn default_with_protocol_versions(
         current_protocol_version_in_consensus: ProtocolVersion,
         next_epoch_protocol_version: ProtocolVersion,
-    ) -> PlatformState {
+        config: &PlatformConfig,
+    ) -> Result<PlatformState, Error> {
         //todo find the current Platform state for the protocol version
-        PlatformStateV0::default_with_protocol_versions(
+        let state = PlatformStateV0::default_with_protocol_versions(
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
-        )
-        .into()
+            config,
+        )?
+        .into();
+
+        Ok(state)
     }
 
     /// Retrieve version 0, or an error if not currently on version 0
@@ -316,7 +321,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorums {
+    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
         }
@@ -382,9 +387,15 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorums) {
+    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         match self {
             PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
+        }
+    }
+
+    fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
+        match self {
+            PlatformState::V0(v0) => v0.set_instant_lock_validating_quorums(quorums),
         }
     }
 
@@ -442,7 +453,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorums {
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => v0.chain_lock_validating_quorums_mut(),
         }
@@ -469,6 +480,18 @@ impl PlatformStateV0Methods for PlatformState {
     fn last_committed_block_id_hash(&self) -> [u8; 32] {
         match self {
             PlatformState::V0(v0) => v0.last_committed_block_id_hash(),
+        }
+    }
+
+    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
+        match self {
+            PlatformState::V0(v0) => v0.instant_lock_validating_quorums(),
+        }
+    }
+
+    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
+        match self {
+            PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
         }
     }
 }

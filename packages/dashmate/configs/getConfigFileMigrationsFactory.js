@@ -40,6 +40,20 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       return defaultConfigs.get(baseConfigName);
     }
 
+    function getDefaultConfigByNetwork(network) {
+      if (network === NETWORK_MAINNET) {
+        return defaultConfigs.get('mainnet');
+      }
+      if (network === NETWORK_TESTNET) {
+        return defaultConfigs.get('testnet');
+      }
+      if (network === NETWORK_LOCAL) {
+        return defaultConfigs.get('local');
+      }
+
+      return defaultConfigs.get('base');
+    }
+
     return {
       '0.24.0': (configFile) => {
         Object.entries(configFile.configs)
@@ -611,6 +625,46 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
           });
 
+        return configFile;
+      },
+      '1.0.0-dev.16': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (name === 'base') {
+              options.network = NETWORK_MAINNET;
+            }
+
+            const networkConfig = getDefaultConfigByNetwork(options.network);
+
+            options.platform.drive.abci.chainLock.quorum = {
+              llmqType: networkConfig.get('platform.drive.abci.chainLock.quorum.llmqType'),
+              dkgInterval: networkConfig.get('platform.drive.abci.chainLock.quorum.dkgInterval'),
+              activeSigners: networkConfig.get('platform.drive.abci.chainLock.quorum.activeSigners'),
+              rotation: networkConfig.get('platform.drive.abci.chainLock.quorum.rotation'),
+            };
+
+            delete options.platform.drive.abci.chainLock.llmqType;
+            delete options.platform.drive.abci.chainLock.llmqSize;
+            delete options.platform.drive.abci.chainLock.dkgInterval;
+
+            options.platform.drive.abci.validatorSet.quorum = {
+              llmqType: networkConfig.get('platform.drive.abci.validatorSet.quorum.llmqType'),
+              dkgInterval: networkConfig.get('platform.drive.abci.validatorSet.quorum.dkgInterval'),
+              activeSigners: networkConfig.get('platform.drive.abci.validatorSet.quorum.activeSigners'),
+              rotation: networkConfig.get('platform.drive.abci.validatorSet.quorum.rotation'),
+            };
+
+            delete options.platform.drive.abci.validatorSet.llmqType;
+
+            options.platform.drive.abci.instantLock = {
+              quorum: {
+                llmqType: networkConfig.get('platform.drive.abci.instantLock.quorum.llmqType'),
+                dkgInterval: networkConfig.get('platform.drive.abci.instantLock.quorum.dkgInterval'),
+                activeSigners: networkConfig.get('platform.drive.abci.instantLock.quorum.activeSigners'),
+                rotation: networkConfig.get('platform.drive.abci.instantLock.quorum.rotation'),
+              },
+            };
+          });
         return configFile;
       },
     };

@@ -47,8 +47,8 @@ pub mod platform;
 pub mod platform_state;
 /// Required identity public key set for system identities
 pub mod required_identity_public_key_set;
-/// Signature verification quorums
-pub mod signature_verification_quorums;
+/// Signature verification quorums for Core
+pub mod signature_verification_quorum_set;
 /// The state transition execution result as part of the block execution outcome
 pub mod state_transitions_processing_result;
 /// System identity public keys
