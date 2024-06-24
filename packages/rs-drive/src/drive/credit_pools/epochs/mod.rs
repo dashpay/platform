@@ -38,6 +38,7 @@ use grovedb::TransactionArg;
 
 pub mod credit_distribution_pools;
 mod get_epochs_infos;
+mod get_epochs_protocol_versions;
 pub mod proposers;
 mod prove_epochs_infos;
 pub mod start_block;
