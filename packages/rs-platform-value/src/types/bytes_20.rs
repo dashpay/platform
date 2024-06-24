@@ -1,6 +1,6 @@
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
-use crate::{string_encoding, Error, Identifier, Value};
+use crate::{string_encoding, Error, Value};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use bincode::{Decode, Encode};

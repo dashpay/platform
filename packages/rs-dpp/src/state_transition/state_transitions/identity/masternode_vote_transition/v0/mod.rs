@@ -83,7 +83,7 @@ mod test {
         let mut rng = rand::thread_rng();
         let transition = MasternodeVoteTransitionV0 {
             pro_tx_hash: Identifier::random(),
-            voting_address: rng.gen(),
+            voter_identity_id: Identifier::random(),
             vote: Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
                 vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
                     ContestedDocumentResourceVotePoll {

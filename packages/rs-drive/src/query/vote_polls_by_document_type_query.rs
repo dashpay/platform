@@ -1,9 +1,6 @@
 use super::ContractLookupFn;
 use crate::drive::object_size_info::DataContractResolvedInfo;
-use crate::drive::votes::paths::{
-    vote_contested_resource_active_polls_contract_document_tree_path_vec,
-    vote_contested_resource_contract_documents_indexes_path_vec,
-};
+use crate::drive::votes::paths::vote_contested_resource_contract_documents_indexes_path_vec;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;

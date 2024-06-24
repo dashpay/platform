@@ -6,7 +6,6 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
-use dpp::dashcore::hashes::Hash;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::PartialIdentity;

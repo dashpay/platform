@@ -7,7 +7,6 @@ pub use data_contract::*;
 pub use document::*;
 pub use identity::*;
 pub use metadata::*;
-pub use voting::*;
 // pub use state_transition::*;
 
 mod dash_platform_protocol;

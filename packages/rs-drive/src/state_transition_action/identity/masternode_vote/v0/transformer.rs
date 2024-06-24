@@ -4,8 +4,6 @@ use crate::error::Error;
 use crate::state_transition_action::identity::masternode_vote::v0::{
     MasternodeVoteTransitionActionV0, PreviousVoteCount,
 };
-use dpp::identifier::MasternodeIdentifiers;
-use dpp::prelude::Identifier;
 use dpp::state_transition::state_transitions::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::TransactionArg;
