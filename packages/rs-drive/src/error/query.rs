@@ -142,6 +142,6 @@ pub enum QuerySyntaxError {
     UnknownIndex(String),
 
     /// Missing index values for query
-    #[error("missing index values error: {0}")]
+    #[error("incorrect index values error: {0}")]
     IndexValuesError(String),
 }

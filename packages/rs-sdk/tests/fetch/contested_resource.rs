@@ -304,7 +304,7 @@ async fn contested_resources_fields() {
                 ]
             },
             expect: Ok(
-                r#"code: InvalidArgument, message: "missing index values error: the start index values and the end index"#,
+                r#"code: InvalidArgument, message: "incorrect index values error: the start index values and the end index"#,
             ),
         },
         TestCase {
