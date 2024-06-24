@@ -45,7 +45,6 @@ async fn contested_resource_vote_states_not_found() {
             contract_id: data_contract_id,
         },
         allow_include_locked_and_abstaining_vote_tally: true,
-        // TODO test other result types
         result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
     };
 
@@ -318,22 +317,22 @@ async fn contested_resource_vote_states_fields() {
         },
         TestCase {
             // todo maybe this should fail? or return everything?
-            name: "index_values empty vec returns zero results PLAN-665",
+            name: "index_values empty vec returns error PLAN-665",
             query_mut_fn: |q| q.vote_poll.index_values = vec![],
-            expect: Ok(r#"Contenders { contenders: {},"#),
+            expect: Ok(r#"TODO error"#),
         },
         TestCase {
-            name: "index_values empty string returns zero results",
+            name: "index_values empty string returns error PLAN-665",
             query_mut_fn: |q| q.vote_poll.index_values = vec![Value::Text("".to_string())],
-            expect: Ok("contenders: {}"),
+            expect: Ok("TODO error"),
         },
         TestCase {
-            name: "index_values with one value returns results PLAN-665",
+            name: "index_values with one value returns error PLAN-665",
             query_mut_fn: |q| q.vote_poll.index_values = vec![Value::Text("dash".to_string())],
-            expect: Ok("contenders: {...}"),
+            expect: Ok("TODO error"),
         },
         TestCase {
-            name: "index_values with two values returns contenders ",
+            name: "index_values with two values returns contenders",
             query_mut_fn: |q| {
                 q.vote_poll.index_values = vec![
                     Value::Text("dash".to_string()),
@@ -422,7 +421,11 @@ async fn contested_resource_vote_states_fields() {
     let mut failures: Vec<(&'static str, String)> = Default::default();
 
     for test_case in test_cases {
-        tracing::debug!("Running test case: {}", test_case.name);
+        tracing::debug!(
+            test_case = test_case.name,
+            "Running test case: {}",
+            test_case.name
+        );
         // create new sdk to ensure that test cases don't interfere with each other
         let sdk = cfg
             .setup_api(&format!(
@@ -435,6 +438,12 @@ async fn contested_resource_vote_states_fields() {
         (test_case.query_mut_fn)(&mut query);
 
         let result = ContenderWithSerializedDocument::fetch_many(&sdk, query).await;
+        tracing::debug!(
+            test_case = test_case.name,
+            ?result,
+            "Result of test case {}",
+            test_case.name
+        );
         match test_case.expect {
             Ok(expected) if result.is_ok() => {
                 let result_string = format!("{:?}", result.as_ref().expect("result"));
