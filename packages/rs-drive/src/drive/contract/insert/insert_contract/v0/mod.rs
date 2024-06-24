@@ -221,7 +221,7 @@ impl Drive {
                     contract.id_ref().as_bytes(),
                 );
 
-            for (type_key, document_type) in document_types_with_contested_indexes.into_iter() {
+            for (type_key, _document_type) in document_types_with_contested_indexes.into_iter() {
                 self.batch_insert_empty_tree(
                     contested_unique_index_contract_document_types_path,
                     KeyRef(type_key.as_bytes()),
