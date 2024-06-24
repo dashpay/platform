@@ -85,6 +85,13 @@ impl<C> Platform<C> {
             ))));
         }
 
+        if index.properties.len() != index_values.len() {
+            return Ok(QueryValidationResult::new_with_error(QueryError::InvalidArgument(format!(
+                "query uses index {}, this index has {} properties, but the query provided {} index values instead",
+                index_name, index.properties.len(), index_values.len()
+            ))));
+        }
+
         let bincode_config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
@@ -117,20 +124,21 @@ impl<C> Platform<C> {
             index_values,
         };
 
-        let limit = count
-            .map_or(Some(config.default_query_limit), |limit_value| {
-                if limit_value == 0
-                    || limit_value > u16::MAX as u32
-                    || limit_value as u16 > config.default_query_limit
-                {
-                    None
+        let limit = check_validation_result_with_data!(count.map_or(
+            Ok(config.default_query_limit),
+            |limit| {
+                let limit = u16::try_from(limit)
+                    .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))?;
+                if limit == 0 || limit > config.default_query_limit {
+                    Err(QueryError::InvalidArgument(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit, config.default_query_limit
+                    )))
                 } else {
-                    Some(limit_value as u16)
+                    Ok(limit)
                 }
-            })
-            .ok_or(drive::error::Error::Query(QuerySyntaxError::InvalidLimit(
-                format!("limit greater than max limit {}", config.max_query_limit),
-            )))?;
+            }
+        ));
 
         let query = ContestedDocumentVotePollDriveQuery {
             vote_poll,
