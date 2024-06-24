@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
 use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
@@ -120,6 +121,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
         Ok(ConsensusValidationResult::new_with_data(
             MasternodeVoteTransitionAction::transform_from_transition(
                 self,
+                masternode.state.voting_address,
                 strength,
                 previous_resource_vote_choice_to_remove,
                 platform.drive,

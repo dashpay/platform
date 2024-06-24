@@ -27,6 +27,20 @@ impl MasternodeVoteTransitionAction {
         }
     }
 
+    /// the voter identity id
+    pub fn voter_identity_id(&self) -> Identifier {
+        match self {
+            MasternodeVoteTransitionAction::V0(transition) => transition.voter_identity_id,
+        }
+    }
+
+    /// the masternode list state based voting address
+    pub fn voting_address(&self) -> [u8; 20] {
+        match self {
+            MasternodeVoteTransitionAction::V0(transition) => transition.voting_address,
+        }
+    }
+
     /// Resource votes
     pub fn vote_ref(&self) -> &ResolvedVote {
         match self {

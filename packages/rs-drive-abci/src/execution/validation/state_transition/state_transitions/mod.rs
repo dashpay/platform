@@ -84,7 +84,9 @@ mod tests {
     use dpp::data_contract::document_type::random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType};
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::identifier::MasternodeIdentifiers;
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -172,7 +174,7 @@ mod tests {
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         platform_version: &PlatformVersion,
-    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
+    ) -> (Identifier, Identity, SimpleSigner, IdentityPublicKey) {
         let mut signer = SimpleSigner::default();
 
         let mut rng = StdRng::seed_from_u64(seed);
@@ -183,8 +185,17 @@ mod tests {
 
         signer.add_key(voting_key.clone(), voting_private_key.clone());
 
+        let pro_tx_hash_bytes: [u8; 32] = rng.gen();
+
+        let voting_address = voting_key
+            .public_key_hash()
+            .expect("expected a public key hash");
+
+        let voter_identifier =
+            Identifier::create_voter_identifier(&pro_tx_hash_bytes, &voting_address);
+
         let identity: Identity = IdentityV0 {
-            id: Identifier::random_with_rng(&mut rng),
+            id: voter_identifier,
             public_keys: BTreeMap::from([(0, voting_key.clone())]),
             balance: 0,
             revision: 0,
@@ -207,7 +218,7 @@ mod tests {
 
         let mut platform_state = platform.state.load().clone().deref().clone();
 
-        let pro_tx_hash = ProTxHash::from_byte_array(identity.id().to_buffer());
+        let pro_tx_hash = ProTxHash::from_byte_array(pro_tx_hash_bytes);
 
         let random_ip = Ipv4Addr::new(
             rng.gen_range(0..255),
@@ -232,7 +243,7 @@ mod tests {
                     pose_ban_height: None,
                     revocation_reason: 0,
                     owner_address: rng.gen(),
-                    voting_address: rng.gen(),
+                    voting_address,
                     payout_address: rng.gen(),
                     pub_key_operator: vec![],
                     operator_payout_address: None,
@@ -245,7 +256,7 @@ mod tests {
 
         platform.state.store(Arc::new(platform_state));
 
-        (identity, signer, voting_key)
+        (pro_tx_hash_bytes.into(), identity, signer, voting_key)
     }
 
     pub(in crate::execution::validation::state_transition::state_transitions) fn take_down_masternode_identities(
@@ -930,7 +941,7 @@ mod tests {
         resource_vote_choice: ResourceVoteChoice,
         name: &str,
         signer: &SimpleSigner,
-        masternode_id: Identifier,
+        pro_tx_hash: Identifier,
         voting_key: &IdentityPublicKey,
         nonce: IdentityNonce,
         expect_error: Option<&str>,
@@ -956,7 +967,7 @@ mod tests {
         let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
             vote,
             signer,
-            masternode_id,
+            pro_tx_hash,
             voting_key,
             nonce,
             platform_version,
@@ -1008,10 +1019,10 @@ mod tests {
         count: u64,
         start_seed: u64,
         platform_version: &PlatformVersion,
-    ) -> Vec<(Identity, SimpleSigner, IdentityPublicKey)> {
+    ) -> Vec<(Identifier, Identity, SimpleSigner, IdentityPublicKey)> {
         let mut masternode_infos = vec![];
         for i in 0..count {
-            let (masternode, signer, voting_key) =
+            let (pro_tx_hash_bytes, voting_identity, signer, voting_key) =
                 setup_masternode_identity(platform, start_seed + i, platform_version);
 
             let platform_state = platform.state.load();
@@ -1023,14 +1034,14 @@ mod tests {
                 resource_vote_choice,
                 name,
                 &signer,
-                masternode.id(),
+                pro_tx_hash_bytes,
                 &voting_key,
                 1,
                 None,
                 platform_version,
             );
 
-            masternode_infos.push((masternode, signer, voting_key));
+            masternode_infos.push((pro_tx_hash_bytes, voting_identity, signer, voting_key));
         }
         masternode_infos
     }
@@ -1042,7 +1053,8 @@ mod tests {
         name: &str,
         start_seed: u64,
         platform_version: &PlatformVersion,
-    ) -> BTreeMap<ResourceVoteChoice, Vec<(Identity, SimpleSigner, IdentityPublicKey)>> {
+    ) -> BTreeMap<ResourceVoteChoice, Vec<(Identifier, Identity, SimpleSigner, IdentityPublicKey)>>
+    {
         let mut count_aggregate = start_seed;
         let mut masternodes_by_vote_choice = BTreeMap::new();
         for (resource_vote_choice, count) in resource_vote_choices.into_iter() {

@@ -74,6 +74,7 @@ use dpp::consensus::state::identity::identity_public_key_already_exists_for_uniq
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
 use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
@@ -279,6 +280,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::MasternodeVoteAlreadyPresentError(e) => {
             generic_consensus_error!(MasternodeVoteAlreadyPresentError, e).into()
+        }
+        StateError::MasternodeIncorrectVotingAddressError(e) => {
+            generic_consensus_error!(MasternodeIncorrectVotingAddressError, e).into()
         }
     }
 }

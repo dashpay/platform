@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 pub struct MasternodeVoteTransitionV0 {
     // Own ST fields
     pub pro_tx_hash: Identifier,
+    pub voter_identity_id: Identifier,
     pub vote: Vote,
     pub nonce: IdentityNonce,
     #[platform_signable(exclude_from_sig_hash)]
@@ -82,6 +83,7 @@ mod test {
         let mut rng = rand::thread_rng();
         let transition = MasternodeVoteTransitionV0 {
             pro_tx_hash: Identifier::random(),
+            voting_address: rng.gen(),
             vote: Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
                 vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
                     ContestedDocumentResourceVotePoll {

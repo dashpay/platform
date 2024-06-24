@@ -1,6 +1,6 @@
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
-use crate::{string_encoding, Error, Value};
+use crate::{string_encoding, Error, Identifier, Value};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use bincode::{Decode, Encode};
@@ -14,6 +14,11 @@ pub struct Bytes20(pub [u8; 20]);
 impl AsRef<[u8]> for Bytes20 {
     fn as_ref(&self) -> &[u8] {
         &self.0
+    }
+}
+impl std::fmt::Display for Bytes20 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string(Encoding::Base58))
     }
 }
 

@@ -7,15 +7,15 @@ use platform_value::Identifier;
 pub use v0::*;
 
 impl MasternodeVoteTransitionAccessorsV0 for MasternodeVoteTransition {
-    fn nonce(&self) -> IdentityNonce {
-        match self {
-            MasternodeVoteTransition::V0(transition) => transition.nonce,
-        }
-    }
-
     fn pro_tx_hash(&self) -> Identifier {
         match self {
             MasternodeVoteTransition::V0(transition) => transition.pro_tx_hash,
+        }
+    }
+
+    fn voter_identity_id(&self) -> Identifier {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.voter_identity_id,
         }
     }
 
@@ -23,6 +23,14 @@ impl MasternodeVoteTransitionAccessorsV0 for MasternodeVoteTransition {
         match self {
             MasternodeVoteTransition::V0(transition) => {
                 transition.pro_tx_hash = pro_tx_hash;
+            }
+        }
+    }
+
+    fn set_voter_identity_id(&mut self, voter_identity_id: Identifier) {
+        match self {
+            MasternodeVoteTransition::V0(transition) => {
+                transition.voter_identity_id = voter_identity_id;
             }
         }
     }
@@ -38,6 +46,12 @@ impl MasternodeVoteTransitionAccessorsV0 for MasternodeVoteTransition {
             MasternodeVoteTransition::V0(transition) => {
                 transition.vote = vote;
             }
+        }
+    }
+
+    fn nonce(&self) -> IdentityNonce {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.nonce,
         }
     }
 }
