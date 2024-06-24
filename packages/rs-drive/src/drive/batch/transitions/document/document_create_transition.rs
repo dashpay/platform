@@ -64,6 +64,14 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                 },
             ));
 
+            // We remove from the identity balance an equal amount
+            ops.push(IdentityOperation(
+                IdentityOperationType::RemoveFromIdentityBalance {
+                    identity_id: owner_id.into_buffer(),
+                    balance_to_remove: credits,
+                },
+            ));
+
             // We add the contested document
             // The contested document resides in a special location in grovedb until a time where the
             // resolution expires, at that point it either will be moved to

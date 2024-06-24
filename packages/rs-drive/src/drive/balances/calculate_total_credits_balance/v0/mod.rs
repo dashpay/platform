@@ -42,6 +42,15 @@ impl Drive {
             drive_version,
         )?;
 
+        let total_specialized_balances = self.grove_get_sum_tree_total_value(
+            SubtreePath::empty(),
+            Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances),
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut drive_operations,
+            drive_version,
+        )?;
+
         let total_in_pools = self.grove_get_sum_tree_total_value(
             SubtreePath::empty(),
             Into::<&[u8; 1]>::into(RootTree::Pools),
@@ -55,6 +64,7 @@ impl Drive {
             total_credits_in_platform,
             total_in_pools,
             total_identity_balances,
+            total_specialized_balances,
         })
     }
 }

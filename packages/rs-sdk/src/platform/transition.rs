@@ -12,7 +12,7 @@ pub mod top_up_identity;
 pub mod transfer_document;
 mod txid;
 pub mod update_price_of_document;
-mod vote;
+pub mod vote;
 pub mod withdraw_from_identity;
 
 pub use context::*;
