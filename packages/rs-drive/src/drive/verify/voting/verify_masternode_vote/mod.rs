@@ -6,6 +6,7 @@ use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
 
@@ -39,6 +40,7 @@ impl Drive {
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],
         vote: &Vote,
+        data_contract: &DataContract,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Vote>), Error> {
@@ -53,7 +55,9 @@ impl Drive {
                 proof,
                 masternode_pro_tx_hash,
                 vote,
+                data_contract,
                 verify_subset_of_proof,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_masternode_vote".to_string(),

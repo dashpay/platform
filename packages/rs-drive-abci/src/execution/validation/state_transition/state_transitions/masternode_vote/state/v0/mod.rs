@@ -8,7 +8,7 @@ use dpp::consensus::ConsensusError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 
-use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
+use crate::error::execution::ExecutionError;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
@@ -23,6 +23,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::master
 {
     fn validate_state_v0<C>(
         &self,
+        action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
@@ -32,20 +33,20 @@ pub(in crate::execution::validation::state_transition::state_transitions::master
 impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition {
     fn validate_state_v0<C>(
         &self,
+        action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let result = self.transform_into_action_v0(platform, tx, platform_version)?;
-
-        if !result.is_valid() {
-            return Ok(ConsensusValidationResult::new_with_errors(result.errors));
-        }
-
-        let action = result.into_data()?;
+        let Some(StateTransitionAction::MasternodeVoteAction(masternode_vote_action)) = action
+        else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "action should be known in validate state for masternode vote transition",
+            )));
+        };
 
         // We need to make sure that the vote poll exists and is in started state
-        match action.vote_ref() {
+        match masternode_vote_action.vote_ref() {
             ResolvedVote::ResolvedResourceVote(resource_vote) => {
                 let vote_poll = resource_vote.vote_poll();
                 match vote_poll {
@@ -85,7 +86,9 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
                                 ))
                             }
                             ContestedDocumentVotePollStatus::Started(_) => {
-                                Ok(ConsensusValidationResult::new_with_data(action.into()))
+                                Ok(ConsensusValidationResult::new_with_data(
+                                    masternode_vote_action.into(),
+                                ))
                             }
                         }
                     }

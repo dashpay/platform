@@ -17,6 +17,7 @@ impl DriveHighLevelOperationConverter for MasternodeVoteTransitionAction {
         _epoch: &Epoch,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
+        let voter_identity_id = self.voter_identity_id();
         let pro_tx_hash = self.pro_tx_hash();
         let nonce = self.nonce();
         let strength = self.vote_strength();
@@ -27,10 +28,11 @@ impl DriveHighLevelOperationConverter for MasternodeVoteTransitionAction {
 
         let drive_operations = vec![
             IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
-                identity_id: pro_tx_hash.into_buffer(),
+                identity_id: voter_identity_id.into_buffer(),
                 nonce,
             }),
             IdentityOperation(IdentityOperationType::MasternodeCastVote {
+                // Votes are cast based on masternode pro_tx_hash, and not the voter identity id
                 voter_pro_tx_hash: pro_tx_hash.to_buffer(),
                 strength,
                 vote,

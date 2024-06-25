@@ -1,7 +1,7 @@
+mod advanced_structure;
 mod balance;
 mod nonce;
 mod state;
-mod structure;
 mod transform_into_action;
 
 use dpp::block::block_info::BlockInfo;
@@ -58,7 +58,7 @@ impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
 impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
-        _action: Option<StateTransitionAction>,
+        action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
         _block_info: &BlockInfo,
@@ -74,7 +74,7 @@ impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
             .masternode_vote_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx, platform_version),
+            0 => self.validate_state_v0(action, platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: validate_state".to_string(),
                 known_versions: vec![0],
@@ -643,8 +643,7 @@ mod tests {
             }
 
             #[test]
-            #[ignore] // Currently will have an issue due to a grovedb bug
-            fn test_limit() {
+            fn test_existing_end_index_value() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .build_with_mock_rpc()
@@ -660,7 +659,286 @@ mod tests {
                     platform_version,
                 );
 
-                let (_contender_3, _contender_4, dpns_contract) = create_dpns_name_contest(
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let encoded_existing_value =
+                    bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                        .expect("expected to encode value");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                {
+                    let query_validation_result = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![],
+                                        end_index_values: vec![encoded_existing_value.clone()],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: false,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_contested_resources_response::Version::V0(
+                        GetContestedResourcesResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = query_validation_result.version.expect("expected a version");
+
+                    let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
+
+                    let dash_encoded =
+                        bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                            .expect("expected to encode the word dash");
+
+                    assert_eq!(
+                        contested_resource_values.first(),
+                        Some(dash_encoded).as_ref()
+                    );
+                }
+
+                {
+                    let query_validation_result = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![],
+                                        end_index_values: vec![encoded_existing_value],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: true,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_contested_resources_response::Version::V0(
+                        GetContestedResourcesResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = query_validation_result.version.expect("expected a version");
+
+                    let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
+                    else {
+                        panic!("expected proof")
+                    };
+
+                    let resolved_contested_document_vote_poll_drive_query =
+                        ResolvedVotePollsByDocumentTypeQuery {
+                            contract: DataContractResolvedInfo::BorrowedDataContract(
+                                dpns_contract.as_ref(),
+                            ),
+                            document_type_name: domain.name(),
+                            index_name: &index_name,
+                            start_index_values: &vec![],
+                            end_index_values: &vec!["quantum".into()],
+                            limit: None,
+                            order_ascending: true,
+                            start_at_value: &None,
+                        };
+
+                    let (_, contests) = resolved_contested_document_vote_poll_drive_query
+                        .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
+                        .expect("expected to verify proof");
+
+                    assert_eq!(
+                        contests.first(),
+                        Some(Value::Text("dash".to_string())).as_ref()
+                    );
+                }
+            }
+
+            #[test]
+            fn test_non_existing_end_index_value() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (_contender_1, _contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let encoded_non_existing_value =
+                    bincode::encode_to_vec(Value::Text("cashcash".to_string()), config)
+                        .expect("expected to encode value");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                {
+                    let query_validation_result = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![],
+                                        end_index_values: vec![encoded_non_existing_value.clone()],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: false,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_contested_resources_response::Version::V0(
+                        GetContestedResourcesResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = query_validation_result.version.expect("expected a version");
+
+                    let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
+
+                    assert_eq!(contested_resource_values.first(), None);
+                }
+
+                {
+                    let query_validation_result = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![],
+                                        end_index_values: vec![encoded_non_existing_value],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: true,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_contested_resources_response::Version::V0(
+                        GetContestedResourcesResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = query_validation_result.version.expect("expected a version");
+
+                    let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
+                    else {
+                        panic!("expected proof")
+                    };
+
+                    let resolved_contested_document_vote_poll_drive_query =
+                        ResolvedVotePollsByDocumentTypeQuery {
+                            contract: DataContractResolvedInfo::BorrowedDataContract(
+                                dpns_contract.as_ref(),
+                            ),
+                            document_type_name: domain.name(),
+                            index_name: &index_name,
+                            start_index_values: &vec![],
+                            end_index_values: &vec!["cashcash".into()],
+                            limit: None,
+                            order_ascending: true,
+                            start_at_value: &None,
+                        };
+
+                    let (_, contests) = resolved_contested_document_vote_poll_drive_query
+                        .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
+                        .expect("expected to verify proof");
+
+                    assert_eq!(contests.first(), None);
+                }
+            }
+
+            #[test]
+            #[ignore] // Currently will have an issue due to a grovedb bug
+            fn test_limit() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (_contender_1, _contender_2, _dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let (_contender_3, _contender_4, _dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     8,
@@ -801,7 +1079,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (_contender_1, _contender_2, dpns_contract) = create_dpns_name_contest(
+                let (_contender_1, _contender_2, _dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     7,
@@ -809,7 +1087,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (_contender_3, _contender_4, dpns_contract) = create_dpns_name_contest(
+                let (_contender_3, _contender_4, _dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     8,
@@ -962,8 +1240,14 @@ mod tests {
         }
 
         mod vote_state_query {
-
             use super::*;
+            use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::{
+                get_contested_resource_vote_state_request_v0,
+                GetContestedResourceVoteStateRequestV0,
+            };
+            use dapi_grpc::platform::v0::{
+                get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
+            };
 
             #[test]
             fn test_not_proved_vote_state_query_request_after_vote() {
@@ -982,7 +1266,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode_1, signer_1, voting_key_1) =
+                let (pro_tx_hash_1, _masternode_1, signer_1, voting_key_1) =
                     setup_masternode_identity(&mut platform, 29, platform_version);
 
                 let platform_state = platform.state.load();
@@ -994,7 +1278,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer_1,
-                    masternode_1.id(),
+                    pro_tx_hash_1,
                     &voting_key_1,
                     1,
                     None,
@@ -1132,7 +1416,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode_1, signer_1, voting_key_1) =
+                let (pro_tx_hash_1, _masternode_1, signer_1, voting_key_1) =
                     setup_masternode_identity(&mut platform, 29, platform_version);
 
                 let platform_state = platform.state.load();
@@ -1144,7 +1428,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer_1,
-                    masternode_1.id(),
+                    pro_tx_hash_1,
                     &voting_key_1,
                     1,
                     None,
@@ -1771,6 +2055,326 @@ mod tests {
                     assert_eq!(locking, None);
                 }
             }
+
+            fn get_vote_states_expect_error(
+                platform: &TempPlatform<MockCoreRPCLike>,
+                platform_state: &PlatformState,
+                dpns_contract: &DataContract,
+                index_values: Vec<Vec<u8>>,
+                count: Option<u32>,
+                allow_include_locked_and_abstaining_vote_tally: bool,
+                start_at_identifier_info: Option<
+                    get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo,
+                >,
+                result_type: ResultType,
+                prove: bool,
+                expected_error: &str,
+                platform_version: &PlatformVersion,
+            ) {
+                // Now let's run a query for the vote totals
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                let query_validation_result = platform
+                    .query_contested_resource_vote_state(
+                        GetContestedResourceVoteStateRequest {
+                            version: Some(get_contested_resource_vote_state_request::Version::V0(
+                                GetContestedResourceVoteStateRequestV0 {
+                                    contract_id: dpns_contract.id().to_vec(),
+                                    document_type_name: domain.name().clone(),
+                                    index_name: index_name.clone(),
+                                    index_values,
+                                    result_type: result_type as i32,
+                                    allow_include_locked_and_abstaining_vote_tally,
+                                    start_at_identifier_info,
+                                    count,
+                                    prove,
+                                },
+                            )),
+                        },
+                        platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query");
+
+                assert_eq!(
+                    query_validation_result
+                        .first_error()
+                        .expect("expected query to return error")
+                        .to_string()
+                        .as_str(),
+                    expected_error
+                );
+            }
+
+            #[test]
+            fn test_vote_state_query_request_with_no_index_values_should_return_error() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                perform_votes_multi(
+                    &mut platform,
+                    dpns_contract.as_ref(),
+                    vec![
+                        (TowardsIdentity(contender_1.id()), 50),
+                        (TowardsIdentity(contender_2.id()), 5),
+                        (ResourceVoteChoice::Abstain, 10),
+                        (ResourceVoteChoice::Lock, 3),
+                    ],
+                    "quantum",
+                    10,
+                    platform_version,
+                );
+
+                // DocumentsAndVoteTally
+                {
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        vec![],
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        false,
+                        "invalid argument error: query uses index parentNameAndLabel, this index has 2 properties, but the query provided 0 index values instead",
+                        platform_version,
+                    );
+
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        vec![],
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        true,
+                        "invalid argument error: query uses index parentNameAndLabel, this index has 2 properties, but the query provided 0 index values instead",
+                        platform_version,
+                    );
+                }
+
+                // Documents
+                {
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        vec![],
+                        None,
+                        true,
+                        None,
+                        ResultType::Documents,
+                        false,
+                        "invalid argument error: query uses index parentNameAndLabel, this index has 2 properties, but the query provided 0 index values instead",
+                        platform_version,
+                    );
+
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        vec![],
+                        None,
+                        true,
+                        None,
+                        ResultType::Documents,
+                        true,
+                        "invalid argument error: query uses index parentNameAndLabel, this index has 2 properties, but the query provided 0 index values instead",
+                        platform_version,
+                    );
+                }
+
+                // VoteTally
+                {
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        vec![],
+                        None,
+                        true,
+                        None,
+                        ResultType::VoteTally,
+                        false,
+                        "invalid argument error: query uses index parentNameAndLabel, this index has 2 properties, but the query provided 0 index values instead",
+                        platform_version,
+                    );
+
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        vec![],
+                        None,
+                        true,
+                        None,
+                        ResultType::VoteTally,
+                        true,
+                        "invalid argument error: query uses index parentNameAndLabel, this index has 2 properties, but the query provided 0 index values instead",
+                        platform_version,
+                    );
+                }
+            }
+
+            #[test]
+            fn test_vote_state_query_request_with_limit_too_high_should_return_error() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                perform_votes_multi(
+                    &mut platform,
+                    dpns_contract.as_ref(),
+                    vec![
+                        (TowardsIdentity(contender_1.id()), 50),
+                        (TowardsIdentity(contender_2.id()), 5),
+                        (ResourceVoteChoice::Abstain, 10),
+                        (ResourceVoteChoice::Lock, 3),
+                    ],
+                    "quantum",
+                    10,
+                    platform_version,
+                );
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                    .expect("expected to encode the word dash");
+
+                let quantum_encoded = bincode::encode_to_vec(
+                    Value::Text(convert_to_homograph_safe_chars("quantum")),
+                    config,
+                )
+                .expect("expected to encode the word quantum");
+
+                let index_values = vec![dash_encoded, quantum_encoded];
+
+                // DocumentsAndVoteTally
+                {
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        index_values.clone(),
+                        Some(3000),
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        false,
+                        "invalid argument error: limit 3000 out of bounds of [1, 100]",
+                        platform_version,
+                    );
+
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        index_values.clone(),
+                        Some(3000),
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        true,
+                        "invalid argument error: limit 3000 out of bounds of [1, 100]",
+                        platform_version,
+                    );
+                }
+
+                // Documents
+                {
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        index_values.clone(),
+                        Some(3000),
+                        true,
+                        None,
+                        ResultType::Documents,
+                        false,
+                        "invalid argument error: limit 3000 out of bounds of [1, 100]",
+                        platform_version,
+                    );
+
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        index_values.clone(),
+                        Some(3000),
+                        true,
+                        None,
+                        ResultType::Documents,
+                        true,
+                        "invalid argument error: limit 3000 out of bounds of [1, 100]",
+                        platform_version,
+                    );
+                }
+
+                // VoteTally
+                {
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        index_values.clone(),
+                        Some(3000),
+                        true,
+                        None,
+                        ResultType::VoteTally,
+                        false,
+                        "invalid argument error: limit 3000 out of bounds of [1, 100]",
+                        platform_version,
+                    );
+
+                    get_vote_states_expect_error(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        index_values.clone(),
+                        Some(3000),
+                        true,
+                        None,
+                        ResultType::VoteTally,
+                        true,
+                        "invalid argument error: limit 3000 out of bounds of [1, 100]",
+                        platform_version,
+                    );
+                }
+            }
         }
 
         mod contestant_received_votes_query {
@@ -1995,7 +2599,7 @@ mod tests {
                 );
 
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2007,7 +2611,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2016,7 +2620,7 @@ mod tests {
                 }
 
                 for i in 0..5 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2028,7 +2632,7 @@ mod tests {
                         TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2037,7 +2641,7 @@ mod tests {
                 }
 
                 for i in 0..8 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 200 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2049,7 +2653,7 @@ mod tests {
                         TowardsIdentity(contender_3.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2119,7 +2723,7 @@ mod tests {
 
                 // let's add another 50 votes
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 400 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2131,7 +2735,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2155,7 +2759,7 @@ mod tests {
 
                 // let's add another vote
                 for i in 0..1 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 500 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2167,7 +2771,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2238,7 +2842,7 @@ mod tests {
                 );
 
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2250,7 +2854,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2259,7 +2863,7 @@ mod tests {
                 }
 
                 for i in 0..5 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2271,7 +2875,7 @@ mod tests {
                         TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2280,7 +2884,7 @@ mod tests {
                 }
 
                 for i in 0..8 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 200 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2292,7 +2896,7 @@ mod tests {
                         TowardsIdentity(contender_3.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2555,7 +3159,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 // Now let's perform a few votes
@@ -2569,7 +3173,7 @@ mod tests {
                     TowardsIdentity(contender_1_quantum.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -2585,7 +3189,7 @@ mod tests {
                     TowardsIdentity(contender_2_cooldog.id()),
                     "cooldog",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     None,
@@ -2601,7 +3205,7 @@ mod tests {
                     ResourceVoteChoice::Lock,
                     "superman",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     3,
                     None,
@@ -2612,7 +3216,7 @@ mod tests {
                     &platform,
                     &platform_state,
                     &dpns_contract,
-                    masternode.id(),
+                    pro_tx_hash,
                     None,
                     true,
                     None,
@@ -2717,7 +3321,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 // Now let's perform a few votes
@@ -2731,7 +3335,7 @@ mod tests {
                     TowardsIdentity(contender_1_quantum.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -2747,7 +3351,7 @@ mod tests {
                     TowardsIdentity(contender_2_cooldog.id()),
                     "cooldog",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     None,
@@ -2763,7 +3367,7 @@ mod tests {
                     ResourceVoteChoice::Lock,
                     "superman",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     3,
                     None,
@@ -2774,7 +3378,7 @@ mod tests {
                     &platform,
                     &platform_state,
                     &dpns_contract,
-                    masternode.id(),
+                    pro_tx_hash,
                     None,
                     true,
                     None,
@@ -3439,84 +4043,169 @@ mod tests {
                     platform_version,
                 );
 
-                let GetVotePollsByEndDateResponse { version } = platform
-                    .query_vote_polls_by_end_date_query(
-                        GetVotePollsByEndDateRequest {
-                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
-                                GetVotePollsByEndDateRequestV0 {
-                                    start_time_info: Some(
-                                        get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
-                                            start_time_ms: 1_209_603_000,
-                                            start_time_included: false,
-                                        },
-                                    ),
-                                    end_time_info: None,
-                                    limit: None,
-                                    offset: None,
-                                    ascending: true,
-                                    prove: false,
-                                },
-                            )),
+                // ascending order
+                {
+                    let GetVotePollsByEndDateResponse { version } = platform
+                        .query_vote_polls_by_end_date_query(
+                            GetVotePollsByEndDateRequest {
+                                version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                    GetVotePollsByEndDateRequestV0 {
+                                        start_time_info: Some(
+                                            get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
+                                                start_time_ms: 1_209_603_000,
+                                                start_time_included: false,
+                                            },
+                                        ),
+                                        end_time_info: None,
+                                        limit: None,
+                                        offset: None,
+                                        ascending: true,
+                                        prove: false,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_vote_polls_by_end_date_response::Version::V0(
+                        GetVotePollsByEndDateResponseV0 {
+                            metadata: _,
+                            result,
                         },
-                        &platform_state,
-                        platform_version,
-                    )
-                    .expect("expected to execute query")
-                    .into_data()
-                    .expect("expected query to be valid");
+                    ) = version.expect("expected a version");
 
-                let get_vote_polls_by_end_date_response::Version::V0(
-                    GetVotePollsByEndDateResponseV0 {
-                        metadata: _,
-                        result,
-                    },
-                ) = version.expect("expected a version");
+                    let Some(get_vote_polls_by_end_date_response_v0::Result::VotePollsByTimestamps(
+                                 get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamps {
+                                     vote_polls_by_timestamps,
+                                     finished_results,
+                                 },
+                             )) = result
+                        else {
+                            panic!("expected contenders")
+                        };
 
-                let Some(get_vote_polls_by_end_date_response_v0::Result::VotePollsByTimestamps(
-                    get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamps {
+                    assert!(finished_results);
+
+                    let serialized_contested_vote_poll_bytes_2 = vec![
+                        0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91,
+                        126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6,
+                        100, 111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109,
+                        101, 65, 110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18,
+                        6, 99, 48, 48, 49, 49, 48,
+                    ];
+
+                    let serialized_contested_vote_poll_bytes_3 = vec![
+                        0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91,
+                        126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6,
+                        100, 111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109,
+                        101, 65, 110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18,
+                        8, 99, 114, 97, 122, 121, 109, 97, 110,
+                    ];
+
+                    assert_eq!(
                         vote_polls_by_timestamps,
-                        finished_results,
-                    },
-                )) = result
-                else {
-                    panic!("expected contenders")
-                };
+                        vec![
+                            SerializedVotePollsByTimestamp {
+                                timestamp: 1_210_103_000, // in ms, 500 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                                serialized_vote_polls: vec![
+                                    serialized_contested_vote_poll_bytes_2.clone()
+                                ]
+                            },
+                            SerializedVotePollsByTimestamp {
+                                timestamp: 1_210_503_000, // in ms, 900 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                                serialized_vote_polls: vec![
+                                    serialized_contested_vote_poll_bytes_3.clone()
+                                ]
+                            },
+                        ]
+                    );
+                }
 
-                assert!(finished_results);
+                // descending order
+                {
+                    let GetVotePollsByEndDateResponse { version } = platform
+                        .query_vote_polls_by_end_date_query(
+                            GetVotePollsByEndDateRequest {
+                                version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                    GetVotePollsByEndDateRequestV0 {
+                                        start_time_info: Some(
+                                            get_vote_polls_by_end_date_request_v0::StartAtTimeInfo {
+                                                start_time_ms: 1_209_603_000,
+                                                start_time_included: false,
+                                            },
+                                        ),
+                                        end_time_info: None,
+                                        limit: None,
+                                        offset: None,
+                                        ascending: false,
+                                        prove: false,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
 
-                let serialized_contested_vote_poll_bytes_2 = vec![
-                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
-                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
-                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
-                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 6, 99, 48, 48,
-                    49, 49, 48,
-                ];
-
-                let serialized_contested_vote_poll_bytes_3 = vec![
-                    0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126,
-                    10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6, 100,
-                    111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109, 101, 65,
-                    110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18, 8, 99, 114,
-                    97, 122, 121, 109, 97, 110,
-                ];
-
-                assert_eq!(
-                    vote_polls_by_timestamps,
-                    vec![
-                        SerializedVotePollsByTimestamp {
-                            timestamp: 1_210_103_000, // in ms, 500 s after Jan 1 1970 + 3 seconds (chosen block time in test)
-                            serialized_vote_polls: vec![
-                                serialized_contested_vote_poll_bytes_2.clone()
-                            ]
+                    let get_vote_polls_by_end_date_response::Version::V0(
+                        GetVotePollsByEndDateResponseV0 {
+                            metadata: _,
+                            result,
                         },
-                        SerializedVotePollsByTimestamp {
-                            timestamp: 1_210_503_000, // in ms, 900 s after Jan 1 1970 + 3 seconds (chosen block time in test)
-                            serialized_vote_polls: vec![
-                                serialized_contested_vote_poll_bytes_3.clone()
-                            ]
-                        },
-                    ]
-                );
+                    ) = version.expect("expected a version");
+
+                    let Some(get_vote_polls_by_end_date_response_v0::Result::VotePollsByTimestamps(
+                                 get_vote_polls_by_end_date_response_v0::SerializedVotePollsByTimestamps {
+                                     vote_polls_by_timestamps,
+                                     finished_results,
+                                 },
+                             )) = result
+                        else {
+                            panic!("expected contenders")
+                        };
+
+                    assert!(finished_results);
+
+                    let serialized_contested_vote_poll_bytes_2 = vec![
+                        0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91,
+                        126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6,
+                        100, 111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109,
+                        101, 65, 110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18,
+                        6, 99, 48, 48, 49, 49, 48,
+                    ];
+
+                    let serialized_contested_vote_poll_bytes_3 = vec![
+                        0, 230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91,
+                        126, 10, 29, 113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85, 6,
+                        100, 111, 109, 97, 105, 110, 18, 112, 97, 114, 101, 110, 116, 78, 97, 109,
+                        101, 65, 110, 100, 76, 97, 98, 101, 108, 2, 18, 4, 100, 97, 115, 104, 18,
+                        8, 99, 114, 97, 122, 121, 109, 97, 110,
+                    ];
+
+                    assert_eq!(
+                        vote_polls_by_timestamps,
+                        vec![
+                            SerializedVotePollsByTimestamp {
+                                timestamp: 1_210_503_000, // in ms, 900 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                                serialized_vote_polls: vec![
+                                    serialized_contested_vote_poll_bytes_3.clone()
+                                ]
+                            },
+                            SerializedVotePollsByTimestamp {
+                                timestamp: 1_210_103_000, // in ms, 500 s after Jan 1 1970 + 3 seconds (chosen block time in test)
+                                serialized_vote_polls: vec![
+                                    serialized_contested_vote_poll_bytes_2.clone()
+                                ]
+                            },
+                        ]
+                    );
+                }
             }
 
             #[test]
@@ -4019,95 +4708,191 @@ mod tests {
                     platform_version,
                 );
 
-                let GetVotePollsByEndDateResponse { version } = platform
-                    .query_vote_polls_by_end_date_query(
-                        GetVotePollsByEndDateRequest {
-                            version: Some(get_vote_polls_by_end_date_request::Version::V0(
-                                GetVotePollsByEndDateRequestV0 {
-                                    start_time_info: None,
-                                    end_time_info: None,
-                                    limit: None,
-                                    offset: None,
-                                    ascending: true,
-                                    prove: true,
-                                },
-                            )),
-                        },
-                        &platform_state,
-                        platform_version,
-                    )
-                    .expect("expected to execute query")
-                    .into_data()
-                    .expect("expected query to be valid");
-
-                let get_vote_polls_by_end_date_response::Version::V0(
-                    GetVotePollsByEndDateResponseV0 {
-                        metadata: _,
-                        result,
-                    },
-                ) = version.expect("expected a version");
-
-                let Some(get_vote_polls_by_end_date_response_v0::Result::Proof(proof)) = result
-                else {
-                    panic!("expected contenders")
-                };
-
-                let vote_poll_by_end_date_query = VotePollsByEndDateDriveQuery {
-                    start_time: None,
-                    end_time: None,
-                    offset: None,
-                    limit: None,
-                    order_ascending: true,
-                };
-
-                let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
-                    .verify_vote_polls_by_end_date_proof(
-                        proof.grovedb_proof.as_ref(),
-                        platform_version,
-                    )
-                    .expect("expected to verify proof");
-
-                assert_eq!(
-                    vote_polls_by_timestamps,
-                    BTreeMap::from([
-                        (
-                            1_209_603_000,
-                            vec![VotePoll::ContestedDocumentResourceVotePoll(
-                                ContestedDocumentResourceVotePoll {
-                                    contract_id: Identifier(IdentifierBytes32([
-                                        230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109,
-                                        222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33,
-                                        246, 34, 191, 83, 197, 49, 85
-                                    ])),
-                                    document_type_name: "domain".to_string(),
-                                    index_name: "parentNameAndLabel".to_string(),
-                                    index_values: vec![
-                                        Text("dash".to_string()),
-                                        Text("quantum".to_string())
-                                    ]
-                                }
-                            )]
-                        ),
-                        (
-                            1_210_103_000,
-                            vec![VotePoll::ContestedDocumentResourceVotePoll(
-                                ContestedDocumentResourceVotePoll {
-                                    contract_id: Identifier(IdentifierBytes32([
-                                        230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109,
-                                        222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13, 87, 33,
-                                        246, 34, 191, 83, 197, 49, 85
-                                    ])),
-                                    document_type_name: "domain".to_string(),
-                                    index_name: "parentNameAndLabel".to_string(),
-                                    index_values: vec![
-                                        Text("dash".to_string()),
-                                        Text("c00110".to_string())
-                                    ]
-                                }
-                            )]
+                // ascending order
+                {
+                    let GetVotePollsByEndDateResponse { version } = platform
+                        .query_vote_polls_by_end_date_query(
+                            GetVotePollsByEndDateRequest {
+                                version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                    GetVotePollsByEndDateRequestV0 {
+                                        start_time_info: None,
+                                        end_time_info: None,
+                                        limit: None,
+                                        offset: None,
+                                        ascending: true,
+                                        prove: true,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
                         )
-                    ])
-                );
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_vote_polls_by_end_date_response::Version::V0(
+                        GetVotePollsByEndDateResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = version.expect("expected a version");
+
+                    let Some(get_vote_polls_by_end_date_response_v0::Result::Proof(proof)) = result
+                    else {
+                        panic!("expected contenders")
+                    };
+
+                    let vote_poll_by_end_date_query = VotePollsByEndDateDriveQuery {
+                        start_time: None,
+                        end_time: None,
+                        offset: None,
+                        limit: None,
+                        order_ascending: true,
+                    };
+
+                    let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
+                        .verify_vote_polls_by_end_date_proof(
+                            proof.grovedb_proof.as_ref(),
+                            platform_version,
+                        )
+                        .expect("expected to verify proof");
+
+                    assert_eq!(
+                        vote_polls_by_timestamps,
+                        BTreeMap::from([
+                            (
+                                1_209_603_000,
+                                vec![VotePoll::ContestedDocumentResourceVotePoll(
+                                    ContestedDocumentResourceVotePoll {
+                                        contract_id: Identifier(IdentifierBytes32([
+                                            230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24,
+                                            109, 222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13,
+                                            87, 33, 246, 34, 191, 83, 197, 49, 85
+                                        ])),
+                                        document_type_name: "domain".to_string(),
+                                        index_name: "parentNameAndLabel".to_string(),
+                                        index_values: vec![
+                                            Text("dash".to_string()),
+                                            Text("quantum".to_string())
+                                        ]
+                                    }
+                                )]
+                            ),
+                            (
+                                1_210_103_000,
+                                vec![VotePoll::ContestedDocumentResourceVotePoll(
+                                    ContestedDocumentResourceVotePoll {
+                                        contract_id: Identifier(IdentifierBytes32([
+                                            230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24,
+                                            109, 222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13,
+                                            87, 33, 246, 34, 191, 83, 197, 49, 85
+                                        ])),
+                                        document_type_name: "domain".to_string(),
+                                        index_name: "parentNameAndLabel".to_string(),
+                                        index_values: vec![
+                                            Text("dash".to_string()),
+                                            Text("c00110".to_string())
+                                        ]
+                                    }
+                                )]
+                            )
+                        ])
+                    );
+                }
+
+                // descending order
+                {
+                    let GetVotePollsByEndDateResponse { version } = platform
+                        .query_vote_polls_by_end_date_query(
+                            GetVotePollsByEndDateRequest {
+                                version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                                    GetVotePollsByEndDateRequestV0 {
+                                        start_time_info: None,
+                                        end_time_info: None,
+                                        limit: None,
+                                        offset: None,
+                                        ascending: false,
+                                        prove: true,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .into_data()
+                        .expect("expected query to be valid");
+
+                    let get_vote_polls_by_end_date_response::Version::V0(
+                        GetVotePollsByEndDateResponseV0 {
+                            metadata: _,
+                            result,
+                        },
+                    ) = version.expect("expected a version");
+
+                    let Some(get_vote_polls_by_end_date_response_v0::Result::Proof(proof)) = result
+                    else {
+                        panic!("expected contenders")
+                    };
+
+                    let vote_poll_by_end_date_query = VotePollsByEndDateDriveQuery {
+                        start_time: None,
+                        end_time: None,
+                        offset: None,
+                        limit: None,
+                        order_ascending: false,
+                    };
+
+                    let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
+                        .verify_vote_polls_by_end_date_proof(
+                            proof.grovedb_proof.as_ref(),
+                            platform_version,
+                        )
+                        .expect("expected to verify proof");
+
+                    assert_eq!(
+                        vote_polls_by_timestamps,
+                        BTreeMap::from([
+                            (
+                                1_209_603_000,
+                                vec![VotePoll::ContestedDocumentResourceVotePoll(
+                                    ContestedDocumentResourceVotePoll {
+                                        contract_id: Identifier(IdentifierBytes32([
+                                            230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24,
+                                            109, 222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13,
+                                            87, 33, 246, 34, 191, 83, 197, 49, 85
+                                        ])),
+                                        document_type_name: "domain".to_string(),
+                                        index_name: "parentNameAndLabel".to_string(),
+                                        index_values: vec![
+                                            Text("dash".to_string()),
+                                            Text("quantum".to_string())
+                                        ]
+                                    }
+                                )]
+                            ),
+                            (
+                                1_210_103_000,
+                                vec![VotePoll::ContestedDocumentResourceVotePoll(
+                                    ContestedDocumentResourceVotePoll {
+                                        contract_id: Identifier(IdentifierBytes32([
+                                            230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24,
+                                            109, 222, 123, 91, 126, 10, 29, 113, 42, 9, 196, 13,
+                                            87, 33, 246, 34, 191, 83, 197, 49, 85
+                                        ])),
+                                        document_type_name: "domain".to_string(),
+                                        index_name: "parentNameAndLabel".to_string(),
+                                        index_values: vec![
+                                            Text("dash".to_string()),
+                                            Text("c00110".to_string())
+                                        ]
+                                    }
+                                )]
+                            )
+                        ])
+                    );
+                }
             }
         }
 
@@ -4279,7 +5064,7 @@ mod tests {
                 assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
 
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -4291,7 +5076,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -4310,7 +5095,7 @@ mod tests {
                 assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
 
                 for i in 0..5 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -4322,7 +5107,7 @@ mod tests {
                         TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -4387,7 +5172,7 @@ mod tests {
                 assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
 
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -4399,7 +5184,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -4418,7 +5203,7 @@ mod tests {
                 assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
 
                 for i in 0..5 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -4430,7 +5215,7 @@ mod tests {
                         TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -5662,7 +6447,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 let platform_state = platform.state.load();
@@ -5674,7 +6459,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -5688,7 +6473,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     Some("Masternode vote is already present for masternode 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R voting for ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] })"),
@@ -5713,7 +6498,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 let platform_state = platform.state.load();
@@ -5725,7 +6510,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -5739,7 +6524,7 @@ mod tests {
                     TowardsIdentity(contender_2.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     None,
@@ -5794,7 +6579,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 let platform_state = platform.state.load();
@@ -5806,7 +6591,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -5820,7 +6605,7 @@ mod tests {
                     TowardsIdentity(contender_2.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     None,
@@ -5834,7 +6619,7 @@ mod tests {
                     Lock,
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     3,
                     None,
@@ -5848,7 +6633,7 @@ mod tests {
                     Abstain,
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     4,
                     None,
@@ -5862,7 +6647,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     5,
                     None,
@@ -5876,7 +6661,7 @@ mod tests {
                     TowardsIdentity(contender_2.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     6,
                     Some("Masternode with id: 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R already voted 5 times and is trying to vote again, they can only vote 5 times"),
@@ -5962,7 +6747,7 @@ mod tests {
                     .expect("expected a vector of 50 masternode identities")
                     .iter()
                     .take(10)
-                    .map(|(identity, _, _)| identity.id())
+                    .map(|(pro_tx_hash, _, _, _)| *pro_tx_hash)
                     .collect();
 
                 let platform_state_before_masternode_identity_removals =

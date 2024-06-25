@@ -94,9 +94,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
             }
         }
 
-        if let Some((contested_document_resource_vote_poll, credits)) =
-            self.prefunded_voting_balance()
-        {
+        if let Some((contested_document_resource_vote_poll, _)) = self.prefunded_voting_balance() {
             if let Some(stored_info) = self.current_store_contest_info() {
                 // We have previous stored info
                 match stored_info.vote_poll_status() {

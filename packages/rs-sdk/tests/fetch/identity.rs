@@ -45,7 +45,7 @@ async fn test_identity_read_by_key() {
         .first_key_value()
         .expect("need at least one pubkey")
         .1
-        .hash()
+        .public_key_hash()
         .expect("public key hash");
 
     let identity2 = Identity::fetch(&sdk, PublicKeyHash(key_hash))

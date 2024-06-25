@@ -221,7 +221,7 @@ impl QueryStrategy {
                         let key_num = rng.gen_range(0..unique_public_keys.len());
                         let public_key = unique_public_keys[key_num].1;
                         Some((
-                            public_key.hash().unwrap(),
+                            public_key.public_key_hash().unwrap(),
                             identity.clone().into_partial_identity_info_no_balance(),
                         ))
                     }

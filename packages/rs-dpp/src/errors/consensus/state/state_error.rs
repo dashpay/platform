@@ -37,6 +37,8 @@ use crate::consensus::state::identity::identity_public_key_already_exists_for_un
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
+use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
 use crate::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use crate::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
@@ -157,6 +159,12 @@ pub enum StateError {
 
     #[error(transparent)]
     MasternodeNotFoundError(MasternodeNotFoundError),
+
+    #[error(transparent)]
+    MasternodeIncorrectVoterIdentityIdError(MasternodeIncorrectVoterIdentityIdError),
+
+    #[error(transparent)]
+    MasternodeIncorrectVotingAddressError(MasternodeIncorrectVotingAddressError),
 
     #[error(transparent)]
     VotePollNotFoundError(VotePollNotFoundError),

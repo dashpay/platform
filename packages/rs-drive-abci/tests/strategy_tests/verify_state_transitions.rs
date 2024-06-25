@@ -23,8 +23,6 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::voting::vote_polls::VotePoll;
-use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
@@ -753,7 +751,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     }
                 }
                 StateTransitionAction::MasternodeVoteAction(masternode_vote_action) => {
-                    match masternode_vote_action.vote_ref() {
+                    let data_contract = match masternode_vote_action.vote_ref() {
                         ResolvedVote::ResolvedResourceVote(resource_vote) => match resource_vote
                             .vote_poll()
                         {
@@ -783,9 +781,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         index_values: serialized_index_values,
                                     }))
                                 });
+                                contested_document_resource_vote_poll.contract.as_ref()
                             }
                         },
-                    }
+                    };
 
                     let versioned_request = GetProofsRequest {
                         version: Some(get_proofs_request::Version::V0(proofs_request)),
@@ -806,6 +805,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         &response_proof.grovedb_proof,
                         masternode_vote_action.pro_tx_hash().into_buffer(),
                         &vote,
+                        data_contract,
                         true,
                         platform_version,
                     )

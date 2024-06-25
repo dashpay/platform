@@ -120,6 +120,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
         Ok(ConsensusValidationResult::new_with_data(
             MasternodeVoteTransitionAction::transform_from_transition(
                 self,
+                masternode.state.voting_address,
                 strength,
                 previous_resource_vote_choice_to_remove,
                 platform.drive,

@@ -16,18 +16,11 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
-    use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
+    use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use dpp::document::Document;
-    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use drive::drive::object_size_info::DataContractResolvedInfo;
-    use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
-    use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
-    use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
-    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
@@ -265,9 +258,9 @@ mod tests {
             get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
                 get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
                     contenders,
-                    abstain_vote_tally,
-                    lock_vote_tally,
-                    finished_vote_info,
+                    abstain_vote_tally: _,
+                    lock_vote_tally: _,
+                    finished_vote_info: _,
                 },
             ),
         ) = result

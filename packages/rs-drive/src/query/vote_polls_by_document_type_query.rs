@@ -1,9 +1,6 @@
 use super::ContractLookupFn;
 use crate::drive::object_size_info::DataContractResolvedInfo;
-use crate::drive::votes::paths::{
-    vote_contested_resource_active_polls_contract_document_tree_path_vec,
-    vote_contested_resource_contract_documents_indexes_path_vec,
-};
+use crate::drive::votes::paths::vote_contested_resource_contract_documents_indexes_path_vec;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
@@ -298,6 +295,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         let document_type = self.document_type()?;
         let properties_iter = index.properties.iter();
         let mut start_values_iter = self.start_index_values.iter();
+        let has_end_index_values = !self.end_index_values.is_empty();
         let mut end_values_iter = self.end_index_values.iter();
         let mut start_values_vec = vec![];
         let mut end_values_vec = vec![];
@@ -327,7 +325,14 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                 break;
             }
         }
-        let middle_index_property = middle_index_property.ok_or(Error::Query(QuerySyntaxError::IndexValuesError("the start index values and the end index values must be equal to the amount of properties in the contested index minus one, no middle property".to_string())))?;
+        let middle_index_property = middle_index_property.ok_or_else(|| {
+            let error_msg = if has_end_index_values {
+                "since end index values were provided, the start index values and the end index values must be equal to the amount of properties in the contested index minus one, we could not find a middle property".to_string()
+            } else {
+                "too many start values were provided, since no end index values were provided, the start index values must be less than the amount of properties in the contested index".to_string()
+            };
+            Error::Query(QuerySyntaxError::IndexValuesError(error_msg))
+        })?;
         Ok((start_values_vec, end_values_vec, middle_index_property))
     }
 
@@ -352,13 +357,14 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
     }
 
     pub(crate) fn result_path_index(&self) -> usize {
-        // 5 because of:
+        // 6 because of:
         // voting sub tree (112)
         // contested ('c')
         // voting part
         // contract id
         // document type name
-        5 + self.start_index_values.len()
+        // 1
+        6 + self.start_index_values.len()
     }
 
     /// Operations to construct a path query.
@@ -491,7 +497,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
 
                             Err(Error::Drive(DriveError::CorruptedCodeExecution("the path length should always be bigger or equal to the result path index")))
                         } else {
-                            // the result is in the path because we did not provide any end index values
+                            // the result is in the path because we did provide end index values
                             // like this  <------ start index values (path) --->    Key
                             // properties ------- --------- --------- ----------  ------- 
                             let inner_path_value_bytes = path.remove(result_path_index.unwrap());

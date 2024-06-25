@@ -67,6 +67,7 @@ pub enum ValidationOperation {
     Protocol(ProtocolValidationOperation),
     RetrieveIdentity(RetrieveIdentityInfo),
     RetrievePrefundedSpecializedBalance,
+    SingleSha256(HashBlockCount),
     DoubleSha256(HashBlockCount),
     ValidateKeyStructure(KeyCount), // This is extremely cheap
     SignatureVerification(SignatureVerificationOperation),
@@ -99,6 +100,18 @@ impl ValidationOperation {
                 }
                 ValidationOperation::PrecalculatedOperation(precalculated_operation) => {
                     fee_result.checked_add_assign(precalculated_operation.clone())?;
+                }
+                ValidationOperation::SingleSha256(block_count) => {
+                    fee_result.processing_fee = fee_result
+                        .processing_fee
+                        .checked_add(
+                            platform_version.fee_version.hashing.single_sha256_base
+                                + platform_version.fee_version.hashing.single_sha256_per_block
+                                    * (*block_count as u64),
+                        )
+                        .ok_or(ExecutionError::Overflow(
+                            "execution processing fee overflow error",
+                        ))?;
                 }
                 ValidationOperation::DoubleSha256(block_count) => {
                     fee_result.processing_fee = fee_result
