@@ -307,12 +307,12 @@ async fn contested_resources_fields() {
             expect:Ok(r#"ContestedResources([Value(Text("dash"))])"#),
         }, 
         TestCase {
-            name: "end_index_values two values (1 nx) with empty start_index_values returns 'dash'",
+            name: "end_index_values two values (1 nx) with empty start_index_values returns error",
             query_mut_fn: |q| {
                 q.start_index_values = vec![];
                 q.end_index_values = vec![Value::Text("dada".to_string()), Value::Text("non existing".to_string())];
             },
-            expect:Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+            expect:Err("too many end index values were provided"),
         },
         TestCase {
             name: "end_index_values with 1 nx value 'aaa*' and empty start_index_values returns zero objects",
@@ -442,7 +442,7 @@ async fn contested_resources_fields() {
                 if !result_string.contains(expected) {
                     failures.push((
                         test_case.name,
-                        format!("expected: {:#?}\ngot: {:?}\n", expected, result),
+                        format!("EXPECTED: {} GOT: {:?}\n", expected, result),
                     ));
                 }
             }
@@ -451,14 +451,14 @@ async fn contested_resources_fields() {
                 if !result.to_string().contains(expected) {
                     failures.push((
                         test_case.name,
-                        format!("expected: {:#?}\ngot {:?}\n", expected, result),
+                        format!("EXPECTED: {} GOT: {:?}\n", expected, result),
                     ));
                 }
             }
             expected => {
                 failures.push((
                     test_case.name,
-                    format!("expected: {:#?}\ngot: {:?}\n", expected, result),
+                    format!("EXPECTED: {:?} GOT: {:?}\n", expected, result),
                 ));
             }
         }
