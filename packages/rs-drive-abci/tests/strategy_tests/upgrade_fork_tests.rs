@@ -7,6 +7,7 @@ mod tests {
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
     use drive::drive::config::DriveConfig;
+    use std::collections::BTreeMap;
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
@@ -181,6 +182,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -231,6 +233,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -418,6 +421,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -468,6 +472,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -818,6 +823,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -871,6 +877,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1043,6 +1050,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1139,6 +1147,7 @@ mod tests {
                         current_proposer_versions: None, //restart the proposer versions
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1194,6 +1203,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1418,6 +1428,7 @@ mod tests {
                         current_proposer_versions: None,
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },

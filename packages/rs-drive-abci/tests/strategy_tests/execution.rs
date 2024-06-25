@@ -777,6 +777,7 @@ pub(crate) fn start_chain_for_strategy(
             current_proposer_versions: None,
             current_identity_nonce_counter: Default::default(),
             current_identity_contract_nonce_counter: Default::default(),
+            current_votes: Default::default(),
             start_time_ms: GENESIS_TIME_MS,
             current_time_ms: GENESIS_TIME_MS,
         },
@@ -804,6 +805,7 @@ pub(crate) fn continue_chain_for_strategy(
         current_proposer_versions,
         mut current_identity_nonce_counter,
         mut current_identity_contract_nonce_counter,
+        mut current_votes,
         start_time_ms,
         mut current_time_ms,
     } = chain_execution_parameters;
@@ -880,6 +882,7 @@ pub(crate) fn continue_chain_for_strategy(
             &mut current_identities,
             &mut current_identity_nonce_counter,
             &mut current_identity_contract_nonce_counter,
+            &mut current_votes,
             &mut signer,
             &mut rng,
         );

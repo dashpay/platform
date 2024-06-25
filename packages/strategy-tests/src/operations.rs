@@ -23,6 +23,8 @@ use drive::drive::object_size_info::DataContractOwnedResolvedInfo;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
+use rand::distributions::{Distribution, WeightedIndex};
+use rand::prelude::StdRng;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
@@ -470,6 +472,26 @@ impl TryFromPlatformVersioned<ResourceVoteOp> for ResourceVoteOpSerializable {
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct VoteAction {
     pub vote_choices_with_weights: Vec<(ResourceVoteChoice, u8)>,
+}
+
+impl VoteAction {
+    // Function to choose a ResourceVoteChoice based on weights
+    pub fn choose_weighted_choice(&self, rng: &mut StdRng) -> ResourceVoteChoice {
+        if self.vote_choices_with_weights.is_empty() {
+            ResourceVoteChoice::Abstain
+        } else if self.vote_choices_with_weights.len() == 1 {
+            self.vote_choices_with_weights[0].0
+        } else {
+            let weights: Vec<u8> = self
+                .vote_choices_with_weights
+                .iter()
+                .map(|(_, weight)| *weight)
+                .collect();
+            let dist = WeightedIndex::new(weights).unwrap();
+            let index = dist.sample(rng);
+            self.vote_choices_with_weights[index].0
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
