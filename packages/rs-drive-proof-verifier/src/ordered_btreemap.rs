@@ -13,6 +13,17 @@ pub enum OrderedIterator<I: DoubleEndedIterator> {
     Descending(Rev<I>),
 }
 
+impl<I: DoubleEndedIterator> Iterator for OrderedIterator<I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            OrderedIterator::Ascending(iter) => iter.next(),
+            OrderedIterator::Descending(iter) => iter.next(),
+        }
+    }
+}
+
 /// BTreeMap that can be ordered in either ascending or descending order.
 #[derive(Clone, Debug, Default, derive_more::From)]
 #[cfg_attr(feature = "mocks", derive(Encode, Decode))]
@@ -20,7 +31,8 @@ pub enum OrderedIterator<I: DoubleEndedIterator> {
 pub struct OrderedBTreeMap<K: Ord, V> {
     /// The inner map.
     inner: BTreeMap<K, V>,
-    /// When set to true, the map will be ordered in ascending order.
+    /// When set to true, the map will be iterated in ascending order. Otherwise, it will be
+    /// iterated in descending order.
     order_ascending: bool,
 }
 
@@ -114,17 +126,6 @@ impl<K: Ord, V> IntoIterator for OrderedBTreeMap<K, V> {
             OrderedIterator::Ascending(iter)
         } else {
             OrderedIterator::Descending(iter.rev())
-        }
-    }
-}
-
-impl<I: DoubleEndedIterator> Iterator for OrderedIterator<I> {
-    type Item = I::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            OrderedIterator::Ascending(iter) => iter.next(),
-            OrderedIterator::Descending(iter) => iter.next(),
         }
     }
 }
