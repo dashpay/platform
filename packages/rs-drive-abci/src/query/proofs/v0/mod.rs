@@ -107,28 +107,31 @@ impl<C> Platform<C> {
                             let identity_id = match contested_resource_vote_status_request.voter_identifier.try_into() {
                                 Ok(identity_id) => identity_id,
                                 Err(_) => return Some(Err(QueryError::InvalidArgument(
-                            "voter_identifier must be a valid identifier (32 bytes long)".to_string(),
-                        ))),
+                                    "voter_identifier must be a valid identifier (32 bytes long)".to_string(),
+                                ))),
                             };
-                            let contract_id = match  contested_resource_vote_status_request.contract_id.try_into() {
+                            let contract_id = match contested_resource_vote_status_request.contract_id.try_into() {
                                 Ok(contract_id) => contract_id,
                                 Err(_) => return Some(Err(QueryError::InvalidArgument(
-                            "contract_id must be a valid identifier (32 bytes long)".to_string(),
-                        ))),
+                                    "contract_id must be a valid identifier (32 bytes long)".to_string(),
+                                ))),
                             };
                             let document_type_name = contested_resource_vote_status_request.document_type_name;
                             let index_name = contested_resource_vote_status_request.index_name;
-                            let index_values = match contested_resource_vote_status_request.index_values.into_iter().enumerate().map(|(pos,serialized_value)|
+                            let index_values = match contested_resource_vote_status_request.index_values.into_iter().enumerate().map(|(pos, serialized_value)|
                                 Ok(bincode::decode_from_slice(serialized_value.as_slice(), bincode::config::standard().with_big_endian()
-            .with_no_limit()).map_err(|_| QueryError::InvalidArgument(
-                            format!("could not convert {:?} to a value in the index values at position {}", serialized_value, pos),
-                        ))?.0)
+                                    .with_no_limit()).map_err(|_| QueryError::InvalidArgument(
+                                    format!("could not convert {:?} to a value in the index values at position {}", serialized_value, pos),
+                                ))?.0)
                             ).collect::<Result<Vec<_>, QueryError>>() {
                                 Ok(index_values) => index_values,
                                 Err(e) => return Some(Err(e)),
                             };
                             let vote_poll = ContestedDocumentResourceVotePoll {
-                            contract_id, document_type_name, index_name, index_values,
+                                contract_id,
+                                document_type_name,
+                                index_name,
+                                index_values,
                             }.into();
                             Some(Ok(IdentityBasedVoteDriveQuery {
                                 identity_id,
@@ -140,7 +143,7 @@ impl<C> Platform<C> {
                     None
                 }
             })
-            .collect::<Result<Vec<_>, QueryError>>());
+            .collect::<Result<Vec<IdentityBasedVoteDriveQuery>, QueryError>>());
 
         let proof = self.drive.prove_multiple_state_transition_results(
             &identity_requests,
