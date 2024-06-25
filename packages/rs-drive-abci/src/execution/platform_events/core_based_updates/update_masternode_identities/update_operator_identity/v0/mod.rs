@@ -78,7 +78,7 @@ where
         )?;
 
         let key_request = IdentityKeysRequest {
-            identity_id: old_operator_identifier,
+            identity_id: old_operator_identifier.to_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,
@@ -143,7 +143,7 @@ where
 
             if !old_operator_identity_key_ids_to_disable.is_empty() {
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
-                    identity_id: new_operator_identifier,
+                    identity_id: new_operator_identifier.to_buffer(),
                     keys_ids: old_operator_identity_key_ids_to_disable,
                 }));
             }
@@ -204,7 +204,7 @@ where
             }
 
             drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
-                identity_id: new_operator_identifier,
+                identity_id: new_operator_identifier.to_buffer(),
                 unique_keys_to_add,
                 non_unique_keys_to_add,
             }));
@@ -230,7 +230,7 @@ where
 
             if !old_operator_identity_key_ids_to_disable.is_empty() {
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
-                    identity_id: old_operator_identifier,
+                    identity_id: old_operator_identifier.to_buffer(),
                     keys_ids: old_operator_identity_key_ids_to_disable,
                 }));
             }

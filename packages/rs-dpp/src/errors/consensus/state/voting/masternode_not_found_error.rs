@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Masternode {pro_tx_hash:?} not found")]
+#[error("Masternode {pro_tx_hash} not found")]
 #[platform_serialize(unversioned)]
 pub struct MasternodeNotFoundError {
     /*

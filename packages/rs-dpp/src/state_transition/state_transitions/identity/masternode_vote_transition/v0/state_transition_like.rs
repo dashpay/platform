@@ -49,9 +49,8 @@ impl StateTransitionLike for MasternodeVoteTransitionV0 {
         // Setting does nothing
     }
 
-    /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.pro_tx_hash]
+        vec![self.voter_identity_id]
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
@@ -60,7 +59,7 @@ impl StateTransitionLike for MasternodeVoteTransitionV0 {
 
     /// Get owner ID
     fn owner_id(&self) -> Identifier {
-        self.pro_tx_hash
+        self.voter_identity_id
     }
 
     fn unique_identifiers(&self) -> Vec<String> {

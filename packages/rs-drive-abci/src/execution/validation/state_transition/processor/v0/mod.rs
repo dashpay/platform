@@ -95,7 +95,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    // Only Data contract state transitions do not have basic structure validation
+    // Only Data contract state transitions and Masternode vote do not have basic structure validation
     if state_transition.has_basic_structure_validation() {
         // We validate basic structure validation after verifying the identity,
         // this is structure validation that does not require state and is already checked on check_tx
@@ -181,7 +181,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    // Identity create and documents batch both have advanced structure validation with state
+    // Identity create, documents batch and masternode vote all have advanced structure validation with state
     let action = if state_transition.has_advanced_structure_validation_with_state() {
         // Currently used for identity create and documents batch
         let state_transition_action_result = state_transition.transform_into_action(
@@ -752,6 +752,12 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
                     platform_version,
                 )
             }
+            StateTransition::MasternodeVote(st) => st.validate_advanced_structure_from_state(
+                action,
+                maybe_identity,
+                execution_context,
+                platform_version,
+            ),
             _ => Ok(ConsensusValidationResult::new()),
         }
     }
@@ -760,7 +766,9 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     fn has_advanced_structure_validation_with_state(&self) -> bool {
         matches!(
             self,
-            StateTransition::DocumentsBatch(_) | StateTransition::IdentityCreate(_)
+            StateTransition::DocumentsBatch(_)
+                | StateTransition::IdentityCreate(_)
+                | StateTransition::MasternodeVote(_)
         )
     }
 

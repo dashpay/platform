@@ -1,7 +1,7 @@
+mod advanced_structure;
 mod balance;
 mod nonce;
 mod state;
-mod structure;
 mod transform_into_action;
 
 use dpp::block::block_info::BlockInfo;
@@ -58,7 +58,7 @@ impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
 impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
-        _action: Option<StateTransitionAction>,
+        action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
         _block_info: &BlockInfo,
@@ -74,7 +74,7 @@ impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
             .masternode_vote_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx, platform_version),
+            0 => self.validate_state_v0(action, platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: validate_state".to_string(),
                 known_versions: vec![0],
@@ -779,10 +779,6 @@ mod tests {
                         .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
                         .expect("expected to verify proof");
 
-                    let dash_encoded =
-                        bincode::encode_to_vec(Value::Text("dash".to_string()), config)
-                            .expect("expected to encode the word dash");
-
                     assert_eq!(
                         contests.first(),
                         Some(Value::Text("dash".to_string())).as_ref()
@@ -820,10 +816,6 @@ mod tests {
                         .expect("expected to encode value");
 
                 let index_name = "parentNameAndLabel".to_string();
-
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
 
                 {
                     let query_validation_result = platform
@@ -1087,7 +1079,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
-                let (_contender_1, _contender_2, dpns_contract) = create_dpns_name_contest(
+                let (_contender_1, _contender_2, _dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     7,
@@ -1095,7 +1087,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (_contender_3, _contender_4, dpns_contract) = create_dpns_name_contest(
+                let (_contender_3, _contender_4, _dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     8,
@@ -1253,19 +1245,8 @@ mod tests {
                 get_contested_resource_vote_state_request_v0,
                 GetContestedResourceVoteStateRequestV0,
             };
-            use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{
-                get_contested_resource_vote_state_response_v0,
-                GetContestedResourceVoteStateResponseV0,
-            };
             use dapi_grpc::platform::v0::{
-                get_contested_resource_vote_state_request,
-                get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest,
-            };
-            use dpp::document::Document;
-            use dpp::voting::contender_structs::{Contender, ContenderV0};
-            use drive::query::vote_poll_vote_state_query::{
-                ContestedDocumentVotePollDriveQueryResultType,
-                ResolvedContestedDocumentVotePollDriveQuery,
+                get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
             };
 
             #[test]
@@ -1285,7 +1266,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode_1, signer_1, voting_key_1) =
+                let (pro_tx_hash_1, _masternode_1, signer_1, voting_key_1) =
                     setup_masternode_identity(&mut platform, 29, platform_version);
 
                 let platform_state = platform.state.load();
@@ -1297,7 +1278,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer_1,
-                    masternode_1.id(),
+                    pro_tx_hash_1,
                     &voting_key_1,
                     1,
                     None,
@@ -1435,7 +1416,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode_1, signer_1, voting_key_1) =
+                let (pro_tx_hash_1, _masternode_1, signer_1, voting_key_1) =
                     setup_masternode_identity(&mut platform, 29, platform_version);
 
                 let platform_state = platform.state.load();
@@ -1447,7 +1428,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer_1,
-                    masternode_1.id(),
+                    pro_tx_hash_1,
                     &voting_key_1,
                     1,
                     None,
@@ -2618,7 +2599,7 @@ mod tests {
                 );
 
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2630,7 +2611,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2639,7 +2620,7 @@ mod tests {
                 }
 
                 for i in 0..5 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2651,7 +2632,7 @@ mod tests {
                         TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2660,7 +2641,7 @@ mod tests {
                 }
 
                 for i in 0..8 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 200 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2672,7 +2653,7 @@ mod tests {
                         TowardsIdentity(contender_3.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2742,7 +2723,7 @@ mod tests {
 
                 // let's add another 50 votes
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 400 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2754,7 +2735,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2778,7 +2759,7 @@ mod tests {
 
                 // let's add another vote
                 for i in 0..1 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 500 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2790,7 +2771,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2861,7 +2842,7 @@ mod tests {
                 );
 
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2873,7 +2854,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2882,7 +2863,7 @@ mod tests {
                 }
 
                 for i in 0..5 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2894,7 +2875,7 @@ mod tests {
                         TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -2903,7 +2884,7 @@ mod tests {
                 }
 
                 for i in 0..8 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 200 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -2915,7 +2896,7 @@ mod tests {
                         TowardsIdentity(contender_3.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -3178,7 +3159,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 // Now let's perform a few votes
@@ -3192,7 +3173,7 @@ mod tests {
                     TowardsIdentity(contender_1_quantum.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -3208,7 +3189,7 @@ mod tests {
                     TowardsIdentity(contender_2_cooldog.id()),
                     "cooldog",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     None,
@@ -3224,7 +3205,7 @@ mod tests {
                     ResourceVoteChoice::Lock,
                     "superman",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     3,
                     None,
@@ -3235,7 +3216,7 @@ mod tests {
                     &platform,
                     &platform_state,
                     &dpns_contract,
-                    masternode.id(),
+                    pro_tx_hash,
                     None,
                     true,
                     None,
@@ -3340,7 +3321,7 @@ mod tests {
                         platform_version,
                     );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 // Now let's perform a few votes
@@ -3354,7 +3335,7 @@ mod tests {
                     TowardsIdentity(contender_1_quantum.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -3370,7 +3351,7 @@ mod tests {
                     TowardsIdentity(contender_2_cooldog.id()),
                     "cooldog",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     None,
@@ -3386,7 +3367,7 @@ mod tests {
                     ResourceVoteChoice::Lock,
                     "superman",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     3,
                     None,
@@ -3397,7 +3378,7 @@ mod tests {
                     &platform,
                     &platform_state,
                     &dpns_contract,
-                    masternode.id(),
+                    pro_tx_hash,
                     None,
                     true,
                     None,
@@ -5083,7 +5064,7 @@ mod tests {
                 assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
 
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -5095,7 +5076,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -5114,7 +5095,7 @@ mod tests {
                 assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
 
                 for i in 0..5 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -5126,7 +5107,7 @@ mod tests {
                         TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -5191,7 +5172,7 @@ mod tests {
                 assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
 
                 for i in 0..50 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -5203,7 +5184,7 @@ mod tests {
                         TowardsIdentity(contender_1.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -5222,7 +5203,7 @@ mod tests {
                 assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
 
                 for i in 0..5 {
-                    let (masternode, signer, voting_key) =
+                    let (pro_tx_hash, _masternode, signer, voting_key) =
                         setup_masternode_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
@@ -5234,7 +5215,7 @@ mod tests {
                         TowardsIdentity(contender_2.id()),
                         "quantum",
                         &signer,
-                        masternode.id(),
+                        pro_tx_hash,
                         &voting_key,
                         1,
                         None,
@@ -6466,7 +6447,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 let platform_state = platform.state.load();
@@ -6478,7 +6459,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -6492,7 +6473,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     Some("Masternode vote is already present for masternode 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R voting for ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] })"),
@@ -6517,7 +6498,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 let platform_state = platform.state.load();
@@ -6529,7 +6510,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -6543,7 +6524,7 @@ mod tests {
                     TowardsIdentity(contender_2.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     None,
@@ -6598,7 +6579,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (masternode, signer, voting_key) =
+                let (pro_tx_hash, _masternode, signer, voting_key) =
                     setup_masternode_identity(&mut platform, 10, platform_version);
 
                 let platform_state = platform.state.load();
@@ -6610,7 +6591,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     1,
                     None,
@@ -6624,7 +6605,7 @@ mod tests {
                     TowardsIdentity(contender_2.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     2,
                     None,
@@ -6638,7 +6619,7 @@ mod tests {
                     Lock,
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     3,
                     None,
@@ -6652,7 +6633,7 @@ mod tests {
                     Abstain,
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     4,
                     None,
@@ -6666,7 +6647,7 @@ mod tests {
                     TowardsIdentity(contender_1.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     5,
                     None,
@@ -6680,7 +6661,7 @@ mod tests {
                     TowardsIdentity(contender_2.id()),
                     "quantum",
                     &signer,
-                    masternode.id(),
+                    pro_tx_hash,
                     &voting_key,
                     6,
                     Some("Masternode with id: 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R already voted 5 times and is trying to vote again, they can only vote 5 times"),
@@ -6766,7 +6747,7 @@ mod tests {
                     .expect("expected a vector of 50 masternode identities")
                     .iter()
                     .take(10)
-                    .map(|(identity, _, _)| identity.id())
+                    .map(|(pro_tx_hash, _, _, _)| *pro_tx_hash)
                     .collect();
 
                 let platform_state_before_masternode_identity_removals =

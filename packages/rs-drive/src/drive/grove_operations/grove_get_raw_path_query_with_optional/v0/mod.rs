@@ -12,12 +12,17 @@ impl Drive {
     pub(super) fn grove_get_raw_path_query_with_optional_v0(
         &self,
         path_query: &PathQuery,
+        error_if_intermediate_path_tree_not_present: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
-        let CostContext { value, cost } =
-            self.grove
-                .query_raw_keys_optional(path_query, true, true, true, transaction);
+        let CostContext { value, cost } = self.grove.query_raw_keys_optional(
+            path_query,
+            true,
+            true,
+            error_if_intermediate_path_tree_not_present,
+            transaction,
+        );
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

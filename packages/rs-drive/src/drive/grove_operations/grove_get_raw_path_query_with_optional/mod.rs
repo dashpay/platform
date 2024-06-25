@@ -24,6 +24,7 @@ impl Drive {
     pub fn grove_get_raw_path_query_with_optional(
         &self,
         path_query: &PathQuery,
+        error_if_intermediate_path_tree_not_present: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
@@ -35,6 +36,7 @@ impl Drive {
         {
             0 => self.grove_get_raw_path_query_with_optional_v0(
                 path_query,
+                error_if_intermediate_path_tree_not_present,
                 transaction,
                 drive_operations,
             ),

@@ -56,6 +56,7 @@ impl Drive {
 
                 let result = self.grove_get_raw_path_query_with_optional(
                     &path_query,
+                    false,
                     transaction,
                     drive_operations,
                     &platform_version.drive,

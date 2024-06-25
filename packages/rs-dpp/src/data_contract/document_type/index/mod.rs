@@ -127,7 +127,7 @@ impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
                 formatter.write_str("enum ContestedIndexFieldMatch")
             }
 
-            fn visit_enum<V>(self, mut visitor: V) -> Result<ContestedIndexFieldMatch, V::Error>
+            fn visit_enum<V>(self, visitor: V) -> Result<ContestedIndexFieldMatch, V::Error>
             where
                 V: de::EnumAccess<'de>,
             {

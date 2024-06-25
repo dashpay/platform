@@ -79,7 +79,7 @@ mod tests {
             .values()
             .find(|public_key| public_key.key_type().is_unique_key_type())
             .expect("expected a unique key")
-            .hash()
+            .public_key_hash()
             .expect("expected to hash data");
 
         let proof = drive

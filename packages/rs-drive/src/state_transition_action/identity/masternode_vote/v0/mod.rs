@@ -13,6 +13,10 @@ pub type PreviousVoteCount = u16;
 pub struct MasternodeVoteTransitionActionV0 {
     /// the pro tx hash identifier of the masternode
     pub pro_tx_hash: Identifier,
+    /// The voter identity id is made by hashing the pro_tx_hash and the voting address
+    pub voter_identity_id: Identifier,
+    /// The voting address used
+    pub voting_address: [u8; 20],
     /// masternode type vote strength, masternodes have 1, evonodes have 4
     pub vote_strength: u8,
     /// the resource votes
