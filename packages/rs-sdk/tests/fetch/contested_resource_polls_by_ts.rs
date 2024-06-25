@@ -86,8 +86,8 @@ async fn vote_polls_by_ts_order() {
                 let (prev_ts, _) = &enumerated[&(i - 1)];
                 if order_ascending {
                     assert!(
-                        ts >= prev_ts,
-                        "ascending order: item {} ({}) must be >= than item {} ({})",
+                        ts > prev_ts,
+                        "ascending order: item {} ({}) must be > than item {} ({})",
                         ts,
                         i,
                         prev_ts,
@@ -95,8 +95,8 @@ async fn vote_polls_by_ts_order() {
                     );
                 } else {
                     assert!(
-                        ts <= prev_ts,
-                        "descending order: item {} ({}) must be >= than item {} ({})",
+                        ts < prev_ts,
+                        "descending order: item {} ({}) must be < than item {} ({})",
                         ts,
                         i,
                         prev_ts,
@@ -140,7 +140,7 @@ async fn vote_polls_by_ts_limit() {
         offset: None,
         order_ascending: true,
         start_time: None,
-        end_time: Some((test_start_time, true)),
+        end_time: Some((test_start_time, true)), // 1 month in future
     };
 
     let all = VotePoll::fetch_many(&sdk, query_all.clone())

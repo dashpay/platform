@@ -269,32 +269,32 @@ async fn contested_resource_vote_states_fields() {
 
     let test_cases: Vec<TestCase> = vec![
         TestCase {
-            name: "limit 0 PLAN-664",
+            name: "limit 0",
             query_mut_fn: |q| q.limit = Some(0),
-            expect: Ok("..."),
+            expect:Err("limit 0 out of bounds of [1, 100]"),
         },
         TestCase {
-            name: "limit std::u16::MAX PLAN-664",
+            name: "limit std::u16::MAX",
             query_mut_fn: |q| q.limit = Some(std::u16::MAX),
-            expect: Ok("..."),
+            expect: Err("limit 65535 out of bounds of [1, 100]"),
         },
         TestCase {
             name: "offset not None",
             query_mut_fn: |q| q.offset = Some(1),
             expect: Err(
-                r#"Generic("ContestedDocumentVotePollDriveQuery.offset field is internal and must be set to None")"#,
+                "ContestedDocumentVotePollDriveQuery.offset field is internal and must be set to None",
             ),
         },
         TestCase {
             //  TODO: pagination test
-            name: "start_at does not exist",
+            name: "start_at does not exist should return next contenders",
             query_mut_fn: |q| q.start_at = Some(([0x11; 32], true)),
             expect: Ok("Contenders { contenders: {Identifier("),
         },
         TestCase {
-            name: "start_at 0xff;32",
+            name: "start_at 0xff;32 should return zero contenders",
             query_mut_fn: |q| q.start_at = Some(([0xff; 32], true)),
-            expect: Ok("Contenders { contenders: {Identifier("),
+            expect: Ok("Contenders { contenders: {}, abstain_vote_tally: None, lock_vote_tally: None }"),
         },
         TestCase {
             name: "non existing document type returns InvalidArgument",
@@ -317,19 +317,21 @@ async fn contested_resource_vote_states_fields() {
         },
         TestCase {
             // todo maybe this should fail? or return everything?
-            name: "index_values empty vec returns error PLAN-665",
+            name: "index_values empty vec returns error",
             query_mut_fn: |q| q.vote_poll.index_values = vec![],
-            expect: Ok(r#"TODO error"#),
+            expect: Err(
+                "query uses index parentNameAndLabel, this index has 2 properties, but the query provided 0 index values instead",
+            ),
         },
         TestCase {
-            name: "index_values empty string returns error PLAN-665",
+            name: "index_values empty string returns error",
             query_mut_fn: |q| q.vote_poll.index_values = vec![Value::Text("".to_string())],
-            expect: Ok("TODO error"),
+            expect: Err("query uses index parentNameAndLabel, this index has 2 properties, but the query provided 1 index values instead"),
         },
         TestCase {
-            name: "index_values with one value returns error PLAN-665",
+            name: "index_values with one value returns error",
             query_mut_fn: |q| q.vote_poll.index_values = vec![Value::Text("dash".to_string())],
-            expect: Ok("TODO error"),
+            expect:  Err("query uses index parentNameAndLabel, this index has 2 properties, but the query provided 1 index values instead"),
         },
         TestCase {
             name: "index_values with two values returns contenders",
@@ -342,7 +344,7 @@ async fn contested_resource_vote_states_fields() {
             expect: Ok("contenders: {Identifier("),
         },
         TestCase {
-            name: "index_values too many items should return error PLAN-665",
+            name: "index_values too many items should return error",
             query_mut_fn: |q| {
                 q.vote_poll.index_values = vec![
                     Value::Text("dash".to_string()),
@@ -350,9 +352,7 @@ async fn contested_resource_vote_states_fields() {
                     Value::Text("eee".to_string()),
                 ]
             },
-            expect: Ok(
-                r#"code: InvalidArgument, message: "incorrect index values error: the start index values and the end index"#,
-            ),
+            expect:Err("query uses index parentNameAndLabel, this index has 2 properties, but the query provided 3 index values instead"),
         },
         TestCase {
             name: "invalid contract id should cause InvalidArgument error",

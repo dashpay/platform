@@ -17,6 +17,7 @@ use drive::query::{
     vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery,
 };
 use drive_proof_verifier::types::ContestedResource;
+use std::panic::catch_unwind;
 
 pub(crate) const INDEX_VALUE: &str = "dada";
 
@@ -241,6 +242,11 @@ async fn contested_resources_fields() {
 
     let test_cases: Vec<TestCase> = vec![
         TestCase {
+            name: "unmodified base query is Ok",
+            query_mut_fn: |_q| {},
+            expect: Ok("aaa"),
+        },
+        TestCase {
             name: "index value empty string is Ok",
             query_mut_fn: |q| q.start_index_values = vec![Value::Text("".to_string())],
             expect: Ok(""),
@@ -267,7 +273,6 @@ async fn contested_resources_fields() {
             ),
         },
         TestCase {
-            // this fails with code: Internal, see PLAN-563
             name: "start_at_value wrong index type returns InvalidArgument PLAN-563",
             query_mut_fn: |q| q.start_at_value = Some((Value::Array(vec![]), true)),
             expect: Err(r#"code: InvalidArgument"#),
@@ -283,19 +288,51 @@ async fn contested_resources_fields() {
             expect: Ok(r#"ContestedResources([])"#),
         },
         TestCase {
-            // fails due to PLAN-662
-            name: "start_index_values with two values PLAN-662",
+            name: "start_index_values with two values returns error",
             query_mut_fn: |q| {
                 q.start_index_values = vec![
                     Value::Text("dash".to_string()),
                     Value::Text("dada".to_string()),
                 ]
             },
-            expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+            expect: Err("incorrect index values error: too many start values were provided, since no end index values \
+            were provided, the start index values must be less than the amount of properties in the contested index"),
         },
         TestCase {
+            name: "end_index_values one value with empty start_index_values returns 'dash'",
+            query_mut_fn: |q| {
+                q.start_index_values = vec![];
+                q.end_index_values = vec![Value::Text("dada".to_string())];
+            },
+            expect:Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+        }, 
+        TestCase {
+            name: "end_index_values two values (1 nx) with empty start_index_values returns 'dash'",
+            query_mut_fn: |q| {
+                q.start_index_values = vec![];
+                q.end_index_values = vec![Value::Text("dada".to_string()), Value::Text("non existing".to_string())];
+            },
+            expect:Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+        },
+        TestCase {
+            name: "end_index_values with 1 nx value 'aaa*' and empty start_index_values returns zero objects",
+            query_mut_fn: |q| {
+                q.start_index_values = vec![];
+                q.end_index_values = vec![Value::Text("aaa non existing".to_string())];
+            },
+            expect:Ok(r#"ContestedResources([])"#),
+        },
+        TestCase {
+            name: "end_index_values with 1 nx value 'zzz*' and empty start_index_values returns zero objects",
+            query_mut_fn: |q| {
+                q.start_index_values = vec![];
+                q.end_index_values = vec![Value::Text("zzz non existing".to_string())];
+            },
+            expect:Ok(r#"ContestedResources([])"#),
+        }, 
+        TestCase {
             // fails due to PLAN-662
-            name: "too many items in start_index_values PLAN-662",
+            name: "too many items in start_index_values returns error",
             query_mut_fn: |q| {
                 q.start_index_values = vec![
                     Value::Text("dash".to_string()),
@@ -303,32 +340,38 @@ async fn contested_resources_fields() {
                     Value::Text("eee".to_string()),
                 ]
             },
-            expect: Ok(
-                r#"code: InvalidArgument, message: "incorrect index values error: the start index values and the end index"#,
-            ),
+            expect: Err("incorrect index values error: too many start values were provided, since no end index values \
+            were provided, the start index values must be less than the amount of properties in the contested index"),
         },
         TestCase {
-            // fails due to PLAN-663
-            name: "Non existing end_index_values PLAN-663",
-            query_mut_fn: |q| q.end_index_values = vec![Value::Text("non existing".to_string())],
+            name: "Non existing end_index_values starting with zzz returns all previous values PLAN-667",
+            query_mut_fn: |q| {
+                q.end_index_values = vec![Value::Text("zzz non existing".to_string())]
+            },
+            expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+        },
+        TestCase {
+            name: "Non existing end_index_values starting with aaa returns nothing PLAN-667",
+            query_mut_fn: |q| {
+                q.end_index_values = vec![Value::Text("aaa non existing".to_string())]
+            },
             expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#),
         },
         TestCase {
             // fails due to PLAN-663
-            name: "wrong type of end_index_values should return InvalidArgument PLAN-663",
+            name: "wrong type of end_index_values should return InvalidArgument PLAN-663 PLAN-667",
             query_mut_fn: |q| q.end_index_values = vec![Value::Array(vec![0.into(), 1.into()])],
-            expect: Ok(r#"code: InvalidArgument"#),
+            expect: Err(r#"code: InvalidArgument a"#),
         },
         TestCase {
-            // fails due to PLAN-664
-            name: "limit 0 returns InvalidArgument PLAN-664",
+            name: "limit 0 returns InvalidArgument",
             query_mut_fn: |q| q.limit = Some(0),
-            expect: Ok(r#"code: InvalidArgument"#),
+            expect: Err(r#"code: InvalidArgument"#),
         },
         TestCase {
-            name: "limit std::u16::MAX returns InvalidArgument PLAN-664",
+            name: "limit std::u16::MAX returns InvalidArgument",
             query_mut_fn: |q| q.limit = Some(std::u16::MAX),
-            expect: Ok(r#"code: InvalidArgument"#),
+            expect: Err(r#"code: InvalidArgument"#),
         },
     ];
 
@@ -343,7 +386,6 @@ async fn contested_resources_fields() {
         document_type_name: cfg.existing_document_type_name.clone(),
         index_name: "parentNameAndLabel".to_string(),
         start_at_value: None,
-        // start_index_values: vec![], // Value(Text("dash")), Value(Text(""))])
         start_index_values: vec![Value::Text("dash".to_string())],
         end_index_values: vec![],
         limit: None,
@@ -362,15 +404,38 @@ async fn contested_resources_fields() {
 
     for test_case in test_cases {
         tracing::debug!("Running test case: {}", test_case.name);
-        // create new sdk to ensure that test cases don't interfere with each other
-        let sdk = cfg
-            .setup_api(&format!("contested_resources_fields_{}", test_case.name))
-            .await;
+        // handle panics to not stop other test cases from running
+        let unwinded = catch_unwind(|| {
+            {
+                pollster::block_on(async {
+                    // create new sdk to ensure that test cases don't interfere with each other
+                    let sdk = cfg
+                        .setup_api(&format!("contested_resources_fields_{}", test_case.name))
+                        .await;
 
-        let mut query = base_query.clone();
-        (test_case.query_mut_fn)(&mut query);
+                    let mut query = base_query.clone();
+                    (test_case.query_mut_fn)(&mut query);
 
-        let result = ContestedResource::fetch_many(&sdk, query).await;
+                    ContestedResource::fetch_many(&sdk, query).await
+                })
+            }
+        });
+        let result = match unwinded {
+            Ok(r) => r,
+            Err(e) => {
+                let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    s.to_string()
+                } else {
+                    format!("unknown panic type: {:?}", std::any::type_name_of_val(&e))
+                };
+
+                failures.push((test_case.name, format!("PANIC: {}", msg)));
+                continue; // continue to next test case
+            }
+        };
+
         match test_case.expect {
             Ok(expected) if result.is_ok() => {
                 let result_string = format!("{:?}", result.as_ref().expect("result"));
@@ -409,7 +474,7 @@ async fn contested_resources_fields() {
             .join("\n* ");
 
         panic!(
-            "{} test cases failed:\n{}\n\n{}\n",
+            "{} test cases failed:\n* {}\n\n{}\n",
             failures.len(),
             failed_cases,
             failures
