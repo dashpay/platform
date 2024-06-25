@@ -921,6 +921,104 @@ mod tests {
             }
 
             #[test]
+            fn test_non_existing_end_index_value_many_values() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (_contender_1, _contender_2, dpns_contract) = create_dpns_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected a profile document type");
+
+                let config = bincode::config::standard()
+                    .with_big_endian()
+                    .with_no_limit();
+
+                let encoded_non_existing_value_1 =
+                    bincode::encode_to_vec(Value::Text("cashcash".to_string()), config)
+                        .expect("expected to encode value");
+
+                let encoded_non_existing_value_2 =
+                    bincode::encode_to_vec(Value::Text("cennnn".to_string()), config)
+                        .expect("expected to encode value");
+
+                let index_name = "parentNameAndLabel".to_string();
+
+                {
+                    let query_validation_error = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![],
+                                        end_index_values: vec![
+                                            encoded_non_existing_value_1.clone(),
+                                            encoded_non_existing_value_2.clone(),
+                                        ],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: false,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .first_error()
+                        .map(|e| e.to_string());
+
+                    assert_eq!(query_validation_error, Some("query syntax error: incorrect index values error: too many end index values were provided".to_string()));
+                }
+
+                {
+                    let query_validation_error = platform
+                        .query_contested_resources(
+                            GetContestedResourcesRequest {
+                                version: Some(get_contested_resources_request::Version::V0(
+                                    GetContestedResourcesRequestV0 {
+                                        contract_id: dpns_contract.id().to_vec(),
+                                        document_type_name: domain.name().clone(),
+                                        index_name: index_name.clone(),
+                                        start_index_values: vec![],
+                                        end_index_values: vec![
+                                            encoded_non_existing_value_1.clone(),
+                                            encoded_non_existing_value_2.clone(),
+                                        ],
+                                        start_at_value_info: None,
+                                        count: None,
+                                        order_ascending: true,
+                                        prove: true,
+                                    },
+                                )),
+                            },
+                            &platform_state,
+                            platform_version,
+                        )
+                        .expect("expected to execute query")
+                        .first_error()
+                        .map(|e| e.to_string());
+
+                    assert_eq!(query_validation_error, Some("query syntax error: incorrect index values error: too many end index values were provided".to_string()));
+                }
+            }
+
+            #[test]
             #[ignore] // Currently will have an issue due to a grovedb bug
             fn test_limit() {
                 let platform_version = PlatformVersion::latest();
