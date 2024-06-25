@@ -37,6 +37,7 @@ use drive_abci::test::fixture::abci::static_init_chain_request;
 use platform_version::version::PlatformVersion;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::{Rng, SeedableRng};
+use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
@@ -46,13 +47,14 @@ use tenderdash_abci::Application;
 
 pub const GENESIS_TIME_MS: u64 = 1681094380000;
 
-pub(crate) fn run_chain_for_strategy(
-    platform: &mut Platform<MockCoreRPCLike>,
+pub(crate) fn run_chain_for_strategy<'a>(
+    platform: &'a mut Platform<MockCoreRPCLike>,
     block_count: u64,
     strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: u64,
-) -> ChainExecutionOutcome {
+    add_voting_keys_to_signer: &mut Option<SimpleSigner>,
+) -> ChainExecutionOutcome<'a> {
     let validator_quorum_count = strategy.validator_quorum_count; // In most tests 24 quorums
     let chain_lock_quorum_count = strategy.chain_lock_quorum_count; // In most tests 4 quorums when not the same as validator
     let validator_set_quorum_size = config.validator_set_quorum_size;
@@ -115,6 +117,7 @@ pub(crate) fn run_chain_for_strategy(
             strategy.total_hpmns,
             generate_updates,
             &mut rng,
+            add_voting_keys_to_signer,
         );
 
         let mut all_masternodes = initial_masternodes.clone();
@@ -165,6 +168,7 @@ pub(crate) fn run_chain_for_strategy(
                         new_hpmns,
                         generate_updates,
                         &mut rng,
+                        add_voting_keys_to_signer,
                     );
 
                 if strategy.proposer_strategy.removed_masternodes.is_set() {
@@ -207,6 +211,7 @@ pub(crate) fn run_chain_for_strategy(
             strategy.total_hpmns,
             None,
             &mut rng,
+            add_voting_keys_to_signer,
         );
         (
             initial_masternodes,

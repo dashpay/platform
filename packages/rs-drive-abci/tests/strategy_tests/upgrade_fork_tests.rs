@@ -111,6 +111,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     13,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -350,6 +351,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     13,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -566,7 +568,14 @@ mod tests {
             current_quorum_hash,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 13);
+        } = run_chain_for_strategy(
+            &mut platform,
+            1,
+            strategy.clone(),
+            config.clone(),
+            13,
+            &mut None,
+        );
 
         let platform = abci_app.platform;
 
@@ -749,6 +758,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     16,
+                    &mut None,
                 );
                 let platform = abci_app.platform;
                 let state = platform.state.load();
@@ -981,6 +991,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     15,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -1303,7 +1314,14 @@ mod tests {
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
                     ..
-                } = run_chain_for_strategy(&mut platform, 1400, strategy, config.clone(), 15);
+                } = run_chain_for_strategy(
+                    &mut platform,
+                    1400,
+                    strategy,
+                    config.clone(),
+                    15,
+                    &mut None,
+                );
                 let state = abci_app.platform.state.load();
                 {
                     let platform = abci_app.platform;

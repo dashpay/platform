@@ -96,7 +96,7 @@ impl<C> Platform<C> {
                     contested_status,
                 })
             })
-            .collect::<Result<Vec<_>, QueryError>>());
+            .collect::<Result<Vec<SingleDocumentDriveQuery>, QueryError>>());
 
         let vote_queries = check_validation_result_with_data!(votes
             .into_iter()

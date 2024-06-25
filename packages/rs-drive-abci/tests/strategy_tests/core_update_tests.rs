@@ -77,7 +77,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
 
         // we expect to see quorums with banned members
 
@@ -175,7 +175,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
 
         // we expect to see quorums with banned members
 
@@ -264,7 +264,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 26, strategy, config, 13);
+        let outcome = run_chain_for_strategy(&mut platform, 26, strategy, config, 13, &mut None);
 
         // We should also see validator sets with less than the quorum size
 
