@@ -5,6 +5,7 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
+use crate::ordered_btreemap::{OrderedBTreeMap, OrderedIterator};
 use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
@@ -25,7 +26,9 @@ use dpp::{
     util::deserializer::ProtocolVersion,
 };
 use drive::grovedb::Element;
+use std::collections::btree_map::IntoIter;
 use std::collections::{BTreeMap, BTreeSet};
+
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
@@ -293,19 +296,26 @@ impl From<&PrefundedSpecializedBalance> for Credits {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-pub struct VotePollsGroupedByTimestamp(pub BTreeMap<TimestampMillis, Vec<VotePoll>>);
+pub struct VotePollsGroupedByTimestamp(pub OrderedBTreeMap<TimestampMillis, Vec<VotePoll>>);
 
 /// Insert items into the map, appending them to the existing values for the same key.
 impl FromIterator<(u64, Vec<VotePoll>)> for VotePollsGroupedByTimestamp {
     fn from_iter<T: IntoIterator<Item = (u64, Vec<VotePoll>)>>(iter: T) -> Self {
         let mut map = BTreeMap::new();
 
+        let mut order_ascending = true;
+        let mut prev = 0;
         for (timestamp, vote_poll) in iter {
             let entry = map.entry(timestamp).or_insert_with(Vec::new);
             entry.extend(vote_poll);
+
+            if timestamp < prev {
+                order_ascending = false;
+            }
+            prev = timestamp;
         }
 
-        Self(map)
+        OrderedBTreeMap::from_btreemap(map, order_ascending).into()
     }
 }
 
@@ -329,7 +339,7 @@ impl FromIterator<(u64, Option<VotePoll>)> for VotePollsGroupedByTimestamp {
 
 impl IntoIterator for VotePollsGroupedByTimestamp {
     type Item = (u64, Vec<VotePoll>);
-    type IntoIter = std::collections::btree_map::IntoIter<u64, Vec<VotePoll>>;
+    type IntoIter = OrderedIterator<IntoIter<u64, Vec<VotePoll>>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
