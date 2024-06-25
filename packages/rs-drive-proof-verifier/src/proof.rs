@@ -1665,7 +1665,7 @@ define_length!(Contenders, |x: &Contenders| x.contenders.len());
 define_length!(Voters, |x: &Voters| x.0.len());
 define_length!(
     VotePollsGroupedByTimestamp,
-    |x: &VotePollsGroupedByTimestamp| x.0.values().map(|v| v.len()).sum()
+    |x: &VotePollsGroupedByTimestamp| x.0.values_vec().into_iter().map(|v| v.len()).sum()
 );
 trait IntoOption
 where

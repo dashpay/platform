@@ -49,7 +49,8 @@ async fn test_prefunded_specialized_balance_ok() {
 
     let poll = polls
         .0
-        .first_key_value()
+        .iter()
+        .next()
         .expect("need at least one vote poll timestamp")
         .1
         .first()
