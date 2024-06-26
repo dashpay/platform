@@ -268,6 +268,7 @@ export default function configureCoreTaskFactory(
                   'SPORK_9_SUPERBLOCKS_ENABLED',
                   'SPORK_17_QUORUM_DKG_ENABLED',
                   'SPORK_19_CHAINLOCKS_ENABLED',
+                  'SPORK_24_TEST_EHF',
                 ];
 
                 await Promise.all(
