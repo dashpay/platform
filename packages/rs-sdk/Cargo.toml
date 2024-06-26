@@ -36,6 +36,8 @@ dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0
 lru = { version = "0.12.3", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 pollster = { version = "0.3.0" }
+sha2 = "0.10.8"
+bs58 = "0.5.0"
 
 [dev-dependencies]
 tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
