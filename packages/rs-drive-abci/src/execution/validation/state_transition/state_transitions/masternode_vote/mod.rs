@@ -30,7 +30,7 @@ impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
         &self,
         platform: &PlatformRef<C>,
         _block_info: &BlockInfo,
-        _validation_mode: ValidationMode,
+        validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -44,7 +44,7 @@ impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
             .transform_into_action
         {
             0 => self
-                .transform_into_action_v0(platform, tx, platform_version)
+                .transform_into_action_v0(platform, validation_mode, tx, platform_version)
                 .map(|result| result.map(|action| action.into())),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: transform_into_action".to_string(),

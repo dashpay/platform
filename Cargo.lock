@@ -4900,6 +4900,8 @@ dependencies = [
  "drive",
  "futures",
  "hex",
+ "platform-serialization",
+ "platform-serialization-derive",
  "platform-version",
  "rand",
  "rocksdb",
