@@ -92,9 +92,7 @@ describe('DPNS', () => {
       expect(createdTLD.getData().normalizedParentDomainName).to.equal('');
     });
 
-    // TODO: Figure out how to overcome client-side validation and implement
-    //  a consensus error for this case instead of misused InvalidDocumentTransitionActionError
-    it.skip('should not be able to update domain', async () => {
+    it('should not be able to update domain', async () => {
       createdTLD.set('label', 'anotherlabel');
 
       let broadcastError;
@@ -108,12 +106,11 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.equal(10404);
+      expect(broadcastError.message).to.be.equal('Action is not allowed');
+      expect(broadcastError.code).to.equal(40500);
     });
 
-    // TODO: Figure out how to overcome client-side validation and implement
-    //  a consensus error for this case instead of misused InvalidDocumentTransitionActionError
-    it.skip('should not be able to delete domain', async () => {
+    it('should not be able to delete domain', async () => {
       let broadcastError;
 
       try {
@@ -125,7 +122,8 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.equal(10404);
+      expect(broadcastError.message).to.be.equal('Action is not allowed');
+      expect(broadcastError.code).to.equal(40500);
     });
   });
 
@@ -264,9 +262,7 @@ describe('DPNS', () => {
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
 
-    // TODO: Figure out how to overcome client-side validation and implement
-    //  a consensus error for this case instead of misused InvalidDocumentTransitionActionError
-    it.skip('should not be able to update domain', async () => {
+    it('should not be able to update domain', async () => {
       registeredDomain.set('label', 'newlabel');
 
       let broadcastError;
@@ -286,9 +282,7 @@ describe('DPNS', () => {
       expect(broadcastError.code).to.equal(40500);
     });
 
-    // TODO: Figure out how to overcome client-side validation and implement
-    //  a consensus error for this case instead of misused InvalidDocumentTransitionActionError
-    it.skip('should not be able to delete domain', async () => {
+    it('should not be able to delete domain', async () => {
       let broadcastError;
 
       try {
