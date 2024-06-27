@@ -77,6 +77,7 @@ impl<C> Platform<C> {
                 .clear_version_information(Some(transaction), &platform_version.drive)
                 .map_err(Error::Drive)?;
 
+            // TODO: Insert it to the map only if the FeeVersion was updated
             let mut cached_fee_version = self.drive.cache.cached_fee_version.write();
             let platform_version = PlatformVersion::get(current_block_protocol_version)?;
             cached_fee_version.insert(
