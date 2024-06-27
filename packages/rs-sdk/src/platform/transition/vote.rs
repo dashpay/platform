@@ -5,6 +5,7 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
+use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
@@ -15,6 +16,7 @@ use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use drive::drive::Drive;
 use rs_dapi_client::DapiRequest;
+use sha2::{Digest, Sha256};
 
 #[async_trait::async_trait]
 /// A trait for putting a vote on platform
@@ -49,8 +51,10 @@ impl<S: Signer> PutVote<S> for Vote {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
+        let voting_identity_id = get_voting_identity_id(voter_pro_tx_hash, voting_public_key)?;
+
         let new_masternode_voting_nonce = sdk
-            .get_identity_nonce(voter_pro_tx_hash, true, settings)
+            .get_identity_nonce(voting_identity_id, true, settings)
             .await?;
 
         let settings = settings.unwrap_or_default();
@@ -79,8 +83,10 @@ impl<S: Signer> PutVote<S> for Vote {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Vote, Error> {
+        let voting_identity_id = get_voting_identity_id(voter_pro_tx_hash, voting_public_key)?;
+
         let new_masternode_voting_nonce = sdk
-            .get_identity_nonce(voter_pro_tx_hash, true, settings)
+            .get_identity_nonce(voting_identity_id, true, settings)
             .await?;
 
         let settings = settings.unwrap_or_default();
@@ -140,4 +146,19 @@ impl<S: Signer> PutVote<S> for Vote {
             )),
         }
     }
+}
+
+fn get_voting_identity_id(
+    voter_pro_tx_hash: Identifier,
+    voting_public_key: &IdentityPublicKey,
+) -> Result<Identifier, Error> {
+    let pub_key_hash = voting_public_key.public_key_hash()?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(voter_pro_tx_hash.as_bytes());
+    hasher.update(pub_key_hash);
+    let voting_identity_id_hashed = hasher.finalize();
+
+    Identifier::from_bytes(&voting_identity_id_hashed)
+        .map_err(|e| Error::Generic(format!("Couldn't convert id string to Identifier: {}", e)))
 }
