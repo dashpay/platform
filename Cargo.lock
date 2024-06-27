@@ -1348,7 +1348,6 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bip37-bloom-filter",
- "bs58 0.5.1",
  "chrono",
  "ciborium",
  "clap 4.5.7",

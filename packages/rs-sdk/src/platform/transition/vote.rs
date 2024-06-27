@@ -8,7 +8,6 @@ use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -58,17 +57,15 @@ impl<S: Signer> PutVote<S> for Vote {
         hasher.update(voter_pro_tx_hash.as_bytes());
         hasher.update(pub_key_hash);
         let voting_identity_id_hashed = hasher.finalize();
-        let voting_identity_id_bs58 = bs58::encode(voting_identity_id_hashed).into_string();
-        let voting_identity_id =
-            match Identifier::from_string(&voting_identity_id_bs58, Encoding::Base58) {
-                Ok(id) => id,
-                Err(e) => {
-                    return Err(Error::Generic(format!(
-                        "Couldn't convert id string to Identifier: {}",
-                        e
-                    )))
-                }
-            };
+        let voting_identity_id = match Identifier::from_bytes(&voting_identity_id_hashed) {
+            Ok(id) => id,
+            Err(e) => {
+                return Err(Error::Generic(format!(
+                    "Couldn't convert id string to Identifier: {}",
+                    e
+                )))
+            }
+        };
 
         let new_masternode_voting_nonce = sdk
             .get_identity_nonce(voting_identity_id, true, settings)
@@ -106,17 +103,15 @@ impl<S: Signer> PutVote<S> for Vote {
         hasher.update(voter_pro_tx_hash.as_bytes());
         hasher.update(pub_key_hash);
         let voting_identity_id_hashed = hasher.finalize();
-        let voting_identity_id_bs58 = bs58::encode(voting_identity_id_hashed).into_string();
-        let voting_identity_id =
-            match Identifier::from_string(&voting_identity_id_bs58, Encoding::Base58) {
-                Ok(id) => id,
-                Err(e) => {
-                    return Err(Error::Generic(format!(
-                        "Couldn't convert id string to Identifier: {}",
-                        e
-                    )))
-                }
-            };
+        let voting_identity_id = match Identifier::from_bytes(&voting_identity_id_hashed) {
+            Ok(id) => id,
+            Err(e) => {
+                return Err(Error::Generic(format!(
+                    "Couldn't convert id string to Identifier: {}",
+                    e
+                )))
+            }
+        };
 
         let new_masternode_voting_nonce = sdk
             .get_identity_nonce(voting_identity_id, true, settings)
