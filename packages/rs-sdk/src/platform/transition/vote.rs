@@ -51,21 +51,7 @@ impl<S: Signer> PutVote<S> for Vote {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
-        let pub_key_hash = voting_public_key.public_key_hash()?;
-
-        let mut hasher = Sha256::new();
-        hasher.update(voter_pro_tx_hash.as_bytes());
-        hasher.update(pub_key_hash);
-        let voting_identity_id_hashed = hasher.finalize();
-        let voting_identity_id = match Identifier::from_bytes(&voting_identity_id_hashed) {
-            Ok(id) => id,
-            Err(e) => {
-                return Err(Error::Generic(format!(
-                    "Couldn't convert id string to Identifier: {}",
-                    e
-                )))
-            }
-        };
+        let voting_identity_id = get_voting_identity_id(voter_pro_tx_hash, voting_public_key)?;
 
         let new_masternode_voting_nonce = sdk
             .get_identity_nonce(voting_identity_id, true, settings)
@@ -97,21 +83,7 @@ impl<S: Signer> PutVote<S> for Vote {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Vote, Error> {
-        let pub_key_hash = voting_public_key.public_key_hash()?;
-
-        let mut hasher = Sha256::new();
-        hasher.update(voter_pro_tx_hash.as_bytes());
-        hasher.update(pub_key_hash);
-        let voting_identity_id_hashed = hasher.finalize();
-        let voting_identity_id = match Identifier::from_bytes(&voting_identity_id_hashed) {
-            Ok(id) => id,
-            Err(e) => {
-                return Err(Error::Generic(format!(
-                    "Couldn't convert id string to Identifier: {}",
-                    e
-                )))
-            }
-        };
+        let voting_identity_id = get_voting_identity_id(voter_pro_tx_hash, voting_public_key)?;
 
         let new_masternode_voting_nonce = sdk
             .get_identity_nonce(voting_identity_id, true, settings)
@@ -174,4 +146,19 @@ impl<S: Signer> PutVote<S> for Vote {
             )),
         }
     }
+}
+
+fn get_voting_identity_id(
+    voter_pro_tx_hash: Identifier,
+    voting_public_key: &IdentityPublicKey,
+) -> Result<Identifier, Error> {
+    let pub_key_hash = voting_public_key.public_key_hash()?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(voter_pro_tx_hash.as_bytes());
+    hasher.update(pub_key_hash);
+    let voting_identity_id_hashed = hasher.finalize();
+
+    Identifier::from_bytes(&voting_identity_id_hashed)
+        .map_err(|e| Error::Generic(format!("Couldn't convert id string to Identifier: {}", e)))
 }
