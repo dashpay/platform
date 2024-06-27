@@ -61,8 +61,7 @@ impl Drive {
                 system_data_contracts: SystemDataContracts::load_genesis_system_contracts(
                     platform_version,
                 )?,
-                // TODO: Populate this from groveDB
-                cached_fee_version: parking_lot::RwLock::new(BTreeMap::new()),
+                cached_fee_version: parking_lot::RwLock::new(BTreeMap::default()),
             },
         };
 
@@ -72,22 +71,24 @@ impl Drive {
     }
 }
 
-/// Test doc
+/// Function that populates drive.cache.cached_fee_version with the EpochIndex were FeeVersion where updated
+// TODO: This function should probably be moved else where. And maybe should be a static method like Drive::fetch_current_protocol_version_with_groved?
 fn populate_cached_fee_version(
     drive: &Drive,
     platform_version: &PlatformVersion,
 ) -> Result<(), Error> {
     let epochs_protocol_versions =
         drive.get_epochs_protocol_versions(0, None, true, None, platform_version)?;
-    let mut write_guard = drive.cache.cached_fee_version.write();
+    let mut cached_fee_versions = drive.cache.cached_fee_version.write();
 
+    // TODO: Insert in cached_fee_versions only when the FeeVersion changes from previous Epoch
     for (epoch_index, protocol_version) in epochs_protocol_versions.iter() {
         let platform_version = PlatformVersion::get(*protocol_version).map_err(|e| {
             Error::Drive(DriveError::CorruptedCacheState(format!(
                 "unable to get platform version {e}"
             )))
         })?;
-        write_guard.insert(*epoch_index, &platform_version.fee_version);
+        cached_fee_versions.insert(*epoch_index, &platform_version.fee_version);
     }
     Ok(())
 }

@@ -160,7 +160,11 @@ impl EpochCosts for Epoch {
         &self,
         cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
     ) -> &'static FeeVersion {
-        // TODO: Test this
+        // If the exact EpochIndex is matching to a FeeVersion update
+        if let Some(fee_version) = cached_fee_version.get(&self.index) {
+            return fee_version;
+        }
+        // else return the FeeVersion at  lower adjacent EpochIndex (if available, else the FeeVersion of first PlatformVersion)
         cached_fee_version
             .range(..=self.index)
             .next_back()
