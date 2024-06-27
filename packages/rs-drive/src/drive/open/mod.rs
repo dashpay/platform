@@ -1,17 +1,17 @@
-use std::collections::BTreeMap;
 use crate::drive::cache::SystemDataContracts;
 use crate::drive::cache::{DataContractCache, DriveCache, ProtocolVersionsCache};
 use crate::drive::config::DriveConfig;
 use crate::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::errors::ProtocolError;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
-use platform_version::version::PlatformVersion;
-use std::path::Path;
 use platform_version::error::PlatformVersionError;
-use crate::error::drive::DriveError;
+use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
+use std::path::Path;
 
 impl Drive {
     /// Opens GroveDB database
@@ -77,14 +77,16 @@ fn populate_cached_fee_version(
     drive: &Drive,
     platform_version: &PlatformVersion,
 ) -> Result<(), Error> {
-    let epochs_protocol_versions = drive.get_epochs_protocol_versions(0, None, true, None, platform_version)?;
+    let epochs_protocol_versions =
+        drive.get_epochs_protocol_versions(0, None, true, None, platform_version)?;
     let mut write_guard = drive.cache.cached_fee_version.write();
 
     for (epoch_index, protocol_version) in epochs_protocol_versions.iter() {
-        let platform_version = PlatformVersion::get(*protocol_version)
-            .map_err(|e| Error::Drive(DriveError::CorruptedCacheState(format!(
+        let platform_version = PlatformVersion::get(*protocol_version).map_err(|e| {
+            Error::Drive(DriveError::CorruptedCacheState(format!(
                 "unable to get platform version {e}"
-            ))))?;
+            )))
+        })?;
         write_guard.insert(*epoch_index, &platform_version.fee_version);
     }
     Ok(())

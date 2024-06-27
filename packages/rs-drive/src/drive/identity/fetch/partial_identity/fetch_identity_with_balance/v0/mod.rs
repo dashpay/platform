@@ -51,7 +51,8 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
         let read_guard = self.cache.cached_fee_version.read();
-        let balance_cost = epoch.cost_for_known_cost_item(&read_guard, FetchIdentityBalanceProcessingCost);
+        let balance_cost =
+            epoch.cost_for_known_cost_item(&read_guard, FetchIdentityBalanceProcessingCost);
         if !apply {
             return Ok((None, FeeResult::new_from_processing_fee(balance_cost)));
         }

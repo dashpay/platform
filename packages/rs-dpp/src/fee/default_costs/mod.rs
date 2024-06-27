@@ -91,14 +91,16 @@ impl KnownCostItem {
             KnownCostItem::NonStorageLoadCreditPerByte => {
                 fee_version.storage.non_storage_load_credit_per_byte
             }
-            KnownCostItem::StorageSeekCost => {
-                fee_version.storage.storage_seek_cost
-            },
+            KnownCostItem::StorageSeekCost => fee_version.storage.storage_seek_cost,
             KnownCostItem::FetchIdentityBalanceProcessingCost => {
-                fee_version.processing.fetch_identity_balance_processing_cost
+                fee_version
+                    .processing
+                    .fetch_identity_balance_processing_cost
             }
             KnownCostItem::FetchSingleIdentityKeyProcessingCost => {
-                fee_version.processing.fetch_single_identity_key_processing_cost
+                fee_version
+                    .processing
+                    .fetch_single_identity_key_processing_cost
             }
             KnownCostItem::DoubleSHA256 => {
                 //TODO: double_sha256_base or double_sha256_per_block?
@@ -126,7 +128,11 @@ impl KnownCostItem {
         }
     }
 
-    pub fn lookup_cost_on_epoch(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> Credits {
+    pub fn lookup_cost_on_epoch(
+        &self,
+        epoch: &Epoch,
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+    ) -> Credits {
         let version = epoch.active_fee_version(cached_fee_version);
         self.lookup_cost(version)
     }
@@ -136,22 +142,38 @@ impl KnownCostItem {
 pub trait EpochCosts {
     /// Get the closest epoch in the past that has a cost table
     /// This is where the base costs last changed
-    fn active_fee_version(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> &'static FeeVersion;
+    fn active_fee_version(
+        &self,
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+    ) -> &'static FeeVersion;
     /// Get the cost for the known cost item
-    fn cost_for_known_cost_item(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>, cost_item: KnownCostItem) -> Credits;
+    fn cost_for_known_cost_item(
+        &self,
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cost_item: KnownCostItem,
+    ) -> Credits;
 }
 
 impl EpochCosts for Epoch {
     /// Get the active fee version for an epoch
-    fn active_fee_version(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> &'static FeeVersion {
+    fn active_fee_version(
+        &self,
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+    ) -> &'static FeeVersion {
         // TODO: Test this
-        cached_fee_version.range(..=self.index).next_back()
+        cached_fee_version
+            .range(..=self.index)
+            .next_back()
             .map(|(_, &fee_version)| fee_version)
             .unwrap_or_else(|| &PlatformVersion::first().fee_version)
     }
 
     /// Get the cost for the known cost item
-    fn cost_for_known_cost_item(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>, cost_item: KnownCostItem) -> Credits {
+    fn cost_for_known_cost_item(
+        &self,
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cost_item: KnownCostItem,
+    ) -> Credits {
         cost_item.lookup_cost_on_epoch(self, cached_fee_version)
     }
 }

@@ -64,21 +64,20 @@ mod add_indices_for_top_index_level_for_contract_operations;
 // This module contains functionality for adding a reference for an index level for contract operations
 mod add_reference_for_index_level_for_contract_operations;
 
-use std::collections::BTreeMap;
-use lazy_static::lazy_static;
 use dpp::block::epoch::EpochIndex;
 #[cfg(all(
     feature = "fixtures-and-mocks",
     feature = "data-contract-cbor-conversion"
 ))]
 use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
+use lazy_static::lazy_static;
 use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION_TEST: BTreeMap<EpochIndex, &'static FeeVersion> = BTreeMap::from([
-        (0, &PlatformVersion::first().fee_version)
-    ]);
+    static ref EPOCH_CHANGE_FEE_VERSION_TEST: BTreeMap<EpochIndex, &'static FeeVersion> =
+        BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
 }
 
 #[cfg(test)]
@@ -99,6 +98,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::Document;
 
+    use crate::drive::document::insert::EPOCH_CHANGE_FEE_VERSION_TEST;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::document::serialization_traits::DocumentCborMethodsV0;
@@ -108,7 +108,6 @@ mod tests {
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
-    use crate::drive::document::insert::EPOCH_CHANGE_FEE_VERSION_TEST;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
@@ -341,9 +340,10 @@ mod tests {
             fee_result,
             FeeResult {
                 storage_fee: 3058
-                    * Epoch::new(0)
-                        .unwrap()
-                        .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte),
+                    * Epoch::new(0).unwrap().cost_for_known_cost_item(
+                        &EPOCH_CHANGE_FEE_VERSION_TEST,
+                        StorageDiskUsageCreditPerByte
+                    ),
                 processing_fee: 2317270,
                 ..Default::default()
             }
@@ -404,9 +404,10 @@ mod tests {
             fee_result,
             FeeResult {
                 storage_fee: 1305
-                    * Epoch::new(0)
-                        .unwrap()
-                        .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte),
+                    * Epoch::new(0).unwrap().cost_for_known_cost_item(
+                        &EPOCH_CHANGE_FEE_VERSION_TEST,
+                        StorageDiskUsageCreditPerByte
+                    ),
                 processing_fee: 1482010,
                 ..Default::default()
             }
@@ -469,9 +470,10 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = storage_fee
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
         assert_eq!(1305, added_bytes);
         assert_eq!(142936800, processing_fee);
     }
@@ -696,9 +698,10 @@ mod tests {
             fee_result,
             FeeResult {
                 storage_fee: 1761
-                    * Epoch::new(0)
-                        .unwrap()
-                        .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte),
+                    * Epoch::new(0).unwrap().cost_for_known_cost_item(
+                        &EPOCH_CHANGE_FEE_VERSION_TEST,
+                        StorageDiskUsageCreditPerByte
+                    ),
                 processing_fee: 2069390,
                 ..Default::default()
             }

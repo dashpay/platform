@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use dpp::identity::TimestampMillis;
+use std::collections::BTreeMap;
 
 mod data_contract;
 mod protocol_version;

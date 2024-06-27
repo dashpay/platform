@@ -79,7 +79,8 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
         let read_guard = self.cache.cached_fee_version.read();
-        let balance_cost = epoch.cost_for_known_cost_item(&read_guard, FetchIdentityBalanceProcessingCost);
+        let balance_cost =
+            epoch.cost_for_known_cost_item(&read_guard, FetchIdentityBalanceProcessingCost);
         if !apply {
             let read_guard = self.cache.cached_fee_version.read();
             let keys_cost = identity_key_request.processing_cost(epoch, &read_guard)?;

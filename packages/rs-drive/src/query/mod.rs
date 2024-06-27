@@ -1620,7 +1620,7 @@ impl<'a> DriveQuery<'a> {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                &cached_fee_versions
+                &cached_fee_versions,
             )?;
             fee_result.processing_fee
         } else {
@@ -1678,7 +1678,7 @@ impl<'a> DriveQuery<'a> {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                &cached_fee_versions
+                &cached_fee_versions,
             )?;
             fee_result.processing_fee
         } else {
@@ -1738,7 +1738,7 @@ impl<'a> DriveQuery<'a> {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
-                &cached_fee_versions
+                &cached_fee_versions,
             )?;
             fee_result.processing_fee
         } else {

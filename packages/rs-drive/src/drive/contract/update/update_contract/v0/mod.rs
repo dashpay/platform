@@ -133,7 +133,7 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            &cached_fee_versions
+            &cached_fee_versions,
         )
     }
 

@@ -12,13 +12,13 @@ use crate::fee::Credits;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 
+use lazy_static::lazy_static;
 use platform_value::Identifier;
+use platform_version::version::fee::FeeVersion;
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;
 use std::collections::BTreeMap;
-use lazy_static::lazy_static;
-use platform_version::version::fee::FeeVersion;
-use platform_version::version::PlatformVersion;
 
 /// There are additional work and storage required to process refunds
 /// To protect system from the spam and unnecessary work
@@ -41,7 +41,7 @@ impl FeeRefunds {
         storage_removal: I,
         current_epoch_index: EpochIndex,
         epochs_per_era: u16,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
@@ -173,9 +173,8 @@ impl FeeRefunds {
 }
 
 lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION_TEST: BTreeMap<EpochIndex, &'static FeeVersion> = BTreeMap::from([
-        (0, &PlatformVersion::first().fee_version)
-    ]);
+    static ref EPOCH_CHANGE_FEE_VERSION_TEST: BTreeMap<EpochIndex, &'static FeeVersion> =
+        BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
 }
 
 impl IntoIterator for FeeRefunds {
@@ -205,8 +204,13 @@ mod tests {
                 BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
 
             // Not accessible but this is unit test so should be ok
-            let fee_refunds = FeeRefunds::from_storage_removal(storage_removal, 3, 20, &EPOCH_CHANGE_FEE_VERSION_TEST)
-                .expect("should create fee refunds");
+            let fee_refunds = FeeRefunds::from_storage_removal(
+                storage_removal,
+                3,
+                20,
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+            )
+            .expect("should create fee refunds");
 
             let credits_per_epoch = fee_refunds.get(&identity_id).expect("should exists");
 

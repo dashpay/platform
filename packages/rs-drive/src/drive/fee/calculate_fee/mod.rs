@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -8,6 +7,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use enum_map::EnumMap;
 use platform_version::version::fee::FeeVersion;
+use std::collections::BTreeMap;
 
 mod v0;
 
@@ -40,7 +40,13 @@ impl Drive {
         cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
     ) -> Result<FeeResult, Error> {
         match platform_version.drive.methods.fees.calculate_fee {
-            0 => Self::calculate_fee_v0(base_operations, drive_operations, epoch, epochs_per_era, cached_fee_version),
+            0 => Self::calculate_fee_v0(
+                base_operations,
+                drive_operations,
+                epoch,
+                epochs_per_era,
+                cached_fee_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::calculate_fee".to_string(),
                 known_versions: vec![0],
