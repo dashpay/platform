@@ -12,6 +12,7 @@ use platform_version::error::PlatformVersionError;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 use std::path::Path;
+use platform_version::version::fee::FeeVersion;
 
 impl Drive {
     /// Opens GroveDB database
@@ -81,14 +82,23 @@ fn populate_cached_fee_version(
         drive.get_epochs_protocol_versions(0, None, true, None, platform_version)?;
     let mut cached_fee_versions = drive.cache.cached_fee_version.write();
 
-    // TODO: Insert in cached_fee_versions only when the FeeVersion changes from previous Epoch
+    let mut last_fee_version_opt: Option<&FeeVersion> = None;
     for (epoch_index, protocol_version) in epochs_protocol_versions.iter() {
         let platform_version = PlatformVersion::get(*protocol_version).map_err(|e| {
             Error::Drive(DriveError::CorruptedCacheState(format!(
                 "unable to get platform version {e}"
             )))
         })?;
-        cached_fee_versions.insert(*epoch_index, &platform_version.fee_version);
+        if let Some(last_fee_version) = last_fee_version_opt {
+            if *last_fee_version != platform_version.fee_version {
+                last_fee_version_opt = Some(&platform_version.fee_version);
+                cached_fee_versions.insert(*epoch_index, &platform_version.fee_version);
+            }
+        }
+        else {
+            last_fee_version_opt = Some(&platform_version.fee_version);
+            cached_fee_versions.insert(*epoch_index, &platform_version.fee_version);
+        }
     }
     Ok(())
 }

@@ -76,14 +76,22 @@ impl<C> Platform<C> {
             self.drive
                 .clear_version_information(Some(transaction), &platform_version.drive)
                 .map_err(Error::Drive)?;
-
-            // TODO: Insert it to the map only if the FeeVersion was updated
-            let mut cached_fee_version = self.drive.cache.cached_fee_version.write();
+            
             let platform_version = PlatformVersion::get(current_block_protocol_version)?;
-            cached_fee_version.insert(
-                epoch_info.current_epoch_index(),
-                &platform_version.fee_version,
-            );
+            let mut cached_fee_version = self.drive.cache.cached_fee_version.write();
+            if let Some((_, &last_fee_version)) = cached_fee_version.iter().last() {
+                if *last_fee_version != platform_version.fee_version {
+                    cached_fee_version.insert(
+                        epoch_info.current_epoch_index(),
+                        &platform_version.fee_version,
+                    );
+                }
+            } else {
+                cached_fee_version.insert(
+                    epoch_info.current_epoch_index(),
+                    &platform_version.fee_version,
+                );
+            }
 
             // We clean voting counter cache only on finalize block because:
             // 1. The voting counter global cache uses for querying of voting information in Drive queries
