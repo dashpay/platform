@@ -32,6 +32,12 @@
 //! This modules implements functions in Drive relevant to updating Documents.
 //!
 
+use std::collections::BTreeMap;
+use lazy_static::lazy_static;
+use dpp::block::epoch::EpochIndex;
+use platform_version::version::fee::FeeVersion;
+use platform_version::version::PlatformVersion;
+
 // Module: add_update_multiple_documents_operations
 // This module contains functionality for adding operations to update multiple documents
 #[cfg(feature = "server")]
@@ -51,6 +57,12 @@ mod update_document_for_contract_id;
 // This module contains functionality for updating a document (with serialization) for a contract
 mod internal;
 mod update_document_with_serialization_for_contract;
+
+lazy_static! {
+    static ref EPOCH_CHANGE_FEE_VERSION_TEST: BTreeMap<EpochIndex, &'static FeeVersion> = BTreeMap::from([
+        (0, &PlatformVersion::first().fee_version)
+    ]);
+}
 
 #[cfg(test)]
 mod tests {
@@ -95,6 +107,7 @@ mod tests {
     use dpp::platform_value;
     use dpp::tests::json_document::json_document_to_document;
     use platform_version::version::PlatformVersion;
+    use crate::drive::document::update::EPOCH_CHANGE_FEE_VERSION_TEST;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -919,7 +932,7 @@ mod tests {
         let original_bytes = original_fees.storage_fee
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
             //Explanation for 1237
 
@@ -1086,7 +1099,7 @@ mod tests {
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
-                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                    .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
             assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 963
@@ -1105,7 +1118,7 @@ mod tests {
             let original_bytes = original_fees.storage_fee
                 / Epoch::new(0)
                     .unwrap()
-                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                    .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1125,7 +1138,7 @@ mod tests {
         let added_bytes = update_fees.storage_fee
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
 
         let expected_added_bytes = if using_history { 313 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
@@ -1196,7 +1209,7 @@ mod tests {
         let original_bytes = original_fees.storage_fee
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history { 1238 } else { 962 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
@@ -1221,7 +1234,7 @@ mod tests {
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
-                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                    .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
             assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 1012
@@ -1240,7 +1253,7 @@ mod tests {
             let original_bytes = original_fees.storage_fee
                 / Epoch::new(0)
                     .unwrap()
-                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                    .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1260,7 +1273,7 @@ mod tests {
         let added_bytes = update_fees.storage_fee
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
 
         let removed_credits = update_fees
             .fee_refunds
@@ -1278,7 +1291,7 @@ mod tests {
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
 
         assert!(expected_added_bytes > refund_equivalent_bytes);
         let expected_remove_bytes = if using_history { 603 } else { 601 };
@@ -1390,7 +1403,7 @@ mod tests {
         let original_bytes = original_fees.storage_fee
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
             //Explanation for 1237
 
@@ -1549,7 +1562,7 @@ mod tests {
         let added_bytes = update_fees.storage_fee
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
 
         let expected_added_bytes = if using_history { 1239 } else { 963 };
         assert_eq!(added_bytes, expected_added_bytes);

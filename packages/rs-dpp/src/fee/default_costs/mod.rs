@@ -36,7 +36,6 @@ use crate::block::epoch::Epoch;
 use crate::block::epoch::EpochIndex;
 use crate::fee::Credits;
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -133,37 +132,25 @@ impl KnownCostItem {
     }
 }
 
-lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION: BTreeMap<EpochIndex, &'static FeeVersion> = BTreeMap::from([
-        (0, &PlatformVersion::first().fee_version)
-    ]);
-}
-
 /// Costs for Epochs
 pub trait EpochCosts {
-    //todo: should just have a static lookup table
     /// Get the closest epoch in the past that has a cost table
     /// This is where the base costs last changed
     fn active_fee_version(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> &'static FeeVersion;
     /// Get the cost for the known cost item
-    //fn cost_for_known_cost_item(&self, cost_item: KnownCostItem) -> Credits;
     fn cost_for_known_cost_item(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>, cost_item: KnownCostItem) -> Credits;
 }
 
 impl EpochCosts for Epoch {
     /// Get the active fee version for an epoch
     fn active_fee_version(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> &'static FeeVersion {
-        EPOCH_CHANGE_FEE_VERSION.range(..=self.index).next_back()
+        // TODO: Test this
+        cached_fee_version.range(..=self.index).next_back()
             .map(|(_, &fee_version)| fee_version)
             .unwrap_or_else(|| &PlatformVersion::first().fee_version)
     }
 
-
     /// Get the cost for the known cost item
-
-    /*fn cost_for_known_cost_item(&self, cost_item: KnownCostItem) -> Credits {
-        cost_item.lookup_cost_on_epoch(self)
-    }*/
     fn cost_for_known_cost_item(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>, cost_item: KnownCostItem) -> Credits {
         cost_item.lookup_cost_on_epoch(self, cached_fee_version)
     }

@@ -66,23 +66,26 @@ impl Drive {
             },
         };
 
-        {
-            let res_map = drive.get_epochs_protocol_versions(0, None, true, None, platform_version)?;
-            let mut write_guard = drive.cache.cached_fee_version.write();
-
-            for (epoch_index, protocol_version) in res_map.iter() {
-                let platform_version = PlatformVersion::get(*protocol_version)
-                    .map_err(|e| Error::Drive(DriveError::CorruptedCacheState(format!(
-                        "no platform version {e}"
-                    ))))?;
-                write_guard.insert(*epoch_index, &platform_version.fee_version);
-            }
-        }
-
-        {
-            let read_guard = drive.cache.cached_fee_version.read();
-        }
+        populate_cached_fee_version(&drive, platform_version)?;
 
         Ok((drive, protocol_version))
     }
+}
+
+/// Test doc
+fn populate_cached_fee_version(
+    drive: &Drive,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    let epochs_protocol_versions = drive.get_epochs_protocol_versions(0, None, true, None, platform_version)?;
+    let mut write_guard = drive.cache.cached_fee_version.write();
+
+    for (epoch_index, protocol_version) in epochs_protocol_versions.iter() {
+        let platform_version = PlatformVersion::get(*protocol_version)
+            .map_err(|e| Error::Drive(DriveError::CorruptedCacheState(format!(
+                "unable to get platform version {e}"
+            ))))?;
+        write_guard.insert(*epoch_index, &platform_version.fee_version);
+    }
+    Ok(())
 }

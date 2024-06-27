@@ -3,6 +3,12 @@
 //! This module implements functions in Drive for deleting documents.
 //!
 
+use std::collections::BTreeMap;
+use lazy_static::lazy_static;
+use dpp::block::epoch::EpochIndex;
+use platform_version::version::fee::FeeVersion;
+use platform_version::version::PlatformVersion;
+
 // Module: delete_document_for_contract
 // This module contains functionality for deleting a document associated with a given contract
 mod delete_document_for_contract;
@@ -45,6 +51,12 @@ mod delete_document_for_contract_operations;
 
 mod internal;
 
+lazy_static! {
+    static ref EPOCH_CHANGE_FEE_VERSION_TEST: BTreeMap<EpochIndex, &'static FeeVersion> = BTreeMap::from([
+        (0, &PlatformVersion::first().fee_version)
+    ]);
+}
+
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
@@ -75,6 +87,7 @@ mod tests {
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
+    use crate::drive::document::delete::EPOCH_CHANGE_FEE_VERSION_TEST;
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
@@ -807,7 +820,7 @@ mod tests {
         let added_bytes = fee_result.storage_fee
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
         // We added 1559 bytes
         assert_eq!(added_bytes, 1559);
 
@@ -843,7 +856,7 @@ mod tests {
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
 
         assert!(added_bytes > refund_equivalent_bytes);
         assert_eq!(refund_equivalent_bytes, 1551); // we refunded 1551 instead of 1559
@@ -905,7 +918,7 @@ mod tests {
         let added_bytes = fee_result.storage_fee
             / Epoch::new(0)
                 .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                .cost_for_known_cost_item(&EPOCH_CHANGE_FEE_VERSION_TEST, StorageDiskUsageCreditPerByte);
         // We added 1558 bytes
         assert_eq!(added_bytes, 1559);
 
