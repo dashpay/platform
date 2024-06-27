@@ -1,7 +1,9 @@
 {
   "domain": {
-    "documentsMutable": false,
-    "canBeDeleted": false,
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 1,
+    "tradeMode": 1,
     "type": "object",
     "indices": [
       {
@@ -138,6 +140,7 @@
   },
   "preorder": {
     "documentsMutable": false,
+    "canBeDeleted": true,
     "type": "object",
     "indices": [
       {

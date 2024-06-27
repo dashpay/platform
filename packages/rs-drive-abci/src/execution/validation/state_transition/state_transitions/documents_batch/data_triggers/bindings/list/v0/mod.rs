@@ -24,11 +24,42 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 #[inline(always)]
 pub(super) fn data_trigger_bindings_list_v0() -> Result<Vec<DataTriggerBindingV0>, ProtocolError> {
     let data_triggers = vec![
+        // Disable all actions on domain for DPNS
         DataTriggerBindingV0 {
             data_contract_id: dpns_contract::ID,
             document_type: "domain".to_string(),
             transition_action_type: DocumentTransitionActionType::Create,
             data_trigger: create_domain_data_trigger,
+        },
+        DataTriggerBindingV0 {
+            data_contract_id: dpns_contract::ID,
+            document_type: "domain".to_string(),
+            transition_action_type: DocumentTransitionActionType::Replace,
+            data_trigger: reject_data_trigger,
+        },
+        DataTriggerBindingV0 {
+            data_contract_id: dpns_contract::ID,
+            document_type: "domain".to_string(),
+            transition_action_type: DocumentTransitionActionType::Delete,
+            data_trigger: reject_data_trigger,
+        },
+        DataTriggerBindingV0 {
+            data_contract_id: dpns_contract::ID,
+            document_type: "domain".to_string(),
+            transition_action_type: DocumentTransitionActionType::Transfer,
+            data_trigger: reject_data_trigger,
+        },
+        DataTriggerBindingV0 {
+            data_contract_id: dpns_contract::ID,
+            document_type: "domain".to_string(),
+            transition_action_type: DocumentTransitionActionType::Purchase,
+            data_trigger: reject_data_trigger,
+        },
+        DataTriggerBindingV0 {
+            data_contract_id: dpns_contract::ID,
+            document_type: "domain".to_string(),
+            transition_action_type: DocumentTransitionActionType::UpdatePrice,
+            data_trigger: reject_data_trigger,
         },
         DataTriggerBindingV0 {
             data_contract_id: dashpay_contract::ID,
