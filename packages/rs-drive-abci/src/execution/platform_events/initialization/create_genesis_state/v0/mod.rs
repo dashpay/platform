@@ -262,7 +262,7 @@ impl<C> Platform<C> {
             revision: None,
             created_at: Some(genesis_time),
             updated_at: Some(genesis_time),
-            transferred_at: None,
+            transferred_at: Some(genesis_time),
             created_at_block_height: None,
             updated_at_block_height: None,
             transferred_at_block_height: None,
@@ -320,8 +320,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    139, 206, 9, 184, 173, 191, 156, 52, 83, 3, 205, 1, 30, 3, 217, 71, 42, 163,
-                    92, 198, 249, 218, 220, 107, 139, 201, 77, 165, 88, 58, 106, 143
+                    243, 253, 220, 159, 6, 122, 148, 242, 254, 248, 127, 236, 104, 250, 241, 71,
+                    217, 215, 31, 252, 101, 183, 148, 205, 222, 183, 255, 98, 218, 252, 126, 0
                 ]
             )
         }
