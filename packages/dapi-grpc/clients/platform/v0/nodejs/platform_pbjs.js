@@ -29722,7 +29722,6 @@ $root.org = (function() {
                                     case 0:
                                     case 1:
                                     case 2:
-                                    case 3:
                                         break;
                                     }
                                 if (message.allowIncludeLockedAndAbstainingVoteTally != null && message.hasOwnProperty("allowIncludeLockedAndAbstainingVoteTally"))
@@ -29774,21 +29773,17 @@ $root.org = (function() {
                                             message.indexValues[i] = object.indexValues[i];
                                 }
                                 switch (object.resultType) {
-                                case "IDENTITY_IDS_ONLY":
+                                case "DOCUMENTS":
                                 case 0:
                                     message.resultType = 0;
                                     break;
-                                case "DOCUMENTS":
+                                case "VOTE_TALLY":
                                 case 1:
                                     message.resultType = 1;
                                     break;
-                                case "VOTE_TALLY":
+                                case "DOCUMENTS_AND_VOTE_TALLY":
                                 case 2:
                                     message.resultType = 2;
-                                    break;
-                                case "DOCUMENTS_AND_VOTE_TALLY":
-                                case 3:
-                                    message.resultType = 3;
                                     break;
                                 }
                                 if (object.allowIncludeLockedAndAbstainingVoteTally != null)
@@ -29830,7 +29825,7 @@ $root.org = (function() {
                                     }
                                     object.documentTypeName = "";
                                     object.indexName = "";
-                                    object.resultType = options.enums === String ? "IDENTITY_IDS_ONLY" : 0;
+                                    object.resultType = options.enums === String ? "DOCUMENTS" : 0;
                                     object.allowIncludeLockedAndAbstainingVoteTally = false;
                                     object.startAtIdentifierInfo = null;
                                     object.count = 0;
@@ -30094,17 +30089,15 @@ $root.org = (function() {
                              * ResultType enum.
                              * @name org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.ResultType
                              * @enum {number}
-                             * @property {number} IDENTITY_IDS_ONLY=0 IDENTITY_IDS_ONLY value
-                             * @property {number} DOCUMENTS=1 DOCUMENTS value
-                             * @property {number} VOTE_TALLY=2 VOTE_TALLY value
-                             * @property {number} DOCUMENTS_AND_VOTE_TALLY=3 DOCUMENTS_AND_VOTE_TALLY value
+                             * @property {number} DOCUMENTS=0 DOCUMENTS value
+                             * @property {number} VOTE_TALLY=1 VOTE_TALLY value
+                             * @property {number} DOCUMENTS_AND_VOTE_TALLY=2 DOCUMENTS_AND_VOTE_TALLY value
                              */
                             GetContestedResourceVoteStateRequestV0.ResultType = (function() {
                                 var valuesById = {}, values = Object.create(valuesById);
-                                values[valuesById[0] = "IDENTITY_IDS_ONLY"] = 0;
-                                values[valuesById[1] = "DOCUMENTS"] = 1;
-                                values[valuesById[2] = "VOTE_TALLY"] = 2;
-                                values[valuesById[3] = "DOCUMENTS_AND_VOTE_TALLY"] = 3;
+                                values[valuesById[0] = "DOCUMENTS"] = 0;
+                                values[valuesById[1] = "VOTE_TALLY"] = 1;
+                                values[valuesById[2] = "DOCUMENTS_AND_VOTE_TALLY"] = 2;
                                 return values;
                             })();
 
