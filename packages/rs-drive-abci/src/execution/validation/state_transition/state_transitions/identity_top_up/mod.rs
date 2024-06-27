@@ -100,6 +100,7 @@ impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::{Network, PrivateKey};
@@ -121,14 +122,18 @@ mod tests {
     #[test]
     fn test_identity_top_up_validation() {
         let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new()
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
-
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.load();
 

@@ -42,18 +42,18 @@ describe('Config set command', () => {
       const command = new ConfigSetCommand();
 
       await command.runWithDependencies({
-        option: 'platform.drive.abci.validatorSet.llmqType',
+        option: 'platform.drive.abci.validatorSet.quorum.llmqType',
         value: 107,
       }, flags, config);
 
-      expect(config.get('platform.drive.abci.validatorSet.llmqType')).to.equal(107);
+      expect(config.get('platform.drive.abci.validatorSet.quorum.llmqType')).to.equal(107);
 
       await command.runWithDependencies({
-        option: 'platform.drive.abci.validatorSet.llmqType',
+        option: 'platform.drive.abci.validatorSet.quorum.llmqType',
         value: '107',
       }, flags, config);
 
-      expect(config.get('platform.drive.abci.validatorSet.llmqType')).to.equal(107);
+      expect(config.get('platform.drive.abci.validatorSet.quorum.llmqType')).to.equal(107);
     });
 
     it('should allow setting booleans', async () => {

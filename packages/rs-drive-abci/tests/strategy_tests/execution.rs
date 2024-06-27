@@ -31,6 +31,7 @@ use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::platform_types::epoch_info::v0::EpochInfoV0;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+use drive_abci::platform_types::signature_verification_quorum_set::{Quorums, SigningQuorum};
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
@@ -50,13 +51,16 @@ pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
     block_count: u64,
     strategy: NetworkStrategy,
-    config: PlatformConfig,
+    mut config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
+    // TODO: Do we want to sign instant locks or just disable verification?
+
     let validator_quorum_count = strategy.validator_quorum_count; // In most tests 24 quorums
     let chain_lock_quorum_count = strategy.chain_lock_quorum_count; // In most tests 4 quorums when not the same as validator
-    let validator_set_quorum_size = config.validator_set_quorum_size;
-    let chain_lock_quorum_size = config.chain_lock_quorum_size;
+    let instant_lock_quorum_count = strategy.instant_lock_quorum_count; // In most tests 24 quorums when not the same as validator
+    let validator_set_quorum_size = config.validator_set.quorum_size;
+    let chain_lock_quorum_size = config.chain_lock.quorum_size;
 
     let mut rng = StdRng::seed_from_u64(seed);
 
@@ -68,7 +72,7 @@ pub(crate) fn run_chain_for_strategy(
     let max_core_height =
         core_height_increase.max_core_height(block_count, strategy.initial_core_height);
 
-    let chain_lock_quorum_type = config.chain_lock_quorum_type();
+    let chain_lock_quorum_type = config.chain_lock.quorum_type;
 
     let sign_chain_locks = strategy.sign_chain_locks;
 
@@ -242,7 +246,7 @@ pub(crate) fn run_chain_for_strategy(
         &mut rng,
     );
 
-    let mut quorums_details: Vec<(QuorumHash, ExtendedQuorumDetails)> = validator_quorums
+    let mut validator_quorums_details: Vec<(QuorumHash, ExtendedQuorumDetails)> = validator_quorums
         .keys()
         .map(|quorum_hash| {
             (
@@ -258,10 +262,10 @@ pub(crate) fn run_chain_for_strategy(
         })
         .collect();
 
-    quorums_details.shuffle(&mut rng);
+    validator_quorums_details.shuffle(&mut rng);
 
     let (chain_lock_quorums, chain_lock_quorums_details) =
-        if config.validator_set_quorum_type != config.chain_lock_quorum_type {
+        if config.validator_set.quorum_type != config.chain_lock.quorum_type {
             let total_chain_lock_quorums = if strategy.rotate_quorums {
                 chain_lock_quorum_count * 10
             } else {
@@ -301,6 +305,95 @@ pub(crate) fn run_chain_for_strategy(
             (BTreeMap::new(), vec![])
         };
 
+    let (instant_lock_quorum_infos, instant_lock_quorums_details, instant_lock_signing_quorums) =
+        if config.validator_set.quorum_type != config.instant_lock.quorum_type {
+            // TODO: Implement instant lock quorums rotation?
+            let total_instant_lock_quorums = if strategy.rotate_quorums {
+                instant_lock_quorum_count * 10
+            } else {
+                instant_lock_quorum_count
+            };
+
+            let instant_lock_quorums_infos = masternodes::generate_test_quorums(
+                total_instant_lock_quorums as usize,
+                initial_all_masternodes
+                    .iter()
+                    .map(|masternode| &masternode.masternode),
+                config.instant_lock.quorum_size as usize,
+                &mut rng,
+            );
+
+            let mut instant_lock_quorums_details: Vec<(QuorumHash, ExtendedQuorumDetails)> =
+                instant_lock_quorums_infos
+                    .iter()
+                    .map(|(hash, quorum)| {
+                        (
+                            *hash,
+                            ExtendedQuorumDetails {
+                                creation_height: 0,
+                                quorum_index: quorum.quorum_index,
+                                mined_block_hash: BlockHash::all_zeros(),
+                                num_valid_members: 0,
+                                health_ratio: 0.0,
+                            },
+                        )
+                    })
+                    .collect();
+
+            instant_lock_quorums_details.shuffle(&mut rng);
+
+            let instant_lock_signing_quorums: Quorums<SigningQuorum> =
+                if strategy.sign_instant_locks {
+                    instant_lock_quorums_infos
+                        .iter()
+                        .map(|(quorum_hash, info)| {
+                            let bytes = info.private_key.to_bytes();
+                            let fixed_bytes: [u8; 32] = bytes
+                                .as_slice()
+                                .try_into()
+                                .expect("Expected a byte array of length 32");
+                            (
+                                *quorum_hash,
+                                SigningQuorum {
+                                    index: info.quorum_index,
+                                    private_key: fixed_bytes,
+                                },
+                            )
+                        })
+                        .collect()
+                } else {
+                    Default::default()
+                };
+
+            (
+                instant_lock_quorums_infos,
+                instant_lock_quorums_details,
+                instant_lock_signing_quorums,
+            )
+        } else if strategy.sign_instant_locks {
+            let signing_quorums = validator_quorums
+                .iter()
+                .map(|(quorum_hash, info)| {
+                    let bytes = info.private_key.to_bytes();
+                    let fixed_bytes: [u8; 32] = bytes
+                        .as_slice()
+                        .try_into()
+                        .expect("Expected a byte array of length 32");
+                    (
+                        *quorum_hash,
+                        SigningQuorum {
+                            index: info.quorum_index,
+                            private_key: fixed_bytes,
+                        },
+                    )
+                })
+                .collect();
+
+            (Default::default(), Default::default(), signing_quorums)
+        } else {
+            Default::default()
+        };
+
     let start_core_height = platform.config.abci.genesis_core_height;
 
     platform
@@ -332,15 +425,10 @@ pub(crate) fn run_chain_for_strategy(
 
     platform
         .core_rpc
-        .expect_verify_instant_lock()
-        .returning(|_, _| Ok(true));
-
-    platform
-        .core_rpc
         .expect_get_quorum_listextended()
         .returning(move |core_height: Option<u32>| {
             let validator_set_extended_info = if !strategy.rotate_quorums {
-                quorums_details.clone().into_iter().collect()
+                validator_quorums_details.clone().into_iter().collect()
             } else {
                 let core_height = core_height.expect("expected a core height");
                 // if we rotate quorums we shouldn't give back the same ones every time
@@ -350,18 +438,18 @@ pub(crate) fn run_chain_for_strategy(
                 let end_range = end_range % total_validator_quorums as u32;
 
                 if end_range > start_range {
-                    quorums_details
+                    validator_quorums_details
                         .iter()
                         .skip(start_range as usize)
                         .take((end_range - start_range) as usize)
                         .map(|(quorum_hash, quorum)| (*quorum_hash, quorum.clone()))
                         .collect()
                 } else {
-                    let first_range = quorums_details
+                    let first_range = validator_quorums_details
                         .iter()
                         .skip(start_range as usize)
                         .take((total_validator_quorums as u32 - start_range) as usize);
-                    let second_range = quorums_details.iter().take(end_range as usize);
+                    let second_range = validator_quorums_details.iter().take(end_range as usize);
                     first_range
                         .chain(second_range)
                         .map(|(quorum_hash, quorum)| (*quorum_hash, quorum.clone()))
@@ -379,6 +467,13 @@ pub(crate) fn run_chain_for_strategy(
                 );
             }
 
+            if !instant_lock_quorums_details.is_empty() {
+                quorums_by_type.insert(
+                    QuorumType::Llmq60_75,
+                    instant_lock_quorums_details.clone().into_iter().collect(),
+                );
+            }
+
             let result = ExtendedQuorumListResult { quorums_by_type };
 
             Ok(result)
@@ -387,6 +482,7 @@ pub(crate) fn run_chain_for_strategy(
     let all_quorums_info: HashMap<QuorumHash, QuorumInfoResult> = validator_quorums
         .iter()
         .chain(chain_lock_quorums.iter())
+        .chain(instant_lock_quorum_infos.iter())
         .map(|(quorum_hash, test_quorum_info)| (*quorum_hash, test_quorum_info.into()))
         .collect();
 
@@ -661,6 +757,7 @@ pub(crate) fn run_chain_for_strategy(
         block_count,
         all_hpmns_with_updates,
         validator_quorums,
+        instant_lock_signing_quorums,
         strategy,
         config,
         rng,
@@ -671,7 +768,8 @@ pub(crate) fn create_chain_for_strategy(
     platform: &Platform<MockCoreRPCLike>,
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
-    quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
+    validator_quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
+    instant_lock_quorums: Quorums<SigningQuorum>,
     strategy: NetworkStrategy,
     config: PlatformConfig,
     rng: StdRng,
@@ -688,7 +786,8 @@ pub(crate) fn create_chain_for_strategy(
         abci_application,
         block_count,
         proposers_with_updates,
-        quorums,
+        validator_quorums,
+        instant_lock_quorums,
         strategy,
         config,
         seed,
@@ -699,7 +798,8 @@ pub(crate) fn start_chain_for_strategy(
     abci_application: FullAbciApplication<MockCoreRPCLike>,
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
-    quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
+    validator_quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
+    instant_lock_quorums: Quorums<SigningQuorum>,
     strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
@@ -709,14 +809,14 @@ pub(crate) fn start_chain_for_strategy(
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
 
-    let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
+    let quorum_hashes: Vec<&QuorumHash> = validator_quorums.keys().collect();
 
-    let mut current_quorum_hash = **quorum_hashes
+    let mut current_validator_quorum_hash = **quorum_hashes
         .choose(&mut rng)
         .expect("expected quorums to be initialized");
 
-    let current_quorum_with_test_info = quorums
-        .get::<QuorumHash>(&current_quorum_hash)
+    let current_quorum_with_test_info = validator_quorums
+        .get::<QuorumHash>(&current_validator_quorum_hash)
         .expect("expected a quorum to be found");
 
     // init chain
@@ -743,7 +843,7 @@ pub(crate) fn start_chain_for_strategy(
                 current_quorum_with_test_info.public_key.to_bytes().to_vec(),
             )),
         }),
-        quorum_hash: current_quorum_hash.to_byte_array().to_vec(),
+        quorum_hash: current_validator_quorum_hash.to_byte_array().to_vec(),
     });
 
     let ResponseInitChain {
@@ -754,7 +854,7 @@ pub(crate) fn start_chain_for_strategy(
         .expect("should init chain");
 
     // initialization will change the current quorum hash
-    current_quorum_hash = abci_application
+    current_validator_quorum_hash = abci_application
         .platform
         .state
         .load()
@@ -767,8 +867,9 @@ pub(crate) fn start_chain_for_strategy(
             core_height_start: initial_core_height,
             block_count,
             proposers: proposers_with_updates,
-            quorums,
-            current_quorum_hash,
+            validator_quorums,
+            current_validator_quorum_hash,
+            instant_lock_quorums,
             current_proposer_versions: None,
             current_identity_nonce_counter: Default::default(),
             current_identity_contract_nonce_counter: Default::default(),
@@ -794,19 +895,20 @@ pub(crate) fn continue_chain_for_strategy(
         core_height_start: _,
         block_count,
         proposers: proposers_with_updates,
-        quorums,
-        mut current_quorum_hash,
+        validator_quorums: quorums,
+        current_validator_quorum_hash: mut current_quorum_hash,
         current_proposer_versions,
         mut current_identity_nonce_counter,
         mut current_identity_contract_nonce_counter,
         start_time_ms,
         mut current_time_ms,
+        instant_lock_quorums,
     } = chain_execution_parameters;
     let mut rng = match seed {
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
-    let quorum_size = config.validator_set_quorum_size;
+    let quorum_size = config.validator_set.quorum_size;
     let first_block_time = start_time_ms;
     let mut current_identities = vec![];
     let mut signer = strategy.strategy.signer.clone().unwrap_or_default();
@@ -877,6 +979,7 @@ pub(crate) fn continue_chain_for_strategy(
             &mut current_identity_contract_nonce_counter,
             &mut signer,
             &mut rng,
+            &instant_lock_quorums,
         );
 
         state_transitions_per_block.insert(block_height, state_transitions.clone());
@@ -1013,7 +1116,7 @@ pub(crate) fn continue_chain_for_strategy(
             query_strategy.query_chain_for_strategy(
                 &ProofVerification {
                     quorum_hash: &current_quorum_with_test_info.quorum_hash.into(),
-                    quorum_type: config.validator_set_quorum_type(),
+                    quorum_type: config.validator_set.quorum_type,
                     app_version,
                     chain_id: drive_abci::mimic::CHAIN_ID.to_string(),
                     core_chain_locked_height: state_id.core_chain_locked_height,
@@ -1076,8 +1179,8 @@ pub(crate) fn continue_chain_for_strategy(
         masternode_identity_balances,
         identities: current_identities,
         proposers: proposers_with_updates,
-        quorums,
-        current_quorum_hash,
+        validator_quorums: quorums,
+        current_validator_quorum_hash: current_quorum_hash,
         current_proposer_versions: proposer_versions,
         identity_nonce_counter: current_identity_nonce_counter,
         identity_contract_nonce_counter: current_identity_contract_nonce_counter,
@@ -1087,5 +1190,6 @@ pub(crate) fn continue_chain_for_strategy(
         withdrawals: total_withdrawals,
         validator_set_updates,
         state_transition_results_per_block,
+        instant_lock_quorums,
     }
 }

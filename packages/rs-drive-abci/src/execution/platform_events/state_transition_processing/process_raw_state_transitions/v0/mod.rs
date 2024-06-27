@@ -214,6 +214,19 @@ where
                     // the first error must be present for an invalid result
                     .remove(0);
 
+                if tracing::enabled!(tracing::Level::DEBUG) {
+                    let st_hash = hex::encode(hash_single(raw_state_transition));
+
+                    tracing::debug!(
+                        error = ?first_consensus_error,
+                        st_hash,
+                        "Invalid {} state transition without identity ({}): {}",
+                        state_transition_name,
+                        st_hash,
+                        &first_consensus_error
+                    );
+                }
+
                 // We don't have execution event, so we can't pay for processing
                 return Ok(StateTransitionExecutionResult::UnpaidConsensusError(
                     first_consensus_error,
