@@ -5,7 +5,6 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::block::epoch::EpochIndex;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::TransactionArg;
 use nohash_hasher::IntMap;

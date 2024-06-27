@@ -35,7 +35,6 @@
 use crate::block::epoch::Epoch;
 use crate::block::epoch::EpochIndex;
 use crate::fee::Credits;
-use itertools::Itertools;
 use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

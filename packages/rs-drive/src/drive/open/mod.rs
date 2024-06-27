@@ -8,7 +8,6 @@ use crate::error::Error;
 use dpp::errors::ProtocolError;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
-use platform_version::error::PlatformVersionError;
 use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
