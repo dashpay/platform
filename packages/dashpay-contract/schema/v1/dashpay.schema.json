@@ -27,6 +27,7 @@
       "avatarUrl": {
         "type": "string",
         "format": "uri",
+        "minLength": 1,
         "maxLength": 2048,
         "position": 0
       },
@@ -48,11 +49,13 @@
       },
       "publicMessage": {
         "type": "string",
+        "minLength": 1,
         "maxLength": 140,
         "position": 3
       },
       "displayName": {
         "type": "string",
+        "minLength": 1,
         "maxLength": 25,
         "position": 4
       }
