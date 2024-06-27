@@ -752,9 +752,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.0.100"
+version = "1.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c891175c3fb232128f48de6590095e59198bbeb8620c310be349bfc3afd12c7b"
+checksum = "ac367972e516d45567c7eafc73d24e1c193dcf200a8d94e9db7b3d38b349572d"
 dependencies = [
  "jobserver",
  "libc",
@@ -1797,9 +1797,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.12.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dca9240753cf90908d7e4aac30f630662b02aebaa1b58a3cadabdb23385b58b"
+checksum = "60b1af1c220855b6ceac025d3f6ecdd2b7c4894bfe9cd9bda4fbb4bc7c0d4cf0"
 
 [[package]]
 name = "enum-map"
@@ -2234,7 +2234,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#d77bbf5bf6ab0eb48cca226fadc3764ca5c80d0f"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bitvec",
@@ -2258,7 +2258,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#d77bbf5bf6ab0eb48cca226fadc3764ca5c80d0f"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2268,7 +2268,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#d77bbf5bf6ab0eb48cca226fadc3764ca5c80d0f"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2291,12 +2291,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#d77bbf5bf6ab0eb48cca226fadc3764ca5c80d0f"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#d77bbf5bf6ab0eb48cca226fadc3764ca5c80d0f"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2315,7 +2315,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#d77bbf5bf6ab0eb48cca226fadc3764ca5c80d0f"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -5076,8 +5076,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.14.0-dev.12"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#3048c2ecdf7a2bd023634082a85635c76db22bf0"
+version = "1.0.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#cfb6ae41b4100c4b0af88ad1a201c5266a2ddc8c"
 dependencies = [
  "bytes",
  "futures",
@@ -5098,8 +5098,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.14.0-dev.12"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#3048c2ecdf7a2bd023634082a85635c76db22bf0"
+version = "1.0.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#cfb6ae41b4100c4b0af88ad1a201c5266a2ddc8c"
 dependencies = [
  "bytes",
  "chrono",
@@ -5118,8 +5118,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "0.14.0-dev.12"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#3048c2ecdf7a2bd023634082a85635c76db22bf0"
+version = "1.0.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#cfb6ae41b4100c4b0af88ad1a201c5266a2ddc8c"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.6",

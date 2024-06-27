@@ -1,6 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
@@ -20,6 +21,7 @@ where
     /// Keeps a record of the vote poll after it has finished
     pub(in crate::execution) fn keep_record_of_finished_contested_resource_vote_poll(
         &self,
+        block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
         contender_votes: &BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
@@ -34,6 +36,7 @@ where
             .keep_record_of_finished_contested_resource_vote_poll
         {
             0 => self.keep_record_of_finished_contested_resource_vote_poll_v0(
+                block_platform_state,
                 block_info,
                 vote_poll,
                 contender_votes,

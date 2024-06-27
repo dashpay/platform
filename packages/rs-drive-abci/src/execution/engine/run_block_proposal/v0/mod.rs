@@ -294,6 +294,17 @@ where
                 platform_version,
             )?;
 
+        // Run all dao platform events, such as vote tallying and distribution of contested documents
+        // This must be done before state transition processing
+        // Otherwise we would expect a proof after a successful vote that has since been cleaned up.
+        self.run_dao_platform_events(
+            &block_info,
+            last_committed_platform_state,
+            &block_platform_state,
+            Some(transaction),
+            platform_version,
+        )?;
+
         // Process transactions
         let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
@@ -309,16 +320,6 @@ where
         // Corresponding withdrawal documents are changed from queued to pooled
         self.pool_withdrawals_into_transactions_queue(
             &block_info,
-            Some(transaction),
-            platform_version,
-        )?;
-
-        // Run all dao platform events, such as vote tallying and distribution of contested documents
-
-        self.run_dao_platform_events(
-            &block_info,
-            last_committed_platform_state,
-            &block_platform_state,
             Some(transaction),
             platform_version,
         )?;

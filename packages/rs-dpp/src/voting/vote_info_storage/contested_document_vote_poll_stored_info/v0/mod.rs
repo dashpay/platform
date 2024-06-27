@@ -147,11 +147,11 @@ pub trait ContestedDocumentVotePollStoredInfoV0Getters {
 
     fn last_locked_votes(&self) -> Option<u32>;
 
-    fn last_locked_voters(&self) -> Option<Vec<Identifier>>;
+    fn last_locked_voters(&self) -> Option<Vec<(Identifier, u8)>>;
 
     fn last_abstain_votes(&self) -> Option<u32>;
 
-    fn last_abstain_voters(&self) -> Option<Vec<Identifier>>;
+    fn last_abstain_voters(&self) -> Option<Vec<(Identifier, u8)>>;
     fn contender_votes_in_vec_of_contender_with_serialized_document(
         &self,
     ) -> Option<Vec<ContenderWithSerializedDocument>>;
@@ -218,12 +218,19 @@ impl ContestedDocumentVotePollStoredInfoV0Getters for ContestedDocumentVotePollS
                     .filter(|choice| {
                         matches!(choice.resource_vote_choice, ResourceVoteChoice::Lock)
                     })
-                    .map(|choice| choice.voters.len() as u32)
+                    .map(|choice| {
+                        let sum: u32 = choice
+                            .voters
+                            .iter()
+                            .map(|(_, strength)| *strength as u32)
+                            .sum();
+                        sum
+                    })
                     .sum()
             })
     }
 
-    fn last_locked_voters(&self) -> Option<Vec<Identifier>> {
+    fn last_locked_voters(&self) -> Option<Vec<(Identifier, u8)>> {
         self.last_resource_vote_choices()
             .map(|resource_vote_choices| {
                 resource_vote_choices
@@ -244,12 +251,19 @@ impl ContestedDocumentVotePollStoredInfoV0Getters for ContestedDocumentVotePollS
                     .filter(|choice| {
                         matches!(choice.resource_vote_choice, ResourceVoteChoice::Abstain)
                     })
-                    .map(|choice| choice.voters.len() as u32)
+                    .map(|choice| {
+                        let sum: u32 = choice
+                            .voters
+                            .iter()
+                            .map(|(_, strength)| *strength as u32)
+                            .sum();
+                        sum
+                    })
                     .sum()
             })
     }
 
-    fn last_abstain_voters(&self) -> Option<Vec<Identifier>> {
+    fn last_abstain_voters(&self) -> Option<Vec<(Identifier, u8)>> {
         self.last_resource_vote_choices()
             .map(|resource_vote_choices| {
                 resource_vote_choices
@@ -273,11 +287,16 @@ impl ContestedDocumentVotePollStoredInfoV0Getters for ContestedDocumentVotePollS
                         if let ResourceVoteChoice::TowardsIdentity(identity_id) =
                             &choice.resource_vote_choice
                         {
+                            let vote_tally: u32 = choice
+                                .voters
+                                .iter()
+                                .map(|(_, strength)| *strength as u32)
+                                .sum();
                             Some(
                                 ContenderWithSerializedDocumentV0 {
                                     identity_id: *identity_id,
                                     serialized_document: None,
-                                    vote_tally: Some(choice.voters.len() as u32),
+                                    vote_tally: Some(vote_tally),
                                 }
                                 .into(),
                             )

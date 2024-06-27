@@ -18,7 +18,7 @@ impl Drive {
     pub fn fetch_identities_voting_for_contenders_v0(
         &self,
         contested_document_resource_vote_poll_with_contract_info: &ContestedDocumentResourceVotePollWithContractInfo,
-        restrict_to_only_fetch_contenders: Option<Vec<Identifier>>,
+        fetch_contenders: Vec<Identifier>,
         also_fetch_abstaining_and_locked_votes: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -28,23 +28,12 @@ impl Drive {
 
         let mut query = Query::new_with_direction(true);
 
-        if let Some(restrict_to_only_fetch_contenders) = restrict_to_only_fetch_contenders {
-            query.insert_keys(
-                restrict_to_only_fetch_contenders
-                    .into_iter()
-                    .map(|id| id.to_vec())
-                    .collect(),
-            );
-            if also_fetch_abstaining_and_locked_votes {
-                query.insert_keys(vec![
-                    vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8],
-                    vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8],
-                ]);
-            }
-        } else if also_fetch_abstaining_and_locked_votes {
-            query.insert_range_after(vec![RESOURCE_STORED_INFO_KEY_U8]..)
-        } else {
-            query.insert_range_after(vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..)
+        query.insert_keys(fetch_contenders.into_iter().map(|id| id.to_vec()).collect());
+        if also_fetch_abstaining_and_locked_votes {
+            query.insert_keys(vec![
+                vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8],
+                vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8],
+            ]);
         }
 
         query.set_subquery_path(vec![vec![VOTING_STORAGE_TREE_KEY]]);

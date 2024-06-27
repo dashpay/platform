@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use dpp::data_contract::DataContract;
 use grovedb::{GroveDb, PathQuery, SizedQuery};
+use tracing::debug;
 
 use crate::error::Error;
 
