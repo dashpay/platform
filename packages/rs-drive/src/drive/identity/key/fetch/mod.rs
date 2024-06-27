@@ -48,6 +48,8 @@ use {
         Element::Item,
     },
 };
+use dpp::block::epoch::EpochIndex;
+use platform_version::version::fee::FeeVersion;
 
 // Modules conditionally compiled for the feature "server"
 #[cfg(feature = "server")]
@@ -653,18 +655,20 @@ pub struct IdentityKeysRequest {
 impl IdentityKeysRequest {
     #[cfg(feature = "server")]
     /// Gets the processing cost of an identity keys request
-    pub fn processing_cost(&self, epoch: &Epoch) -> Result<Credits, Error> {
+    pub fn processing_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<Credits, Error> {
+        // Good
         match &self.request_type {
             AllKeys => Err(Error::Fee(FeeError::OperationNotAllowed(
                 "You can not get costs for requesting all keys",
             ))),
             SpecificKeys(keys) => Ok(keys.len() as u64
-                * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
+                * epoch.cost_for_known_cost_item(cached_fee_version, FetchSingleIdentityKeyProcessingCost)),
             SearchKey(_search) => todo!(),
             ContractBoundKey(_, _, key_kind) | ContractDocumentTypeBoundKey(_, _, _, key_kind) => {
                 match key_kind {
                     CurrentKeyOfKindRequest => {
-                        Ok(epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost))
+                        // not acceissble
+                        Ok(epoch.cost_for_known_cost_item(cached_fee_version, FetchSingleIdentityKeyProcessingCost))
                     }
                     AllKeysOfKindRequest => Err(Error::Fee(FeeError::OperationNotAllowed(
                         "You can not get costs for an all keys of kind request",

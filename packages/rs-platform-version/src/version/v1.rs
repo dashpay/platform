@@ -109,6 +109,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             credit_pools: DriveCreditPoolMethodVersions {
                 epochs: DriveCreditPoolEpochsMethodVersions {
                     get_epochs_infos: 0,
+                    get_epochs_protocol_versions: 0,
                     prove_epochs_infos: 0,
                     get_epoch_fee_multiplier: 0,
                     get_epoch_processing_credits_for_distribution: 0,

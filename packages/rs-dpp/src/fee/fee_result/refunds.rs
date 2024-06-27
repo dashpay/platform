@@ -16,6 +16,7 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;
 use std::collections::BTreeMap;
+use platform_version::version::fee::FeeVersion;
 
 /// There are additional work and storage required to process refunds
 /// To protect system from the spam and unnecessary work
@@ -38,6 +39,7 @@ impl FeeRefunds {
         storage_removal: I,
         current_epoch_index: EpochIndex,
         epochs_per_era: u16,
+        cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
@@ -56,7 +58,7 @@ impl FeeRefunds {
                         // TODO We should use multipliers
 
                         let credits: Credits = (bytes as Credits)
-                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
+                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(cached_fee_version, StorageDiskUsageCreditPerByte))
                             .ok_or(ProtocolError::Overflow("storage written bytes cost overflow"))?;
 
                         let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
@@ -194,6 +196,7 @@ mod tests {
             let storage_removal =
                 BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
 
+            // Not accessible but this is unit test so should be ok
             let fee_refunds = FeeRefunds::from_storage_removal(storage_removal, 3, 20)
                 .expect("should create fee refunds");
 

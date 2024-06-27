@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::drive::batch::GroveDbOpBatch;
 use grovedb_costs::storage_cost::removal::Identifier;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
@@ -20,7 +21,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation::{
     CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };
-use dpp::block::epoch::Epoch;
+use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::fee::default_costs::EpochCosts;
 use dpp::fee::default_costs::KnownCostItem::{
     StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
@@ -28,6 +29,7 @@ use dpp::fee::default_costs::KnownCostItem::{
 };
 use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::fee_result::FeeResult;
+use platform_version::version::fee::FeeVersion;
 
 /// Base ops
 #[derive(Debug, Enum)]
@@ -203,6 +205,7 @@ impl LowLevelDriveOperation {
         drive_operation: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
         epochs_per_era: u16,
+        cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>
     ) -> Result<Vec<FeeResult>, Error> {
         drive_operation
             .into_iter()
@@ -214,8 +217,8 @@ impl LowLevelDriveOperation {
                 }),
                 _ => {
                     let cost = operation.operation_cost()?;
-                    let storage_fee = cost.storage_cost(epoch)?;
-                    let processing_fee = cost.ephemeral_cost(epoch)?;
+                    let storage_fee = cost.storage_cost(epoch, cached_fee_version)?;
+                    let processing_fee = cost.ephemeral_cost(epoch, cached_fee_version)?;
                     let (fee_refunds, removed_bytes_from_system) =
                         match cost.storage_cost.removed_bytes {
                             NoStorageRemoval => (FeeRefunds::default(), 0),
@@ -233,6 +236,7 @@ impl LowLevelDriveOperation {
                                         removal_per_epoch_by_identifier,
                                         epoch.index,
                                         epochs_per_era,
+                                        cached_fee_version
                                     )?,
                                     system_amount,
                                 )
@@ -405,14 +409,14 @@ impl LowLevelDriveOperation {
 /// Drive cost trait
 pub trait DriveCost {
     /// Ephemeral cost
-    fn ephemeral_cost(&self, epoch: &Epoch) -> Result<u64, Error>;
+    fn ephemeral_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<u64, Error>;
     /// Storage cost
-    fn storage_cost(&self, epoch: &Epoch) -> Result<u64, Error>;
+    fn storage_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<u64, Error>;
 }
 
 impl DriveCost for OperationCost {
     /// Return the ephemeral cost from the operation
-    fn ephemeral_cost(&self, epoch: &Epoch) -> Result<u64, Error> {
+    fn ephemeral_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<u64, Error> {
         //todo: deal with epochs
         let OperationCost {
             seek_count,
@@ -421,9 +425,9 @@ impl DriveCost for OperationCost {
             hash_node_calls,
         } = self;
         let epoch_cost_for_processing_credit_per_byte =
-            epoch.cost_for_known_cost_item(StorageProcessingCreditPerByte);
+            epoch.cost_for_known_cost_item(cached_fee_version, StorageProcessingCreditPerByte);
         let seek_cost = (*seek_count as u64)
-            .checked_mul(epoch.cost_for_known_cost_item(StorageSeekCost))
+            .checked_mul(epoch.cost_for_known_cost_item(cached_fee_version, StorageSeekCost))
             .ok_or_else(|| get_overflow_error("seek cost overflow"))?;
         let storage_added_bytes_ephemeral_cost = (storage_cost.added_bytes as u64)
             .checked_mul(epoch_cost_for_processing_credit_per_byte)
@@ -435,8 +439,9 @@ impl DriveCost for OperationCost {
             (storage_cost.removed_bytes.total_removed_bytes() as u64)
                 .checked_mul(epoch_cost_for_processing_credit_per_byte)
                 .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
+        // not accessible
         let storage_loaded_bytes_cost = (*storage_loaded_bytes as u64)
-            .checked_mul(epoch.cost_for_known_cost_item(StorageLoadCreditPerByte))
+            .checked_mul(epoch.cost_for_known_cost_item(cached_fee_version, StorageLoadCreditPerByte))
             .ok_or_else(|| get_overflow_error("storage loaded cost overflow"))?;
         // this can't overflow
         let hash_node_cost =
@@ -451,11 +456,11 @@ impl DriveCost for OperationCost {
     }
 
     /// Return the storage cost from the operation
-    fn storage_cost(&self, epoch: &Epoch) -> Result<u64, Error> {
+    fn storage_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<u64, Error> {
         //todo: deal with epochs
         let OperationCost { storage_cost, .. } = self;
         (storage_cost.added_bytes as u64)
-            .checked_mul(epoch.cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
+            .checked_mul(epoch.cost_for_known_cost_item(cached_fee_version, StorageDiskUsageCreditPerByte))
             .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))
     }
 }

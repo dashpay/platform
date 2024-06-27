@@ -1613,12 +1613,14 @@ impl<'a> DriveQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
+            let cached_fee_versions = drive.cache.cached_fee_version.read();
             let fee_result = Drive::calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                &cached_fee_versions
             )?;
             fee_result.processing_fee
         } else {
@@ -1669,12 +1671,14 @@ impl<'a> DriveQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
+            let cached_fee_versions = drive.cache.cached_fee_version.read();
             let fee_result = Drive::calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                &cached_fee_versions
             )?;
             fee_result.processing_fee
         } else {
@@ -1727,12 +1731,14 @@ impl<'a> DriveQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
+            let cached_fee_versions = drive.cache.cached_fee_version.read();
             let fee_result = Drive::calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                &cached_fee_versions
             )?;
             fee_result.processing_fee
         } else {

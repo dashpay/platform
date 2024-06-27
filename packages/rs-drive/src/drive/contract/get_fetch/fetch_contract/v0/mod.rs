@@ -84,6 +84,7 @@ impl Drive {
                     .map_err(Error::Protocol)
                 );
                 let drive_operation = CalculatedCostOperation(cost.clone());
+                let cached_fee_versions = self.cache.cached_fee_version.read();
                 let fee = if let Some(epoch) = epoch {
                     Some(cost_return_on_error_no_add!(
                         &cost,
@@ -92,7 +93,8 @@ impl Drive {
                             Some(vec![drive_operation]),
                             epoch,
                             self.config.epochs_per_era,
-                            platform_version
+                            platform_version,
+                            &cached_fee_versions
                         )
                     ))
                 } else {
@@ -138,6 +140,7 @@ impl Drive {
                             .map_err(Error::Protocol)
                         );
                         let drive_operation = CalculatedCostOperation(cost.clone());
+                        let cached_fee_versions = self.cache.cached_fee_version.read();
                         let fee = if let Some(epoch) = epoch {
                             Some(cost_return_on_error_no_add!(
                                 &cost,
@@ -146,7 +149,8 @@ impl Drive {
                                     Some(vec![drive_operation]),
                                     epoch,
                                     self.config.epochs_per_era,
-                                    platform_version
+                                    platform_version,
+                                    &cached_fee_versions
                                 )
                             ))
                         } else {

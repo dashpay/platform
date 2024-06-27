@@ -61,7 +61,7 @@ impl Drive {
             )?
             .0;
 
-        let mut map: IntMap<EpochIndex, ProtocolVersion> = IntMap::new();
+        let mut map: IntMap<EpochIndex, ProtocolVersion> = IntMap::default();
 
         for result_item in results.elements.into_iter() {
             if let QueryResultElement::PathKeyElementTrioResultItem((
@@ -82,7 +82,7 @@ impl Drive {
                             "extended epoch info: item has an invalid length".to_string(),
                         ))
                     })?;
-                let epoch_index = EpochIndex::from_be_bytes(epoch_index_bytes)
+                let epoch_index = EpochIndex::from_be_bytes([epoch_index_bytes[0], epoch_index_bytes[1]])
                     .checked_sub(EPOCH_KEY_OFFSET)
                     .ok_or(Error::Drive(DriveError::CorruptedSerialization(
                         "epoch bytes on disk too small, should be over epoch key offset"

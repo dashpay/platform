@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use dpp::identity::TimestampMillis;
 
 mod data_contract;
@@ -5,6 +6,8 @@ mod protocol_version;
 mod system_contracts;
 
 pub use data_contract::DataContractCache;
+use dpp::block::epoch::EpochIndex;
+use platform_version::version::fee::FeeVersion;
 pub use protocol_version::ProtocolVersionsCache;
 pub use system_contracts::SystemDataContracts;
 
@@ -20,4 +23,6 @@ pub struct DriveCache {
     pub protocol_versions_counter: parking_lot::RwLock<ProtocolVersionsCache>,
     /// Versioned system data contracts
     pub system_data_contracts: SystemDataContracts,
+    /// Cached Epoch changed FeeVersion
+    pub cached_fee_version: parking_lot::RwLock<BTreeMap<EpochIndex, FeeVersion>>,
 }

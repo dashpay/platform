@@ -78,9 +78,11 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
-        let balance_cost = epoch.cost_for_known_cost_item(FetchIdentityBalanceProcessingCost);
+        let read_guard = self.cache.cached_fee_version.read();
+        let balance_cost = epoch.cost_for_known_cost_item(&read_guard, FetchIdentityBalanceProcessingCost);
         if !apply {
-            let keys_cost = identity_key_request.processing_cost(epoch)?;
+            let read_guard = self.cache.cached_fee_version.read();
+            let keys_cost = identity_key_request.processing_cost(epoch, &read_guard)?;
             return Ok((
                 None,
                 FeeResult::new_from_processing_fee(balance_cost + keys_cost),
@@ -97,7 +99,8 @@ impl Drive {
             return Ok((None, FeeResult::new_from_processing_fee(balance_cost)));
         };
 
-        let keys_cost = identity_key_request.processing_cost(epoch)?;
+        let read_guard = self.cache.cached_fee_version.read();
+        let keys_cost = identity_key_request.processing_cost(epoch, &read_guard)?;
 
         let loaded_public_keys = self.fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
             identity_key_request,

@@ -1,11 +1,13 @@
+use std::collections::BTreeMap;
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::{BaseOp, LowLevelDriveOperation};
-use dpp::block::epoch::Epoch;
+use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::fee::fee_result::FeeResult;
 
 use enum_map::EnumMap;
+use platform_version::version::fee::FeeVersion;
 
 impl Drive {
     /// Calculates fees for the given operations. Returns the storage and processing costs.
@@ -15,6 +17,7 @@ impl Drive {
         drive_operations: Option<Vec<LowLevelDriveOperation>>,
         epoch: &Epoch,
         epochs_per_era: u16,
+        cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>
     ) -> Result<FeeResult, Error> {
         let mut aggregate_fee_result = FeeResult::default();
         if let Some(base_operations) = base_operations {
@@ -32,7 +35,7 @@ impl Drive {
         if let Some(drive_operations) = drive_operations {
             // println!("{:#?}", drive_operations);
             for drive_fee_result in
-                LowLevelDriveOperation::consume_to_fees(drive_operations, epoch, epochs_per_era)?
+                LowLevelDriveOperation::consume_to_fees(drive_operations, epoch, epochs_per_era, cached_fee_version)?
             {
                 aggregate_fee_result.checked_add_assign(drive_fee_result)?;
             }

@@ -37,6 +37,8 @@ impl<C> Platform<C> {
             .protocol_version;
         let current_block_protocol_version = platform_version.protocol_version;
 
+        // here
+
         // Protocol version can be changed only on epoch change
         if epoch_info.is_epoch_change_but_not_genesis() {
             if current_block_protocol_version == previous_block_protocol_version {

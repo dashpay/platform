@@ -27,12 +27,14 @@ impl Drive {
             &mut drive_operations,
             platform_version,
         )?;
+        let cached_fee_versions = self.cache.cached_fee_version.read();
         let fee = Drive::calculate_fee(
             None,
             Some(drive_operations),
             epoch,
             self.config.epochs_per_era,
             platform_version,
+            &cached_fee_versions
         )?;
         Ok((maybe_identity, fee))
     }

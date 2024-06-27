@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::drive::cache::SystemDataContracts;
 use crate::drive::cache::{DataContractCache, DriveCache, ProtocolVersionsCache};
 use crate::drive::config::DriveConfig;
@@ -9,6 +10,8 @@ use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 use std::path::Path;
+use platform_version::error::PlatformVersionError;
+use crate::error::drive::DriveError;
 
 impl Drive {
     /// Opens GroveDB database
@@ -58,8 +61,27 @@ impl Drive {
                 system_data_contracts: SystemDataContracts::load_genesis_system_contracts(
                     platform_version,
                 )?,
+                // TODO: Populate this from groveDB
+                cached_fee_version: parking_lot::RwLock::new(BTreeMap::new()),
             },
         };
+
+        {
+            let res_map = drive.get_epochs_protocol_versions(0, None, true, None, platform_version)?;
+            let mut write_guard = drive.cache.cached_fee_version.write();
+
+            for (epoch_index, protocol_version) in res_map.iter() {
+                let platform_version = PlatformVersion::get(*protocol_version)
+                    .map_err(|e| Error::Drive(DriveError::CorruptedCacheState(format!(
+                        "no platform version {e}"
+                    ))))?;
+                write_guard.insert(*epoch_index, platform_version.fee_version.clone());
+            }
+        }
+
+        {
+            let read_guard = drive.cache.cached_fee_version.read();
+        }
 
         Ok((drive, protocol_version))
     }
