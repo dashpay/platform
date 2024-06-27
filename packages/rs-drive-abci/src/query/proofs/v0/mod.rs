@@ -169,9 +169,13 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::ContestedResourceVoteStatusRequest;
     use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::{
-        ContractRequest, DocumentRequest, IdentityRequest,
+        ContractRequest, DocumentRequest, IdentityRequest, VoteStatusRequest,
     };
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::platform_value::Value;
+    use dpp::util::strings::convert_to_homograph_safe_chars;
 
     #[test]
     fn test_invalid_identity_ids() {
@@ -306,6 +310,58 @@ mod tests {
                 document_contested_status: 0,
             }],
             votes: vec![],
+        };
+
+        let validation_result = platform
+            .query_proofs_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(validation_result.data, Some(GetProofsResponseV0 {
+            result: Some(get_proofs_response_v0::Result::Proof(proof)),
+            metadata: Some(_),
+        }) if !proof.grovedb_proof.is_empty()));
+    }
+
+    #[test]
+    fn test_proof_of_absence_of_vote() {
+        let (platform, state, version) = setup_platform(false);
+
+        let dpns_contract = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns()
+            .as_ref()
+            .clone();
+
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let serialized_index_values = [
+            Value::Text("dash".to_string()),
+            Value::Text(convert_to_homograph_safe_chars("quantum")),
+        ]
+        .iter()
+        .map(|value| {
+            bincode::encode_to_vec(value, config).expect("expected to encode value in path")
+        })
+        .collect();
+
+        let request = GetProofsRequestV0 {
+            identities: vec![],
+            contracts: vec![],
+            documents: vec![],
+            votes: vec![VoteStatusRequest {
+                request_type: Some(RequestType::ContestedResourceVoteStatusRequest(
+                    ContestedResourceVoteStatusRequest {
+                        contract_id: dpns_contract.id().to_vec(),
+                        document_type_name: "domain".to_string(),
+                        index_name: "parentNameAndLabel".to_string(),
+                        index_values: serialized_index_values,
+                        voter_identifier: [0u8; 32].to_vec(),
+                    },
+                )),
+            }],
         };
 
         let validation_result = platform

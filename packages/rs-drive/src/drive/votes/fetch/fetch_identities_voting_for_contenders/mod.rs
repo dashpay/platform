@@ -17,7 +17,7 @@ impl Drive {
     pub fn fetch_identities_voting_for_contenders(
         &self,
         contested_document_resource_vote_poll_with_contract_info: &ContestedDocumentResourceVotePollWithContractInfo,
-        restrict_to_only_fetch_contenders: Option<Vec<Identifier>>,
+        fetch_contenders: Vec<Identifier>,
         also_fetch_abstaining_and_locked_votes: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -31,7 +31,7 @@ impl Drive {
         {
             0 => self.fetch_identities_voting_for_contenders_v0(
                 contested_document_resource_vote_poll_with_contract_info,
-                restrict_to_only_fetch_contenders,
+                fetch_contenders,
                 also_fetch_abstaining_and_locked_votes,
                 transaction,
                 platform_version,

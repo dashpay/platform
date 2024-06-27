@@ -1,8 +1,15 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
+use dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::ProTxHash;
 use dpp::identifier::Identifier;
+use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedResourceVoteChoicesWithVoterInfo;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -20,6 +27,7 @@ where
     #[inline(always)]
     pub(super) fn keep_record_of_finished_contested_resource_vote_poll_v0(
         &self,
+        block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
         contender_votes: &BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
@@ -29,12 +37,30 @@ where
     ) -> Result<(), Error> {
         let finalized_resource_vote_choices_with_voter_infos = contender_votes
             .iter()
-            .map(
-                |(resource_vote_choice, voters)| FinalizedResourceVoteChoicesWithVoterInfo {
-                    resource_vote_choice: resource_vote_choice.clone(),
-                    voters: voters.clone(),
-                },
-            )
+            .map(|(resource_vote_choice, voters)| {
+                let full_masternode_list = block_platform_state.full_masternode_list();
+                let voters = voters
+                    .iter()
+                    .map(|pro_tx_hash_identifier| {
+                        let strength = if let Some(masternode) = full_masternode_list.get(
+                            &ProTxHash::from_byte_array(pro_tx_hash_identifier.to_buffer()),
+                        ) {
+                            match masternode.node_type {
+                                MasternodeType::Regular => 1,
+                                MasternodeType::Evo => 4,
+                            }
+                        } else {
+                            0
+                        };
+                        (*pro_tx_hash_identifier, strength)
+                    })
+                    .collect();
+
+                FinalizedResourceVoteChoicesWithVoterInfo {
+                    resource_vote_choice: *resource_vote_choice,
+                    voters,
+                }
+            })
             .collect();
         let stored_info_from_disk = self
             .drive

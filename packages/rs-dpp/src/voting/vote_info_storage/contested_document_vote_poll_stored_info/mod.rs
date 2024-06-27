@@ -166,7 +166,7 @@ impl ContestedDocumentVotePollStoredInfoV0Getters for ContestedDocumentVotePollS
         }
     }
 
-    fn last_locked_voters(&self) -> Option<Vec<Identifier>> {
+    fn last_locked_voters(&self) -> Option<Vec<(Identifier, u8)>> {
         match self {
             ContestedDocumentVotePollStoredInfo::V0(v0) => v0.last_locked_voters(),
         }
@@ -178,7 +178,7 @@ impl ContestedDocumentVotePollStoredInfoV0Getters for ContestedDocumentVotePollS
         }
     }
 
-    fn last_abstain_voters(&self) -> Option<Vec<Identifier>> {
+    fn last_abstain_voters(&self) -> Option<Vec<(Identifier, u8)>> {
         match self {
             ContestedDocumentVotePollStoredInfo::V0(v0) => v0.last_abstain_voters(),
         }

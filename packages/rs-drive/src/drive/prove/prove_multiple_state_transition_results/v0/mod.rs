@@ -120,6 +120,7 @@ impl Drive {
             _ => true,
         };
         let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
+
         self.grove_get_proved_path_query(
             &path_query,
             verbose,
