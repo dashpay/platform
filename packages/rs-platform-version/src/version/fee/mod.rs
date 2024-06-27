@@ -25,11 +25,11 @@ pub struct FeeVersion {
 
 impl PartialEq for FeeVersion {
     fn eq(&self, other: &Self) -> bool {
-        self.storage == other.storage &&
-            self.signature == other.signature &&
-            self.hashing == other.hashing &&
-            self.processing == other.processing &&
-            self.data_contract == other.data_contract &&
-            self.state_transition_min_fees == other.state_transition_min_fees
+        self.storage == other.storage
+            && self.signature == other.signature
+            && self.hashing == other.hashing
+            && self.processing == other.processing
+            && self.data_contract == other.data_contract
+            && self.state_transition_min_fees == other.state_transition_min_fees
     }
 }

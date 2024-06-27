@@ -76,7 +76,7 @@ impl<C> Platform<C> {
             self.drive
                 .clear_version_information(Some(transaction), &platform_version.drive)
                 .map_err(Error::Drive)?;
-            
+
             let platform_version = PlatformVersion::get(current_block_protocol_version)?;
             let mut cached_fee_version = self.drive.cache.cached_fee_version.write();
             if let Some((_, &last_fee_version)) = cached_fee_version.iter().last() {
