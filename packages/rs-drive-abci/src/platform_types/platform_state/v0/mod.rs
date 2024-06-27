@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
-use dpp::block::epoch::{Epoch, EpochIndex, EPOCH_0};
+use dpp::block::epoch::{Epoch, EPOCH_0};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 
 use dpp::bincode::{Decode, Encode};
@@ -58,9 +58,6 @@ pub struct PlatformStateV0 {
 
     /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
-
-    /// Epoch change fee versions
-    pub epoch_change_fee_versions: BTreeMap<EpochIndex, PlatformVersion>,
 }
 
 impl Debug for PlatformStateV0 {
@@ -226,8 +223,6 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .into_iter()
                 .map(|(k, v)| (ProTxHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
-            // TODO: Check if we need to store in PlatformStateForSavingV0?
-            epoch_change_fee_versions: BTreeMap::new(),
         }
     }
 }
@@ -259,8 +254,6 @@ impl PlatformStateV0 {
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
-            // TODO: Check if we need to store in PlatformStateForSavingV0?
-            epoch_change_fee_versions: BTreeMap::default(),
         };
 
         Ok(state)
