@@ -24,5 +24,5 @@ pub struct DriveCache {
     /// Versioned system data contracts
     pub system_data_contracts: SystemDataContracts,
     /// Cached Epoch changed FeeVersion
-    pub cached_fee_version: parking_lot::RwLock<BTreeMap<EpochIndex, FeeVersion>>,
+    pub cached_fee_version: parking_lot::RwLock<BTreeMap<EpochIndex, &'static FeeVersion>>,
 }

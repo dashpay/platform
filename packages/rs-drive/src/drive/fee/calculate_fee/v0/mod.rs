@@ -17,7 +17,7 @@ impl Drive {
         drive_operations: Option<Vec<LowLevelDriveOperation>>,
         epoch: &Epoch,
         epochs_per_era: u16,
-        cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>
     ) -> Result<FeeResult, Error> {
         let mut aggregate_fee_result = FeeResult::default();
         if let Some(base_operations) = base_operations {

@@ -37,7 +37,7 @@ impl Drive {
         epoch: &Epoch,
         epochs_per_era: u16,
         platform_version: &PlatformVersion,
-        cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>,
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
     ) -> Result<FeeResult, Error> {
         match platform_version.drive.methods.fees.calculate_fee {
             0 => Self::calculate_fee_v0(base_operations, drive_operations, epoch, epochs_per_era, cached_fee_version),

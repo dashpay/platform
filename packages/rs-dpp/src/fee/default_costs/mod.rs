@@ -127,7 +127,7 @@ impl KnownCostItem {
         }
     }
 
-    pub fn lookup_cost_on_epoch(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Credits {
+    pub fn lookup_cost_on_epoch(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> Credits {
         let version = epoch.active_fee_version(cached_fee_version);
         self.lookup_cost(version)
     }
@@ -144,15 +144,15 @@ pub trait EpochCosts {
     //todo: should just have a static lookup table
     /// Get the closest epoch in the past that has a cost table
     /// This is where the base costs last changed
-    fn active_fee_version(&self, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> &'static FeeVersion;
+    fn active_fee_version(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> &'static FeeVersion;
     /// Get the cost for the known cost item
     //fn cost_for_known_cost_item(&self, cost_item: KnownCostItem) -> Credits;
-    fn cost_for_known_cost_item(&self, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>, cost_item: KnownCostItem) -> Credits;
+    fn cost_for_known_cost_item(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>, cost_item: KnownCostItem) -> Credits;
 }
 
 impl EpochCosts for Epoch {
     /// Get the active fee version for an epoch
-    fn active_fee_version(&self, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> &'static FeeVersion {
+    fn active_fee_version(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> &'static FeeVersion {
         EPOCH_CHANGE_FEE_VERSION.range(..=self.index).next_back()
             .map(|(_, &fee_version)| fee_version)
             .unwrap_or_else(|| &PlatformVersion::first().fee_version)
@@ -164,7 +164,7 @@ impl EpochCosts for Epoch {
     /*fn cost_for_known_cost_item(&self, cost_item: KnownCostItem) -> Credits {
         cost_item.lookup_cost_on_epoch(self)
     }*/
-    fn cost_for_known_cost_item(&self, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>, cost_item: KnownCostItem) -> Credits {
+    fn cost_for_known_cost_item(&self, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>, cost_item: KnownCostItem) -> Credits {
         cost_item.lookup_cost_on_epoch(self, cached_fee_version)
     }
 }

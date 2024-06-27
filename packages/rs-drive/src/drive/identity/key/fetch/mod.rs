@@ -655,7 +655,7 @@ pub struct IdentityKeysRequest {
 impl IdentityKeysRequest {
     #[cfg(feature = "server")]
     /// Gets the processing cost of an identity keys request
-    pub fn processing_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<Credits, Error> {
+    pub fn processing_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> Result<Credits, Error> {
         // Good
         match &self.request_type {
             AllKeys => Err(Error::Fee(FeeError::OperationNotAllowed(

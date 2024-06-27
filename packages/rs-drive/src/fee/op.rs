@@ -205,7 +205,7 @@ impl LowLevelDriveOperation {
         drive_operation: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
         epochs_per_era: u16,
-        cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>
     ) -> Result<Vec<FeeResult>, Error> {
         drive_operation
             .into_iter()
@@ -409,14 +409,14 @@ impl LowLevelDriveOperation {
 /// Drive cost trait
 pub trait DriveCost {
     /// Ephemeral cost
-    fn ephemeral_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<u64, Error>;
+    fn ephemeral_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> Result<u64, Error>;
     /// Storage cost
-    fn storage_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<u64, Error>;
+    fn storage_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> Result<u64, Error>;
 }
 
 impl DriveCost for OperationCost {
     /// Return the ephemeral cost from the operation
-    fn ephemeral_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<u64, Error> {
+    fn ephemeral_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> Result<u64, Error> {
         //todo: deal with epochs
         let OperationCost {
             seek_count,
@@ -456,7 +456,7 @@ impl DriveCost for OperationCost {
     }
 
     /// Return the storage cost from the operation
-    fn storage_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>) -> Result<u64, Error> {
+    fn storage_cost(&self, epoch: &Epoch, cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>) -> Result<u64, Error> {
         //todo: deal with epochs
         let OperationCost { storage_cost, .. } = self;
         (storage_cost.added_bytes as u64)

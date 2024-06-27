@@ -75,7 +75,7 @@ impl Drive {
                     .map_err(|e| Error::Drive(DriveError::CorruptedCacheState(format!(
                         "no platform version {e}"
                     ))))?;
-                write_guard.insert(*epoch_index, platform_version.fee_version.clone());
+                write_guard.insert(*epoch_index, &platform_version.fee_version);
             }
         }
 

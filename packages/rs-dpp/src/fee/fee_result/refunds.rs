@@ -39,7 +39,7 @@ impl FeeRefunds {
         storage_removal: I,
         current_epoch_index: EpochIndex,
         epochs_per_era: u16,
-        cached_fee_version: &BTreeMap<EpochIndex, FeeVersion>
+        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
