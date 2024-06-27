@@ -37,7 +37,6 @@ impl<C> Platform<C> {
             .protocol_version;
         let current_block_protocol_version = platform_version.protocol_version;
 
-
         // Protocol version can be changed only on epoch change
         if epoch_info.is_epoch_change_but_not_genesis() {
             if current_block_protocol_version == previous_block_protocol_version {
@@ -80,7 +79,10 @@ impl<C> Platform<C> {
 
             let mut cached_fee_version = self.drive.cache.cached_fee_version.write();
             let platform_version = PlatformVersion::get(current_block_protocol_version)?;
-            cached_fee_version.insert(epoch_info.current_epoch_index(), &platform_version.fee_version);
+            cached_fee_version.insert(
+                epoch_info.current_epoch_index(),
+                &platform_version.fee_version,
+            );
 
             // We clean voting counter cache only on finalize block because:
             // 1. The voting counter global cache uses for querying of voting information in Drive queries
