@@ -202,7 +202,7 @@ mod tests {
             let bytes_per_epoch = IntMap::from_iter([(0, 31), (1, 100)]);
             let storage_removal =
                 BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
-            
+
             let fee_refunds = FeeRefunds::from_storage_removal(
                 storage_removal,
                 3,
