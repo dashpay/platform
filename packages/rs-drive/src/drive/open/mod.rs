@@ -9,10 +9,10 @@ use dpp::errors::ProtocolError;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
 use platform_version::error::PlatformVersionError;
+use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 use std::path::Path;
-use platform_version::version::fee::FeeVersion;
 
 impl Drive {
     /// Opens GroveDB database
@@ -94,8 +94,7 @@ fn populate_cached_fee_version(
                 last_fee_version_opt = Some(&platform_version.fee_version);
                 cached_fee_versions.insert(*epoch_index, &platform_version.fee_version);
             }
-        }
-        else {
+        } else {
             last_fee_version_opt = Some(&platform_version.fee_version);
             cached_fee_versions.insert(*epoch_index, &platform_version.fee_version);
         }
