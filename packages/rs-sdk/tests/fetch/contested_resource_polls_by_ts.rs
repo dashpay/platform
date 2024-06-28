@@ -178,7 +178,7 @@ async fn vote_polls_by_ts_limit() {
                 .await
                 .expect("fetch vote polls");
 
-            let Some(last) = rss.0.keys().last().copied() else {
+            let Some(last) = rss.0.last() else {
                 // no more vote polls
                 break;
             };
@@ -194,12 +194,12 @@ async fn vote_polls_by_ts_limit() {
                 };
                 let expected = &all_values[all_idx];
                 assert_eq!(
-                    *current.0, expected.0,
+                    current.0, expected.0,
                     "inclusive {}: timestamp should match",
                     inclusive
                 );
                 assert_eq!(
-                    current.1, &expected.1,
+                    &current.1, &expected.1,
                     "inclusive {}: vote polls should match",
                     inclusive
                 );
@@ -207,7 +207,7 @@ async fn vote_polls_by_ts_limit() {
 
             tracing::debug!(polls=?rss, checked_count, ?start_time, "Vote polls");
 
-            start_time = Some((last, inclusive));
+            start_time = Some((last.0, inclusive));
             // when inclusive, we include the first item in checked_count only on first iteration
             checked_count += if inclusive && checked_count != 0 {
                 length - 1

@@ -5,7 +5,6 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
-use crate::ordered_btreemap::{OrderedBTreeMap, OrderedIterator};
 use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
@@ -26,7 +25,6 @@ use dpp::{
     util::deserializer::ProtocolVersion,
 };
 use drive::grovedb::Element;
-use std::collections::btree_map::IntoIter;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "mocks")]
@@ -296,26 +294,35 @@ impl From<&PrefundedSpecializedBalance> for Credits {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-pub struct VotePollsGroupedByTimestamp(pub OrderedBTreeMap<TimestampMillis, Vec<VotePoll>>);
+pub struct VotePollsGroupedByTimestamp(pub Vec<(TimestampMillis, Vec<VotePoll>)>);
+impl VotePollsGroupedByTimestamp {
+    /// Sort the vote polls by timestamp.
+    pub fn sorted(mut self, ascending: bool) -> Self {
+        self.0.sort_by(|a, b| {
+            if ascending {
+                a.0.cmp(&b.0)
+            } else {
+                b.0.cmp(&a.0)
+            }
+        });
+
+        self
+    }
+}
 
 /// Insert items into the map, appending them to the existing values for the same key.
 impl FromIterator<(u64, Vec<VotePoll>)> for VotePollsGroupedByTimestamp {
     fn from_iter<T: IntoIterator<Item = (u64, Vec<VotePoll>)>>(iter: T) -> Self {
-        let mut map = BTreeMap::new();
+        // collect all vote polls for the same timestamp into a single vector
+        let data = iter
+            .into_iter()
+            .fold(BTreeMap::new(), |mut acc, (timestamp, vote_poll)| {
+                let entry: &mut Vec<VotePoll> = acc.entry(timestamp).or_default();
+                entry.extend(vote_poll);
+                acc
+            });
 
-        let mut order_ascending = true;
-        let mut prev = 0;
-        for (timestamp, vote_poll) in iter {
-            let entry = map.entry(timestamp).or_insert_with(Vec::new);
-            entry.extend(vote_poll);
-
-            if timestamp < prev {
-                order_ascending = false;
-            }
-            prev = timestamp;
-        }
-
-        OrderedBTreeMap::from_btreemap(map, order_ascending).into()
+        Self(data.into_iter().collect())
     }
 }
 
@@ -339,7 +346,7 @@ impl FromIterator<(u64, Option<VotePoll>)> for VotePollsGroupedByTimestamp {
 
 impl IntoIterator for VotePollsGroupedByTimestamp {
     type Item = (u64, Vec<VotePoll>);
-    type IntoIter = OrderedIterator<IntoIter<u64, Vec<VotePoll>>>;
+    type IntoIter = std::vec::IntoIter<(u64, Vec<VotePoll>)>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
