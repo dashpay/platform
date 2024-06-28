@@ -3210,7 +3210,7 @@ mod tests {
                 };
 
                 query
-                    .verify_identity_votes_given_proof(
+                    .verify_identity_votes_given_proof::<BTreeMap<_, _>>(
                         proof.grovedb_proof.as_slice(),
                         &contract_lookup_fn_for_contract(Arc::new(contract.to_owned())),
                         platform_version,
@@ -3708,7 +3708,7 @@ mod tests {
                 };
 
                 let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
-                    .verify_vote_polls_by_end_date_proof(
+                    .verify_vote_polls_by_end_date_proof::<BTreeMap<_, _>>(
                         proof.grovedb_proof.as_ref(),
                         platform_version,
                     )
@@ -4013,7 +4013,7 @@ mod tests {
                 };
 
                 let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
-                    .verify_vote_polls_by_end_date_proof(
+                    .verify_vote_polls_by_end_date_proof::<BTreeMap<_, _>>(
                         proof.grovedb_proof.as_ref(),
                         platform_version,
                     )
@@ -4850,7 +4850,7 @@ mod tests {
                     };
 
                     let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
-                        .verify_vote_polls_by_end_date_proof(
+                        .verify_vote_polls_by_end_date_proof::<BTreeMap<_, _>>(
                             proof.grovedb_proof.as_ref(),
                             platform_version,
                         )
@@ -4943,7 +4943,7 @@ mod tests {
                     };
 
                     let (_, vote_polls_by_timestamps) = vote_poll_by_end_date_query
-                        .verify_vote_polls_by_end_date_proof(
+                        .verify_vote_polls_by_end_date_proof::<BTreeMap<_, _>>(
                             proof.grovedb_proof.as_ref(),
                             platform_version,
                         )
