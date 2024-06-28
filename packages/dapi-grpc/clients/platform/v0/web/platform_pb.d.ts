@@ -3817,10 +3817,9 @@ export namespace GetContestedResourceVoteStateRequest {
     }
 
     export interface ResultTypeMap {
-      IDENTITY_IDS_ONLY: 0;
-      DOCUMENTS: 1;
-      VOTE_TALLY: 2;
-      DOCUMENTS_AND_VOTE_TALLY: 3;
+      DOCUMENTS: 0;
+      VOTE_TALLY: 1;
+      DOCUMENTS_AND_VOTE_TALLY: 2;
     }
 
     export const ResultType: ResultTypeMap;

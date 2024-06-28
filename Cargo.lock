@@ -5893,6 +5893,7 @@ version = "1.0.0-dev.15"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bincode 2.0.0-rc.3",
  "dpp",
  "hex",
  "itertools 0.10.5",

@@ -8176,10 +8176,9 @@ GPBEnumDescriptor *GetContestedResourceVoteStateRequest_GetContestedResourceVote
   static _Atomic(GPBEnumDescriptor*) descriptor = nil;
   if (!descriptor) {
     static const char *valueNames =
-        "IdentityIdsOnly\000Documents\000VoteTally\000Docu"
-        "mentsAndVoteTally\000";
+        "Documents\000VoteTally\000DocumentsAndVoteTall"
+        "y\000";
     static const int32_t values[] = {
-        GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_IdentityIdsOnly,
         GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_Documents,
         GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_VoteTally,
         GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_DocumentsAndVoteTally,
@@ -8200,7 +8199,6 @@ GPBEnumDescriptor *GetContestedResourceVoteStateRequest_GetContestedResourceVote
 
 BOOL GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_IsValidValue(int32_t value__) {
   switch (value__) {
-    case GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_IdentityIdsOnly:
     case GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_Documents:
     case GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_VoteTally:
     case GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_DocumentsAndVoteTally:
