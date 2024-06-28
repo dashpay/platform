@@ -172,11 +172,6 @@ impl FeeRefunds {
     }
 }
 
-lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
-        BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
-}
-
 impl IntoIterator for FeeRefunds {
     type Item = ([u8; 32], CreditsPerEpoch);
     type IntoIter = std::collections::btree_map::IntoIter<[u8; 32], CreditsPerEpoch>;
@@ -189,6 +184,11 @@ impl IntoIterator for FeeRefunds {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    lazy_static! {
+        static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
+            BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
+    }
 
     mod from_storage_removal {
         use super::*;

@@ -32,11 +32,6 @@
 //! This modules implements functions in Drive relevant to updating Documents.
 //!
 
-use dpp::prelude::CachedEpochIndexFeeVersions;
-use lazy_static::lazy_static;
-use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
-
 // Module: add_update_multiple_documents_operations
 // This module contains functionality for adding operations to update multiple documents
 #[cfg(feature = "server")]
@@ -57,19 +52,15 @@ mod update_document_for_contract_id;
 mod internal;
 mod update_document_with_serialization_for_contract;
 
-lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
-        BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
-}
-
 #[cfg(test)]
 mod tests {
+    use dpp::data_contract::{DataContract, DataContractFactory};
     use grovedb::TransactionArg;
+    use lazy_static::lazy_static;
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
     use std::default::Default;
     use std::option::Option::None;
-
-    use dpp::data_contract::{DataContract, DataContractFactory};
 
     use dpp::platform_value::{platform_value, Identifier, Value};
 
@@ -88,7 +79,6 @@ mod tests {
 
     use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
-    use crate::drive::document::update::EPOCH_CHANGE_FEE_VERSION_TEST;
     use crate::query::DriveQuery;
     use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::block::epoch::Epoch;
@@ -104,8 +94,14 @@ mod tests {
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value;
+    use dpp::prelude::CachedEpochIndexFeeVersions;
     use dpp::tests::json_document::json_document_to_document;
     use platform_version::version::PlatformVersion;
+
+    lazy_static! {
+        static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
+            BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
+    }
 
     #[test]
     fn test_create_and_update_document_same_transaction() {

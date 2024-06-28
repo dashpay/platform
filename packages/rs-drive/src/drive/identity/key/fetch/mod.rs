@@ -27,7 +27,6 @@ use {
 };
 
 // Conditional imports for the feature "server"
-use dpp::prelude::CachedEpochIndexFeeVersions;
 #[cfg(feature = "server")]
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
@@ -38,6 +37,7 @@ use {
             Credits,
         },
         identity::{IdentityPublicKey, SecurityLevel},
+        prelude::CachedEpochIndexFeeVersions,
         serialization::PlatformDeserializable,
         version::PlatformVersion,
     },

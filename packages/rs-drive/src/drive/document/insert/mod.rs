@@ -69,23 +69,15 @@ mod add_reference_for_index_level_for_contract_operations;
     feature = "data-contract-cbor-conversion"
 ))]
 use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
-use dpp::prelude::CachedEpochIndexFeeVersions;
-use lazy_static::lazy_static;
-use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
-
-lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
-        BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
-}
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
-    use std::option::Option::None;
-
     use dpp::block::block_info::BlockInfo;
+    use lazy_static::lazy_static;
     use rand::{random, Rng};
+    use std::borrow::Cow;
+    use std::collections::BTreeMap;
+    use std::option::Option::None;
 
     use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
@@ -97,16 +89,21 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::Document;
 
-    use crate::drive::document::insert::EPOCH_CHANGE_FEE_VERSION_TEST;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::document::serialization_traits::DocumentCborMethodsV0;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::fee_result::FeeResult;
+    use dpp::prelude::CachedEpochIndexFeeVersions;
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
+
+    lazy_static! {
+        static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
+            BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
+    }
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {

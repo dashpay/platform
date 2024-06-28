@@ -3,11 +3,6 @@
 //! This module implements functions in Drive for deleting documents.
 //!
 
-use dpp::prelude::CachedEpochIndexFeeVersions;
-use lazy_static::lazy_static;
-use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
-
 // Module: delete_document_for_contract
 // This module contains functionality for deleting a document associated with a given contract
 mod delete_document_for_contract;
@@ -50,11 +45,6 @@ mod delete_document_for_contract_operations;
 
 mod internal;
 
-lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
-        BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
-}
-
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
@@ -62,7 +52,9 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use rand::Rng;
 
+    use lazy_static::lazy_static;
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
     use std::option::Option::None;
     use tempfile::TempDir;
 
@@ -81,11 +73,16 @@ mod tests {
     use dpp::document::Document;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::prelude::CachedEpochIndexFeeVersions;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
-    use crate::drive::document::delete::EPOCH_CHANGE_FEE_VERSION_TEST;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
+
+    lazy_static! {
+        static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
+            BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
+    }
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
