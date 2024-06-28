@@ -3,7 +3,6 @@
 
 /// Errors that can occur during proof verification
 pub mod error;
-pub mod ordered_btreemap;
 /// Implementation of proof verification
 mod proof;
 mod provider;
