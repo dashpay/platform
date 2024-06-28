@@ -6,6 +6,7 @@ import * as diskusage from 'diskusage';
 /**
  *
  * @param {Docker} docker
+ * @param {DockerCompose} dockerCompose
  * @return {verifySystemRequirementsTask}
  */
 export default function verifySystemRequirementsTaskFactory(docker, dockerCompose) {
