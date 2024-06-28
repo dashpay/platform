@@ -109,6 +109,8 @@ import createIpAndPortsFormFactory from './listr/prompts/createIpAndPortsForm.js
 import registerMasternodeWithCoreWalletFactory from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet.js';
 import registerMasternodeWithDMTFactory from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT.js';
 import writeConfigTemplatesFactory from './templates/writeConfigTemplatesFactory.js';
+import verifySystemRequirementsTaskFactory
+  from './listr/tasks/setup/regular/verifySystemRequirementsTaskFactory.js';
 
 /**
  * @param {Object} [options]
@@ -297,6 +299,8 @@ export default async function createDIContainer(options = {}) {
     registerMasternodeWithCoreWallet: asFunction(registerMasternodeWithCoreWalletFactory)
       .singleton(),
     registerMasternodeWithDMT: asFunction(registerMasternodeWithDMTFactory)
+      .singleton(),
+    verifySystemRequirementsTask: asFunction(verifySystemRequirementsTaskFactory)
       .singleton(),
   });
 

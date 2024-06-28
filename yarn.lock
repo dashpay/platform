@@ -6339,6 +6339,7 @@ __metadata:
     chalk: "npm:^4.1.0"
     cron: "npm:^2.1.0"
     dirty-chai: "npm:^2.0.1"
+    diskusage: "npm:^1.2.0"
     dockerode: "npm:^3.3.5"
     dot: "npm:^1.1.3"
     dotenv: "npm:^8.6.0"
@@ -6707,6 +6708,17 @@ __metadata:
   peerDependencies:
     chai: ">=2.2.1 <5"
   checksum: b4f3d1ea01cc75ec083e5a5a4b7728b2ab7c4b45651126f8189d36653df0737ac601a473e37f026a37d6aca68d8b965952bc917b50905eba0d008c18eeb85fd8
+  languageName: node
+  linkType: hard
+
+"diskusage@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "diskusage@npm:1.2.0"
+  dependencies:
+    es6-promise: "npm:^4.2.8"
+    nan: "npm:^2.18.0"
+    node-gyp: "npm:latest"
+  checksum: cf37552dd9b2731f44d802a6b4d9ea7fbff4f6d33d3f67ce736538fd09fbb276d146a61be0d3e40e27afe232c7cd54d91487c5ca3770f1fe11c865ac240b9674
   languageName: node
   linkType: hard
 
@@ -7125,7 +7137,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"es6-promise@npm:^4.0.3":
+"es6-promise@npm:^4.0.3, es6-promise@npm:^4.2.8":
   version: 4.2.8
   resolution: "es6-promise@npm:4.2.8"
   checksum: b250c55523c496c43c9216c2646e58ec182b819e036fe5eb8d83fa16f044ecc6b8dcefc88ace2097be3d3c4d02b6aa8eeae1a66deeaf13e7bee905ebabb350a3
@@ -11190,6 +11202,15 @@ __metadata:
   dependencies:
     node-gyp: "npm:latest"
   checksum: bba1efee2475afb0cce154300b554863fb4bb0a683a28f5d0fa7390794b3b4381356aabeab6472c70651d9c8a2830e7595963f3ec0aa2008e5c4d83dbeb820fa
+  languageName: node
+  linkType: hard
+
+"nan@npm:^2.18.0":
+  version: 2.20.0
+  resolution: "nan@npm:2.20.0"
+  dependencies:
+    node-gyp: "npm:latest"
+  checksum: 5f16e4c9953075d9920229c703c1d781c0b74118ce3d9e926b448a4eef92b7d8be5ac6adc748a13a5fafb594436cbfe63250e3471aefdd78e3a0cd14603b9ba7
   languageName: node
   linkType: hard
 
