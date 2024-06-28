@@ -33,7 +33,7 @@ export default function configureNodeTaskFactory(createIpAndPortsForm) {
           task.title = `Configure ${ctx.nodeType}`;
 
           // Masternode Operator key
-          if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
+          if (ctx.nodeType === NODE_TYPE_MASTERNODE && !ctx.config.get('core.masternode.operator.privateKey')) {
             const masternodeOperatorPrivateKey = await task.prompt({
               type: 'input',
               header: `  Please enter your Masternode Operator BLS Private key.
