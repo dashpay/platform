@@ -30,6 +30,13 @@ function fetchProofForStateTransitionFactory(driveClient) {
         documentRequest.setContractId(documentTransition.getDataContractId().toBuffer());
         documentRequest.setDocumentType(documentTransition.getType());
         documentRequest.setDocumentId(documentTransition.getId().toBuffer());
+
+        const status = documentTransition.hasPrefundedBalance()
+          ? DocumentRequest.DocumentContestedStatus.CONTESTED
+          : DocumentRequest.DocumentContestedStatus.NOT_CONTESTED;
+
+        documentRequest.setDocumentContestedStatus(status);
+
         return documentRequest;
       });
 
