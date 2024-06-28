@@ -122,6 +122,19 @@ impl AsRef<DataContract> for DataContractOwnedResolvedInfo {
     }
 }
 
+impl DataContractOwnedResolvedInfo {
+    /// Get the contract as owned
+    pub fn into_owned(self) -> DataContract {
+        match self {
+            #[cfg(feature = "server")]
+            DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => {
+                fetch_info.contract.clone()
+            }
+            DataContractOwnedResolvedInfo::OwnedDataContract(owned) => owned,
+        }
+    }
+}
+
 /// Contains resolved data contract information, typically used after initial
 /// fetching or retrieval steps have been completed. This enum simplifies handling
 /// of data contract states post-retrieval.

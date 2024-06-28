@@ -36,6 +36,13 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
         user_fee_increase: UserFeeIncrease,
     },
+    /// A drive event that has a fixed cost that will be taken out in the operations
+    PaidFixedCost {
+        /// the operations that should be performed
+        operations: Vec<DriveOperation<'a>>,
+        /// fees to add
+        fees_to_add_to_pool: Credits,
+    },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLock {
         /// The identity requesting the event
@@ -177,7 +184,14 @@ impl<'a> ExecutionEvent<'a> {
             StateTransitionAction::MasternodeVoteAction(_) => {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
-                Ok(ExecutionEvent::Free { operations })
+
+                Ok(ExecutionEvent::PaidFixedCost {
+                    operations,
+                    fees_to_add_to_pool: platform_version
+                        .fee_version
+                        .vote_resolution_fund_fees
+                        .contested_document_single_vote_cost,
+                })
             }
             _ => {
                 let user_fee_increase = action.user_fee_increase();

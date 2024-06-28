@@ -23,7 +23,9 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
+use drive::drive::verify::RootHash;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
 use drive::drive::votes::resolved::votes::ResolvedVote;
@@ -554,7 +556,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         false,
                         platform_version,
                     )
-                    .expect("expected to verify balance identity");
+                    .expect("expected to verify balance identity for top up");
                     let balance = balance.expect("expected a balance");
                     assert_eq!(
                         &root_hash,
@@ -616,7 +618,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         false,
                         platform_version,
                     )
-                    .expect("expected to verify balance identity");
+                    .expect("expected to verify balance identity for withdrawal");
                     let _balance = balance.expect("expected a balance");
                     assert_eq!(
                         &root_hash,
@@ -717,7 +719,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             true,
                             platform_version,
                         )
-                        .expect("expected to verify balance identity");
+                        .expect("expected to verify balance identity for credit transfer");
 
                     assert_eq!(
                         &root_hash_identity,
@@ -806,7 +808,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         masternode_vote_action.pro_tx_hash().into_buffer(),
                         &vote,
                         data_contract,
-                        true,
+                        false, // we are not in a subset, we have just one vote
                         platform_version,
                     )
                     .expect("expected to verify balance identity");

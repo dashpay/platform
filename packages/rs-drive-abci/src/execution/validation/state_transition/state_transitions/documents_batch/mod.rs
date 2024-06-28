@@ -929,10 +929,13 @@ mod tests {
 
             fast_forward_to_block(&platform, 2_000_000_000, 900); //more than two weeks
 
+            let platform_state = platform.state.load();
+
             let transaction = platform.drive.grove.start_transaction();
 
             platform
                 .check_for_ended_vote_polls(
+                    &platform_state,
                     &BlockInfo {
                         time_ms: 2_000_000_000,
                         height: 900,

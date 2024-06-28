@@ -325,11 +325,16 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                 break;
             }
         }
+        if end_values_iter.next().is_some() {
+            return Err(Error::Query(QuerySyntaxError::IndexValuesError(
+                "too many end index values were provided".to_string(),
+            )));
+        }
         let middle_index_property = middle_index_property.ok_or_else(|| {
             let error_msg = if has_end_index_values {
                 "since end index values were provided, the start index values and the end index values must be equal to the amount of properties in the contested index minus one, we could not find a middle property".to_string()
             } else {
-                "too many start values were provided, since no end index values were provided, the start index values must be less than the amount of properties in the contested index".to_string()
+                "too many start index values were provided, since no end index values were provided, the start index values must be less than the amount of properties in the contested index".to_string()
             };
             Error::Query(QuerySyntaxError::IndexValuesError(error_msg))
         })?;

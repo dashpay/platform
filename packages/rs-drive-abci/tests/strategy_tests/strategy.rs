@@ -45,9 +45,12 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
+use dpp::dashcore::hashes::Hash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
+use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -59,7 +62,15 @@ use dpp::state_transition::documents_batch_transition::document_transition::{Doc
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
+use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::votes::resource_vote::ResourceVote;
+use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
+use dpp::voting::votes::Vote;
 use drive_abci::abci::app::FullAbciApplication;
+use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
@@ -527,9 +538,13 @@ impl NetworkStrategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        // first identifier is the vote poll id
+        // second identifier is the identifier
+        current_votes: &mut BTreeMap<Identifier, BTreeMap<Identifier, ResourceVoteChoice>>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
+        let mut maybe_state = None;
         let mut operations = vec![];
         let mut finalize_block_operations = vec![];
         let mut replaced = vec![];
@@ -1261,6 +1276,76 @@ impl NetworkStrategy {
                             operations.push(state_transition);
                         }
                     }
+                    OperationType::ResourceVote(resource_vote_op) => {
+                        let state = maybe_state.get_or_insert(platform.state.load());
+                        let full_masternode_list = state.full_masternode_list();
+                        let vote_poll_id = resource_vote_op
+                            .resolved_vote_poll
+                            .unique_id()
+                            .expect("expected a vote poll unique id");
+                        let vote_poll_votes = current_votes.entry(vote_poll_id).or_default();
+                        for _ in 0..count {
+                            let rand_index = rng.gen_range(0..full_masternode_list.len());
+                            let (pro_tx_hash, masternode_list_item) =
+                                full_masternode_list.iter().nth(rand_index).unwrap();
+
+                            let pro_tx_hash_bytes: [u8; 32] = pro_tx_hash.to_raw_hash().into();
+                            let voting_address = masternode_list_item.state.voting_address;
+
+                            let voting_identifier = Identifier::create_voter_identifier(
+                                pro_tx_hash.as_byte_array(),
+                                &voting_address,
+                            );
+
+                            // Choose the resource vote choice based on weights
+                            let resource_vote_choice =
+                                resource_vote_op.action.choose_weighted_choice(rng);
+
+                            if vote_poll_votes.get(&voting_identifier)
+                                == Some(&resource_vote_choice)
+                            {
+                                continue;
+                            }
+
+                            let identity_public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                                id: 0,
+                                purpose: Purpose::VOTING,
+                                security_level: SecurityLevel::MEDIUM,
+                                contract_bounds: None,
+                                key_type: KeyType::ECDSA_HASH160,
+                                read_only: false,
+                                data: voting_address.to_vec().into(),
+                                disabled_at: None,
+                            });
+
+                            let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                                vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                                    resource_vote_op.resolved_vote_poll.clone().into(),
+                                ),
+                                resource_vote_choice,
+                            }));
+
+                            let identity_nonce =
+                                identity_nonce_counter.entry(voting_identifier).or_default();
+                            *identity_nonce += 1;
+
+                            let state_transition =
+                                MasternodeVoteTransition::try_from_vote_with_signer(
+                                    vote,
+                                    signer,
+                                    Identifier::from(pro_tx_hash_bytes),
+                                    &identity_public_key,
+                                    *identity_nonce,
+                                    platform_version,
+                                    None,
+                                )
+                                .expect("expected to make a masternode vote transition");
+
+                            vote_poll_votes.insert(voting_identifier, resource_vote_choice);
+
+                            operations.push(state_transition);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1275,6 +1360,7 @@ impl NetworkStrategy {
         current_identities: &mut Vec<Identity>,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        current_votes: &mut BTreeMap<Identifier, BTreeMap<Identifier, ResourceVoteChoice>>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -1318,6 +1404,7 @@ impl NetworkStrategy {
                     signer,
                     identity_nonce_counter,
                     contract_nonce_counter,
+                    current_votes,
                     rng,
                     platform_version,
                 );
@@ -1460,6 +1547,7 @@ pub struct ChainExecutionParameters {
     pub current_proposer_versions: Option<Option<HashMap<ProTxHash, ValidatorVersionMigration>>>,
     pub current_identity_nonce_counter: BTreeMap<Identifier, IdentityNonce>,
     pub current_identity_contract_nonce_counter: BTreeMap<(Identifier, Identifier), IdentityNonce>,
+    pub current_votes: BTreeMap<Identifier, BTreeMap<Identifier, ResourceVoteChoice>>,
     pub start_time_ms: u64,
     pub current_time_ms: u64,
 }

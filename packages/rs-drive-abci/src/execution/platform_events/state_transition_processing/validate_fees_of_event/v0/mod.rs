@@ -146,7 +146,8 @@ where
                     ))
                 }
             }
-            ExecutionEvent::Free { .. }
+            ExecutionEvent::PaidFixedCost { .. }
+            | ExecutionEvent::Free { .. }
             | ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. } => Ok(
                 ConsensusValidationResult::new_with_data(FeeResult::default()),
             ),

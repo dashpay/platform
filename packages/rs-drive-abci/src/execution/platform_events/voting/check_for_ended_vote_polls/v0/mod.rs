@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::document::DocumentV0Getters;
@@ -23,6 +24,7 @@ where
     #[inline(always)]
     pub(super) fn check_for_ended_vote_polls_v0(
         &self,
+        block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -69,27 +71,23 @@ where
 
                         let (contenders_with_votes, contenders_with_no_votes) : (Vec<_>, Vec<_>) = sorted_contenders.iter().partition(|a| a.final_vote_tally > 0);
 
-                        let (restrict_to_only_fetch_contenders, mut other_contenders) = if contenders_with_no_votes.is_empty()
+                        let fetch_contenders = contenders_with_votes
+                            .iter()
+                            .map(|contender| contender.identity_id)
+                            .collect::<Vec<_>>();
+                        let mut other_contenders = if contenders_with_no_votes.is_empty()
                         {
-                            (None, BTreeMap::new())
+                            BTreeMap::new()
                         } else {
-                            // Collect all identity_ids from contenders_with_votes
-                            let restrict_to_only_fetch_contenders = Some(
-                                contenders_with_votes
-                                    .iter()
-                                    .map(|contender| contender.identity_id)
-                                    .collect::<Vec<_>>(),
-                            );
-
                             // Other contenders are only those with no votes
-                            (restrict_to_only_fetch_contenders, contenders_with_no_votes.into_iter().map(|contender| (TowardsIdentity(contender.identity_id), vec![])).collect())
+                            contenders_with_no_votes.into_iter().map(|contender| (TowardsIdentity(contender.identity_id), vec![])).collect()
                         };
 
                         // We need to get the votes of the sorted contenders
                         let mut identifiers_voting_for_contenders =
                             self.drive.fetch_identities_voting_for_contenders(
                                 &resolved_contested_document_resource_vote_poll,
-                                restrict_to_only_fetch_contenders,
+                                fetch_contenders,
                                 true,
                                 transaction,
                                 platform_version,
@@ -156,6 +154,7 @@ where
                         };
                         // We want to keep a record of how everyone voted
                         self.keep_record_of_finished_contested_resource_vote_poll(
+                            block_platform_state,
                             block_info,
                             &resolved_contested_document_resource_vote_poll,
                             &identifiers_voting_for_contenders,

@@ -10,6 +10,7 @@ use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::fmt;
+use std::fmt::format;
 
 pub use contender::v0::{ContenderV0, ContenderWithSerializedDocumentV0};
 pub use contender::{Contender, ContenderWithSerializedDocument};
@@ -38,15 +39,15 @@ pub struct FinalizedContenderWithSerializedDocument {
 pub struct FinalizedResourceVoteChoicesWithVoterInfo {
     /// The resource vote choice.
     pub resource_vote_choice: ResourceVoteChoice,
-    /// The pro_tx_hashes of the voters for this contender.
-    pub voters: Vec<Identifier>,
+    /// The pro_tx_hashes of the voters for this contender along with their strength
+    pub voters: Vec<(Identifier, u8)>,
 }
 impl fmt::Display for FinalizedResourceVoteChoicesWithVoterInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let voters_str: Vec<String> = self
             .voters
             .iter()
-            .map(|v| v.to_string(Encoding::Base58))
+            .map(|(id, strength)| format!("{}:{}", id, strength))
             .collect();
         write!(
             f,

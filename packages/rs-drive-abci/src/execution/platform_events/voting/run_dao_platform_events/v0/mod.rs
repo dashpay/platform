@@ -29,7 +29,12 @@ where
 
         // Check for any vote polls that might have ended
 
-        self.check_for_ended_vote_polls(block_info, transaction, platform_version)?;
+        self.check_for_ended_vote_polls(
+            block_platform_state,
+            block_info,
+            transaction,
+            platform_version,
+        )?;
 
         Ok(())
     }
