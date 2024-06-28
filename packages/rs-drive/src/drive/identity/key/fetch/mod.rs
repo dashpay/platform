@@ -27,8 +27,7 @@ use {
 };
 
 // Conditional imports for the feature "server"
-use dpp::block::epoch::EpochIndex;
-use platform_version::version::fee::FeeVersion;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 #[cfg(feature = "server")]
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
@@ -658,7 +657,7 @@ impl IdentityKeysRequest {
     pub fn processing_cost(
         &self,
         epoch: &Epoch,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Result<Credits, Error> {
         // Good
         match &self.request_type {

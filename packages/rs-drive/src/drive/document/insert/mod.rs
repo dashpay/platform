@@ -64,19 +64,18 @@ mod add_indices_for_top_index_level_for_contract_operations;
 // This module contains functionality for adding a reference for an index level for contract operations
 mod add_reference_for_index_level_for_contract_operations;
 
-use dpp::block::epoch::EpochIndex;
 #[cfg(all(
     feature = "fixtures-and-mocks",
     feature = "data-contract-cbor-conversion"
 ))]
 use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use lazy_static::lazy_static;
-use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION_TEST: BTreeMap<EpochIndex, &'static FeeVersion> =
+    static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
         BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
 }
 

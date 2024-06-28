@@ -2,12 +2,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::{BaseOp, LowLevelDriveOperation};
-use dpp::block::epoch::{Epoch, EpochIndex};
+use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use enum_map::EnumMap;
-use platform_version::version::fee::FeeVersion;
-use std::collections::BTreeMap;
 
 mod v0;
 
@@ -37,7 +36,7 @@ impl Drive {
         epoch: &Epoch,
         epochs_per_era: u16,
         platform_version: &PlatformVersion,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Result<FeeResult, Error> {
         match platform_version.drive.methods.fees.calculate_fee {
             0 => Self::calculate_fee_v0(

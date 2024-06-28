@@ -3,7 +3,6 @@ use grovedb_costs::storage_cost::removal::Identifier;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
     BasicStorageRemoval, NoStorageRemoval, SectionedStorageRemoval,
 };
-use std::collections::BTreeMap;
 
 use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
@@ -21,7 +20,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation::{
     CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };
-use dpp::block::epoch::{Epoch, EpochIndex};
+use dpp::block::epoch::Epoch;
 use dpp::fee::default_costs::EpochCosts;
 use dpp::fee::default_costs::KnownCostItem::{
     StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
@@ -29,7 +28,7 @@ use dpp::fee::default_costs::KnownCostItem::{
 };
 use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::fee_result::FeeResult;
-use platform_version::version::fee::FeeVersion;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 
 /// Base ops
 #[derive(Debug, Enum)]
@@ -205,7 +204,7 @@ impl LowLevelDriveOperation {
         drive_operation: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
         epochs_per_era: u16,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Result<Vec<FeeResult>, Error> {
         drive_operation
             .into_iter()
@@ -412,13 +411,13 @@ pub trait DriveCost {
     fn ephemeral_cost(
         &self,
         epoch: &Epoch,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Result<u64, Error>;
     /// Storage cost
     fn storage_cost(
         &self,
         epoch: &Epoch,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Result<u64, Error>;
 }
 
@@ -427,7 +426,7 @@ impl DriveCost for OperationCost {
     fn ephemeral_cost(
         &self,
         epoch: &Epoch,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Result<u64, Error> {
         //todo: deal with epochs
         let OperationCost {
@@ -473,7 +472,7 @@ impl DriveCost for OperationCost {
     fn storage_cost(
         &self,
         epoch: &Epoch,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Result<u64, Error> {
         //todo: deal with epochs
         let OperationCost { storage_cost, .. } = self;

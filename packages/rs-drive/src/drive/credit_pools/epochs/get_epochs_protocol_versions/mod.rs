@@ -3,6 +3,7 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use std::collections::BTreeMap;
 
 use dpp::block::epoch::EpochIndex;
 use dpp::util::deserializer::ProtocolVersion;
@@ -20,7 +21,7 @@ impl Drive {
         ascending: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<IntMap<EpochIndex, ProtocolVersion>, Error> {
+    ) -> Result<BTreeMap<EpochIndex, ProtocolVersion>, Error> {
         match platform_version
             .drive
             .methods

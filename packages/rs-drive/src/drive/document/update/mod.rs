@@ -32,9 +32,8 @@
 //! This modules implements functions in Drive relevant to updating Documents.
 //!
 
-use dpp::block::epoch::EpochIndex;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use lazy_static::lazy_static;
-use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -59,7 +58,7 @@ mod internal;
 mod update_document_with_serialization_for_contract;
 
 lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION_TEST: BTreeMap<EpochIndex, &'static FeeVersion> =
+    static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
         BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
 }
 

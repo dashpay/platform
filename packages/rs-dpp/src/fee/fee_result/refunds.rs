@@ -12,9 +12,9 @@ use crate::fee::Credits;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 
+use crate::prelude::CachedEpochIndexFeeVersions;
 use lazy_static::lazy_static;
 use platform_value::Identifier;
-use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;
@@ -41,7 +41,7 @@ impl FeeRefunds {
         storage_removal: I,
         current_epoch_index: EpochIndex,
         epochs_per_era: u16,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
@@ -173,7 +173,7 @@ impl FeeRefunds {
 }
 
 lazy_static! {
-    static ref EPOCH_CHANGE_FEE_VERSION_TEST: BTreeMap<EpochIndex, &'static FeeVersion> =
+    static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
         BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
 }
 

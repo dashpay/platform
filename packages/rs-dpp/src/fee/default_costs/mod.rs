@@ -33,11 +33,10 @@
 //!
 
 use crate::block::epoch::Epoch;
-use crate::block::epoch::EpochIndex;
 use crate::fee::Credits;
+use crate::prelude::CachedEpochIndexFeeVersions;
 use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
 
 pub mod constants;
 
@@ -127,10 +126,10 @@ impl KnownCostItem {
         }
     }
 
-    pub fn lookup_cost_on_epoch(
+    pub fn lookup_cost_on_epoch<T: EpochCosts>(
         &self,
-        epoch: &Epoch,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        epoch: &T,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Credits {
         let version = epoch.active_fee_version(cached_fee_version);
         self.lookup_cost(version)
@@ -143,12 +142,12 @@ pub trait EpochCosts {
     /// This is where the base costs last changed
     fn active_fee_version(
         &self,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> &'static FeeVersion;
     /// Get the cost for the known cost item
     fn cost_for_known_cost_item(
         &self,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
         cost_item: KnownCostItem,
     ) -> Credits;
 }
@@ -157,7 +156,7 @@ impl EpochCosts for Epoch {
     /// Get the active fee version for an epoch
     fn active_fee_version(
         &self,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> &'static FeeVersion {
         // If the exact EpochIndex is matching to a FeeVersion update
         if let Some(fee_version) = cached_fee_version.get(&self.index) {
@@ -174,7 +173,7 @@ impl EpochCosts for Epoch {
     /// Get the cost for the known cost item
     fn cost_for_known_cost_item(
         &self,
-        cached_fee_version: &BTreeMap<EpochIndex, &'static FeeVersion>,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
         cost_item: KnownCostItem,
     ) -> Credits {
         cost_item.lookup_cost_on_epoch(self, cached_fee_version)

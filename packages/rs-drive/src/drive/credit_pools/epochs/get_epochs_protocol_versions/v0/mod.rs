@@ -7,6 +7,7 @@ use dpp::ProtocolError;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use nohash_hasher::IntMap;
+use std::collections::BTreeMap;
 
 use crate::drive::credit_pools::pools_vec_path;
 use crate::error::query::QuerySyntaxError;
@@ -22,7 +23,7 @@ impl Drive {
         ascending: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<IntMap<EpochIndex, ProtocolVersion>, Error> {
+    ) -> Result<BTreeMap<EpochIndex, ProtocolVersion>, Error> {
         if let Some(count) = count {
             if count > 16383 {
                 return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
@@ -61,7 +62,7 @@ impl Drive {
             )?
             .0;
 
-        let mut map: IntMap<EpochIndex, ProtocolVersion> = IntMap::default();
+        let mut map: BTreeMap<EpochIndex, ProtocolVersion> = BTreeMap::default();
 
         for result_item in results.elements.into_iter() {
             if let QueryResultElement::PathKeyElementTrioResultItem((
