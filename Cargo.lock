@@ -421,7 +421,7 @@ dependencies = [
  "bitflags 2.6.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -2234,7 +2234,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#53642edc24893ab51d5dcbc06ee3b4e0001b8624"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bitvec",
@@ -2258,7 +2258,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#53642edc24893ab51d5dcbc06ee3b4e0001b8624"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2268,7 +2268,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#53642edc24893ab51d5dcbc06ee3b4e0001b8624"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2291,12 +2291,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#53642edc24893ab51d5dcbc06ee3b4e0001b8624"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#53642edc24893ab51d5dcbc06ee3b4e0001b8624"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2315,7 +2315,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#1696c2ef47a674be5ec213b9ff723afe4c45fb90"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#53642edc24893ab51d5dcbc06ee3b4e0001b8624"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -2890,7 +2890,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
- "base64 0.13.1",
+ "base64 0.22.1",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -2956,7 +2956,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e310b3a6b5907f99202fcdb4960ff45b93735d7c7d96b760fcff8db2dc0e103d"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.5",
 ]
 
 [[package]]
@@ -3020,9 +3020,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.21"
+version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
+checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
 name = "lru"
@@ -3253,6 +3253,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
 
 [[package]]
+name = "multimap"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "defc4c55412d89136f966bbb339008b474350e5e6e78d2714439c386b3137a03"
+
+[[package]]
 name = "murmur3"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3323,9 +3329,9 @@ dependencies = [
 
 [[package]]
 name = "num-bigint"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c165a9ab64cf766f73521c0dd2cfdff64f488b8f0b3e621face3462d3db536d7"
+checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
 dependencies = [
  "num-integer",
  "num-traits",
@@ -3919,7 +3925,7 @@ dependencies = [
  "itertools 0.10.5",
  "lazy_static",
  "log",
- "multimap",
+ "multimap 0.8.3",
  "petgraph",
  "prettyplease 0.1.25",
  "prost 0.11.9",
@@ -3937,10 +3943,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
- "heck 0.4.1",
- "itertools 0.10.5",
+ "heck 0.5.0",
+ "itertools 0.12.1",
  "log",
- "multimap",
+ "multimap 0.10.0",
  "once_cell",
  "petgraph",
  "prettyplease 0.2.20",
@@ -3971,7 +3977,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.68",
