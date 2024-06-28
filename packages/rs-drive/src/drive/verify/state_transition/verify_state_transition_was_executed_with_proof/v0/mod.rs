@@ -114,11 +114,12 @@ impl Drive {
 
                 let document_type = contract
                     .document_type_for_name(transition.document_type_name())
-                    .map_err(|_| {
+                    .map_err(|e| {
                         Error::Proof(ProofError::UnknownContract(format!(
-                            "unknown contract document {} with id {}",
+                            "cannot fetch contract for document {} with id {}: {}",
                             transition.document_type_name(),
-                            transition.data_contract_id()
+                            transition.data_contract_id(),
+                            e
                         )))
                     })?;
 
