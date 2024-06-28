@@ -1,6 +1,5 @@
 mod to_object;
 
-use js_sys::{Array, Object, Reflect, Uint8Array};
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
@@ -16,11 +15,12 @@ use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVote
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
+use js_sys::{Array, Object, Reflect, Uint8Array};
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=MasternodeVoteTransition)]
@@ -50,25 +50,26 @@ impl MasternodeVoteTransitionWasm {
             .map_err(from_dpp_err)
     }
 
+    #[wasm_bindgen(js_name=getOwnerId)]
+    pub fn get_owner_id(&self) -> IdentifierWrapper {
+        self.0.owner_id().to_owned().into()
+    }
+
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u8 {
         self.0.state_transition_type() as u8
     }
 
-    #[wasm_bindgen(getter, js_name=getProTxHash)]
-    pub fn pro_tx_hash(&self) -> IdentifierWrapper {
-        self.get_pro_tx_hash()
-    }
-
-    #[wasm_bindgen(js_name=getIdentityId)]
+    #[wasm_bindgen(js_name=getProTxHash)]
     pub fn get_pro_tx_hash(&self) -> IdentifierWrapper {
         self.0.pro_tx_hash().into()
     }
 
-    #[wasm_bindgen(js_name=setIdentityId)]
+    #[wasm_bindgen(js_name=setProTxHash)]
     pub fn set_pro_tx_hash(&mut self, pro_tx_hash: &IdentifierWrapper) {
         self.0.set_pro_tx_hash(pro_tx_hash.into());
     }
+
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
         let opts: self::to_object::ToObjectOptions = if options.is_object() {
@@ -221,39 +222,59 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(js_name=getContestedDocumentResourceVotePoll)]
     pub fn contested_document_resource_vote_poll(&self) -> Option<Object> {
-      match self.0.vote() {
-        Vote::ResourceVote(vote) => match vote.vote_poll() {
-          VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
-            let js_object = Object::new();
+        match self.0.vote() {
+            Vote::ResourceVote(vote) => match vote.vote_poll() {
+                VotePoll::ContestedDocumentResourceVotePoll(
+                    contested_document_resource_vote_poll,
+                ) => {
+                    let js_object = Object::new();
 
-            let contract_id = IdentifierWrapper::from(contested_document_resource_vote_poll.contract_id.clone());
+                    let contract_id = IdentifierWrapper::from(
+                        contested_document_resource_vote_poll.contract_id.clone(),
+                    );
 
-            Reflect::set(&js_object, &"contractId".into(), &contract_id.into()).unwrap();
-            Reflect::set(&js_object, &"documentTypeName".into(), &contested_document_resource_vote_poll.document_type_name.clone().into()).unwrap();
-            Reflect::set(&js_object, &"indexName".into(), &contested_document_resource_vote_poll.index_name.clone().into()).unwrap();
+                    Reflect::set(&js_object, &"contractId".into(), &contract_id.into()).unwrap();
+                    Reflect::set(
+                        &js_object,
+                        &"documentTypeName".into(),
+                        &contested_document_resource_vote_poll
+                            .document_type_name
+                            .clone()
+                            .into(),
+                    )
+                    .unwrap();
+                    Reflect::set(
+                        &js_object,
+                        &"indexName".into(),
+                        &contested_document_resource_vote_poll
+                            .index_name
+                            .clone()
+                            .into(),
+                    )
+                    .unwrap();
 
-            let config = bincode::config::standard()
-              .with_big_endian()
-              .with_no_limit();
+                    let config = bincode::config::standard()
+                        .with_big_endian()
+                        .with_no_limit();
 
-            let serialized_index_values = contested_document_resource_vote_poll
-              .index_values
-              .iter()
-              .map(|value| {
-                JsValue::from(Buffer::from_bytes_owned(
-                  bincode::encode_to_vec(value, config)
-                    .expect("expected to encode value in path")
-                ))
-              });
+                    let serialized_index_values = contested_document_resource_vote_poll
+                        .index_values
+                        .iter()
+                        .map(|value| {
+                            JsValue::from(Buffer::from_bytes_owned(
+                                bincode::encode_to_vec(value, config)
+                                    .expect("expected to encode value in path"),
+                            ))
+                        });
 
-            let js_array = Array::from_iter(serialized_index_values);
+                    let js_array = Array::from_iter(serialized_index_values);
 
-            Reflect::set(&js_object, &"indexValues".into(), &js_array.into()).unwrap();
+                    Reflect::set(&js_object, &"indexValues".into(), &js_array.into()).unwrap();
 
-            Some(js_object)
-          }
+                    Some(js_object)
+                }
+            },
         }
-      }
     }
 
     #[wasm_bindgen(js_name=signByPrivateKey)]
