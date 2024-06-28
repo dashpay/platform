@@ -79,13 +79,16 @@ impl<C> Platform<C> {
 
             let platform_version = PlatformVersion::get(current_block_protocol_version)?;
             let mut cached_fee_version = self.drive.cache.cached_fee_version.write();
+            // If cached_fee_version is non-empty
             if let Some((_, &last_fee_version)) = cached_fee_version.iter().last() {
+                // Insert the new (epoch_index, fee_version) only if the new fee_version is different from the last_fee_version.
                 if *last_fee_version != platform_version.fee_version {
                     cached_fee_version.insert(
                         epoch_info.current_epoch_index(),
                         &platform_version.fee_version,
                     );
                 }
+            // In case of empty cached_fee_version, insert the new (epoch_index, fee_version)
             } else {
                 cached_fee_version.insert(
                     epoch_info.current_epoch_index(),
