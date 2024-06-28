@@ -141,13 +141,14 @@ async fn contested_resources_start_at_value() {
 /// ## Preconditions
 ///
 /// 1. At least 3 contested resources (eg. different DPNS names) exist
-// TODO: fails due to PLAN-656, not tested enough so it can be faulty
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     feature = "network-testing",
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
-async fn contested_resources_limit() {
+#[allow(non_snake_case)]
+async fn contested_resources_limit_PLAN_656() {
+    // TODO: fails due to PLAN-656, not tested enough so it can be faulty
     setup_logs();
 
     let cfg = Config::new();
@@ -244,7 +245,7 @@ async fn contested_resources_fields() {
         TestCase {
             name: "unmodified base query is Ok",
             query_mut_fn: |_q| {},
-            expect: Ok("aaa"),
+            expect: Ok("ContestedResources([Value(Text("),
         },
         TestCase {
             name: "index value empty string is Ok",
@@ -273,7 +274,7 @@ async fn contested_resources_fields() {
             ),
         },
         TestCase {
-            name: "start_at_value wrong index type returns InvalidArgument PLAN-563",
+            name: "start_at_value wrong index type returns InvalidArgument PLAN-653",
             query_mut_fn: |q| q.start_at_value = Some((Value::Array(vec![]), true)),
             expect: Err(r#"code: InvalidArgument"#),
         },
@@ -295,8 +296,7 @@ async fn contested_resources_fields() {
                     Value::Text("dada".to_string()),
                 ]
             },
-            expect: Err("incorrect index values error: too many start values were provided, since no end index values \
-            were provided, the start index values must be less than the amount of properties in the contested index"),
+            expect: Err("incorrect index values error: too many start index values were provided, since no end index values were provided, the start index values must be less than the amount of properties in the contested index"),
         },
         TestCase {
             name: "end_index_values one value with empty start_index_values returns 'dash'",
@@ -305,7 +305,7 @@ async fn contested_resources_fields() {
                 q.end_index_values = vec![Value::Text("dada".to_string())];
             },
             expect:Ok(r#"ContestedResources([Value(Text("dash"))])"#),
-        }, 
+        },
         TestCase {
             name: "end_index_values two values (1 nx) with empty start_index_values returns error",
             query_mut_fn: |q| {
@@ -329,7 +329,7 @@ async fn contested_resources_fields() {
                 q.end_index_values = vec![Value::Text("zzz non existing".to_string())];
             },
             expect:Ok(r#"ContestedResources([])"#),
-        }, 
+        },
         TestCase {
             // fails due to PLAN-662
             name: "too many items in start_index_values returns error",
@@ -340,28 +340,27 @@ async fn contested_resources_fields() {
                     Value::Text("eee".to_string()),
                 ]
             },
-            expect: Err("incorrect index values error: too many start values were provided, since no end index values \
-            were provided, the start index values must be less than the amount of properties in the contested index"),
+            expect: Err("incorrect index values error: too many start index values were provided, since no end index values were provided, the start index values must be less than the amount of properties in the contested index"),
         },
         TestCase {
-            name: "Non existing end_index_values starting with zzz returns all previous values PLAN-667",
+            name: "Both start_ and end_index_values returns error",
             query_mut_fn: |q| {
                 q.end_index_values = vec![Value::Text("zzz non existing".to_string())]
             },
-            expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+            expect: Err("incorrect index values error: too many end index values were provided"),
         },
         TestCase {
-            name: "Non existing end_index_values starting with aaa returns nothing PLAN-667",
+            name: "Non-existing end_index_values returns error",
             query_mut_fn: |q| {
-                q.end_index_values = vec![Value::Text("aaa non existing".to_string())]
+                q.start_index_values = vec![];
+                q.end_index_values = vec![Value::Text("zzz non existing".to_string())]
             },
-            expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+            expect:Ok("ContestedResources([])"),
         },
         TestCase {
-            // fails due to PLAN-663
-            name: "wrong type of end_index_values should return InvalidArgument PLAN-663 PLAN-667",
+            name: "wrong type of end_index_values should return InvalidArgument",
             query_mut_fn: |q| q.end_index_values = vec![Value::Array(vec![0.into(), 1.into()])],
-            expect: Err(r#"code: InvalidArgument a"#),
+            expect: Err("incorrect index values error: too many end index values were provided"),
         },
         TestCase {
             name: "limit 0 returns InvalidArgument",
@@ -373,6 +372,17 @@ async fn contested_resources_fields() {
             query_mut_fn: |q| q.limit = Some(std::u16::MAX),
             expect: Err(r#"code: InvalidArgument"#),
         },
+        TestCase{
+            name: "exact match query returns one object PLAN-656",
+            query_mut_fn: |q| {
+                q.start_index_values = vec![Value::Text("dash".to_string())];
+                q.start_at_value = Some((Value::Text("dada".to_string()), true));
+                q.limit = Some(1);
+            },
+            expect: Ok(r#"ContestedResources([Value(Text("dada"))])"#),
+
+        }
+        // start index + start at + limit 1
     ];
 
     let cfg = Config::new();

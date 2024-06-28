@@ -3,7 +3,9 @@
 use crate::fetch::{common::setup_logs, config::Config};
 use dash_sdk::platform::FetchMany;
 use dpp::{
-    dashcore::ProTxHash, identifier::Identifier, voting::votes::resource_vote::ResourceVote,
+    dashcore::{hashes::Hash, ProTxHash},
+    identifier::Identifier,
+    voting::votes::resource_vote::ResourceVote,
 };
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 
@@ -41,9 +43,38 @@ async fn contested_resource_identity_votes_not_found() {
 /// ## Preconditions
 ///
 /// 1. At least one vote exists for the given masternode identity (protx hash).
+///
+/// ## Setup process
+///
+/// In order to setup this test, you need to:
+///
+/// 0. Ensure you have at least 1 contested DPNS name `dada` in the system.
+///
+/// 1. Grep log output of `yarn setup` to find `ProRegTx transaction ID` and `Owner Private Key`.
+/// Use `ProRegTx transaction ID` as `protx_hex` variable below.
+///
+/// 2. Load masternode identity into [rs-platform-explorer](https://github.com/dashpay/rs-platform-explorer/):
+///
+///  * ensure `.env` file contains correct configuration
+///  * start tui with `cargo run`
+///  * select `w - wallet`
+///  * ensure a wallet with positive balance is loaded; if not - load it (getting a wallet is out of scope of this document)
+///  * select `p - Load Evonode Identity`.
+///  * enter `ProRegTx transaction ID`  and `Owner Private Key` from step 1.
+///  * top up the identity balance using `t - Identity top up` option (1 DASH will be OK).
+///  * exit Wallet screen using `q - Back to Main`
+///
+/// 3. Vote for some contested resource using the masternode identity:
+///
+///  * select `csnq`:  `c - Contracts` -> `s - Fetch system contract` -> `n - Fetch DPNS contract` -> `q - Back to Contracts `
+///  * press ENTER to enter the fetched contract, then select `domain` -> `c - Query Contested Resources`
+///  * Select `string dada`, use `v - Vote`, select some identity.
+///
+/// Now, vote should be casted and you can run this test.
+///   
 #[cfg_attr(
     feature = "network-testing",
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see docs of contested_resource_identity_votes_ok()"
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn contested_resource_identity_votes_ok() {
@@ -56,13 +87,16 @@ async fn contested_resource_identity_votes_ok() {
 
     // TODO: Fetch proTxHash from the network instead of hardcoding; it's not so trivial as it must support our mocking
     // mechanisms
-    let protx_hex = "7624E7D0D7C8837D4D02A19700F4116091A8AD145352420193DE8828F6D00BBF";
-    let protx = ProTxHash::from_hex(protx_hex).expect("ProTxHash from hex");
+    let protx_hex = "53fe73c78179e69a2e9dbe6c04ca0b6d4da596e5e8df0b5dc41a121bf5bda5a3";
+    let protx = ProTxHash::from_slice(&hex::decode(protx_hex).expect("ProTxHash from hex"))
+        .expect("ProTxHash from slice");
 
     // When I query for votes given by this identity
     let votes = ResourceVote::fetch_many(&sdk, protx)
         .await
         .expect("fetch votes for identity");
+
+    tracing::debug!(?protx, ?votes, "votes of masternode");
 
     // Then I get some votes
     assert!(!votes.is_empty(), "votes expected for this query");

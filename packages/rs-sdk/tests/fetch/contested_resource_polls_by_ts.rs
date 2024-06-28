@@ -52,8 +52,8 @@ async fn vote_polls_by_ts_ok() {
     feature = "network-testing",
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
-// fails due to PLAN-661
-async fn vote_polls_by_ts_order() {
+#[allow(non_snake_case)]
+async fn vote_polls_by_ts_order_PLAN_661() {
     setup_logs();
 
     let cfg = Config::new();

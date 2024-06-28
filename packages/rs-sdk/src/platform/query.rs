@@ -520,3 +520,27 @@ impl Query<GetContestedResourceIdentityVotesRequest> for VoteQuery {
         .into())
     }
 }
+
+impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
+    fn query(self, prove: bool) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        use proto::get_contested_resource_identity_votes_request::{
+            get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo, Version,
+        };
+
+        Ok(match self.query.query(prove)?.version {
+            None => return Err(Error::Protocol(dpp::ProtocolError::NoProtocolVersionError)),
+            Some(Version::V0(v0)) => GetContestedResourceIdentityVotesRequestV0 {
+                limit: self.limit,
+                start_at_vote_poll_id_info: self.start_info.map(|v| StartAtVotePollIdInfo {
+                    start_at_poll_identifier: v.start_key.to_vec(),
+                    start_poll_identifier_included: v.start_included,
+                }),
+                ..v0
+            },
+        }
+        .into())
+    }
+}

@@ -40,7 +40,7 @@ async fn contested_resource_vote_states_not_found() {
         start_at: None,
         vote_poll: ContestedDocumentResourceVotePoll {
             index_name: "parentNameAndLabel".to_string(),
-            index_values: vec![label.into()],
+            index_values: vec!["nx".into(), label.into()],
             document_type_name: cfg.existing_document_type_name,
             contract_id: data_contract_id,
         },
@@ -188,7 +188,8 @@ async fn contested_resource_vote_states_ok() {
 /// 1. There must be at least 3 condenders for name "dash" and value "dada".
 ///
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn contested_resource_vote_states_with_limit() {
+#[allow(non_snake_case)]
+async fn contested_resource_vote_states_with_limit_PLAN_674() {
     setup_logs();
 
     let cfg = Config::new();
@@ -222,10 +223,12 @@ async fn contested_resource_vote_states_with_limit() {
     let all_contenders = ContenderWithSerializedDocument::fetch_many(&sdk, query_all.clone())
         .await
         .expect("fetch many contenders")
-        .contenders
-        .len();
+        .contenders;
+
+    tracing::debug!(?all_contenders, "All contenders");
+
     assert!(
-        all_contenders > limit as usize,
+        all_contenders.len() > limit as usize,
         "we need more than {} contenders for this test",
         limit
     );
@@ -236,11 +239,11 @@ async fn contested_resource_vote_states_with_limit() {
         ..query_all
     };
 
-    let contenders = ContenderWithSerializedDocument::fetch_many(&sdk, query)
+    let contenders = ContenderWithSerializedDocument::fetch_many(&sdk, query.clone())
         .await
         .expect("fetch many contenders");
     // Then I get no more than the limit of contenders
-    tracing::debug!(contenders=?contenders, "Contenders");
+    tracing::debug!(contenders=?contenders, ?query, "Contenders");
 
     assert_eq!(
         contenders.contenders.len(),
