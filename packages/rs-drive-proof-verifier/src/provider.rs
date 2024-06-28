@@ -1,5 +1,6 @@
 use crate::error::ContextProviderError;
 use dpp::prelude::{DataContract, Identifier};
+use drive::{error::proof::ProofError, query::ContractLookupFn};
 #[cfg(feature = "mocks")]
 use hex::ToHex;
 use std::{io::ErrorKind, ops::Deref, sync::Arc};
@@ -92,6 +93,27 @@ where
     ) -> Result<[u8; 48], ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+}
+
+/// A trait that provides a function that can be used to look up a [DataContract] by its [Identifier].
+///
+/// This trait is automatically implemented for any type that implements [ContextProvider].
+/// It is used internally by the Drive proof verification functions to look up data contracts.
+pub trait DataContractProvider: Send + Sync {
+    /// Returns [ContractLookupFn] function that can be used to look up a [DataContract] by its [Identifier].
+    fn as_contract_lookup_fn(&self) -> Box<ContractLookupFn>;
+}
+impl<C: ContextProvider + ?Sized> DataContractProvider for C {
+    /// Returns function that uses [ContextProvider] to provide a [DataContract] to Drive proof verification functions
+    fn as_contract_lookup_fn(&self) -> Box<ContractLookupFn> {
+        let f = |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
+            self.get_data_contract(id).map_err(|e| {
+                drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
+            })
+        };
+
+        Box::new(f)
     }
 }
 

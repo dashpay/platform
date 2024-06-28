@@ -1,4 +1,5 @@
 use crate::from_request::TryFromRequest;
+use crate::provider::DataContractProvider;
 use crate::{types, types::*, ContextProvider, Error};
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
@@ -46,11 +47,10 @@ use drive::query::contested_resource_votes_given_by_identity_query::ContestedRes
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
-use drive::query::{ContractLookupFn, DriveQuery, VotePollsByEndDateDriveQuery};
+use drive::query::{DriveQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
-use std::sync::Arc;
 
 use crate::verify::verify_tenderdash_proof;
 
@@ -861,7 +861,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             epoch: (metadata.epoch as u16).try_into()?,
         };
 
-        let contracts_provider_fn = known_contracts_provider_fn(provider);
+        let contracts_provider_fn = provider.as_contract_lookup_fn();
 
         let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
@@ -1271,8 +1271,8 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         // Decode request to get drive query
         let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
-        let resolved_request = drive_query
-            .resolve_with_known_contracts_provider(&known_contracts_provider_fn(provider))?;
+        let resolved_request =
+            drive_query.resolve_with_known_contracts_provider(&provider.as_contract_lookup_fn())?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -1314,7 +1314,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
 
         // Resolve request to get verify_*_proof
-        let contracts_provider = known_contracts_provider_fn(provider);
+        let contracts_provider = provider.as_contract_lookup_fn();
         let resolved_request =
             drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
 
@@ -1365,7 +1365,7 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
-        let contracts_provider = known_contracts_provider_fn(provider);
+        let contracts_provider = provider.as_contract_lookup_fn();
 
         let resolved_request =
             drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
@@ -1414,7 +1414,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let contract_provider_fn = known_contracts_provider_fn(provider);
+        let contract_provider_fn = provider.as_contract_lookup_fn();
         let (root_hash, voters) = drive_query
             .verify_identity_votes_given_proof::<Vec<_>>(
                 &proof.grovedb_proof,
@@ -1585,19 +1585,6 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
     };
 
     Ok(i)
-}
-
-/// Returns function that uses [ContextProvider] to provide a [DataContract] to Drive proof verification functions
-fn known_contracts_provider_fn<'a, P: ContextProvider + ?Sized + 'a>(
-    provider: &'a P,
-) -> Box<ContractLookupFn> {
-    let f = |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
-        provider.get_data_contract(id).map_err(|e| {
-            drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
-        })
-    };
-
-    Box::new(f)
 }
 
 /// Determine number of non-None elements

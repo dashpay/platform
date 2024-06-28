@@ -10,9 +10,9 @@ pub mod types;
 mod verify;
 pub use error::Error;
 pub use proof::{FromProof, Length};
-pub use provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use provider::MockContextProvider;
+pub use provider::{ContextProvider, DataContractProvider};
 pub mod from_request;
 
 // Needed for #[derive(PlatformSerialize, PlatformDeserialize)]
