@@ -11,16 +11,18 @@ use dpp::identifier::Identifier;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
 
 impl ContestedResourceVotesGivenByIdentityQuery {
     #[inline(always)]
-    pub(super) fn verify_identity_votes_given_proof_v0(
+    pub(super) fn verify_identity_votes_given_proof_v0<I>(
         &self,
         proof: &[u8],
         contract_lookup_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, BTreeMap<Identifier, ResourceVote>), Error> {
+    ) -> Result<(RootHash, I), Error>
+    where
+        I: FromIterator<(Identifier, ResourceVote)>,
+    {
         let path_query = self.construct_path_query()?;
         let (root_hash, proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
 
@@ -58,7 +60,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                     vote_storage_form.resolve_with_contract(&data_contract, platform_version)?;
                 Ok((vote_id, resource_vote))
             })
-            .collect::<Result<BTreeMap<Identifier, ResourceVote>, Error>>()?;
+            .collect::<Result<I, Error>>()?;
 
         Ok((root_hash, voters))
     }

@@ -15,7 +15,7 @@ impl VotePollsByEndDateDriveQuery {
     /// Verifies the serialized proof for a vote poll based on the end date.
     ///
     /// This function analyzes a byte slice which contains the serialized proof, performs verification, and returns
-    /// the results, which include the root hash of the proof and a structured map of the contests.
+    /// the results, which include the root hash of the proof and a structured collection of the contests.
     ///
     /// # Arguments
     ///
@@ -25,7 +25,10 @@ impl VotePollsByEndDateDriveQuery {
     /// # Returns
     ///
     /// A `Result` which is either:
-    /// * `Ok((RootHash, BTreeMap<TimestampMillis, Vec<ContestedDocumentResourceVotePoll>))` if the proof is verified successfully.
+    /// * `Ok((RootHash, I))` if the proof is verified successfully, where `I` is a collection of items with
+    ///   keys as timestamps (in milliseconds since the epoch) and values as vectors of `ContestedDocumentResourceVotePoll`
+    ///   objects, representing voting polls ending at those times. The collection type is flexible and determined by the
+    ///   generic parameter `I`.
     /// * `Err(Error)` if there is a failure in proof verification or during the deserialization of documents.
     ///
     /// # Errors
@@ -34,11 +37,14 @@ impl VotePollsByEndDateDriveQuery {
     /// 1. Proof verification fails due to invalid data or signature issues.
     /// 2. Deserialization error occurs due to malformed data or incompatible types in the document(s).
     ///
-    pub fn verify_vote_polls_by_end_date_proof(
+    pub fn verify_vote_polls_by_end_date_proof<I>(
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, BTreeMap<TimestampMillis, Vec<VotePoll>>), Error> {
+    ) -> Result<(RootHash, I), Error>
+    where
+        I: FromIterator<(TimestampMillis, Vec<VotePoll>)>,
+    {
         match platform_version
             .drive
             .methods
