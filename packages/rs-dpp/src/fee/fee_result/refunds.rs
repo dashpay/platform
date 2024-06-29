@@ -182,13 +182,11 @@ impl IntoIterator for FeeRefunds {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use platform_version::version::PlatformVersion;
 
-    lazy_static! {
-        static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
-            BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
-    }
+    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, &PlatformVersion::first().fee_version)]));
 
     mod from_storage_removal {
         use super::*;

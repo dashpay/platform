@@ -1576,6 +1576,7 @@ dependencies = [
  "log",
  "nohash-hasher",
  "num_enum",
+ "once_cell",
  "platform-serialization",
  "platform-serialization-derive",
  "platform-value",
