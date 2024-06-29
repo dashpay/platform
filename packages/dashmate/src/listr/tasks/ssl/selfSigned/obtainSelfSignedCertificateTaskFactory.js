@@ -7,12 +7,12 @@ import { Listr } from 'listr2';
  * @param {saveCertificateTask} saveCertificateTask
  * @return {obtainSelfSignedCertificateTask}
  */
-export default function obtainSelfSignedCertificateTaskFactory(
+export default function obtainSelfSignedCertificateTaskFactory({
   generateKeyPair,
   generateCsr,
   createSelfSignedCertificate,
   saveCertificateTask,
-) {
+}) {
   /**
    * @typedef {obtainSelfSignedCertificateTask}
    * @param {Config} config

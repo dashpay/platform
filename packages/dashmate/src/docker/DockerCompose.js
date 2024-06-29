@@ -63,7 +63,7 @@ export default class DockerCompose {
    * @param {generateEnvs} generateEnvs
    * @param {getServiceList} getServiceList
    */
-  constructor(docker, startedContainers, homeDir, generateEnvs, getServiceList) {
+  constructor({ docker, startedContainers, homeDir, generateEnvs, getServiceList}) {
     this.#docker = docker;
     this.#startedContainers = startedContainers;
     this.#homeDir = homeDir;

@@ -7,17 +7,15 @@ import { Observable } from 'rxjs';
  * @param {startCore} startCore
  * @param {createNewAddress} createNewAddress
  * @param {generateToAddress} generateToAddress
- * @param {generateBlocks} generateBlocks
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
  * @return {generateToAddressTask}
  */
-export default function generateToAddressTaskFactory(
+export default function generateToAddressTaskFactory({
   startCore,
   createNewAddress,
   generateToAddress,
-  generateBlocks,
   waitForBalanceToConfirm,
-) {
+}) {
   /**
    * @typedef {generateToAddressTask}
    * @param {Config} config

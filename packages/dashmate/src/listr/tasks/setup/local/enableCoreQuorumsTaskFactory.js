@@ -10,7 +10,7 @@ import waitForMasternodeProbes from '../../../../core/quorum/waitForMasternodePr
  * @param {generateBlocks} generateBlocks
  * @return {enableCoreQuorumsTask}
  */
-export default function enableCoreQuorumsTaskFactory(generateBlocks) {
+export default function enableCoreQuorumsTaskFactory({ generateBlocks }) {
   /**
    * @typedef {enableCoreQuorumsTask}
    * @return {Listr}

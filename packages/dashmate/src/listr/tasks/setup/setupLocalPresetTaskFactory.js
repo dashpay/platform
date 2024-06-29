@@ -15,7 +15,7 @@ import generateRandomString from '../../../util/generateRandomString.js';
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
  */
-export default function setupLocalPresetTaskFactory(
+export default function setupLocalPresetTaskFactory({
   configFile,
   configureCoreTask,
   obtainSelfSignedCertificateTask,
@@ -23,7 +23,7 @@ export default function setupLocalPresetTaskFactory(
   resolveDockerHostIp,
   generateHDPrivateKeys,
   homeDir,
-) {
+}) {
   /**
    * @typedef {setupLocalPresetTask}
    * @return {Listr}

@@ -6,7 +6,7 @@ import fs from 'fs';
  * @param {HomeDir} homeDir
  * @return {saveCertificateTask}
  */
-export default function saveCertificateTaskFactory(homeDir) {
+export default function saveCertificateTaskFactory({ homeDir }) {
   /**
    * @typedef {function} saveCertificateTask
    * @param {Config} config

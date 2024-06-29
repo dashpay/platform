@@ -44,11 +44,11 @@ export default class SetupCommand extends BaseCommand {
    * @param {DefaultConfigs} defaultConfigs
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    {
+  async runWithDependencies({
+    args: {
       preset,
     },
-    {
+    flags: {
       'node-count': nodeCount,
       'debug-logs': debugLogs,
       'miner-interval': minerInterval,
@@ -59,7 +59,7 @@ export default class SetupCommand extends BaseCommand {
     setupRegularPresetTask,
     dockerCompose,
     defaultConfigs,
-  ) {
+  }) {
     if (nodeCount !== null && (nodeCount < 3)) {
       throw new Error('node-count flag should be not less than 3');
     }

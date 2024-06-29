@@ -1,6 +1,6 @@
 import { Command, Flags, settings } from '@oclif/core';
 
-import { asValue } from 'awilix';
+import { asValue, InjectionMode } from 'awilix';
 
 import graceful from 'node-graceful';
 
@@ -86,11 +86,14 @@ export default class BaseCommand extends Command {
       throw new Error('`run` or `runWithDependencies` must be implemented');
     }
 
-    const params = getFunctionParams(this.runWithDependencies, 2);
+    // const params = getFunctionParams(this.runWithDependencies, 2);
 
-    const dependencies = params.map((paramName) => this.container.resolve(paramName));
+    // const dependencies = params.map((paramName) => this.container.resolve(paramName));
 
-    return this.runWithDependencies(this.parsedArgs, this.parsedFlags, ...dependencies);
+    return this.container.build(this.runWithDependencies, {
+      injectionMode: InjectionMode.PROXY,
+      injector: () => ({ args: this.parsedArgs, flags: this.parsedFlags }),
+    });
   }
 
   async finally(err) {

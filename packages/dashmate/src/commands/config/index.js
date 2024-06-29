@@ -22,13 +22,12 @@ export default class ConfigCommand extends ConfigBaseCommand {
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       format,
     },
     config,
-  ) {
+  }) {
     let configOptions;
     if (format === OUTPUT_FORMATS.JSON) {
       configOptions = JSON.stringify(config.getOptions(), null, 2);

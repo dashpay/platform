@@ -9,7 +9,7 @@ import { DASHMATE_HELPER_DOCKER_IMAGE } from '../constants.js';
  * @param {getConfigProfiles} getConfigProfiles
  * @return {generateEnvs}
  */
-export default function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
+export default function generateEnvsFactory({ configFile, homeDir, getConfigProfiles }) {
   /**
    * @typedef {function} generateEnvs
    * @param {Config} config

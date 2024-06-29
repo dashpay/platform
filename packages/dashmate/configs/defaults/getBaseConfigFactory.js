@@ -40,7 +40,7 @@ const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'pack
  * @param {HomeDir} homeDir
  * @returns {getBaseConfig}
  */
-export default function getBaseConfigFactory(homeDir) {
+export default function getBaseConfigFactory({ homeDir }) {
   const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
   const dockerImageVersion = `${semver.major(version)}.${semver.minor(version)}${prereleaseTag}`;
 

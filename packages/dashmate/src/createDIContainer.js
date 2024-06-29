@@ -128,11 +128,11 @@ export default async function createDIContainer(options = {}) {
       HomeDir.createWithPathOrDefault(options.DASHMATE_HOME_DIR)
     )).singleton(),
     getServiceList: asFunction(getServiceListFactory).singleton(),
-    configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
-    getBaseConfig: asFunction(getBaseConfigFactory).singleton(),
-    getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
-    getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),
-    getMainnetConfig: asFunction(getMainnetConfigFactory).singleton(),
+    configFileRepository: asClass(ConfigFileJsonRepository).singleton().proxy(),
+    getBaseConfig: asFunction(getBaseConfigFactory).singleton().proxy(),
+    getLocalConfig: asFunction(getLocalConfigFactory).singleton().proxy(),
+    getTestnetConfig: asFunction(getTestnetConfigFactory).singleton().proxy(),
+    getMainnetConfig: asFunction(getMainnetConfigFactory).singleton().proxy(),
     defaultConfigs: asFunction((
       getBaseConfig,
       getLocalConfig,
@@ -144,12 +144,12 @@ export default async function createDIContainer(options = {}) {
       getTestnetConfig,
       getMainnetConfig,
     ])).singleton(),
-    createConfigFile: asFunction(createConfigFileFactory).singleton(),
-    getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton(),
+    createConfigFile: asFunction(createConfigFileFactory).singleton().proxy(),
+    getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton().proxy(),
     migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
-    getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
-    generateEnvs: asFunction(generateEnvsFactory).singleton(),
+    getConnectionHost: asFunction(getConnectionHostFactory).singleton().proxy(),
+    generateEnvs: asFunction(generateEnvsFactory).singleton().proxy(),
     getConfigProfiles: asFunction(getConfigProfilesFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
@@ -175,7 +175,7 @@ export default async function createDIContainer(options = {}) {
   container.register({
     renderTemplate: asFunction(renderTemplateFactory).singleton(),
     renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
-    writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
+    writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton().proxy(),
     writeConfigTemplates: asFunction(writeConfigTemplatesFactory).singleton(),
   });
 
@@ -191,7 +191,7 @@ export default async function createDIContainer(options = {}) {
     getCertificate: asValue(getCertificate),
     listCertificates: asValue(listCertificates),
     createSelfSignedCertificate: asValue(createSelfSignedCertificate),
-    verificationServer: asClass(VerificationServer).singleton(),
+    verificationServer: asClass(VerificationServer).singleton().proxy(),
   });
 
   /**
@@ -210,7 +210,7 @@ export default async function createDIContainer(options = {}) {
     docker: asFunction(() => (
       new Docker(dockerOptions)
     )).singleton(),
-    dockerCompose: asClass(DockerCompose).singleton(),
+    dockerCompose: asClass(DockerCompose).singleton().proxy(),
     startedContainers: asFunction(() => (
       new StartedContainers()
     )).singleton(),
@@ -227,7 +227,7 @@ export default async function createDIContainer(options = {}) {
     waitForCoreStart: asValue(waitForCoreStart),
     waitForCoreSync: asValue(waitForCoreSync),
     waitForMasternodesSync: asValue(waitForMasternodesSync),
-    startCore: asFunction(startCoreFactory).singleton(),
+    startCore: asFunction(startCoreFactory).singleton().proxy(),
     waitForBlocks: asValue(waitForBlocks),
     waitForConfirmations: asValue(waitForConfirmations),
     generateBlsKeys: asValue(generateBlsKeys),
@@ -269,22 +269,24 @@ export default async function createDIContainer(options = {}) {
   container.register({
     buildServicesTask: asFunction(buildServicesTaskFactory).singleton(),
     startGroupNodesTask: asFunction(startGroupNodesTaskFactory).singleton(),
-    generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
-    registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
+    generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton().proxy(),
+    registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton().proxy(),
     startNodeTask: asFunction(startNodeTaskFactory).singleton(),
     stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
     restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),
     resetNodeTask: asFunction(resetNodeTaskFactory).singleton(),
-    setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton(),
-    setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
-    configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
+    setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton().proxy(),
+    setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton().proxy(),
+    configureCoreTask: asFunction(configureCoreTaskFactory).singleton().proxy(),
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
-    enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
+    enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton().proxy(),
     registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
-    obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
-    obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
-    saveCertificateTask: asFunction(saveCertificateTaskFactory),
+    obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory)
+      .singleton().proxy(),
+    obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory)
+      .singleton().proxy(),
+    saveCertificateTask: asFunction(saveCertificateTaskFactory).proxy(),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
     getCoreScope: asFunction(getCoreScopeFactory).singleton(),
     getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),

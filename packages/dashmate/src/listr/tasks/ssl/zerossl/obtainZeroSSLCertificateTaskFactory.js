@@ -12,24 +12,20 @@ import wait from '../../../../util/wait.js';
  * @param {verifyDomain} verifyDomain
  * @param {downloadCertificate} downloadCertificate
  * @param {getCertificate} getCertificate
- * @param {listCertificates} listCertificates
- * @param {saveCertificateTask} saveCertificateTask
  * @param {VerificationServer} verificationServer
  * @param {HomeDir} homeDir
  * @return {obtainZeroSSLCertificateTask}
  */
-export default function obtainZeroSSLCertificateTaskFactory(
+export default function obtainZeroSSLCertificateTaskFactory({
   generateCsr,
   generateKeyPair,
   createZeroSSLCertificate,
   verifyDomain,
   downloadCertificate,
   getCertificate,
-  listCertificates,
-  saveCertificateTask,
   verificationServer,
   homeDir,
-) {
+}) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
    * @param {Config} config

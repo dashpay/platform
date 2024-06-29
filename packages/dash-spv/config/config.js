@@ -1,4 +1,3 @@
-const DashUtil = require('@dashevo/dash-util');
 const utils = require('../lib/utils');
 
 module.exports = {
@@ -7,7 +6,7 @@ module.exports = {
     return utils.normalizeHeader({
       version: 1,
       previousblockhash: '0000000000000000000000000000000000000000000000000000000000000000',
-      merkleroot: DashUtil.nullHash.toString('hex'),
+      merkleroot: '0000000000000000000000000000000000000000000000000000000000000000',
       time: 1504510163,
       bits: '1fffffff',
       nonce: 2307,

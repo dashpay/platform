@@ -1,6 +1,5 @@
-async function main() {
-  const { execute } = await import('@oclif/core');
-  await execute({ dir: '/Users/ivanshumkov/Projects/dashpay/platform/packages/dashmate/', development: true });
-}
+#!/usr/bin/env node
 
-await main();
+import { run } from '../dist/index.js';
+
+await run();

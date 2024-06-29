@@ -4,7 +4,7 @@ import * as esbuild from 'esbuild';
 import fileloc from 'esbuild-plugin-fileloc';
 
 await esbuild.build({
-  entryPoints: ['./bin/run.js', './src/commands/index.js'],
+  entryPoints: ['./src/index.js', 'src/help.js'],
   bundle: true,
   outdir: './dist',
   platform: 'node',
@@ -12,8 +12,10 @@ await esbuild.build({
   format: 'esm',
   inject: ['./scripts/build/shim.js'],
   plugins: [fileloc.filelocPlugin()],
+  // external: ['ejs'],
+  treeShaking: true,
   loader: {
-    '.node': 'file',
-    // '.proto': 'file',
+    '.node': 'copy',
   },
+  mainFields: ['main'],
 });
