@@ -71,12 +71,23 @@ export default function configureNodeTaskFactory(createIpAndPortsForm) {
 
             let form;
             if (ctx.initialIpForm) {
+              // Using for testing
               form = ctx.initialIpForm;
             } else {
+              let initialIp = ctx.nodeType === NODE_TYPE_MASTERNODE ? '' : undefined;
+              if (ctx.importedExternalIp) {
+                initialIp = ctx.importedExternalIp;
+              }
+
+              let initialCoreP2PPort = showEmptyPort ? '' : undefined;
+              if (ctx.importedP2pPort) {
+                initialCoreP2PPort = ctx.importedP2pPort;
+              }
+
               form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
                 isHPMN: ctx.isHP,
-                initialIp: ctx.nodeType === NODE_TYPE_MASTERNODE ? '' : undefined,
-                initialCoreP2PPort: showEmptyPort ? '' : undefined,
+                initialIp,
+                initialCoreP2PPort,
                 initialPlatformHTTPPort: showEmptyPort ? '' : undefined,
                 initialPlatformP2PPort: showEmptyPort ? '' : undefined,
               }));

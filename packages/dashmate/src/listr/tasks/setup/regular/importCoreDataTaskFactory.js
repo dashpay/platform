@@ -115,12 +115,28 @@ You current user must have read access to this directory.\n`,
             validate: validateCoreDataDirectoryPathFactory(ctx.config),
           });
 
-          // Read masternode operator private key from dashd.conf
+          // Read configuration from dashd.conf
           const configPath = path.join(coreDataPath, 'dash.conf');
           const configFileContent = fs.readFileSync(configPath, 'utf8');
           const masternodeOperatorPrivateKey = configFileContent.match(/masternodeblsprivkey=(.*)/)[1];
 
-          ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
+          if (masternodeOperatorPrivateKey) {
+            ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
+          }
+
+          const host = configFileContent.match(/bind=(.*)/)[1];
+
+          if (host) {
+            ctx.config.set('core.p2p.host', host);
+          }
+
+          // Store values to fill in the configure node form
+
+          // eslint-disable-next-line prefer-destructuring
+          ctx.importedP2pPort = configFileContent.match(/port=(.*)/)[1];
+
+          // eslint-disable-next-line prefer-destructuring
+          ctx.importedExternalIp = configFileContent.match(/externalip=(.*)/)[1];
 
           // Copy data directory to docker a volume
 
@@ -133,45 +149,41 @@ You current user must have read access to this directory.\n`,
           // Pull image
           await dockerPull('alpine');
 
-          const hostConfig = {
-            AutoRemove: true,
-            Binds: [
-              `${coreDataPath}:/source:ro`,
-            ],
-            Mounts: [
-              {
-                Type: 'volume',
-                Source: volumeName,
-                Target: '/destination',
-              },
-            ],
-          };
-
           // Copy data and set user dash
-          const writableStream = new WritableStream();
-
           const [result] = await docker.run(
             'alpine',
-            ['/bin/sh', '-c', 'cp -a /source/. /destination/ && chown -R 1000:1000 /destination/'],
-            writableStream,
+            [
+              '/bin/sh',
+              '-c',
+              `cd /source && cp -av * /${volumeName}/ && chown -R 1000:1000 /${volumeName}/`,
+            ],
+            task.stdout(),
             {
-              HostConfig: hostConfig,
+              HostConfig: {
+                AutoRemove: true,
+                Binds: [
+                  `${coreDataPath}:/source:ro`,
+                ],
+                Mounts: [
+                  {
+                    Type: 'volume',
+                    Source: volumeName,
+                    Target: `/${volumeName}`,
+                  },
+                ],
+              },
             },
           );
 
-          // TODO: Stream to output
-
-          const output = writableStream.toString();
-
           if (result.StatusCode !== 0) {
-            throw new Error(`Cannot copy data dir: ${output.substring(0, 100)}`);
+            throw new Error('Cannot copy data dir to volume');
           }
 
           await task.prompt({
             type: 'confirm',
-            header: `  You need to stop your existing master before your start a dashmate
+            header: `  You need to stop your existing node before your start a dashmate
     node\n`,
-            message: 'Yes I understand...',
+            message: 'Press any key to continue...',
             default: ' ',
             separator: () => '',
             format: () => '',
