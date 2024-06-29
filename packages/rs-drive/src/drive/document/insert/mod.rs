@@ -72,18 +72,17 @@ use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 
 #[cfg(test)]
 mod tests {
-    use dpp::block::block_info::BlockInfo;
-    use lazy_static::lazy_static;
-    use rand::{random, Rng};
-    use std::borrow::Cow;
-    use std::collections::BTreeMap;
-    use std::option::Option::None;
-
     use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::fee::op::LowLevelDriveOperation;
+    use dpp::block::block_info::BlockInfo;
+    use once_cell::sync::Lazy;
+    use rand::{random, Rng};
+    use std::borrow::Cow;
+    use std::collections::BTreeMap;
+    use std::option::Option::None;
 
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -100,10 +99,8 @@ mod tests {
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
 
-    lazy_static! {
-        static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
-            BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
-    }
+    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, &PlatformVersion::first().fee_version)]));
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {

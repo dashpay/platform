@@ -52,7 +52,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use rand::Rng;
 
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::option::Option::None;
@@ -79,10 +79,8 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
-    lazy_static! {
-        static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
-            BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
-    }
+    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, &PlatformVersion::first().fee_version)]));
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
@@ -908,7 +906,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected to insert a document successfully");
-        
+
         let added_bytes = fee_result.storage_fee
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,

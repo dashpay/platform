@@ -56,7 +56,6 @@ mod update_document_with_serialization_for_contract;
 mod tests {
     use dpp::data_contract::{DataContract, DataContractFactory};
     use grovedb::TransactionArg;
-    use lazy_static::lazy_static;
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::default::Default;
@@ -96,12 +95,11 @@ mod tests {
     use dpp::platform_value;
     use dpp::prelude::CachedEpochIndexFeeVersions;
     use dpp::tests::json_document::json_document_to_document;
+    use once_cell::sync::Lazy;
     use platform_version::version::PlatformVersion;
 
-    lazy_static! {
-        static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
-            BTreeMap::from([(0, &PlatformVersion::first().fee_version)]);
-    }
+    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, &PlatformVersion::first().fee_version)]));
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
