@@ -13,9 +13,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 
 use crate::prelude::CachedEpochIndexFeeVersions;
-use lazy_static::lazy_static;
 use platform_value::Identifier;
-use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;
 use std::collections::BTreeMap;
@@ -184,6 +182,8 @@ impl IntoIterator for FeeRefunds {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lazy_static::lazy_static;
+    use platform_version::version::PlatformVersion;
 
     lazy_static! {
         static ref EPOCH_CHANGE_FEE_VERSION_TEST: CachedEpochIndexFeeVersions =
