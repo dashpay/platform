@@ -94,11 +94,12 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
             header: `  If you run a masternode on the same machine, you can
    import your existing data so you don't need to sync node from scratch.
    You current user must have read access to this directory.`,
-            message: 'Try?',
+            message: 'Import existing data?',
             enabled: 'Yes',
             disabled: 'No',
             initial: true,
           });
+          // TODO: Wording needs to be updated
 
           if (!doImport) {
             task.skip();
@@ -179,6 +180,7 @@ You current user must have read access to this directory.\n`,
             throw new Error('Cannot copy data dir to volume');
           }
 
+          // TODO: Wording needs to be updated
           await task.prompt({
             type: 'confirm',
             header: `  You need to stop your existing node before your start a dashmate
