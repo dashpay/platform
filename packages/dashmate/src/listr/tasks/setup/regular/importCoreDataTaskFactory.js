@@ -25,24 +25,19 @@ function validateCoreDataDirectoryPathFactory(config) {
       return 'path must be absolute';
     }
 
-    // Should contain dashd.conf
+    // Should contain data and dashd.conf
     const configFilePath = path.join(value, 'dash.conf');
-    try {
-      fs.accessSync(configFilePath, fs.constants.R_OK);
-    } catch (e) {
-      return 'directory must contain dash.conf and it must be readable by the current user';
-    }
 
     let dataDirName = 'blocks';
     if (config.get('network') === NETWORK_TESTNET) {
       dataDirName = 'testnet3';
     }
 
-    // Should contain data dir
     try {
+      fs.accessSync(configFilePath, fs.constants.R_OK);
       fs.accessSync(path.join(value, dataDirName), fs.constants.R_OK);
     } catch (e) {
-      return 'directory must contain network data and it must be readable by the current user';
+      return 'directory must be readable and contain blockchain data with dash.conf';
     }
 
     const configFileContent = fs.readFileSync(configFilePath, 'utf8');
@@ -93,7 +88,7 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
             type: 'toggle',
             header: `  If you run a masternode on the same machine, you can
    import your existing data so you don't need to sync node from scratch.
-   You current user must have read access to this directory.`,
+   You current user must have read access to this directory.\n`,
             message: 'Import existing data?',
             enabled: 'Yes',
             disabled: 'No',
@@ -119,13 +114,13 @@ You current user must have read access to this directory.\n`,
           // Read configuration from dashd.conf
           const configPath = path.join(coreDataPath, 'dash.conf');
           const configFileContent = fs.readFileSync(configPath, 'utf8');
-          const masternodeOperatorPrivateKey = configFileContent.match(/masternodeblsprivkey=(.*)/)[1];
+          const masternodeOperatorPrivateKey = configFileContent.match(/^masternodeblsprivkey=([^ \n]+)/m)[1];
 
           if (masternodeOperatorPrivateKey) {
             ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
           }
 
-          const host = configFileContent.match(/bind=(.*)/)[1];
+          const host = configFileContent.match(/^bind=([^ \n]+)/m)[1];
 
           if (host) {
             ctx.config.set('core.p2p.host', host);
@@ -134,10 +129,10 @@ You current user must have read access to this directory.\n`,
           // Store values to fill in the configure node form
 
           // eslint-disable-next-line prefer-destructuring
-          ctx.importedP2pPort = configFileContent.match(/port=(.*)/)[1];
+          ctx.importedP2pPort = configFileContent.match(/^port=([^ \n]+)/m)[1];
 
           // eslint-disable-next-line prefer-destructuring
-          ctx.importedExternalIp = configFileContent.match(/externalip=(.*)/)[1];
+          ctx.importedExternalIp = configFileContent.match(/^externalip=([^ \n]+)/m)[1];
 
           // Copy data directory to docker a volume
 
@@ -145,6 +140,15 @@ You current user must have read access to this directory.\n`,
           const { COMPOSE_PROJECT_NAME: composeProjectName } = generateEnvs(ctx.config);
 
           const volumeName = `${composeProjectName}_core_data`;
+
+          // Check if volume already exists
+          const volumes = await docker.listVolumes();
+          const exists = volumes.Volumes.some((volume) => volume.Name === volumeName);
+
+          if (exists) {
+            throw new Error(`Volume ${volumeName} already exists. Please remove it first.`);
+          }
+
           await docker.createVolume(volumeName);
 
           // Pull image
@@ -156,7 +160,7 @@ You current user must have read access to this directory.\n`,
             [
               '/bin/sh',
               '-c',
-              `cd /source && cp -av * /${volumeName}/ && chown -R 1000:1000 /${volumeName}/`,
+              `mkdir /${volumeName}/.dashcore/ && cd /source && cp -av * /${volumeName}/.dashcore/ && chown -R 1000:1000 /${volumeName}/`,
             ],
             task.stdout(),
             {
