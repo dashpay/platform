@@ -160,7 +160,7 @@ You current user must have read access to this directory.\n`,
             [
               '/bin/sh',
               '-c',
-              `mkdir /${volumeName}/.dashcore/ && cd /source && cp -av * /${volumeName}/.dashcore/ && chown -R 1000:1000 /${volumeName}/`,
+              `mkdir /${volumeName}/.dashcore/ && cd /source && cp -avL * /${volumeName}/.dashcore/ && chown -R 1000:1000 /${volumeName}/`,
             ],
             task.stdout(),
             {
