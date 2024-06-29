@@ -156,13 +156,21 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
           // Pull image
           await dockerPull('alpine');
 
+          const commands = [
+            `mkdir /${volumeName}/.dashcore/`,
+            'cd /source',
+            `cp -avL * /${volumeName}/.dashcore/`,
+            `chown -R 1000:1000 /${volumeName}/`,
+            `rm /${volumeName}/.dashcore/dash.conf`,
+          ];
+
           // Copy data and set user dash
           const [result] = await docker.run(
             'alpine',
             [
               '/bin/sh',
               '-c',
-              `mkdir /${volumeName}/.dashcore/ && cd /source && cp -avL * /${volumeName}/.dashcore/ && chown -R 1000:1000 /${volumeName}/`,
+              commands.join(' && '),
             ],
             task.stdout(),
             {
