@@ -811,7 +811,6 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        // drive.cache
         let added_bytes = fee_result.storage_fee
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
@@ -848,7 +847,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(*removed_credits, 41881536);
-        // drive.cache
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
@@ -910,8 +908,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected to insert a document successfully");
-
-        // drive.cache
+        
         let added_bytes = fee_result.storage_fee
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,

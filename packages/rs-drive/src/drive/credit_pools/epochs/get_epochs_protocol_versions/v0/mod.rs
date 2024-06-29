@@ -6,7 +6,6 @@ use dpp::util::deserializer::ProtocolVersion;
 use dpp::ProtocolError;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
-use nohash_hasher::IntMap;
 use std::collections::BTreeMap;
 
 use crate::drive::credit_pools::pools_vec_path;
