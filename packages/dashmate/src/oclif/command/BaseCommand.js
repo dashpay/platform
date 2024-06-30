@@ -86,7 +86,6 @@ export default class BaseCommand extends Command {
     }
 
     return this.container.build(this.runWithDependencies, {
-      injectionMode: InjectionMode.PROXY,
       injector: () => ({ args: this.parsedArgs, flags: this.parsedFlags }),
     });
   }
