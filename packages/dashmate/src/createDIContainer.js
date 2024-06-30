@@ -133,12 +133,12 @@ export default async function createDIContainer(options = {}) {
     getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
     getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),
     getMainnetConfig: asFunction(getMainnetConfigFactory).singleton(),
-    defaultConfigs: asFunction((
+    defaultConfigs: asFunction(({
       getBaseConfig,
       getLocalConfig,
       getTestnetConfig,
       getMainnetConfig,
-    ) => new DefaultConfigs([
+    }) => new DefaultConfigs([
       getBaseConfig,
       getLocalConfig,
       getTestnetConfig,
