@@ -14,7 +14,7 @@ import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
  * @param {ensureFileMountExists} ensureFileMountExists
  * @return {startNodeTask}
  */
-export default function startNodeTaskFactory(
+export default function startNodeTaskFactory({
   dockerCompose,
   waitForCorePeersConnected,
   waitForMasternodesSync,
@@ -22,7 +22,7 @@ export default function startNodeTaskFactory(
   buildServicesTask,
   getConnectionHost,
   ensureFileMountExists,
-) {
+ }) {
   /**
    * @typedef {startNodeTask}
    * @param {Config} config

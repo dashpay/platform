@@ -17,21 +17,19 @@ export default class ConfigRemoveCommand extends BaseCommand {
 
   /**
    * @param {Object} args
-   * @param {Object} flags
    * @param {ConfigFile} configFile
    * @param {DefaultConfigs} defaultConfigs
    * @param {HomeDir} homeDir
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    {
+  async runWithDependencies({
+    args: {
       config: configName,
     },
-    flags,
     configFile,
     defaultConfigs,
     homeDir,
-  ) {
+  }) {
     if (defaultConfigs.has(configName)) {
       throw new Error(`system config ${configName} can't be removed.\nPlease use 'dashmate reset --hard --config=${configName}' command to reset the configuration`);
     }

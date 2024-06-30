@@ -20,18 +20,16 @@ export default class GroupStatusCommand extends GroupBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {getOverviewScope} getOverviewScope
    * @param {Config[]} configGroup
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
+  async runWithDependencies({
     flags,
     getOverviewScope,
     configGroup,
-  ) {
+  }) {
     const scopeResults = await Promise.allSettled(configGroup.map(async (config) => {
       // try-catch needed to pass config name in the error
       try {

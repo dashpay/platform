@@ -18,14 +18,12 @@ Force dashmate to render all config's service configs
   };
 
   /**
-   * @param {Object} args
-   * @param {Object} flags
    * @param {Config} config
    * @param {renderServiceTemplates} renderServiceTemplates
    * @param {writeServiceConfigs} writeServiceConfigs
    * @return {Promise<void>}
    */
-  async runWithDependencies(args, flags, config, renderServiceTemplates, writeServiceConfigs) {
+  async runWithDependencies({ config, renderServiceTemplates, writeServiceConfigs }) {
     // render & write service config files
     const configFiles = renderServiceTemplates(config);
     writeServiceConfigs(config.getName(), configFiles);

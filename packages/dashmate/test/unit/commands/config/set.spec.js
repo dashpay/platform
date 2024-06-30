@@ -18,22 +18,37 @@ describe('Config set command', () => {
       const command = new ConfigSetCommand();
 
       await command.runWithDependencies({
-        option: 'core.docker.image', value: 'fake_image',
-      }, flags, config);
+        args: {
+          option: 'core.docker.image',
+          value: 'fake_image',
+        },
+        flags,
+        config,
+      });
     });
 
     it('should allow setting null', async () => {
       const command = new ConfigSetCommand();
 
       await command.runWithDependencies({
-        option: 'description', value: null,
-      }, flags, config);
+        args: {
+          option: 'description',
+          value: null,
+        },
+        flags,
+        config,
+      });
 
       expect(config.get('description')).to.equal(null);
 
       await command.runWithDependencies({
-        option: 'description', value: 'null',
-      }, flags, config);
+        args: {
+          option: 'description',
+          value: 'null',
+        },
+        flags,
+        config,
+      });
 
       expect(config.get('description')).to.equal(null);
     });
@@ -42,16 +57,24 @@ describe('Config set command', () => {
       const command = new ConfigSetCommand();
 
       await command.runWithDependencies({
-        option: 'platform.drive.abci.validatorSet.quorum.llmqType',
-        value: 107,
-      }, flags, config);
+        args: {
+          option: 'platform.drive.abci.validatorSet.quorum.llmqType',
+          value: 107,
+        },
+        flags,
+        config,
+      });
 
       expect(config.get('platform.drive.abci.validatorSet.quorum.llmqType')).to.equal(107);
 
       await command.runWithDependencies({
-        option: 'platform.drive.abci.validatorSet.quorum.llmqType',
-        value: '107',
-      }, flags, config);
+        args: {
+          option: 'platform.drive.abci.validatorSet.quorum.llmqType',
+          value: '107',
+        },
+        flags,
+        config,
+      });
 
       expect(config.get('platform.drive.abci.validatorSet.quorum.llmqType')).to.equal(107);
     });
@@ -60,14 +83,24 @@ describe('Config set command', () => {
       const command = new ConfigSetCommand();
 
       await command.runWithDependencies({
-        option: 'dashmate.helper.api.enable', value: 'true',
-      }, flags, config);
+        args: {
+          option: 'dashmate.helper.api.enable',
+          value: 'true',
+        },
+        flags,
+        config,
+      });
 
       expect(config.get('dashmate.helper.api.enable')).to.equal(true);
 
       await command.runWithDependencies({
-        option: 'dashmate.helper.api.enable', value: true,
-      }, flags, config);
+        args: {
+          option: 'dashmate.helper.api.enable',
+          value: true,
+        },
+        flags,
+        config,
+      });
 
       expect(config.get('dashmate.helper.api.enable')).to.equal(true);
     });
@@ -76,8 +109,13 @@ describe('Config set command', () => {
       const command = new ConfigSetCommand();
 
       await command.runWithDependencies({
-        option: 'core.rpc.allowIps', value: '["1337", "36484"]',
-      }, flags, config);
+        args: {
+          option: 'core.rpc.allowIps',
+          value: '["1337", "36484"]',
+        },
+        flags,
+        config,
+      });
 
       expect(config.get('core.rpc.allowIps')).to.deep.equal(['1337', '36484']);
     });
@@ -86,9 +124,13 @@ describe('Config set command', () => {
       const command = new ConfigSetCommand();
 
       await command.runWithDependencies({
-        option: 'docker.network',
-        value: '{"subnet":"127.0.0.1/24"}',
-      }, flags, config);
+        args: {
+          option: 'docker.network',
+          value: '{"subnet":"127.0.0.1/24"}',
+        },
+        flags,
+        config,
+      });
     });
 
     it('should throw on unknown path', async () => {
@@ -97,8 +139,13 @@ describe('Config set command', () => {
       // invalid path
       try {
         await command.runWithDependencies({
-          option: 'fakePath', value: 'fake',
-        }, flags, config);
+          args: {
+            option: 'fakePath',
+            value: 'fake',
+          },
+          flags,
+          config,
+        });
 
         expect.fail('should throw error');
       } catch (e) {
@@ -112,8 +159,13 @@ describe('Config set command', () => {
       // invalid json
       try {
         await command.runWithDependencies({
-          option: 'core.rpc.allowIps', value: 'fake_image',
-        }, flags, config);
+          args: {
+            option: 'core.rpc.allowIps',
+            value: 'fake_image',
+          },
+          flags,
+          config,
+        });
 
         expect.fail('should throw error');
       } catch (e) {
@@ -127,8 +179,13 @@ describe('Config set command', () => {
       // invalid json
       try {
         await command.runWithDependencies({
-          option: 'dashmate.helper.api.enable', value: 120,
-        }, flags, config);
+          args: {
+            option: 'dashmate.helper.api.enable',
+            value: 120,
+          },
+          flags,
+          config,
+        });
 
         expect.fail('should throw error');
       } catch (e) {

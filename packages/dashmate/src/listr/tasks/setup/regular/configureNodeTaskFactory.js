@@ -15,7 +15,7 @@ import getConfigurationOutputFromContext from './getConfigurationOutputFromConte
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {configureNodeTask}
  */
-export default function configureNodeTaskFactory(createIpAndPortsForm) {
+export default function configureNodeTaskFactory({ createIpAndPortsForm }) {
   /**
    * @typedef {function} configureNodeTask
    * @returns {Listr}
@@ -23,7 +23,7 @@ export default function configureNodeTaskFactory(createIpAndPortsForm) {
   async function configureNodeTask() {
     const blsSignatures = await BlsSignatures();
 
-    const validateBLSPrivateKey = validateBLSPrivateKeyFactory(blsSignatures);
+    const validateBLSPrivateKey = validateBLSPrivateKeyFactory({ blsSignatures });
 
     return new Listr([
       {

@@ -11,11 +11,11 @@ import extractCoreVersion from '../../core/extractCoreVersion.js';
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
  */
-export default function getCoreScopeFactory(
+export default function getCoreScopeFactory({
   dockerCompose,
   createRpcClient,
   getConnectionHost,
-) {
+ }) {
   /*
    * Get core status scope
    *

@@ -53,11 +53,11 @@ describe('getPlatformScopeFactory', () => {
       p2pService = `${config.get('externalIp')}:${p2pPort}`;
       rpcPort = config.get('platform.drive.tenderdash.rpc.port');
       rpcService = `127.0.0.1:${rpcPort}`;
-      getPlatformScope = getPlatformScopeFactory(
+      getPlatformScope = getPlatformScopeFactory({
         mockDockerCompose,
         mockCreateRpcClient,
         mockGetConnectionHost,
-      );
+       });
     });
 
     it('should just work', async () => {

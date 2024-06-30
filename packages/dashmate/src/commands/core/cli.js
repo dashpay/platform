@@ -19,18 +19,16 @@ export default class CliCommand extends ConfigBaseCommand {
 
   /**
    * @param {Object} args
-   * @param {Object} flags
    * @param {Config} config
    *
    * @param dockerCompose
    * @return {Promise<void>}
    */
-  async runWithDependencies(
+  async runWithDependencies({
     args,
-    flags,
     config,
     dockerCompose,
-  ) {
+   }) {
     const { command } = args;
 
     if (!(await dockerCompose.isServiceRunning(config, 'core'))) {

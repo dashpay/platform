@@ -13,20 +13,18 @@ Build docker images for services configured to be built from source
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {buildServicesTask} buildServicesTask
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       verbose: isVerbose,
     },
     buildServicesTask,
     config,
-  ) {
+  }) {
     if (!isServiceBuildRequired(config)) {
       throw new Error('No services are configured to be built from sources');
     }

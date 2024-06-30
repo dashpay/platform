@@ -26,7 +26,6 @@ export default class GroupResetCommand extends GroupBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {resetNodeTask} resetNodeTask
    * @param {Config[]} configGroup
@@ -34,9 +33,8 @@ export default class GroupResetCommand extends GroupBaseCommand {
    * @param {configureTenderdashTask} configureTenderdashTask
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       verbose: isVerbose,
       hard: isHardReset,
       force: isForce,
@@ -46,7 +44,7 @@ export default class GroupResetCommand extends GroupBaseCommand {
     configGroup,
     configureCoreTask,
     configureTenderdashTask,
-  ) {
+  }) {
     const groupName = configGroup[0].get('group');
 
     const tasks = new Listr(

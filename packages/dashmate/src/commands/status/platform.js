@@ -19,22 +19,16 @@ export default class PlatformStatusCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
-   * @param {DockerCompose} dockerCompose
-   * @param {createRpcClient} createRpcClient
    * @param {Config} config
    * @param {getPlatformScope} getPlatformScope
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
+  async runWithDependencies({
     flags,
-    dockerCompose,
-    createRpcClient,
     config,
     getPlatformScope,
-  ) {
+  }) {
     const plain = {
       'HTTP service': 'n/a',
       'HTTP port': 'n/a',

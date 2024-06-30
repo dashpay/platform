@@ -19,27 +19,23 @@ export default class StartCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
-   * @param {DockerCompose} dockerCompose
    * @param {startNodeTask} startNodeTask
    * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       'wait-for-readiness': waitForReadiness,
       verbose: isVerbose,
       force: isForce,
       platform: platformOnly,
     },
-    dockerCompose,
     startNodeTask,
     waitForNodeToBeReadyTask,
     config,
-  ) {
+  }) {
     const tasks = new Listr(
       [
         {

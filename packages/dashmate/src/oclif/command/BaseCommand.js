@@ -7,7 +7,6 @@ import graceful from 'node-graceful';
 import dotenv from 'dotenv';
 import createDIContainer from '../../createDIContainer.js';
 import ConfigFileNotFoundError from '../../config/errors/ConfigFileNotFoundError.js';
-import getFunctionParams from '../../util/getFunctionParams.js';
 
 /**
  * @abstract
@@ -85,10 +84,6 @@ export default class BaseCommand extends Command {
     if (!this.runWithDependencies) {
       throw new Error('`run` or `runWithDependencies` must be implemented');
     }
-
-    // const params = getFunctionParams(this.runWithDependencies, 2);
-
-    // const dependencies = params.map((paramName) => this.container.resolve(paramName));
 
     return this.container.build(this.runWithDependencies, {
       injectionMode: InjectionMode.PROXY,

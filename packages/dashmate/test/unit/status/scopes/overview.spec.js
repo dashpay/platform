@@ -22,11 +22,11 @@ describe('getOverviewScopeFactory', () => {
         toEnvs: this.sinon.stub(),
       };
 
-      getOverviewScope = getOverviewScopeFactory(
+      getOverviewScope = getOverviewScopeFactory({
         mockGetCoreScope,
         mockGetMasternodeScope,
         mockGetPlatformScope,
-      );
+       });
     });
 
     it('should just work', async () => {

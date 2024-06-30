@@ -24,11 +24,11 @@ describe('getMasternodeScopeFactory', () => {
       mockGetConnectionHost = this.sinon.stub();
 
       config = getConfigMock(this.sinon);
-      getMasternodeScope = getMasternodeScopeFactory(
+      getMasternodeScope = getMasternodeScopeFactory({
         mockDockerCompose,
         mockCreateRpcClient,
         mockGetConnectionHost,
-      );
+       });
     });
 
     it('should just work', async () => {

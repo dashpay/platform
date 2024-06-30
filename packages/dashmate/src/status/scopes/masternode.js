@@ -9,11 +9,11 @@ import { MasternodeStateEnum } from '../enums/masternodeState.js';
  * @param {getConnectionHost} getConnectionHost
  * @returns {getMasternodeScopeFactory}
  */
-export default function getMasternodeScopeFactory(
+export default function getMasternodeScopeFactory({
   dockerCompose,
   createRpcClient,
   getConnectionHost,
-) {
+ }) {
   async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),

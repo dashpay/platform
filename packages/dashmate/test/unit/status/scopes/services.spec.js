@@ -18,7 +18,7 @@ describe('getServicesScopeFactory', () => {
 
       getServiceList.returns([{ name: 'mock', title: 'Mock service', image: 'fakeImageId' }]);
 
-      getServicesScope = getServicesScopeFactory(mockDockerCompose, getServiceList);
+      getServicesScope = getServicesScopeFactory({ mockDockerCompose, getServiceList });
     });
 
     it('should just work', async () => {

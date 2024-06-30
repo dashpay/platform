@@ -50,11 +50,11 @@ describe('getCoreScopeFactory', () => {
       rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
       p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
 
-      getCoreScope = getCoreScopeFactory(
+      getCoreScope = getCoreScopeFactory({
         mockDockerCompose,
         mockCreateRpcClient,
         mockGetConnectionHost,
-      );
+       });
     });
 
     it('should just work', async function it() {

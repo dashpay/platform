@@ -17,7 +17,6 @@ export default class ConfigCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
    * @return {Promise<void>}

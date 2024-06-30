@@ -18,7 +18,7 @@ import CoreService from '../../core/CoreService.js';
  * @param {Docker} docker
  * @return {reindexNodeTask}
  */
-export default function reindexNodeTaskFactory(
+export default function reindexNodeTaskFactory({
   dockerCompose,
   startNodeTask,
   restartNodeTask,
@@ -30,7 +30,7 @@ export default function reindexNodeTaskFactory(
   writeServiceConfigs,
   getConnectionHost,
   docker,
-) {
+ }) {
   /**
    * Gets dashcore docker container from the node
    * @param config

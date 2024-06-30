@@ -21,7 +21,7 @@ import getBLSPublicKeyFromPrivateKeyHex from '../../../../../core/getBLSPublicKe
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {registerMasternodeWithCoreWallet}
  */
-export default function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
+export default function registerMasternodeWithCoreWalletFactory({ createIpAndPortsForm }) {
   /**
    * Print prompts to collect masternode registration data with Core
    *
@@ -46,7 +46,7 @@ export default function registerMasternodeWithCoreWalletFactory(createIpAndPorts
    */
   async function registerMasternodeWithCoreWallet(ctx, task, defaultConfigs) {
     const blsSignatures = await BlsSignatures();
-    const validateBLSPrivateKey = validateBLSPrivateKeyFactory(blsSignatures);
+    const validateBLSPrivateKey = validateBLSPrivateKeyFactory({ blsSignatures });
 
     const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 

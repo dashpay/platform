@@ -23,28 +23,22 @@ export default class GroupReindexCommand extends GroupBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {reindexNodeTask} reindexNodeTask
-   * @param {createRpcClient} createRpcClient
    * @param {dockerCompose} dockerCompose
-   * @param {ConfigFile} configFile
    * @param {Config[]} configGroup
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       verbose: isVerbose,
       detach: isDetach,
       force: isForce,
     },
     reindexNodeTask,
-    createRpcClient,
     dockerCompose,
-    configFile,
     configGroup,
-  ) {
+  }) {
     const tasks = new Listr(
       [
         {

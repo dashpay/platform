@@ -19,13 +19,11 @@ describe('Config render command', () => {
   it('should call render and write', async () => {
     const command = new ConfigRenderCommand();
 
-    await command.runWithDependencies(
-      {},
-      {},
+    await command.runWithDependencies({
       config,
       mockRenderServiceTemplates,
       mockWriteServiceConfigs,
-    );
+    });
 
     expect(mockRenderServiceTemplates).to.have.been.calledOnceWithExactly(config);
     expect(mockWriteServiceConfigs).to.have.been.calledOnceWith(config.getName());

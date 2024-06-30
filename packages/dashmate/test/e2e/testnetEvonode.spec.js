@@ -133,7 +133,7 @@ describe('Testnet Evonode', function main() {
         pass: config.get('core.rpc.password'),
       });
 
-      waitForCoreData = waitForCoreDataFactory(coreRpcClient);
+      waitForCoreData = waitForCoreDataFactory({ coreRpcClient });
 
       lastBlockHeight = await waitForCoreData(0, (currentValue) => currentValue > 0);
     });

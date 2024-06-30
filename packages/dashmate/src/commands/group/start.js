@@ -13,25 +13,19 @@ export default class GroupStartCommand extends GroupBaseCommand {
   static description = 'Start group nodes';
 
   /**
-   * @param {Object} args
    * @param {Object} flags
-   * @param {DockerCompose} dockerCompose
-   * @param {startNodeTask} startNodeTask
    * @param {Config[]} configGroup
    * @param {startGroupNodesTask} startGroupNodesTask
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       'wait-for-readiness': waitForReadiness,
       verbose: isVerbose,
     },
-    dockerCompose,
-    startNodeTask,
     configGroup,
     startGroupNodesTask,
-  ) {
+  }) {
     const groupName = configGroup[0].get('group');
 
     const tasks = new Listr(

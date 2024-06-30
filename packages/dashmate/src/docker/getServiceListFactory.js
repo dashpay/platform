@@ -8,7 +8,7 @@ import { DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR } from '../constants.js'
  * @param {getConfigProfiles} getConfigProfiles
  * @return {getServiceList}
  */
-export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
+export default function getServiceListFactory({ generateEnvs, getConfigProfiles }) {
   const file = fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'docker-compose.yml'));
   const composeFile = yaml.load(file);
 

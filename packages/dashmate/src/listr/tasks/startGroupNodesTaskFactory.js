@@ -18,7 +18,7 @@ const { PrivateKey } = DashCoreLib;
  * @param {getConnectionHost} getConnectionHost
  * @return {startGroupNodesTask}
  */
-export default function startGroupNodesTaskFactory(
+export default function startGroupNodesTaskFactory({
   dockerCompose,
   waitForCorePeersConnected,
   waitForMasternodesSync,
@@ -28,7 +28,7 @@ export default function startGroupNodesTaskFactory(
   waitForNodeToBeReadyTask,
   buildServicesTask,
   getConnectionHost,
-) {
+ }) {
   /**
    * @typedef {startGroupNodesTask}
    * @param {Config[]} configGroup

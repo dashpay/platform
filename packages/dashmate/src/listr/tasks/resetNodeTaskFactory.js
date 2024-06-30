@@ -14,7 +14,7 @@ import wait from '../../util/wait.js';
  * @param {generateEnvs} generateEnvs
  * @return {resetNodeTask}
  */
-export default function resetNodeTaskFactory(
+export default function resetNodeTaskFactory({
   dockerCompose,
   docker,
   startNodeTask,
@@ -23,7 +23,7 @@ export default function resetNodeTaskFactory(
   configFile,
   homeDir,
   generateEnvs,
-) {
+ }) {
   /**
    * @typedef {resetNodeTask}
    * @param {Config} config

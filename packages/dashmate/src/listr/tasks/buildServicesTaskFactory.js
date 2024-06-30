@@ -6,10 +6,10 @@ import { Listr } from 'listr2';
  * @param {generateEnvs} generateEnvs
  * @return {buildServicesTask}
  */
-export default function buildServicesTaskFactory(
+export default function buildServicesTaskFactory({
   dockerCompose,
   generateEnvs,
-) {
+ }) {
   /**
    * @typedef {buildServicesTask}
    * @param {Config} config

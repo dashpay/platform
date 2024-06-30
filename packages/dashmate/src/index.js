@@ -1,56 +1,91 @@
 import { execute } from '@oclif/core';
 
-// eslint-disable-next-line import/prefer-default-export
+import reset from './commands/reset.js';
+import restart from './commands/restart.js';
+import setup from './commands/setup.js';
+import start from './commands/start.js';
+import stop from './commands/stop.js';
+import update from './commands/update.js';
+
+import configIndex from './commands/config/index.js';
+import configCreate from './commands/config/create.js';
+import configDefault from './commands/config/default.js';
+import configEnvs from './commands/config/envs.js';
+import configGet from './commands/config/get.js';
+import configList from './commands/config/list.js';
+import configRemove from './commands/config/remove.js';
+import configRender from './commands/config/render.js';
+import configSet from './commands/config/set.js';
+
+import coreCli from './commands/core/cli.js';
+import coreReindex from './commands/core/reindex.js';
+
+import dockerBuild from './commands/docker/build.js';
+
+import groupCoreReindex from './commands/group/core/reindex.js';
+import groupDefault from './commands/group/default.js';
+import groupList from './commands/group/list.js';
+import groupReset from './commands/group/reset.js';
+import groupRestart from './commands/group/restart.js';
+import groupStart from './commands/group/start.js';
+import groupStatus from './commands/group/status.js';
+import groupStop from './commands/group/stop.js';
+
+import sslObtain from './commands/ssl/obtain.js';
+
+import statusCore from './commands/status/core.js';
+import statusHost from './commands/status/host.js';
+import statusIndex from './commands/status/index.js';
+import statusMasternode from './commands/status/masternode.js';
+import statusPlatform from './commands/status/platform.js';
+import statusServices from './commands/status/services.js';
+
+import walletMint from './commands/wallet/mint.js';
+
 export const COMMANDS = {
-  reset: (await import('./commands/reset.js')).default,
-  restart: (await import('./commands/restart.js')).default,
-  setup: (await import('./commands/setup.js')).default,
-  start: (await import('./commands/start.js')).default,
-  stop: (await import('./commands/stop.js')).default,
-  update: (await import('./commands/update.js')).default,
+  reset,
+  restart,
+  setup,
+  start,
+  stop,
+  update,
 
-  // Config
-  config: (await import('./commands/config/index.js')).default,
-  'config create': (await import('./commands/config/create.js')).default,
-  'config default': (await import('./commands/config/default.js')).default,
-  'config envs': (await import('./commands/config/envs.js')).default,
-  'config get': (await import('./commands/config/get.js')).default,
-  'config list': (await import('./commands/config/list.js')).default,
-  'config remove': (await import('./commands/config/remove.js')).default,
-  'config render': (await import('./commands/config/render.js')).default,
-  'config set': (await import('./commands/config/set.js')).default,
+  config: configIndex,
+  'config create': configCreate,
+  'config default': configDefault,
+  'config envs': configEnvs,
+  'config get': configGet,
+  'config list': configList,
+  'config remove': configRemove,
+  'config render': configRender,
+  'config set': configSet,
 
-  // Core
-  'core cli': (await import('./commands/core/cli.js')).default,
-  'core reindex': (await import('./commands/core/reindex.js')).default,
+  'core cli': coreCli,
+  'core reindex': coreReindex,
 
-  // Docker
-  'docker build': (await import('./commands/docker/build.js')).default,
+  'docker build': dockerBuild,
 
-  // Group
-  'group core reindex': (await import('./commands/group/core/reindex.js')).default,
-  'group default': (await import('./commands/group/default.js')).default,
-  'group list': (await import('./commands/group/list.js')).default,
-  'group reset': (await import('./commands/group/reset.js')).default,
-  'group restart': (await import('./commands/group/restart.js')).default,
-  'group start': (await import('./commands/group/start.js')).default,
-  'group status': (await import('./commands/group/status.js')).default,
-  'group stop': (await import('./commands/group/stop.js')).default,
+  'group core reindex': groupCoreReindex,
+  'group default': groupDefault,
+  'group list': groupList,
+  'group reset': groupReset,
+  'group restart': groupRestart,
+  'group start': groupStart,
+  'group status': groupStatus,
+  'group stop': groupStop,
 
-  // SSL
-  'ssl obtain': (await import('./commands/ssl/obtain.js')).default,
+  'ssl obtain': sslObtain,
 
-  // Status
-  status: (await import('./commands/status/index.js')).default,
-  'status core': (await import('./commands/status/core.js')).default,
-  'status host': (await import('./commands/status/host.js')).default,
-  'status masternode': (await import('./commands/status/masternode.js')).default,
-  'status platform': (await import('./commands/status/platform.js')).default,
-  'status services': (await import('./commands/status/services.js')).default,
+  'status core': statusCore,
+  'status host': statusHost,
+  status: statusIndex,
+  'status masternode': statusMasternode,
+  'status platform': statusPlatform,
+  'status services': statusServices,
 
-  // Wallet
-  'wallet mint': (await import('./commands/wallet/mint.js')).default,
+  'wallet mint': walletMint,
 };
+
 export async function run() {
   await execute({ dir: import.meta.url, development: Boolean(process.env.DEBUG) });
 }

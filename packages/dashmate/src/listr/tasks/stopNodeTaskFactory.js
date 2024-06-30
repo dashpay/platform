@@ -9,11 +9,11 @@ import waitForDKGWindowPass from '../../core/quorum/waitForDKGWindowPass.js';
  * @param {getConnectionHost} getConnectionHost
  * @return {stopNodeTask}
  */
-export default function stopNodeTaskFactory(
+export default function stopNodeTaskFactory({
   dockerCompose,
   createRpcClient,
   getConnectionHost,
-) {
+ }) {
   /**
    * Stop node
    * @typedef stopNodeTask

@@ -5,16 +5,12 @@ export default class ConfigListCommand extends BaseCommand {
   static description = 'List available configs';
 
   /**
-   * @param {Object} args
-   * @param {Object} flags
    * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    flags,
+  async runWithDependencies({
     configFile,
-  ) {
+  }) {
     const rows = configFile.getAllConfigs()
       .map((config) => [config.getName(), config.get('description')]);
 

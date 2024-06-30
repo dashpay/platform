@@ -15,11 +15,11 @@ import listCertificates from '../../../../ssl/zerossl/listCertificates.js';
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
  * @returns {configureSSLCertificateTask}
  */
-export default function configureSSLCertificateTaskFactory(
+export default function configureSSLCertificateTaskFactory({
   saveCertificateTask,
   obtainZeroSSLCertificateTask,
   obtainSelfSignedCertificateTask,
-) {
+ }) {
   /**
    * @typedef configureSSLCertificateTask
    * @returns {Listr}

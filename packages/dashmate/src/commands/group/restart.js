@@ -15,25 +15,21 @@ export default class GroupRestartCommand extends GroupBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
-   * @param {DockerCompose} dockerCompose
    * @param {stopNodeTask} stopNodeTask
    * @param {startGroupNodesTask} startGroupNodesTask
    * @param {Config[]} configGroup
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       safe: isSafe,
       verbose: isVerbose,
     },
-    dockerCompose,
     stopNodeTask,
     startGroupNodesTask,
     configGroup,
-  ) {
+  }) {
     const groupName = configGroup[0].get('group');
 
     const tasks = new Listr(

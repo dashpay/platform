@@ -17,20 +17,16 @@ export default class ServicesStatusCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
-   * @param {DockerCompose} dockerCompose
    * @param {Config} config
    * @param {getServicesScope} getServicesScope
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
+  async runWithDependencies({
     flags,
-    dockerCompose,
     config,
     getServicesScope,
-  ) {
+  }) {
     const scope = await getServicesScope(config);
 
     const outputRows = [];

@@ -11,14 +11,14 @@ import Certificate from '../ssl/zerossl/Certificate.js';
  * @param {writeConfigTemplates} writeConfigTemplates
  * @return {scheduleRenewZeroSslCertificate}
  */
-export default function scheduleRenewZeroSslCertificateFactory(
+export default function scheduleRenewZeroSslCertificateFactory({
   getCertificate,
   obtainZeroSSLCertificateTask,
   dockerCompose,
   configFileRepository,
   configFile,
   writeConfigTemplates,
-) {
+ }) {
   /**
    * @typedef scheduleRenewZeroSslCertificate
    * @param {Config} config

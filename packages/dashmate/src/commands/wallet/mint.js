@@ -34,17 +34,17 @@ Mint given amount of tDash to a new or specified address
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    {
+  async runWithDependencies({
+    args: {
       amount,
     },
-    {
+    flags: {
       address,
       verbose: isVerbose,
     },
     generateToAddressTask,
     config,
-  ) {
+  }) {
     const network = config.get('network');
 
     if (network !== NETWORK_LOCAL) {
