@@ -9,6 +9,7 @@ license = "MIT"
 
 [dependencies]
 thiserror = { version = "1.0.59" }
+sha2 = "0.10.5"
 
 [features]
 mock-versions = []
