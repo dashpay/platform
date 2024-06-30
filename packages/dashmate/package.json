@@ -99,9 +99,6 @@
     "table": "^6.8.1",
     "wrap-ansi": "^7.0.0"
   },
-  "optionalDependencies": {
-    "typescript": "^5"
-  },
   "devDependencies": {
     "@babel/core": "^7.23.3",
     "@babel/eslint-parser": "^7.23.3",
