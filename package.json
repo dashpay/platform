@@ -30,7 +30,8 @@
     "clean:data": "yarn run dashmate group reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
     "release": "yarn exec ./scripts/release/release.sh",
-    "bench": "yarn workspace @dashevo/bench-suite bench"
+    "bench": "yarn workspace @dashevo/bench-suite bench",
+    "dashmate": "echo 'Error: `yarn dashmate` is not supported anymore. Please use `./scripts/dashmate` instead'; exit 1"
   },
   "packageManager": "yarn@4.3.1",
   "ultra": {
