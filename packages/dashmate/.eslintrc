@@ -9,6 +9,7 @@
   "env": {
     "node": true
   },
+  "ignorePatterns": ["dist/"],
   "rules": {
     "import/extensions": [
       "error",
@@ -39,5 +40,8 @@
       "error",
       "all"
     ]
+  },
+  "settings": {
+    "import/core-modules": ["@oclif/core"]
   }
 }

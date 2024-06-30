@@ -30,7 +30,7 @@ export default function reindexNodeTaskFactory({
   writeServiceConfigs,
   getConnectionHost,
   docker,
- }) {
+}) {
   /**
    * Gets dashcore docker container from the node
    * @param config

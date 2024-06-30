@@ -1,7 +1,10 @@
 /**
  * @return {writeConfigTemplates}
  */
-export default function writeConfigTemplatesFactory({ renderServiceTemplates, writeServiceConfigs }) {
+export default function writeConfigTemplatesFactory({
+  renderServiceTemplates,
+  writeServiceConfigs,
+}) {
   /**
    * @typedef {writeConfigTemplates}
    * @param {Config} config

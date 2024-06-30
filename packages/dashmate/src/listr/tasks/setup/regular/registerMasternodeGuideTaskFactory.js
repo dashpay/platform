@@ -12,7 +12,7 @@ export default function registerMasternodeGuideTaskFactory({
   defaultConfigs,
   registerMasternodeWithCoreWallet,
   registerMasternodeWithDMT,
- }) {
+}) {
   /**
    * @typedef {registerMasternodeGuideTask}
    * @return {Listr}

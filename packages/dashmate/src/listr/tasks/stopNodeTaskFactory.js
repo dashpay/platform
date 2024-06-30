@@ -13,7 +13,7 @@ export default function stopNodeTaskFactory({
   dockerCompose,
   createRpcClient,
   getConnectionHost,
- }) {
+}) {
   /**
    * Stop node
    * @typedef stopNodeTask

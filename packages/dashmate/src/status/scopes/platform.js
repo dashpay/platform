@@ -14,7 +14,7 @@ export default function getPlatformScopeFactory({
   dockerCompose,
   createRpcClient,
   getConnectionHost,
- }) {
+}) {
   async function getMNSync(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),

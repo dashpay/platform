@@ -57,7 +57,7 @@ describe('getPlatformScopeFactory', () => {
         mockDockerCompose,
         mockCreateRpcClient,
         mockGetConnectionHost,
-       });
+      });
     });
 
     it('should just work', async () => {

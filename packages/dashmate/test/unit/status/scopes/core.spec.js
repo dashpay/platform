@@ -54,7 +54,7 @@ describe('getCoreScopeFactory', () => {
         mockDockerCompose,
         mockCreateRpcClient,
         mockGetConnectionHost,
-       });
+      });
     });
 
     it('should just work', async function it() {

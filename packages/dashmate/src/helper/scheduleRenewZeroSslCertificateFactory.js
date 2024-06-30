@@ -18,7 +18,7 @@ export default function scheduleRenewZeroSslCertificateFactory({
   configFileRepository,
   configFile,
   writeConfigTemplates,
- }) {
+}) {
   /**
    * @typedef scheduleRenewZeroSslCertificate
    * @param {Config} config

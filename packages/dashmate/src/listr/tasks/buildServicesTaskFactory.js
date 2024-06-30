@@ -9,7 +9,7 @@ import { Listr } from 'listr2';
 export default function buildServicesTaskFactory({
   dockerCompose,
   generateEnvs,
- }) {
+}) {
   /**
    * @typedef {buildServicesTask}
    * @param {Config} config

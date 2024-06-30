@@ -19,7 +19,7 @@ export default function configureSSLCertificateTaskFactory({
   saveCertificateTask,
   obtainZeroSSLCertificateTask,
   obtainSelfSignedCertificateTask,
- }) {
+}) {
   /**
    * @typedef configureSSLCertificateTask
    * @returns {Listr}

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
+// eslint-disable-next-line import/no-extraneous-dependencies
 import * as esbuild from 'esbuild';
+// eslint-disable-next-line import/no-extraneous-dependencies
 import fileloc from 'esbuild-plugin-fileloc';
 
 await esbuild.build({

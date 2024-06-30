@@ -28,7 +28,7 @@ describe('getMasternodeScopeFactory', () => {
         mockDockerCompose,
         mockCreateRpcClient,
         mockGetConnectionHost,
-       });
+      });
     });
 
     it('should just work', async () => {

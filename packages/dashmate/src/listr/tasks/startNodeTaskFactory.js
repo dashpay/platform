@@ -6,7 +6,6 @@ import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 /**
  *
  * @param {DockerCompose} dockerCompose
- * @param {waitForCorePeersConnected} waitForCorePeersConnected
  * @param {waitForMasternodesSync} waitForMasternodesSync
  * @param {createRpcClient} createRpcClient
  * @param {buildServicesTask} buildServicesTask
@@ -16,13 +15,12 @@ import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
  */
 export default function startNodeTaskFactory({
   dockerCompose,
-  waitForCorePeersConnected,
   waitForMasternodesSync,
   createRpcClient,
   buildServicesTask,
   getConnectionHost,
   ensureFileMountExists,
- }) {
+}) {
   /**
    * @typedef {startNodeTask}
    * @param {Config} config

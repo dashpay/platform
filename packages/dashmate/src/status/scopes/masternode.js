@@ -4,16 +4,14 @@ import blocksToTime from '../../util/blocksToTime.js';
 import { MasternodeStateEnum } from '../enums/masternodeState.js';
 
 /**
- * @param {DockerCompose}dockerCompose
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
  * @returns {getMasternodeScopeFactory}
  */
 export default function getMasternodeScopeFactory({
-  dockerCompose,
   createRpcClient,
   getConnectionHost,
- }) {
+}) {
   async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),

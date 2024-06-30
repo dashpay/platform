@@ -15,7 +15,7 @@ export default function getCoreScopeFactory({
   dockerCompose,
   createRpcClient,
   getConnectionHost,
- }) {
+}) {
   /*
    * Get core status scope
    *

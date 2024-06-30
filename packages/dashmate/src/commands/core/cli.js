@@ -28,7 +28,7 @@ export default class CliCommand extends ConfigBaseCommand {
     args,
     config,
     dockerCompose,
-   }) {
+  }) {
     const { command } = args;
 
     if (!(await dockerCompose.isServiceRunning(config, 'core'))) {

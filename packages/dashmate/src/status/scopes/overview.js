@@ -8,7 +8,7 @@ export default function getOverviewScopeFactory({
   getCoreScope,
   getMasternodeScope,
   getPlatformScope,
- }) {
+}) {
   /**
    * Get overview status scope
    *

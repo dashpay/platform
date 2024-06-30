@@ -1,10 +1,9 @@
 /**
- * @param {ConfigFile} configFile
  * @param {DockerCompose} dockerCompose
  *
  * @returns {assertServiceRunning}
  */
-export default function assertServiceRunningFactory({ configFile, dockerCompose }) {
+export default function assertServiceRunningFactory({ dockerCompose }) {
   /**
    * Check if service is running
    *

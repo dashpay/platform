@@ -26,7 +26,7 @@ describe('getOverviewScopeFactory', () => {
         mockGetCoreScope,
         mockGetMasternodeScope,
         mockGetPlatformScope,
-       });
+      });
     });
 
     it('should just work', async () => {
