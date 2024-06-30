@@ -212,6 +212,9 @@ impl Sdk {
             }
         }
     }
+    pub fn context_provider(&self) -> Option<impl ContextProvider> {
+        self.context_provider.as_ref().map(Arc::clone)
+    }
 
     /// Returns a mutable reference to the `MockDashPlatformSdk` instance.
     ///
