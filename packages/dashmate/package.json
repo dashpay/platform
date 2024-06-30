@@ -101,7 +101,6 @@
   "devDependencies": {
     "@babel/core": "^7.23.3",
     "@babel/eslint-parser": "^7.23.3",
-    "@yarnpkg/esbuild-plugin-pnp": "^3.0.0-rc.15",
     "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",

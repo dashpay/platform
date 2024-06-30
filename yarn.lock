@@ -4867,17 +4867,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@yarnpkg/esbuild-plugin-pnp@npm:^3.0.0-rc.15":
-  version: 3.0.0-rc.15
-  resolution: "@yarnpkg/esbuild-plugin-pnp@npm:3.0.0-rc.15"
-  dependencies:
-    tslib: "npm:^2.4.0"
-  peerDependencies:
-    esbuild: ">=0.10.0"
-  checksum: 10/454f521088c1fa24fda51f83ca4a50ba6e3bd147e5dee8c899e6bf24a7196186532c3abb18480e83395708ffb7238c9cac5b82595c3985ce93593b5afbd0a9f0
-  languageName: node
-  linkType: hard
-
 "@yarnpkg/fslib@npm:^3.0.0-rc.42":
   version: 3.0.0-rc.42
   resolution: "@yarnpkg/fslib@npm:3.0.0-rc.42"
@@ -7034,7 +7023,6 @@ __metadata:
     "@dashevo/wasm-dpp": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
     "@oclif/core": "npm:^4.0.7"
-    "@yarnpkg/esbuild-plugin-pnp": "npm:^3.0.0-rc.15"
     ajv: "npm:^8.6.0"
     ajv-formats: "npm:^2.1.1"
     awilix: "npm:^4.2.6"
