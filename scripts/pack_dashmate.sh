@@ -29,13 +29,16 @@ FULL_PATH=$(realpath "$0")
 DIR_PATH=$(dirname "$FULL_PATH")
 ROOT_PATH=$(dirname "$DIR_PATH")
 
+export NODE_ENV=production
+
 cd $ROOT_PATH/packages/dashmate || exit 1
 yarn pack --install-if-needed
 tar zxvf package.tgz -C .
 cd $ROOT_PATH/packages/dashmate/package || exit 1
 cp $ROOT_PATH/yarn.lock ./yarn.lock
 mkdir .yarn
-echo "nodeLinker: node-modules"  > .yarnrc.yml
+echo "nodeLinker: pnpm"  > .yarnrc.yml
+# TODO: Remove bundled dependencies from package.json
 yarn install --no-immutable
 yarn oclif manifest
 yarn oclif pack $COMMAND $FLAGS

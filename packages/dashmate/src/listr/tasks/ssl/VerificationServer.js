@@ -12,7 +12,12 @@ export default class VerificationServer {
    * @param {StartedContainers} startedContainers
    * @param {HomeDir} homeDir
    */
-  constructor({ docker, dockerPull, startedContainers, homeDir }) {
+  constructor({
+    docker,
+    dockerPull,
+    startedContainers,
+    homeDir,
+  }) {
     this.docker = docker;
     this.dockerPull = dockerPull;
     this.startedContainers = startedContainers;
