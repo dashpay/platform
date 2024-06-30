@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
-    "start": "yarn run dashmate group start --verbose -w",
-    "restart": "yarn run dashmate group restart --verbose",
-    "stop": "yarn run dashmate group stop --verbose",
+    "start": "./scripts/dashmate group start --verbose -w",
+    "restart": "./scripts/dashmate group restart --verbose",
+    "stop": "./scripts/dashmate group stop --verbose",
     "reset": "yarn run clean:data --force && yarn run setup",
     "test": "ultra -r $* test",
     "test:dapi": "ultra -r --filter \"packages/@(dapi|platform-test-suite)\" test",
@@ -29,7 +29,6 @@
     "configure": "yarn exec ./scripts/configure.sh",
     "clean:data": "yarn run dashmate group reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
-    "dashmate": "./packages/dashmate/bin/run.js",
     "release": "yarn exec ./scripts/release/release.sh",
     "bench": "yarn workspace @dashevo/bench-suite bench"
   },

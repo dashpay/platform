@@ -11,8 +11,7 @@
     "test:unit": "mocha --recursive test/unit",
     "test:e2e": "mocha --recursive test/e2e",
     "helper": "node scripts/helper.js",
-    "build": "rm -rf dist && ./scripts/build.js",
-    "dashmate": "node ./bin/run.js"
+    "build": "rm -rf dist && ./scripts/build.js"
   },
   "repository": {
     "type": "git",

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+FULL_PATH=$(realpath "$0")
+DIR_PATH=$(dirname "$FULL_PATH")
+ROOT_PATH=$(dirname "$DIR_PATH")
+
+node $ROOT_PATH/packages/dashmate/bin/run.js "$@"

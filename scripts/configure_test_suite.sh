@@ -10,7 +10,7 @@ PATH_TO_PACKAGES="${PATH_TO_PROJECT_ROOT}/packages"
 TEST_SUITE_PATH="${PATH_TO_PACKAGES}/platform-test-suite"
 BENCH_SUITE_PATH="${PATH_TO_PACKAGES}/bench-suite"
 
-CONFIG="local"
+DASHMATE="$PATH_TO_PROJECT_ROOT"/scripts/dashmate
 
 SETUP_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/setup.log
 
@@ -25,13 +25,13 @@ echo "Mint 50 Dash to the first faucet"
 
 MINT_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/mint.log
 
-yarn dashmate wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PATH}"
+$DASHMATE config wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PATH}"
 FAUCET_1_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
 FAUCET_1_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
 
 echo "Mint 50 Dash to the second faucet"
 
-yarn dashmate wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PATH}"
+$DASHMATE wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PATH}"
 FAUCET_2_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
 FAUCET_2_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
 

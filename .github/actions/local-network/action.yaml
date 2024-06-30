@@ -51,10 +51,10 @@ runs:
         set -ex
 
         # create tenderdash blocks every 10s to speed up test suite
-        yarn dashmate config set --config=local platform.drive.tenderdash.consensus.createEmptyBlocksInterval "10s"
+        ./scripts/dashmate config set --config=local platform.drive.tenderdash.consensus.createEmptyBlocksInterval "10s"
 
         # collect drive logs for bench suite
-        yarn dashmate config set --config=local platform.drive.abci.logs.stdout.level "trace"
+        ./scripts/dashmate config set --config=local platform.drive.abci.logs.stdout.level "trace"
 
         ./scripts/setup_local_network.sh
         ./scripts/configure_test_suite.sh
