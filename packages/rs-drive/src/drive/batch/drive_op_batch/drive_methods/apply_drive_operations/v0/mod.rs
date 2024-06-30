@@ -17,6 +17,7 @@ use crate::drive::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use std::collections::HashMap;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
@@ -43,6 +44,7 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<FeeResult, Error> {
         if operations.is_empty() {
             return Ok(FeeResult::default());
@@ -67,6 +69,7 @@ impl Drive {
                 block_info,
                 transaction,
                 platform_version,
+                Some(previous_fee_versions),
             )?);
         }
 
@@ -84,15 +87,14 @@ impl Drive {
         for task in finalize_tasks {
             task.execute(self, platform_version);
         }
-
-        let cached_fee_versions = self.cache.cached_fee_version.read();
+        
         Drive::calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            &cached_fee_versions,
+            previous_fee_versions,
         )
     }
 }

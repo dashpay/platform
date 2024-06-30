@@ -21,6 +21,7 @@ use crate::fee::op::LowLevelDriveOperation::{
     CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };
 use dpp::block::epoch::Epoch;
+use dpp::fee::Credits;
 use dpp::fee::default_costs::EpochCosts;
 use dpp::fee::default_costs::KnownCostItem::{
     StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
@@ -29,6 +30,8 @@ use dpp::fee::default_costs::KnownCostItem::{
 use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::CachedEpochIndexFeeVersions;
+use platform_version::version::fee::FeeVersion;
+use crate::error::fee::FeeError;
 
 /// Base ops
 #[derive(Debug, Enum)]
@@ -141,13 +144,23 @@ impl HashFunction {
         }
     }
 
-    //todo: put real costs in
-    fn base_cost(&self, _epoch: &Epoch) -> u64 {
+    fn block_cost(&self, fee_version: &FeeVersion) -> u64 {
         match self {
-            HashFunction::Sha256 => 30,
-            HashFunction::Sha256_2 => 30,
-            HashFunction::Blake3 => 30,
-            HashFunction::Sha256RipeMD160 => 30,
+            HashFunction::Sha256 => fee_version.hashing.sha256_per_block,
+            HashFunction::Sha256_2 => fee_version.hashing.sha256_per_block,
+            HashFunction::Blake3 => fee_version.hashing.blake3_per_block,
+            HashFunction::Sha256RipeMD160 => fee_version.hashing.sha256_per_block,
+        }
+    }
+    
+    fn base_cost(&self, fee_version: &FeeVersion) -> u64 {
+        match self {
+            HashFunction::Sha256 => fee_version.hashing.single_sha256_base,
+            // It's normal that the base cost for a sha256 will have a single sha256 base
+            // But it has an extra block
+            HashFunction::Sha256_2 => fee_version.hashing.single_sha256_base,
+            HashFunction::Blake3 => fee_version.hashing.blake3_base,
+            HashFunction::Sha256RipeMD160 => fee_version.hashing.sha256_ripe_md160_base,
         }
     }
 }
@@ -163,8 +176,9 @@ pub struct FunctionOp {
 
 impl FunctionOp {
     /// The cost of the function
-    fn cost(&self, epoch: &Epoch) -> u64 {
-        self.rounds as u64 * self.hash.base_cost(epoch)
+    fn cost(&self, fee_version: &FeeVersion) -> Credits {
+        let block_cost = (self.rounds as u64).saturating_mul(self.hash.block_cost(fee_version));
+        self.hash.base_cost(fee_version).saturating_add(block_cost)
     }
 
     /// Create a new function operation with the following hash knowing the rounds it will take
@@ -204,20 +218,23 @@ impl LowLevelDriveOperation {
         drive_operation: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
         epochs_per_era: u16,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
+        fee_version: &FeeVersion,
+        cached_fee_versions: &Option<CachedEpochIndexFeeVersions>,
     ) -> Result<Vec<FeeResult>, Error> {
         drive_operation
             .into_iter()
             .map(|operation| match operation {
                 PreCalculatedFeeResult(f) => Ok(f),
                 FunctionOperation(op) => Ok(FeeResult {
-                    processing_fee: op.cost(epoch),
+                    processing_fee: op.cost(fee_version),
                     ..Default::default()
                 }),
                 _ => {
                     let cost = operation.operation_cost()?;
-                    let storage_fee = cost.storage_cost(epoch, cached_fee_version)?;
-                    let processing_fee = cost.ephemeral_cost(epoch, cached_fee_version)?;
+                    // There is no need for a checked multiply here because added bytes are u64 and 
+                    // storage disk usage credit per byte should never be high enough to cause an overflow
+                    let storage_fee = cost.storage_cost.added_bytes as u64 * fee_version.storage.storage_disk_usage_credit_per_byte;
+                    let processing_fee = cost.ephemeral_cost(fee_version)?;
                     let (fee_refunds, removed_bytes_from_system) =
                         match cost.storage_cost.removed_bytes {
                             NoStorageRemoval => (FeeRefunds::default(), 0),
@@ -226,6 +243,7 @@ impl LowLevelDriveOperation {
                                 (FeeRefunds::default(), amount)
                             }
                             SectionedStorageRemoval(mut removal_per_epoch_by_identifier) => {
+                                let cached_fee_versions = cached_fee_versions.as_ref().ok_or(Error::Drive(DriveError::CorruptedCodeExecution("expected previous epoch index fee versions to be able to offer refunds")))?;
                                 let system_amount = removal_per_epoch_by_identifier
                                     .remove(&Identifier::default())
                                     .map_or(0, |a| a.values().sum());
@@ -235,7 +253,7 @@ impl LowLevelDriveOperation {
                                         removal_per_epoch_by_identifier,
                                         epoch.index,
                                         epochs_per_era,
-                                        cached_fee_version,
+                                        cached_fee_versions,
                                     )?,
                                     system_amount,
                                 )
@@ -410,14 +428,7 @@ pub trait DriveCost {
     /// Ephemeral cost
     fn ephemeral_cost(
         &self,
-        epoch: &Epoch,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
-    ) -> Result<u64, Error>;
-    /// Storage cost
-    fn storage_cost(
-        &self,
-        epoch: &Epoch,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
+        fee_version: &FeeVersion,
     ) -> Result<u64, Error>;
 }
 
@@ -425,20 +436,17 @@ impl DriveCost for OperationCost {
     /// Return the ephemeral cost from the operation
     fn ephemeral_cost(
         &self,
-        epoch: &Epoch,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
-    ) -> Result<u64, Error> {
-        //todo: deal with epochs
+        fee_version: &FeeVersion,
+    ) -> Result<Credits, Error> {
         let OperationCost {
             seek_count,
             storage_cost,
             storage_loaded_bytes,
             hash_node_calls,
         } = self;
-        let epoch_cost_for_processing_credit_per_byte =
-            epoch.cost_for_known_cost_item(cached_fee_version, StorageProcessingCreditPerByte);
+        let epoch_cost_for_processing_credit_per_byte = fee_version.storage.storage_processing_credit_per_byte;
         let seek_cost = (*seek_count as u64)
-            .checked_mul(epoch.cost_for_known_cost_item(cached_fee_version, StorageSeekCost))
+            .checked_mul(fee_version.storage.storage_seek_cost)
             .ok_or_else(|| get_overflow_error("seek cost overflow"))?;
         let storage_added_bytes_ephemeral_cost = (storage_cost.added_bytes as u64)
             .checked_mul(epoch_cost_for_processing_credit_per_byte)
@@ -453,12 +461,14 @@ impl DriveCost for OperationCost {
         // not accessible
         let storage_loaded_bytes_cost = (*storage_loaded_bytes as u64)
             .checked_mul(
-                epoch.cost_for_known_cost_item(cached_fee_version, StorageLoadCreditPerByte),
+                fee_version.storage.storage_load_credit_per_byte,
             )
             .ok_or_else(|| get_overflow_error("storage loaded cost overflow"))?;
+        
+        // There is one block per hash node call
+        let blake3_total = fee_version.hashing.blake3_base + fee_version.hashing.blake3_per_block;
         // this can't overflow
-        let hash_node_cost =
-            FunctionOp::new_with_round_count(HashFunction::Blake3, *hash_node_calls).cost(epoch);
+        let hash_node_cost = blake3_total * (*hash_node_calls as u64);
         seek_cost
             .checked_add(storage_added_bytes_ephemeral_cost)
             .and_then(|c| c.checked_add(storage_replaced_bytes_ephemeral_cost))
@@ -466,20 +476,5 @@ impl DriveCost for OperationCost {
             .and_then(|c| c.checked_add(storage_removed_bytes_ephemeral_cost))
             .and_then(|c| c.checked_add(hash_node_cost))
             .ok_or_else(|| get_overflow_error("ephemeral cost addition overflow"))
-    }
-
-    /// Return the storage cost from the operation
-    fn storage_cost(
-        &self,
-        epoch: &Epoch,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
-    ) -> Result<u64, Error> {
-        //todo: deal with epochs
-        let OperationCost { storage_cost, .. } = self;
-        (storage_cost.added_bytes as u64)
-            .checked_mul(
-                epoch.cost_for_known_cost_item(cached_fee_version, StorageDiskUsageCreditPerByte),
-            )
-            .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))
     }
 }

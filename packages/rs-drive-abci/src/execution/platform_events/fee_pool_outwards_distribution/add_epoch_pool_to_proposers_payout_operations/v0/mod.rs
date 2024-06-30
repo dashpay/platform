@@ -152,6 +152,7 @@ impl<C> Platform<C> {
             &BlockInfo::default(),
             Some(transaction),
             platform_version,
+            &None,
         )?;
 
         batch.push(DriveOperation::GroveDBOpBatch(operations));
@@ -180,6 +181,7 @@ mod tests {
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
+        use dpp::prelude::CachedEpochIndexFeeVersions;
 
         #[test]
         fn test_payout_to_proposers() {
@@ -281,6 +283,7 @@ mod tests {
                     &BlockInfo::default(),
                     Some(&transaction),
                     platform_version,
+                    &CachedEpochIndexFeeVersions::default(),
                 )
                 .expect("should apply batch");
 

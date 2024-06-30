@@ -8,6 +8,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::util::hash::hash_single;
 use dpp::validation::ConsensusValidationResult;
 use std::time::Instant;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::state_transition_container::v0::{
@@ -70,6 +71,8 @@ where
             config: &self.config,
             core_rpc: &self.core_rpc,
         };
+        
+        let previous_fee_versions = block_platform_state.previous_fee_versions();
 
         let state_transition_container =
             self.decode_raw_state_transitions(raw_state_transitions, platform_version)?;
@@ -115,6 +118,7 @@ where
                             block_info,
                             transaction,
                             platform_version,
+                            previous_fee_versions,
                         )
                         .unwrap_or_else(error_to_internal_error_execution_result)
                     })
@@ -199,6 +203,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
         // State Transition is invalid
         if !validation_result.is_valid() {
@@ -252,6 +257,7 @@ where
                     block_info,
                     transaction,
                     platform_version,
+                    previous_fee_versions,
                 )
                 .map_err(|error| StateTransitionAwareError {
                     error,
@@ -343,6 +349,7 @@ where
                 block_info,
                 transaction,
                 platform_version,
+                previous_fee_versions,
             )
             .map_err(|error| StateTransitionAwareError {
                 error,

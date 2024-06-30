@@ -11,6 +11,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
 use drive::grovedb::Transaction;
@@ -48,6 +49,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         let maybe_fee_validation_result = match event {
             ExecutionEvent::PaidFromAssetLock { .. } | ExecutionEvent::Paid { .. } => {
@@ -89,6 +91,7 @@ where
                             block_info,
                             Some(transaction),
                             platform_version,
+                            previous_fee_versions,
                         )
                         .map_err(Error::Drive)?;
 
@@ -138,6 +141,7 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
+                        &CachedEpochIndexFeeVersions::default(),
                     )
                     .map_err(Error::Drive)?;
 
@@ -162,6 +166,7 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
+                        &CachedEpochIndexFeeVersions::default(),
                     )
                     .map_err(Error::Drive)?;
                 Ok(SuccessfulFreeExecution)

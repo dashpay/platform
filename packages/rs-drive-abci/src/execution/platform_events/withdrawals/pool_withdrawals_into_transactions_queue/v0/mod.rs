@@ -3,6 +3,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
@@ -131,6 +132,7 @@ where
             block_info,
             transaction,
             platform_version,
+            &CachedEpochIndexFeeVersions::default(),
         )?;
 
         Ok(())

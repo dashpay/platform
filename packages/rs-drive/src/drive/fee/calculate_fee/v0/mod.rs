@@ -37,6 +37,7 @@ impl Drive {
                 drive_operations,
                 epoch,
                 epochs_per_era,
+                ,
                 cached_fee_version,
             )? {
                 aggregate_fee_result.checked_add_assign(drive_fee_result)?;

@@ -9,6 +9,7 @@ use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdr
 use dpp::version::PlatformVersion;
 use itertools::Itertools;
 use std::collections::HashSet;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 
 use drive::drive::batch::DriveOperation;
 use drive::drive::config::DEFAULT_QUERY_LIMIT;
@@ -155,6 +156,7 @@ where
             block_info,
             transaction.into(),
             platform_version,
+            &CachedEpochIndexFeeVersions::default(),
         )?;
 
         Ok(())

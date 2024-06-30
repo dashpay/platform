@@ -16,6 +16,7 @@ use drive::drive::batch::IdentityOperationType::AddNewIdentity;
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 use tracing::Level;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 
 impl<C> Platform<C>
 where
@@ -140,6 +141,7 @@ where
             block_info,
             Some(transaction),
             platform_version,
+            &CachedEpochIndexFeeVersions::default(),
         )?;
 
         let height = block_info.height;

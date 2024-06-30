@@ -171,6 +171,7 @@ mod tests {
         use crate::platform_types::platform_state::PlatformState;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::CreditsPerEpoch;
+        use dpp::prelude::CachedEpochIndexFeeVersions;
         use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 
         /// Process and validate an epoch change
@@ -211,6 +212,7 @@ mod tests {
                         &BlockInfo::default(),
                         Some(transaction),
                         platform_version,
+                        &CachedEpochIndexFeeVersions::default(),
                     )
                     .expect("should apply batch");
             }
@@ -285,6 +287,7 @@ mod tests {
                     &BlockInfo::default(),
                     Some(transaction),
                     platform_version,
+                    &CachedEpochIndexFeeVersions::default(),
                 )
                 .expect("should apply batch");
 

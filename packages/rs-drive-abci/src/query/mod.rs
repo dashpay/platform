@@ -30,6 +30,7 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use std::borrow::Cow;
     use std::sync::Arc;
+    use dpp::prelude::CachedEpochIndexFeeVersions;
 
     pub fn setup_platform<'a>(
         with_genesis_state: bool,
@@ -71,7 +72,7 @@ mod tests {
 
         platform
             .drive
-            .apply_drive_operations(vec![operation], true, &block_info, None, platform_version)
+            .apply_drive_operations(vec![operation], true, &block_info, None, platform_version, &CachedEpochIndexFeeVersions::default())
             .expect("expected to apply drive operations");
     }
 

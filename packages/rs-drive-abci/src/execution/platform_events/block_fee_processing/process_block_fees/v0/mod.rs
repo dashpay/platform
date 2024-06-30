@@ -36,6 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::Drive;
@@ -180,6 +181,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             &block_info.to_block_info(epoch_info.try_into()?),
             Some(transaction),
             platform_version,
+            &CachedEpochIndexFeeVersions::default(),
         )?;
 
         let outcome = processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome {

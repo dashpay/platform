@@ -10,6 +10,7 @@ use dpp::block::block_info::BlockInfo;
 use grovedb::TransactionArg;
 
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 
 use dpp::version::PlatformVersion;
 
@@ -39,6 +40,7 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -52,6 +54,7 @@ impl Drive {
                 block_info,
                 transaction,
                 platform_version,
+                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_drive_operations".to_string(),

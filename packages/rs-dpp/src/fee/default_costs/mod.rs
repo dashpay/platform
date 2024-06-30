@@ -75,6 +75,7 @@ pub enum KnownCostItem {
 }
 
 impl KnownCostItem {
+    #[inline]
     pub fn lookup_cost(&self, fee_version: &FeeVersion) -> Credits {
         match self {
             KnownCostItem::StorageDiskUsageCreditPerByte => {

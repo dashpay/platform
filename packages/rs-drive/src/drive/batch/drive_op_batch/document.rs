@@ -12,7 +12,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::prelude::Identifier;
+use dpp::prelude::{CachedEpochIndexFeeVersions, Identifier};
 
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
@@ -102,6 +102,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DocumentOperationType::AddDocument {

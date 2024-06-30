@@ -39,7 +39,7 @@ impl FeeRefunds {
         storage_removal: I,
         current_epoch_index: EpochIndex,
         epochs_per_era: u16,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
+        cached_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
@@ -58,7 +58,7 @@ impl FeeRefunds {
                         // TODO We should use multipliers
 
                         let credits: Credits = (bytes as Credits)
-                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(cached_fee_version, StorageDiskUsageCreditPerByte))
+                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(cached_fee_versions, StorageDiskUsageCreditPerByte))
                             .ok_or(ProtocolError::Overflow("storage written bytes cost overflow"))?;
 
                         let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(

@@ -34,6 +34,7 @@ use crate::drive::batch::drive_op_batch::finalize_task::{
 };
 use crate::error::drive::DriveError;
 use std::collections::{BTreeMap, HashMap};
+use dpp::prelude::CachedEpochIndexFeeVersions;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
@@ -47,6 +48,7 @@ pub trait DriveLowLevelOperationConverter {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &Option<CachedEpochIndexFeeVersions>,
     ) -> Result<Vec<LowLevelDriveOperation>, Error>;
 }
 
@@ -88,6 +90,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DriveOperation::DataContractOperation(contract_operation_type) => {
@@ -271,6 +274,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                &CachedEpochIndexFeeVersions::default(),
             )
             .expect("expected to insert contract and document");
 
@@ -389,6 +393,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                &CachedEpochIndexFeeVersions::default(),
             )
             .expect("expected to be able to insert documents");
 
@@ -500,6 +505,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                &CachedEpochIndexFeeVersions::default(),
             )
             .expect("expected to be able to insert documents");
 
@@ -630,6 +636,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                &CachedEpochIndexFeeVersions::default(),
             )
             .expect("expected to be able to insert documents");
 
@@ -738,6 +745,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                &CachedEpochIndexFeeVersions::default(),
             )
             .expect("expected to be able to insert documents");
 
@@ -798,6 +806,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                &CachedEpochIndexFeeVersions::default(),
             )
             .expect("expected to be able to update documents");
 
@@ -951,6 +960,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                &CachedEpochIndexFeeVersions::default(),
             )
             .expect("expected to be able to insert documents");
 
@@ -1004,6 +1014,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                &CachedEpochIndexFeeVersions::default(),
             )
             .expect("expected to be able to update documents");
 

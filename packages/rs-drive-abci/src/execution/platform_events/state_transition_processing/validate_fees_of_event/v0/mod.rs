@@ -9,7 +9,7 @@ use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::prelude::ConsensusValidationResult;
+use dpp::prelude::{CachedEpochIndexFeeVersions, ConsensusValidationResult};
 use dpp::version::PlatformVersion;
 
 use drive::grovedb::TransactionArg;
@@ -62,6 +62,7 @@ where
                         block_info,
                         transaction,
                         platform_version,
+                        &CachedEpochIndexFeeVersions::default(),
                     )
                     .map_err(Error::Drive)?;
 
@@ -113,6 +114,7 @@ where
                         block_info,
                         transaction,
                         platform_version,
+                        &CachedEpochIndexFeeVersions::default(),
                     )
                     .map_err(Error::Drive)?;
 
