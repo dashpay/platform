@@ -4,4 +4,10 @@ FULL_PATH=$(realpath "$0")
 DIR_PATH=$(dirname "$FULL_PATH")
 ROOT_PATH=$(dirname "$DIR_PATH")
 
+# Check if packages/dashmate/dist/index.js exists
+if [ ! -f "$ROOT_PATH/packages/dashmate/dist/index.js" ]; then
+  echo "Error: dashmate is not built. Please run 'yarn build' or use dev script."
+  exit 1
+fi
+
 node $ROOT_PATH/packages/dashmate/bin/run.js "$@"
