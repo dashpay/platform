@@ -14,6 +14,7 @@ await esbuild.build({
   format: 'esm',
   inject: ['./scripts/build/shim.js'],
   plugins: [fileloc.filelocPlugin()],
+  // These packages break the bundle
   external: ['ejs', '@dashevo/bls', '@dashevo/wasm-dpp'],
   treeShaking: true,
   loader: {
