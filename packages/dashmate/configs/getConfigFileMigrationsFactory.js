@@ -664,6 +664,8 @@ export default function getConfigFileMigrationsFactory({ homeDir, defaultConfigs
                 rotation: networkConfig.get('platform.drive.abci.instantLock.quorum.rotation'),
               },
             };
+
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
           });
         return configFile;
       },
