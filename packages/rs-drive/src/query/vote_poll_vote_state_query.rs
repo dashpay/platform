@@ -91,7 +91,7 @@ pub struct ContestedDocumentVotePollDriveQuery {
     pub result_type: ContestedDocumentVotePollDriveQueryResultType,
     /// Offset
     pub offset: Option<u16>,
-    /// Limit
+    /// Limit for returned contestant info, including locked or abstaining votes does not change this
     pub limit: Option<u16>,
     /// Start at identity id
     pub start_at: Option<([u8; 32], bool)>,
@@ -769,22 +769,30 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
         let allow_include_locked_and_abstaining_vote_tally = self
             .allow_include_locked_and_abstaining_vote_tally
             && self.result_type.has_vote_tally();
+        
+        
+        // We have the following
+        // Stored Info 'b' Abstain votes 'k' Lock Votes 'l'
 
         // this is a range on all elements
-        match &self.start_at {
+        let limit = match &self.start_at {
             None => {
                 if allow_include_locked_and_abstaining_vote_tally {
                     if !self.result_type.has_vote_tally() {
                         // Documents and Ids don't care about the vote tallies
                         query.insert_range_after(vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..);
+                        self.limit
                     } else {
                         query.insert_all();
+                        self.limit.map(|limit| limit.saturating_add(2))
                     }
-                } else {
-                    if self.result_type.has_vote_tally() {
-                        query.insert_key(vec![RESOURCE_STORED_INFO_KEY_U8]);
-                    }
+                } else if self.result_type.has_vote_tally() {
+                    query.insert_key(vec![RESOURCE_STORED_INFO_KEY_U8]);
                     query.insert_range_after(vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..);
+                    self.limit.map(|limit| limit.saturating_add(1))
+                } else {
+                    query.insert_range_after(vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8]..);
+                    self.limit
                 }
             }
             Some((starts_at_key_bytes, start_at_included)) => {
@@ -793,8 +801,9 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                     true => query.insert_range_from(starts_at_key..),
                     false => query.insert_range_after(starts_at_key..),
                 }
+                self.limit
             }
-        }
+        };
 
         let (subquery_path, subquery) = match self.result_type {
             ContestedDocumentVotePollDriveQueryResultType::Documents => (Some(vec![vec![0]]), None),
@@ -831,7 +840,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
             path,
             query: SizedQuery {
                 query,
-                limit: self.limit,
+                limit,
                 offset: self.offset,
             },
         })
