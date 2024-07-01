@@ -95,10 +95,5 @@
     "test:coverage": "NODE_ENV=test nyc --check-coverage --stmts=98 --branch=98 --funcs=98 --lines=90 yarn run mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
     "prepublishOnly": "yarn run build:web"
   },
-  "ultra": {
-    "concurrent": [
-      "clean"
-    ]
-  },
   "license": "MIT"
 }

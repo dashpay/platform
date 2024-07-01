@@ -13,7 +13,6 @@ scripts
 node_modules
 
 packages/*/.nyc_output
-packages/*/.ultra.cache.json
 packages/*/test
 packages/*/tests
 packages/*/build
@@ -22,7 +21,6 @@ packages/*/docs
 packages/*/dist
 packages/*/wasm
 packages/*/lib/wasm
-packages/*/node_modules
 packages/*/.env
 
 !packages/platform-test-suite/test
