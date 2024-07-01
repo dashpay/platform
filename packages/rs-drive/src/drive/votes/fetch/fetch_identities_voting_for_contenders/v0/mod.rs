@@ -1,6 +1,6 @@
 use crate::drive::votes::paths::{
-    VotePollPaths, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8, RESOURCE_LOCK_VOTE_TREE_KEY_U8,
-    RESOURCE_STORED_INFO_KEY_U8, VOTING_STORAGE_TREE_KEY,
+    VotePollPaths, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
+    VOTING_STORAGE_TREE_KEY,
 };
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
@@ -31,8 +31,8 @@ impl Drive {
         query.insert_keys(fetch_contenders.into_iter().map(|id| id.to_vec()).collect());
         if also_fetch_abstaining_and_locked_votes {
             query.insert_keys(vec![
-                vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8],
-                vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8],
+                RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec(),
+                RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec(),
             ]);
         }
 
@@ -65,9 +65,9 @@ impl Drive {
                 .into_iter()
                 .map(|value| value.try_into())
                 .collect::<Result<Vec<Identifier>, dpp::platform_value::Error>>()?;
-            if key == vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8] {
+            if key == RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32 {
                 Ok((ResourceVoteChoice::Abstain, voters_array))
-            } else if key == vec![RESOURCE_LOCK_VOTE_TREE_KEY_U8] {
+            } else if key == RESOURCE_LOCK_VOTE_TREE_KEY_U8_32 {
                 Ok((ResourceVoteChoice::Lock, voters_array))
             } else {
                 Ok((

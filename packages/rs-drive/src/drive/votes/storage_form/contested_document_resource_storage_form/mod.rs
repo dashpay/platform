@@ -1,6 +1,6 @@
 use crate::drive::defaults::DEFAULT_HASH_SIZE_USIZE;
 use crate::drive::votes::paths::{
-    ACTIVE_POLLS_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY, RESOURCE_LOCK_VOTE_TREE_KEY,
+    ACTIVE_POLLS_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
 };
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 use crate::error::contract::DataContractError::{CorruptedDataContract, ProvidedContractMismatch};
@@ -162,13 +162,13 @@ impl TreePathStorageForm for ContestedDocumentResourceVoteStorageForm {
         let document_type_name = String::from_utf8(key_document_type_name.clone()).map_err(|_| ProtocolError::VoteError(format!("path {} fifth element must be a document type name but couldn't be converted to a string", path.iter().map(hex::encode).collect::<Vec<_>>().join("/"))))?;
 
         let resource_vote_choice = if key_vote_choice.len() == 32 {
-            ResourceVoteChoice::TowardsIdentity(Identifier::from_vec(key_vote_choice.clone())?)
-        } else if key_vote_choice.len() == 1 {
-            let char = (*key_vote_choice.first().unwrap()) as char;
-            match char {
-                RESOURCE_ABSTAIN_VOTE_TREE_KEY => ResourceVoteChoice::Abstain,
-                RESOURCE_LOCK_VOTE_TREE_KEY => ResourceVoteChoice::Lock,
-                _ => return Err(ProtocolError::VoteError(format!("path {} 2 before last element must be an identifier or RESOURCE_ABSTAIN_VOTE_TREE_KEY/RESOURCE_LOCK_VOTE_TREE_KEY", path.into_iter().map(hex::encode).collect::<Vec<_>>().join("/")))),
+            if key_vote_choice.as_slice() == RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.as_slice() {
+                ResourceVoteChoice::Lock
+            } else if key_vote_choice.as_slice() == RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.as_slice()
+            {
+                ResourceVoteChoice::Abstain
+            } else {
+                ResourceVoteChoice::TowardsIdentity(Identifier::from_vec(key_vote_choice.clone())?)
             }
         } else {
             return Err(ProtocolError::VoteError(format!("path {} 2 before last element must be an identifier or RESOURCE_ABSTAIN_VOTE_TREE_KEY/RESOURCE_LOCK_VOTE_TREE_KEY", path.into_iter().map(hex::encode).collect::<Vec<_>>().join("/"))));

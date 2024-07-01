@@ -1,5 +1,7 @@
 use crate::drive::document::paths::contract_document_type_path;
-use crate::drive::votes::paths::{RESOURCE_ABSTAIN_VOTE_TREE_KEY, RESOURCE_LOCK_VOTE_TREE_KEY};
+use crate::drive::votes::paths::{
+    RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
@@ -104,8 +106,8 @@ impl ResourceVoteChoiceToKeyTrait for ResourceVoteChoice {
     fn to_key(&self) -> Vec<u8> {
         match self {
             ResourceVoteChoice::TowardsIdentity(identity_id) => identity_id.to_vec(),
-            ResourceVoteChoice::Abstain => vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY as u8],
-            ResourceVoteChoice::Lock => vec![RESOURCE_LOCK_VOTE_TREE_KEY as u8],
+            ResourceVoteChoice::Abstain => RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec(),
+            ResourceVoteChoice::Lock => RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec(),
         }
     }
 }

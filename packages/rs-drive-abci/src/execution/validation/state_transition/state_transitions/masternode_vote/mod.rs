@@ -263,13 +263,13 @@ mod tests {
                 ) = query_validation_result.version.expect("expected a version");
 
                 let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
-                             get_contested_resources_response_v0::ContestedResourceValues {
-                                 contested_resource_values,
-                             },
-                         )) = result
-                    else {
-                        panic!("expected contested resources")
-                    };
+                    get_contested_resources_response_v0::ContestedResourceValues {
+                        contested_resource_values,
+                    },
+                )) = result
+                else {
+                    panic!("expected contested resources")
+                };
 
                 assert_eq!(contested_resource_values.len(), 2);
             }
@@ -431,13 +431,13 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
-                                 get_contested_resources_response_v0::ContestedResourceValues {
-                                     contested_resource_values,
-                                 },
-                             )) = result
-                        else {
-                            panic!("expected contested resources")
-                        };
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
 
                     assert_eq!(contested_resource_values.len(), 0);
                 }
@@ -475,9 +475,9 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
-                        else {
-                            panic!("expected proof")
-                        };
+                    else {
+                        panic!("expected proof")
+                    };
 
                     let resolved_contested_document_vote_poll_drive_query =
                         ResolvedVotePollsByDocumentTypeQuery {
@@ -561,13 +561,13 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
-                                 get_contested_resources_response_v0::ContestedResourceValues {
-                                     contested_resource_values,
-                                 },
-                             )) = result
-                        else {
-                            panic!("expected contested resources")
-                        };
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
 
                     let dash_encoded =
                         bincode::encode_to_vec(Value::Text("dash".to_string()), config)
@@ -612,9 +612,9 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
-                        else {
-                            panic!("expected proof")
-                        };
+                    else {
+                        panic!("expected proof")
+                    };
 
                     let resolved_contested_document_vote_poll_drive_query =
                         ResolvedVotePollsByDocumentTypeQuery {
@@ -705,13 +705,13 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
-                                 get_contested_resources_response_v0::ContestedResourceValues {
-                                     contested_resource_values,
-                                 },
-                             )) = result
-                        else {
-                            panic!("expected contested resources")
-                        };
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
 
                     let dash_encoded =
                         bincode::encode_to_vec(Value::Text("dash".to_string()), config)
@@ -756,9 +756,9 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
-                        else {
-                            panic!("expected proof")
-                        };
+                    else {
+                        panic!("expected proof")
+                    };
 
                     let resolved_contested_document_vote_poll_drive_query =
                         ResolvedVotePollsByDocumentTypeQuery {
@@ -849,13 +849,13 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
-                                 get_contested_resources_response_v0::ContestedResourceValues {
-                                     contested_resource_values,
-                                 },
-                             )) = result
-                        else {
-                            panic!("expected contested resources")
-                        };
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
 
                     assert_eq!(contested_resource_values.first(), None);
                 }
@@ -893,9 +893,9 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
-                        else {
-                            panic!("expected proof")
-                        };
+                    else {
+                        panic!("expected proof")
+                    };
 
                     let resolved_contested_document_vote_poll_drive_query =
                         ResolvedVotePollsByDocumentTypeQuery {
@@ -1097,13 +1097,13 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
-                                 get_contested_resources_response_v0::ContestedResourceValues {
-                                     contested_resource_values,
-                                 },
-                             )) = result
-                        else {
-                            panic!("expected contested resources")
-                        };
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
 
                     assert_eq!(contested_resource_values.len(), 2);
                 }
@@ -1141,9 +1141,9 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
-                        else {
-                            panic!("expected proof")
-                        };
+                    else {
+                        panic!("expected proof")
+                    };
 
                     let resolved_contested_document_vote_poll_drive_query =
                         ResolvedVotePollsByDocumentTypeQuery {
@@ -1217,7 +1217,7 @@ mod tests {
                     Value::Text(convert_to_homograph_safe_chars("quantum")),
                     config,
                 )
-                    .expect("expected to encode value");
+                .expect("expected to encode value");
 
                 {
                     let query_validation_result = platform
@@ -1257,13 +1257,13 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::ContestedResourceValues(
-                                 get_contested_resources_response_v0::ContestedResourceValues {
-                                     contested_resource_values,
-                                 },
-                             )) = result
-                        else {
-                            panic!("expected contested resources")
-                        };
+                        get_contested_resources_response_v0::ContestedResourceValues {
+                            contested_resource_values,
+                        },
+                    )) = result
+                    else {
+                        panic!("expected contested resources")
+                    };
 
                     assert_eq!(contested_resource_values.len(), 1);
                 }
@@ -1306,9 +1306,9 @@ mod tests {
                     ) = query_validation_result.version.expect("expected a version");
 
                     let Some(get_contested_resources_response_v0::Result::Proof(proof)) = result
-                        else {
-                            panic!("expected proof")
-                        };
+                    else {
+                        panic!("expected proof")
+                    };
 
                     let resolved_contested_document_vote_poll_drive_query =
                         ResolvedVotePollsByDocumentTypeQuery {
@@ -2375,7 +2375,7 @@ mod tests {
                     Value::Text(convert_to_homograph_safe_chars("quantum")),
                     config,
                 )
-                    .expect("expected to encode the word quantum");
+                .expect("expected to encode the word quantum");
 
                 let index_values = vec![dash_encoded, quantum_encoded];
 
@@ -2490,7 +2490,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (contender_3, contender_4, _dpns_contract) = create_dpns_name_contest(
+                let (contender_3, _contender_4, _dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     8,
@@ -2498,7 +2498,7 @@ mod tests {
                     platform_version,
                 );
 
-                let (contender_5, contender_6, dpns_contract) = create_dpns_name_contest(
+                let (_contender_5, _contender_6, dpns_contract) = create_dpns_name_contest(
                     &mut platform,
                     &platform_state,
                     9,
@@ -2528,28 +2528,34 @@ mod tests {
                         &platform_state,
                         &dpns_contract,
                         "quantum",
-                        Some(6),
+                        Some(3),
                         false,
                         None,
                         ResultType::DocumentsAndVoteTally,
                         platform_version,
                     );
 
-                    assert_eq!((contenders.len(), abstaining, locking, finished_vote_info), (4, None, None, None));
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (3, None, None, None)
+                    );
 
                     let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
                         &platform,
                         &platform_state,
                         &dpns_contract,
                         "quantum",
-                        Some(4),
+                        Some(3),
                         true,
                         None,
                         ResultType::DocumentsAndVoteTally,
                         platform_version,
                     );
 
-                    assert_eq!((contenders.len(), abstaining, locking, finished_vote_info), (4, Some(10), Some(3), None));
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (3, Some(10), Some(3), None)
+                    );
                 }
 
                 // Documents
@@ -2562,8 +2568,30 @@ mod tests {
                         Some(4),
                         false,
                         None,
-                        ResultType::VoteTally,
+                        ResultType::Documents,
                         platform_version,
+                    );
+
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (4, None, None, None)
+                    );
+
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        Some(4),
+                        true,
+                        None,
+                        ResultType::Documents,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (4, None, None, None)
                     );
                 }
 
@@ -2574,11 +2602,33 @@ mod tests {
                         &platform_state,
                         &dpns_contract,
                         "quantum",
-                        Some(4),
+                        Some(3),
                         false,
                         None,
                         ResultType::VoteTally,
                         platform_version,
+                    );
+
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (3, None, None, None)
+                    );
+
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        Some(3),
+                        true,
+                        None,
+                        ResultType::VoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (3, Some(10), Some(3), None)
                     );
                 }
             }
@@ -2633,63 +2683,73 @@ mod tests {
 
                 // DocumentsAndVoteTally
                 {
-                    let (contenders, abstaining, locking, finished_vote_info) = get_proved_vote_states(
-                        &platform,
-                        &platform_state,
-                        &dpns_contract,
-                        "quantum",
-                        Some(4),
-                        false,
-                        None,
-                        ResultType::DocumentsAndVoteTally,
-                        platform_version,
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            Some(4),
+                            false,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (4, None, None, None)
                     );
 
-                    assert_eq!((contenders.len(), abstaining, locking, finished_vote_info), (4, None, None, None));
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            Some(4),
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
 
-                    let (contenders, abstaining, locking, finished_vote_info) = get_proved_vote_states(
-                        &platform,
-                        &platform_state,
-                        &dpns_contract,
-                        "quantum",
-                        Some(4),
-                        true,
-                        None,
-                        ResultType::DocumentsAndVoteTally,
-                        platform_version,
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (4, Some(10), Some(3), None)
                     );
-
-                    assert_eq!((contenders.len(), abstaining, locking, finished_vote_info), (4, Some(10), Some(3), None));
                 }
 
                 // Documents
                 {
-                    let (contenders, abstaining, locking, finished_vote_info) = get_proved_vote_states(
-                        &platform,
-                        &platform_state,
-                        &dpns_contract,
-                        "quantum",
-                        Some(4),
-                        false,
-                        None,
-                        ResultType::VoteTally,
-                        platform_version,
-                    );
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            Some(4),
+                            false,
+                            None,
+                            ResultType::VoteTally,
+                            platform_version,
+                        );
                 }
 
                 // VoteTally
                 {
-                    let (contenders, abstaining, locking, finished_vote_info) = get_proved_vote_states(
-                        &platform,
-                        &platform_state,
-                        &dpns_contract,
-                        "quantum",
-                        Some(4),
-                        false,
-                        None,
-                        ResultType::VoteTally,
-                        platform_version,
-                    );
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            Some(4),
+                            false,
+                            None,
+                            ResultType::VoteTally,
+                            platform_version,
+                        );
                 }
             }
         }
