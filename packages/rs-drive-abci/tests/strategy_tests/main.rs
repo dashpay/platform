@@ -47,7 +47,7 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::AssetUnlockStatus;
-    use dashcore_rpc::json::AssetUnlockStatusResult;
+    use dashcore_rpc::json::{AssetUnlockStatusResult, QuorumType};
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use std::sync::{Arc, Mutex};
     use strategy_tests::operations::DocumentAction::{
@@ -74,7 +74,9 @@ mod tests {
     use dpp::version::PlatformVersion;
     use drive::drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
-    use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformTestConfig, ValidatorSetConfig,
+    };
 
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -113,9 +115,9 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -158,9 +160,9 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -203,9 +205,9 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -225,12 +227,13 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             identity_nonce_counter,
             identity_contract_nonce_counter,
+            instant_lock_quorums,
             ..
         } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
 
@@ -289,13 +292,14 @@ mod tests {
                 core_height_start: 1,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                instant_lock_quorums,
             },
             strategy,
             config,
@@ -335,9 +339,9 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -357,12 +361,13 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             identity_nonce_counter,
             identity_contract_nonce_counter,
+            instant_lock_quorums,
             ..
         } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
 
@@ -421,13 +426,14 @@ mod tests {
                 core_height_start: 1,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                instant_lock_quorums,
             },
             strategy,
             config,
@@ -468,16 +474,20 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -530,9 +540,9 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -579,9 +589,9 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -636,9 +646,9 @@ mod tests {
         let hour_in_s = 60 * 60;
         let three_mins_in_ms = 1000 * 60 * 3;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -694,9 +704,25 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -774,9 +800,25 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -841,9 +883,25 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -903,9 +961,25 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -962,7 +1036,8 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
-        // drive_abci::logging::Loggers::default().try_install().ok();
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
+
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -995,12 +1070,13 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
+            sign_instant_locks: true,
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -1052,16 +1128,20 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -1133,16 +1213,20 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1252,9 +1336,9 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -1339,16 +1423,20 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1443,9 +1531,9 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -1524,16 +1612,20 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 120;
@@ -1632,16 +1724,20 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 120;
@@ -1740,16 +1836,20 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -1866,16 +1966,20 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -1991,9 +2095,9 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2105,9 +2209,9 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2219,9 +2323,9 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2229,7 +2333,11 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 30;
@@ -2348,9 +2456,9 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2358,7 +2466,11 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 30;
@@ -2493,9 +2605,9 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 100,
@@ -2503,7 +2615,11 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 30;
@@ -2559,12 +2675,13 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            sign_instant_locks: true,
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
@@ -2642,16 +2759,20 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -2727,16 +2848,20 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -2824,16 +2949,20 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -2901,12 +3030,13 @@ mod tests {
             ChainExecutionOutcome {
                 abci_app,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions,
                 end_time_ms,
                 identity_nonce_counter,
                 identity_contract_nonce_counter,
+                instant_lock_quorums,
                 ..
             },
             last_block_pooled_withdrawals_amount,
@@ -2940,13 +3070,14 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             withdrawals: last_block_withdrawals,
             identity_nonce_counter,
             identity_contract_nonce_counter,
+            instant_lock_quorums,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -2956,13 +3087,14 @@ mod tests {
                     core_height_start: 1,
                     block_count: 1,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms,
+                    instant_lock_quorums,
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3019,13 +3151,14 @@ mod tests {
             ChainExecutionOutcome {
                 abci_app,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions,
                 end_time_ms,
                 withdrawals: last_block_withdrawals,
                 identity_nonce_counter,
                 identity_contract_nonce_counter,
+                instant_lock_quorums,
                 ..
             },
             last_block_broadcased_withdrawals_amount,
@@ -3037,13 +3170,14 @@ mod tests {
                     core_height_start: 1,
                     block_count: 1,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3131,13 +3265,14 @@ mod tests {
             ChainExecutionOutcome {
                 abci_app,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions,
                 end_time_ms,
                 withdrawals: last_block_withdrawals,
                 identity_nonce_counter,
                 identity_contract_nonce_counter,
+                instant_lock_quorums,
                 ..
             },
             last_block_withdrawals_completed_amount,
@@ -3149,13 +3284,14 @@ mod tests {
                     core_height_start: 1,
                     block_count: 1,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3256,13 +3392,14 @@ mod tests {
                     core_height_start: 1,
                     block_count: 1,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3387,9 +3524,25 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 3,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 1,
@@ -3552,9 +3705,25 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 3,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 1,
@@ -3688,16 +3857,36 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 3,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform_a = TestPlatformBuilder::new()
@@ -3814,9 +4003,25 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 3,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 1,
@@ -3837,8 +4042,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             identity_nonce_counter,
@@ -3899,8 +4104,9 @@ mod tests {
                 core_height_start: 10,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                instant_lock_quorums: Default::default(),
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
@@ -3958,16 +4164,20 @@ mod tests {
         };
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -4014,16 +4224,20 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()

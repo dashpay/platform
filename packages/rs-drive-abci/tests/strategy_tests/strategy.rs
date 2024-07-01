@@ -40,7 +40,7 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use strategy_tests::{KeyMaps, Strategy};
-use strategy_tests::transitions::{create_state_transitions_for_identities, instant_asset_lock_proof_fixture};
+use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
@@ -48,8 +48,9 @@ use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::platform_value::{BinaryData, Value};
-use dpp::prelude::{Identifier, IdentityNonce};
+use dpp::prelude::{AssetLockProof, Identifier, IdentityNonce};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
 use dpp::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
@@ -59,7 +60,10 @@ use dpp::state_transition::documents_batch_transition::document_transition::{Doc
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
+use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use drive_abci::abci::app::FullAbciApplication;
+use drive_abci::config::PlatformConfig;
+use drive_abci::platform_types::signature_verification_quorum_set::{QuorumConfig, Quorums, SigningQuorum};
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
@@ -240,6 +244,7 @@ pub struct NetworkStrategy {
     pub extra_normal_mns: u16,
     pub validator_quorum_count: u16,
     pub chain_lock_quorum_count: u16,
+    pub instant_lock_quorum_count: u16,
     pub initial_core_height: u32,
     pub upgrading_info: Option<UpgradingInfo>,
     pub core_height_increase: CoreHeightIncrease,
@@ -251,6 +256,7 @@ pub struct NetworkStrategy {
     pub max_tx_bytes_per_block: u64,
     pub independent_process_proposal_verification: bool,
     pub sign_chain_locks: bool,
+    pub sign_instant_locks: bool,
 }
 
 impl Default for NetworkStrategy {
@@ -261,6 +267,7 @@ impl Default for NetworkStrategy {
             extra_normal_mns: 0,
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
+            instant_lock_quorum_count: 24,
             initial_core_height: 1,
             upgrading_info: None,
             core_height_increase: NoCoreHeightIncrease,
@@ -272,6 +279,7 @@ impl Default for NetworkStrategy {
             max_tx_bytes_per_block: 44800,
             independent_process_proposal_verification: false,
             sign_chain_locks: false,
+            sign_instant_locks: false,
         }
     }
 }
@@ -365,16 +373,18 @@ impl NetworkStrategy {
         block_info: &BlockInfo,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
+        platform_config: &PlatformConfig,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
         if block_info.height == 1 && self.strategy.start_identities.number_of_identities > 0 {
-            let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
+            let mut new_transitions = self.create_identities_state_transitions(
                 self.strategy.start_identities.number_of_identities.into(),
-                self.strategy.identity_inserts.start_keys as KeyID,
-                &self.strategy.identity_inserts.extra_keys,
                 signer,
                 rng,
+                instant_lock_quorums,
+                platform_config,
                 platform_version,
             );
             state_transitions.append(&mut new_transitions);
@@ -382,12 +392,12 @@ impl NetworkStrategy {
         let frequency = &self.strategy.identity_inserts.frequency;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
+            let mut new_transitions = self.create_identities_state_transitions(
                 count,
-                self.strategy.identity_inserts.start_keys as KeyID,
-                &self.strategy.identity_inserts.extra_keys,
                 signer,
                 rng,
+                instant_lock_quorums,
+                platform_config,
                 platform_version,
             );
             state_transitions.append(&mut new_transitions);
@@ -522,6 +532,7 @@ impl NetworkStrategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -1046,9 +1057,11 @@ impl NetworkStrategy {
                             .collect();
 
                         for random_identity in random_identities {
-                            operations.push(NetworkStrategy::create_identity_top_up_transition(
+                            operations.push(self.create_identity_top_up_transition(
                                 rng,
                                 random_identity,
+                                instant_lock_quorums,
+                                &platform.config,
                                 platform_version,
                             ));
                         }
@@ -1252,6 +1265,7 @@ impl NetworkStrategy {
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
         let platform_state = platform.state.load();
@@ -1259,8 +1273,14 @@ impl NetworkStrategy {
             .current_platform_version()
             .expect("expected platform version");
 
-        let identity_state_transitions_result =
-            self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
+        let identity_state_transitions_result = self.identity_state_transitions_for_block(
+            block_info,
+            signer,
+            rng,
+            instant_lock_quorums,
+            &platform.config,
+            platform_version,
+        );
 
         // Handle the Result returned by identity_state_transitions_for_block
         let (mut identities, mut state_transitions) = match identity_state_transitions_result {
@@ -1293,6 +1313,7 @@ impl NetworkStrategy {
                     signer,
                     identity_nonce_counter,
                     contract_nonce_counter,
+                    instant_lock_quorums,
                     rng,
                     platform_version,
                 );
@@ -1317,13 +1338,17 @@ impl NetworkStrategy {
 
     // add this because strategy tests library now requires a callback and uses the actual chain.
     fn create_identities_state_transitions(
+        &self,
         count: u16,
-        key_count: KeyID,
-        extra_keys: &KeyMaps,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
+        platform_config: &PlatformConfig,
         platform_version: &PlatformVersion,
     ) -> Vec<(Identity, StateTransition)> {
+        let key_count = self.strategy.identity_inserts.start_keys as KeyID;
+        let extra_keys = &self.strategy.identity_inserts.extra_keys;
+
         let (mut identities, mut keys) = Identity::random_identities_with_private_keys_with_rng::<
             Vec<_>,
         >(count, key_count, rng, platform_version)
@@ -1352,13 +1377,33 @@ impl NetworkStrategy {
         }
 
         signer.add_keys(keys);
-        create_state_transitions_for_identities(identities, signer, rng, platform_version)
+
+        if self.sign_instant_locks {
+            let identities_with_proofs = create_signed_instant_asset_lock_proofs_for_identities(
+                identities,
+                rng,
+                instant_lock_quorums,
+                platform_config,
+                platform_version,
+            );
+
+            create_state_transitions_for_identities_and_proofs(
+                identities_with_proofs,
+                signer,
+                platform_version,
+            )
+        } else {
+            create_state_transitions_for_identities(identities, signer, rng, platform_version)
+        }
     }
 
     // add this because strategy tests library now requires a callback and uses the actual chain.
     fn create_identity_top_up_transition(
+        &self,
         rng: &mut StdRng,
         identity: &Identity,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
+        platform_config: &PlatformConfig,
         platform_version: &PlatformVersion,
     ) -> StateTransition {
         let (_, pk) = ECDSA_SECP256K1
@@ -1366,8 +1411,42 @@ impl NetworkStrategy {
             .unwrap();
         let sk: [u8; 32] = pk.try_into().unwrap();
         let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
-        let asset_lock_proof =
+        let mut asset_lock_proof =
             instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
+
+        // Sign transaction and update signature in instant lock proof
+        if self.sign_instant_locks {
+            let quorum_config = QuorumConfig {
+                quorum_type: platform_config.instant_lock.quorum_type,
+                active_signers: platform_config.instant_lock.quorum_active_signers,
+                rotation: platform_config.instant_lock.quorum_rotation,
+                window: platform_config.instant_lock.quorum_window,
+            };
+
+            // Sign transaction and update instant lock
+            let AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }) =
+                &mut asset_lock_proof
+            else {
+                panic!("must be instant lock proof");
+            };
+
+            let request_id = instant_lock
+                .request_id()
+                .expect("failed to build request id");
+
+            let (quorum_hash, quorum) = instant_lock_quorums
+                .choose_quorum(&quorum_config, request_id.as_ref())
+                .expect("failed to choose quorum for instant lock transaction signing");
+
+            instant_lock.signature = quorum
+                .sign_for_instant_lock(
+                    &quorum_config,
+                    &quorum_hash,
+                    request_id.as_ref(),
+                    &instant_lock.txid,
+                )
+                .expect("failed to sign transaction for instant lock");
+        }
 
         IdentityTopUpTransition::try_from_identity(
             identity,
@@ -1399,9 +1478,10 @@ pub struct ChainExecutionOutcome<'a> {
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<MasternodeListItemWithUpdates>,
-    pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
-    pub current_quorum_hash: QuorumHash,
+    pub validator_quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
+    pub current_validator_quorum_hash: QuorumHash,
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
+    pub instant_lock_quorums: Quorums<SigningQuorum>,
     /// Identity nonce counters
     pub identity_nonce_counter: BTreeMap<Identifier, IdentityNonce>,
     /// Identity Contract nonce counters
@@ -1417,8 +1497,8 @@ pub struct ChainExecutionOutcome<'a> {
 
 impl<'a> ChainExecutionOutcome<'a> {
     pub fn current_quorum(&self) -> &TestQuorumInfo {
-        self.quorums
-            .get::<QuorumHash>(&self.current_quorum_hash)
+        self.validator_quorums
+            .get::<QuorumHash>(&self.current_validator_quorum_hash)
             .unwrap()
     }
 }
@@ -1428,8 +1508,9 @@ pub struct ChainExecutionParameters {
     pub core_height_start: u32,
     pub block_count: u64,
     pub proposers: Vec<MasternodeListItemWithUpdates>,
-    pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
-    pub current_quorum_hash: QuorumHash,
+    pub validator_quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
+    pub current_validator_quorum_hash: QuorumHash,
+    pub instant_lock_quorums: Quorums<SigningQuorum>,
     // the first option is if it is set
     // the second option is if we are even upgrading
     pub current_proposer_versions: Option<Option<HashMap<ProTxHash, ValidatorVersionMigration>>>,
@@ -1437,4 +1518,61 @@ pub struct ChainExecutionParameters {
     pub current_identity_contract_nonce_counter: BTreeMap<(Identifier, Identifier), IdentityNonce>,
     pub start_time_ms: u64,
     pub current_time_ms: u64,
+}
+
+fn create_signed_instant_asset_lock_proofs_for_identities(
+    identities: Vec<Identity>,
+    rng: &mut StdRng,
+    instant_lock_quorums: &Quorums<SigningQuorum>,
+    platform_config: &PlatformConfig,
+    platform_version: &PlatformVersion,
+) -> Vec<(Identity, [u8; 32], AssetLockProof)> {
+    let quorum_config = QuorumConfig {
+        quorum_type: platform_config.instant_lock.quorum_type,
+        active_signers: platform_config.instant_lock.quorum_active_signers,
+        rotation: platform_config.instant_lock.quorum_rotation,
+        window: platform_config.instant_lock.quorum_window,
+    };
+
+    identities
+        .into_iter()
+        .map(|identity| {
+            // Create instant asset lock proof
+            let (_, pk) = ECDSA_SECP256K1
+                .random_public_and_private_key_data(rng, platform_version)
+                .unwrap();
+
+            let pk_fixed: [u8; 32] = pk.try_into().unwrap();
+            let secret_key = SecretKey::from_str(hex::encode(pk_fixed).as_str()).unwrap();
+            let private_key = PrivateKey::new(secret_key, Network::Dash);
+
+            let mut asset_lock_proof = instant_asset_lock_proof_fixture(private_key);
+
+            // Sign transaction and update instant lock
+            let AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }) =
+                &mut asset_lock_proof
+            else {
+                panic!("must be instant lock proof");
+            };
+
+            let request_id = instant_lock
+                .request_id()
+                .expect("failed to build request id");
+
+            let (quorum_hash, quorum) = instant_lock_quorums
+                .choose_quorum(&quorum_config, request_id.as_ref())
+                .expect("failed to choose quorum for instant lock transaction signing");
+
+            instant_lock.signature = quorum
+                .sign_for_instant_lock(
+                    &quorum_config,
+                    &quorum_hash,
+                    request_id.as_ref(),
+                    &instant_lock.txid,
+                )
+                .expect("failed to sign transaction for instant lock");
+
+            (identity, pk_fixed, asset_lock_proof)
+        })
+        .collect()
 }

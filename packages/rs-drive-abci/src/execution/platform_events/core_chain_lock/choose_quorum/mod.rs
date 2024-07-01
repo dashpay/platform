@@ -21,7 +21,7 @@ where
     C: CoreRPCLike,
 {
     /// Based on DIP8 deterministically chooses a pseudorandom quorum from the list of quorums
-    ///
+    // TODO: use CoreQuorumSet.select_quorums instead
     pub fn choose_quorum<'a>(
         llmq_quorum_type: QuorumType,
         quorums: &'a BTreeMap<QuorumHash, BlsPublicKey>,

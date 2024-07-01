@@ -95,6 +95,8 @@ pub struct TestQuorumInfo {
     pub core_height: u32,
     /// The hash of the quorum.
     pub quorum_hash: QuorumHash,
+    /// The quorum index. Available only for DIP24 rotated quorums.
+    pub quorum_index: Option<u32>,
     /// The set of validators that belong to the quorum.
     pub validator_set: Vec<ValidatorInQuorum>,
     /// A map of validators indexed by their `ProTxHash` identifiers.
@@ -129,6 +131,7 @@ impl TestQuorumInfo {
     pub fn from_quorum_hash_and_pro_tx_hashes(
         core_height: u32,
         quorum_hash: QuorumHash,
+        quorum_index: Option<u32>,
         pro_tx_hashes: Vec<ProTxHash>,
         rng: &mut StdRng,
     ) -> Self {
@@ -172,6 +175,7 @@ impl TestQuorumInfo {
         TestQuorumInfo {
             core_height,
             quorum_hash,
+            quorum_index,
             validator_set,
             validator_map: map,
             private_key: recovered_private_key,
@@ -185,6 +189,7 @@ impl From<&TestQuorumInfo> for ValidatorSetV0 {
         let TestQuorumInfo {
             core_height,
             quorum_hash,
+            quorum_index,
             validator_set,
             private_key: _,
             public_key,
@@ -199,6 +204,7 @@ impl From<&TestQuorumInfo> for ValidatorSetV0 {
                 .map(|v| (v.pro_tx_hash, v.into()))
                 .collect(),
             threshold_public_key: public_key.clone(),
+            quorum_index: *quorum_index,
         }
     }
 }
@@ -208,6 +214,7 @@ impl From<TestQuorumInfo> for ValidatorSetV0 {
         let TestQuorumInfo {
             core_height,
             quorum_hash,
+            quorum_index,
             validator_set,
             private_key: _,
             public_key,
@@ -216,6 +223,7 @@ impl From<TestQuorumInfo> for ValidatorSetV0 {
 
         ValidatorSetV0 {
             quorum_hash,
+            quorum_index,
             core_height,
             members: validator_set
                 .iter()

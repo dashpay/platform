@@ -26,6 +26,7 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use bincode::{Decode, Encode};
 use dashcore_rpc::json::QuorumType;
 use std::path::PathBuf;
 
@@ -98,6 +99,7 @@ pub struct ExecutionConfig {
     #[serde(default = "ExecutionConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
 
+    // TODO: Move to ValidatorSetConfig
     /// How often should quorums change?
     #[serde(
         default = "ExecutionConfig::default_validator_set_rotation_block_count",
@@ -175,21 +177,16 @@ pub struct PlatformConfig {
     pub execution: ExecutionConfig,
 
     /// The default quorum type
-    pub validator_set_quorum_type: String,
+    #[serde(flatten)]
+    pub validator_set: ValidatorSetConfig,
 
-    /// The quorum type used for verifying chain locks
-    pub chain_lock_quorum_type: String,
+    /// Chain lock configuration
+    #[serde(flatten)]
+    pub chain_lock: ChainLockConfig,
 
-    /// The validator set quorum size
-    pub validator_set_quorum_size: u16,
-
-    /// The chain lock quorum size
-    pub chain_lock_quorum_size: u16,
-
-    /// The window for chain locks
-    /// On Mainnet Chain Locks are signed using 400_60: One quorum in every 288 blocks and activeQuorumCount is 4.
-    /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
-    pub chain_lock_quorum_window: u32,
+    /// Instant lock configuration
+    #[serde(flatten)]
+    pub instant_lock: InstantLockConfig,
 
     // todo: this should probably be coming from Tenderdash config. It's a test only param
     /// Approximately how often are blocks produced
@@ -209,7 +206,7 @@ pub struct PlatformConfig {
     #[serde(default)]
     pub rejections_path: Option<PathBuf>,
 
-    // todo: put this in tests like #[cfg(test)]
+    #[cfg(feature = "testing-config")]
     /// This should be None, except in the case of Testing platform
     #[serde(skip)]
     pub testing_configs: PlatformTestConfig,
@@ -224,6 +221,317 @@ pub struct PlatformConfig {
     /// Number of seconds to store task information if there is no clients connected
     #[serde(default = "PlatformConfig::default_tokio_console_retention_secs")]
     pub tokio_console_retention_secs: u64,
+}
+
+/// A config suitable for a quorum configuration
+pub trait QuorumLikeConfig: Sized {
+    /// Quorum type
+    fn quorum_type(&self) -> QuorumType;
+
+    /// Quorum size
+    fn quorum_size(&self) -> u16;
+
+    /// Quorum DKG interval
+    fn quorum_window(&self) -> u32;
+
+    /// Quorum active signers count
+    fn quorum_active_signers(&self) -> u16;
+
+    /// Quorum rotation (dip24) or classic
+    fn quorum_rotation(&self) -> bool;
+}
+
+/// Chain Lock quorum configuration
+#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+pub struct ValidatorSetConfig {
+    /// The quorum type used for verifying chain locks
+    #[serde(
+        rename = "validator_set_quorum_type",
+        serialize_with = "serialize_quorum_type",
+        deserialize_with = "deserialize_quorum_type"
+    )]
+    pub quorum_type: QuorumType,
+
+    /// The quorum size
+    #[serde(
+        rename = "validator_set_quorum_size",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_size: u16,
+
+    /// The quorum window (DKG interval)
+    /// On Mainnet Chain Locks are signed using 400_60: One quorum in every 288 blocks and activeQuorumCount is 4.
+    /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
+    #[serde(
+        rename = "validator_set_quorum_window",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_window: u32,
+
+    /// The number of active signers
+    #[serde(
+        rename = "validator_set_quorum_active_signers",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_active_signers: u16,
+
+    /// Whether the quorum is rotated DIP24 or classic
+    #[serde(
+        rename = "validator_set_quorum_rotation",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_rotation: bool,
+}
+
+impl Default for ValidatorSetConfig {
+    fn default() -> Self {
+        // Mainnet
+        Self::default_100_67()
+    }
+}
+
+impl ValidatorSetConfig {
+    /// Creates a default config for LLMQ 100 67
+    pub fn default_100_67() -> Self {
+        Self {
+            quorum_type: QuorumType::Llmq100_67,
+            quorum_size: 100,
+            quorum_window: 24,
+            quorum_active_signers: 24,
+            quorum_rotation: false,
+        }
+    }
+}
+
+impl QuorumLikeConfig for ValidatorSetConfig {
+    fn quorum_type(&self) -> QuorumType {
+        self.quorum_type
+    }
+
+    fn quorum_size(&self) -> u16 {
+        self.quorum_size
+    }
+
+    fn quorum_window(&self) -> u32 {
+        self.quorum_window
+    }
+
+    fn quorum_active_signers(&self) -> u16 {
+        self.quorum_active_signers
+    }
+
+    fn quorum_rotation(&self) -> bool {
+        self.quorum_rotation
+    }
+}
+
+/// Chain Lock quorum configuration
+#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+pub struct ChainLockConfig {
+    /// The quorum type used for verifying chain locks
+    #[serde(
+        rename = "chain_lock_quorum_type",
+        serialize_with = "serialize_quorum_type",
+        deserialize_with = "deserialize_quorum_type"
+    )]
+    pub quorum_type: QuorumType,
+
+    /// The quorum size
+    #[serde(
+        rename = "chain_lock_quorum_size",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_size: u16,
+
+    /// The quorum window (DKG interval)
+    /// On Mainnet Chain Locks are signed using 400_60: One quorum in every 288 blocks and activeQuorumCount is 4.
+    /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
+    #[serde(
+        rename = "chain_lock_quorum_window",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_window: u32,
+
+    /// The number of active signers
+    #[serde(
+        rename = "chain_lock_quorum_active_signers",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_active_signers: u16,
+
+    /// Whether the quorum is rotated DIP24 or classic
+    #[serde(
+        rename = "chain_lock_quorum_rotation",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_rotation: bool,
+}
+
+impl Default for ChainLockConfig {
+    fn default() -> Self {
+        // Mainnet
+        Self {
+            quorum_type: QuorumType::Llmq400_60,
+            quorum_size: 400,
+            quorum_window: 24 * 12,
+            quorum_active_signers: 4,
+            quorum_rotation: false,
+        }
+    }
+}
+
+impl QuorumLikeConfig for ChainLockConfig {
+    fn quorum_type(&self) -> QuorumType {
+        self.quorum_type
+    }
+
+    fn quorum_size(&self) -> u16 {
+        self.quorum_size
+    }
+
+    fn quorum_window(&self) -> u32 {
+        self.quorum_window
+    }
+
+    fn quorum_active_signers(&self) -> u16 {
+        self.quorum_active_signers
+    }
+
+    fn quorum_rotation(&self) -> bool {
+        self.quorum_rotation
+    }
+}
+
+impl ChainLockConfig {
+    /// Creates a default config for LLMQ 100 67
+    pub fn default_100_67() -> Self {
+        Self {
+            quorum_type: QuorumType::Llmq100_67,
+            quorum_size: 100,
+            quorum_window: 24,
+            quorum_active_signers: 24,
+            quorum_rotation: false,
+        }
+    }
+}
+
+/// Chain Lock quorum configuration
+#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+pub struct InstantLockConfig {
+    /// The quorum type used for verifying chain locks
+    #[serde(
+        rename = "instant_lock_quorum_type",
+        serialize_with = "serialize_quorum_type",
+        deserialize_with = "deserialize_quorum_type"
+    )]
+    pub quorum_type: QuorumType,
+
+    /// The quorum size
+    #[serde(
+        rename = "instant_lock_quorum_size",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_size: u16,
+
+    /// The quorum window (DKG interval)
+    /// On Mainnet Chain Locks are signed using 400_60: One quorum in every 288 blocks and activeQuorumCount is 4.
+    /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
+    #[serde(
+        rename = "instant_lock_quorum_window",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_window: u32,
+
+    /// The number of active signers
+    #[serde(
+        rename = "instant_lock_quorum_active_signers",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_active_signers: u16,
+
+    /// Whether the quorum is rotated DIP24 or classic
+    #[serde(
+        rename = "instant_lock_quorum_rotation",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub quorum_rotation: bool,
+}
+
+impl Default for InstantLockConfig {
+    fn default() -> Self {
+        // Mainnet
+        Self {
+            quorum_type: QuorumType::Llmq60_75,
+            quorum_active_signers: 32,
+            quorum_size: 60,
+            quorum_window: 24 * 12,
+            quorum_rotation: true,
+        }
+    }
+}
+
+impl InstantLockConfig {
+    /// Creates a default config for LLMQ 100 67
+    pub fn default_100_67() -> Self {
+        Self {
+            quorum_type: QuorumType::Llmq100_67,
+            quorum_size: 100,
+            quorum_window: 24,
+            quorum_active_signers: 24,
+            quorum_rotation: false,
+        }
+    }
+}
+
+impl QuorumLikeConfig for InstantLockConfig {
+    fn quorum_type(&self) -> QuorumType {
+        self.quorum_type
+    }
+
+    fn quorum_size(&self) -> u16 {
+        self.quorum_size
+    }
+
+    fn quorum_window(&self) -> u32 {
+        self.quorum_window
+    }
+
+    fn quorum_active_signers(&self) -> u16 {
+        self.quorum_active_signers
+    }
+
+    fn quorum_rotation(&self) -> bool {
+        self.quorum_rotation
+    }
+}
+
+fn serialize_quorum_type<S>(quorum_type: &QuorumType, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(quorum_type.to_string().as_str())
+}
+
+fn deserialize_quorum_type<'de, D>(deserializer: D) -> Result<QuorumType, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let quorum_type_name = String::deserialize(deserializer)?;
+
+    let quorum_type = if let Ok(t) = quorum_type_name.trim().parse::<u32>() {
+        QuorumType::from(t)
+    } else {
+        QuorumType::from(quorum_type_name.as_str())
+    };
+
+    if quorum_type == QuorumType::UNKNOWN {
+        return Err(serde::de::Error::custom(format!(
+            "unsupported QUORUM_TYPE: {}",
+            quorum_type_name
+        )));
+    };
+
+    Ok(quorum_type)
 }
 
 impl ExecutionConfig {
@@ -256,43 +564,8 @@ impl PlatformConfig {
     fn default_tokio_console_retention_secs() -> u64 {
         60 * 3
     }
-
-    /// Return type of quorum
-    pub fn validator_set_quorum_type(&self) -> QuorumType {
-        let found = if let Ok(t) = self.validator_set_quorum_type.trim().parse::<u32>() {
-            QuorumType::from(t)
-        } else {
-            QuorumType::from(self.validator_set_quorum_type.as_str())
-        };
-
-        if found == QuorumType::UNKNOWN {
-            panic!(
-                "config: unsupported QUORUM_TYPE: {}",
-                self.validator_set_quorum_type
-            );
-        }
-
-        found
-    }
-
-    /// Return type of quorum for validating chain locks
-    pub fn chain_lock_quorum_type(&self) -> QuorumType {
-        let found = if let Ok(t) = self.chain_lock_quorum_type.trim().parse::<u32>() {
-            QuorumType::from(t)
-        } else {
-            QuorumType::from(self.chain_lock_quorum_type.as_str())
-        };
-
-        if found == QuorumType::UNKNOWN {
-            panic!(
-                "config: unsupported QUORUM_TYPE: {}",
-                self.chain_lock_quorum_type
-            );
-        }
-
-        found
-    }
 }
+
 /// create new object using values from environment variables
 pub trait FromEnv {
     /// create new object using values from environment variables
@@ -338,11 +611,27 @@ impl Default for PlatformConfig {
 impl PlatformConfig {
     pub fn default_local() -> Self {
         Self {
-            validator_set_quorum_type: "llmq_test_platform".to_string(),
-            chain_lock_quorum_type: "llmq_test".to_string(),
-            validator_set_quorum_size: 3,
-            chain_lock_quorum_size: 3,
-            chain_lock_quorum_window: 24,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::LlmqTestPlatform,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 2,
+                quorum_rotation: false,
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::LlmqTest,
+                quorum_active_signers: 2,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::LlmqTest,
+                quorum_active_signers: 2,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_rotation: false,
+            },
             block_spacing_ms: 5000,
             drive: Default::default(),
             abci: Default::default(),
@@ -350,6 +639,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
@@ -362,11 +652,27 @@ impl PlatformConfig {
 
     pub fn default_testnet() -> Self {
         Self {
-            validator_set_quorum_type: "llmq_25_67".to_string(),
-            chain_lock_quorum_type: "llmq_50_60".to_string(),
-            validator_set_quorum_size: 25,
-            chain_lock_quorum_size: 50,
-            chain_lock_quorum_window: 24,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq25_67,
+                quorum_size: 25,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq50_60,
+                quorum_active_signers: 24,
+                quorum_size: 50,
+                quorum_window: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq60_75,
+                quorum_active_signers: 32,
+                quorum_size: 60,
+                quorum_window: 24 * 12,
+                quorum_rotation: true,
+            },
             block_spacing_ms: 5000,
             drive: Default::default(),
             abci: Default::default(),
@@ -374,6 +680,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
@@ -386,11 +693,27 @@ impl PlatformConfig {
 
     pub fn default_mainnet() -> Self {
         Self {
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_400_60".to_string(),
-            validator_set_quorum_size: 100,
-            chain_lock_quorum_size: 400,
-            chain_lock_quorum_window: 288,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 100,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq400_60,
+                quorum_active_signers: 4,
+                quorum_size: 400,
+                quorum_window: 24 * 12,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq60_75,
+                quorum_active_signers: 32,
+                quorum_size: 60,
+                quorum_window: 24 * 12,
+                quorum_rotation: true,
+            },
             block_spacing_ms: 5000,
             drive: Default::default(),
             abci: Default::default(),
@@ -398,6 +721,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
@@ -409,30 +733,37 @@ impl PlatformConfig {
     }
 }
 
+#[cfg(feature = "testing-config")]
 /// Configs that should only happen during testing
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct PlatformTestConfig {
     /// Block signing
     pub block_signing: bool,
     /// Block signature verification
     pub block_commit_signature_verification: bool,
+    /// Disable instant lock signature verification
+    pub disable_instant_lock_signature_verification: bool,
 }
 
+#[cfg(feature = "testing-config")]
 impl PlatformTestConfig {
     /// Much faster config for tests
     pub fn default_with_no_block_signing() -> Self {
         Self {
             block_signing: false,
             block_commit_signature_verification: false,
+            disable_instant_lock_signature_verification: false,
         }
     }
 }
 
+#[cfg(feature = "testing-config")]
 impl Default for PlatformTestConfig {
     fn default() -> Self {
         Self {
             block_signing: true,
             block_commit_signature_verification: true,
+            disable_instant_lock_signature_verification: false,
         }
     }
 }
@@ -468,7 +799,7 @@ mod tests {
 
         let config = super::PlatformConfig::from_env().expect("expected config from env");
         assert!(config.execution.verify_sum_trees);
-        assert_ne!(config.validator_set_quorum_type(), QuorumType::UNKNOWN);
+        assert_ne!(config.validator_set.quorum_type, QuorumType::UNKNOWN);
         for id in vectors {
             matches!(config.abci.log[id.0].destination, LogDestination::Bytes);
         }

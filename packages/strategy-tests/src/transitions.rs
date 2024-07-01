@@ -779,7 +779,7 @@ pub fn create_state_transitions_for_identities(
             let (_, pk) = ECDSA_SECP256K1
                 .random_public_and_private_key_data(rng, platform_version)
                 .unwrap();
-            let sk: [u8; 32] = pk.clone().try_into().unwrap();
+            let sk: [u8; 32] = pk.try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
             let asset_lock_proof =
                 instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
@@ -787,7 +787,33 @@ pub fn create_state_transitions_for_identities(
                 IdentityCreateTransition::try_from_identity_with_signer(
                     &identity.clone(),
                     asset_lock_proof,
-                    pk.as_slice(),
+                    &sk,
+                    signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .expect("expected to transform identity into identity create transition");
+            identity.set_id(identity_create_transition.owner_id());
+
+            (identity, identity_create_transition)
+        })
+        .collect()
+}
+
+pub fn create_state_transitions_for_identities_and_proofs(
+    identities_with_proofs: Vec<(Identity, [u8; 32], AssetLockProof)>,
+    signer: &mut SimpleSigner,
+    platform_version: &PlatformVersion,
+) -> Vec<(Identity, StateTransition)> {
+    identities_with_proofs
+        .into_iter()
+        .map(|(mut identity, private_key, asset_lock_proof)| {
+            let identity_create_transition =
+                IdentityCreateTransition::try_from_identity_with_signer(
+                    &identity.clone(),
+                    asset_lock_proof,
+                    &private_key,
                     signer,
                     &NativeBlsModule,
                     0,

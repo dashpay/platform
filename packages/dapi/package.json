@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "1.0.0-dev.15",
+  "version": "1.0.0-dev.16",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
@@ -53,7 +53,7 @@
     "lru-cache": "^5.1.1",
     "pino": "^8.16.2",
     "pino-pretty": "^10.2.3",
-    "ws": "^7.5.3"
+    "ws": "^8.17.1"
   },
   "devDependencies": {
     "@babel/core": "^7.23.3",

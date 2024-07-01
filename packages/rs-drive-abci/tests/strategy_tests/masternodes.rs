@@ -537,6 +537,7 @@ where
                 TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
                     index as u32 * 24,
                     quorum_hash,
+                    Some(index as u32 + 1),
                     validator_pro_tx_hashes,
                     rng,
                 ),
