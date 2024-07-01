@@ -7,6 +7,7 @@ mod document_create_transition;
 // pub use document_replace_transition::*;
 
 use dpp::platform_value::Value;
+use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::{
@@ -70,6 +71,16 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, revision: u32) {
         self.0.set_revision(revision as u64);
+    }
+
+    #[wasm_bindgen(js_name=hasPrefundedBalance)]
+    pub fn has_prefunded_balance(&self) -> bool {
+        match &self.0 {
+            DocumentTransition::Create(create_transition) => {
+                create_transition.prefunded_voting_balance().is_some()
+            }
+            _ => false,
+        }
     }
 }
 
