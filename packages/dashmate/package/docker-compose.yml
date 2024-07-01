@@ -1,0 +1,225 @@
+version: '3.7'
+
+services:
+  dashmate_helper:
+    image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Dashmate Helper"
+    restart: unless-stopped
+    environment:
+      - LOCAL_UID=${LOCAL_UID:?err}
+      - LOCAL_GID=${LOCAL_GID:?err}
+    ports:
+      - 127.0.0.1:${DASHMATE_HELPER_API_PORT:?err}:${DASHMATE_HELPER_API_PORT:?err}
+    command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
+    expose:
+      - ${DASHMATE_HELPER_API_PORT:?err}
+    volumes:
+      - ${DASHMATE_HOME_DIR:?err}:/home/dashmate/.dashmate
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  core:
+    image: ${CORE_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Core"
+    restart: unless-stopped
+    ports:
+      - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err}
+      - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err}
+    volumes:
+      - core_data:/home/dash
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/home/dash/.dashcore/dash.conf:ro
+      - ${CORE_LOG_DIRECTORY_PATH:?err}:/var/log/dash
+    command:
+      - dashd
+    stop_grace_period: 30s
+    environment:
+      # Solving issue under WSL when after restart container volume is not being mounted properly
+      # https://github.com/docker/for-win/issues/4812
+      # Following fix forces container recreation
+      - WSL2_FIX=${WSL2_FIX:-0}
+    profiles:
+      - core
+
+  drive_abci:
+    image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Drive ABCI"
+    restart: unless-stopped
+    volumes:
+      - drive_abci_data:/var/lib/dash/rs-drive-abci/db
+    environment:
+      - CHAIN_ID=${PLATFORM_DRIVE_TENDERDASH_GENESIS_CHAIN_ID:-devnet}
+      - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
+      - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
+      - CORE_JSON_RPC_HOST=core
+      - CORE_JSON_RPC_PORT=${CORE_RPC_PORT:?err}
+      - DPNS_MASTER_PUBLIC_KEY=${PLATFORM_DPNS_MASTER_PUBLIC_KEY}
+      - DPNS_SECOND_PUBLIC_KEY=${PLATFORM_DPNS_SECOND_PUBLIC_KEY}
+      - DASHPAY_MASTER_PUBLIC_KEY=${PLATFORM_DASHPAY_MASTER_PUBLIC_KEY}
+      - DASHPAY_SECOND_PUBLIC_KEY=${PLATFORM_DASHPAY_SECOND_PUBLIC_KEY}
+      - EPOCH_TIME_LENGTH_S=${PLATFORM_DRIVE_ABCI_EPOCH_TIME}
+      - FEATURE_FLAGS_MASTER_PUBLIC_KEY=${PLATFORM_FEATURE_FLAGS_MASTER_PUBLIC_KEY}
+      - FEATURE_FLAGS_SECOND_PUBLIC_KEY=${PLATFORM_FEATURE_FLAGS_SECOND_PUBLIC_KEY}
+      - MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY}
+      - MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY}
+      - WITHDRAWALS_MASTER_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_MASTER_PUBLIC_KEY}
+      - WITHDRAWALS_SECOND_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_SECOND_PUBLIC_KEY}
+      - VALIDATOR_SET_QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_QUORUM_LLMQ_TYPE:?err}
+      - VALIDATOR_SET_QUORUM_WINDOW=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_QUORUM_DKG_INTERVAL:?err}
+      - VALIDATOR_SET_QUORUM_ACTIVE_SIGNERS=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_QUORUM_ACTIVE_SIGNERS:?err}
+      - VALIDATOR_SET_QUORUM_ROTATION=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_QUORUM_ROTATION:?err}
+      - CHAIN_LOCK_QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_QUORUM_LLMQ_TYPE:?err}
+      - CHAIN_LOCK_QUORUM_WINDOW=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_QUORUM_DKG_INTERVAL:?err}
+      - CHAIN_LOCK_QUORUM_ACTIVE_SIGNERS=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_QUORUM_ACTIVE_SIGNERS:?err}
+      - CHAIN_LOCK_QUORUM_ROTATION=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_QUORUM_ROTATION:?err}
+      - INSTANT_LOCK_QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_INSTANT_LOCK_QUORUM_LLMQ_TYPE:?err}
+      - INSTANT_LOCK_QUORUM_WINDOW=${PLATFORM_DRIVE_ABCI_INSTANT_LOCK_QUORUM_DKG_INTERVAL:?err}
+      - INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS=${PLATFORM_DRIVE_ABCI_INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS:?err}
+      - INSTANT_LOCK_QUORUM_ROTATION=${PLATFORM_DRIVE_ABCI_INSTANT_LOCK_QUORUM_ROTATION:?err}
+      - DB_PATH=/var/lib/dash/rs-drive-abci/db
+      - ABCI_CONSENSUS_BIND_ADDRESS=tcp://0.0.0.0:26658
+      - GRPC_BIND_ADDRESS=0.0.0.0:26670
+      - PROMETHEUS_BIND_ADDRESS=${PLATFORM_DRIVE_ABCI_METRICS_URL}
+      - TOKIO_CONSOLE_ENABLED=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_ENABLED:?err}
+      - TOKIO_CONSOLE_ADDRESS=0.0.0.0:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
+      - TOKIO_CONSOLE_RETENTION_SECS=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_RETENTION:?err}
+    stop_grace_period: 30s
+    expose:
+      - 26658
+      - 26659
+      - 26670
+    env_file:
+      # Logger settings
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/abci/logger.env
+    profiles:
+      - platform
+    ports:
+      - ${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_HOST:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
+      - ${PLATFORM_DRIVE_ABCI_METRICS_HOST:?err}:${PLATFORM_DRIVE_ABCI_METRICS_PORT:?err}:29090
+
+  drive_tenderdash:
+    image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Drive Tenderdash"
+    restart: unless-stopped
+    depends_on:
+      - drive_abci
+    ports:
+      - ${PLATFORM_DRIVE_TENDERDASH_P2P_HOST:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
+      - ${PLATFORM_DRIVE_TENDERDASH_RPC_HOST}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
+      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err} # pprof
+      - ${PLATFORM_DRIVE_TENDERDASH_METRICS_HOST:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err} # Metrics
+    volumes:
+      - drive_tenderdash:/tenderdash
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
+      - ${PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH:?err}:/var/log/tenderdash
+    stop_grace_period: 10s
+    profiles:
+      - platform
+
+  dapi_api:
+    image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "DAPI API"
+    restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
+    depends_on:
+      - drive_tenderdash
+    environment:
+      - API_JSON_RPC_PORT=3004
+      - API_GRPC_PORT=3005
+      - DASHCORE_RPC_HOST=core
+      - DASHCORE_RPC_PORT=${CORE_RPC_PORT:?err}
+      - DASHCORE_RPC_USER=${CORE_RPC_USER:?err}
+      - DASHCORE_RPC_PASS=${CORE_RPC_PASSWORD:?err}
+      - DASHCORE_ZMQ_HOST=core
+      - DASHCORE_ZMQ_PORT=29998
+      - NETWORK=${NETWORK:?err}
+      - TENDERMINT_RPC_HOST=drive_tenderdash
+      - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
+      - NODE_ENV=${ENVIRONMENT:?err}
+      - DRIVE_RPC_HOST=drive_abci
+      - DRIVE_RPC_PORT=26670
+    command: yarn run api
+    stop_grace_period: 10s
+    expose:
+      - 3004
+      - 3005
+    profiles:
+      - platform
+
+  dapi_core_streams:
+    image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "DAPI Transactions Filter Stream"
+    restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
+    environment:
+      - TX_FILTER_STREAM_GRPC_PORT=3006
+      - DASHCORE_RPC_HOST=core
+      - DASHCORE_RPC_PORT=${CORE_RPC_PORT:?err}
+      - DASHCORE_RPC_USER=${CORE_RPC_USER:?err}
+      - DASHCORE_RPC_PASS=${CORE_RPC_PASSWORD:?err}
+      - DASHCORE_ZMQ_HOST=core
+      - DASHCORE_ZMQ_PORT=29998
+      - NETWORK=${NETWORK:?err}
+      - TENDERMINT_RPC_HOST=drive_tenderdash
+      - TENDERMINT_RPC_PORT=26657
+      - DRIVE_RPC_HOST=drive_abci
+      - DRIVE_RPC_PORT=26670
+    expose:
+      - 3006
+    command: yarn run core-streams
+    stop_grace_period: 10s
+    profiles:
+      - platform
+
+  gateway:
+    image: ${PLATFORM_GATEWAY_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Gateway"
+    restart: unless-stopped
+    ports:
+      # HTTP entry point to the platform.
+      # Supports HTTP1 and HTTP2
+      # Serves JSON RPC, gRPC, and gRPC-Web
+      - ${PLATFORM_GATEWAY_LISTENERS_DAPI_AND_DRIVE_HOST:?err}:${PLATFORM_GATEWAY_LISTENERS_DAPI_AND_DRIVE_PORT:?err}:10000
+      - ${PLATFORM_GATEWAY_METRICS_HOST:?err}:${PLATFORM_GATEWAY_METRICS_PORT:?err}:9090
+      - ${PLATFORM_GATEWAY_ADMIN_HOST:?err}:${PLATFORM_GATEWAY_ADMIN_PORT:?err}:9901
+    depends_on:
+      - dapi_api
+      - dapi_core_streams
+      - drive_abci
+    networks:
+      - default
+      - gateway_rate_limiter
+    environment:
+      - ENVOY_UID=${LOCAL_UID:?err}
+      - ENVOY_GID=${LOCAL_GID:?err}
+      - LOG_LEVEL=${PLATFORM_GATEWAY_LOG_LEVEL:?err}
+    volumes:
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/ssl/bundle.crt:/etc/ssl/bundle.crt:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/ssl/private.key:/etc/ssl/private.key:ro
+    stop_grace_period: 10s
+    profiles:
+      - platform
+
+volumes:
+  core_data:
+  drive_abci_data:
+  drive_tenderdash:
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:?err}
+  gateway_rate_limiter:
+    driver: bridge

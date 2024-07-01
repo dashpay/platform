@@ -7047,7 +7047,6 @@ __metadata:
     node-forge: "npm:^1.3.1"
     node-graceful: "npm:^3.0.1"
     oclif: "npm:^4.13.11"
-    pnpapi: "npm:*"
     pretty-bytes: "npm:^5.3.0"
     pretty-ms: "npm:^7.0.0"
     public-ip: "npm:^6.0.1"
@@ -12588,13 +12587,6 @@ __metadata:
   dependencies:
     irregular-plurals: "npm:^3.2.0"
   checksum: 10/fea2e903efca67cc5c7a8952fca3db46ae8d9e9353373b406714977e601a5d3b628bcb043c3ad2126c6ff0e73d8020bf43af30a72dd087eff1ec240eb13b90e1
-  languageName: node
-  linkType: hard
-
-"pnpapi@npm:*":
-  version: 0.0.0
-  resolution: "pnpapi@npm:0.0.0"
-  checksum: 10/9b8ce695cb5dcd904f2602a5e943d5808a58818e5c5dcf1c9b6dde3610b0f9070b9bc6758621c39d2cc954a1305d6256d925f176e17f00cc30779a6350d7a9f7
   languageName: node
   linkType: hard
 

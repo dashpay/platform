@@ -10,4 +10,4 @@ if [ ! -f "$ROOT_PATH/packages/dashmate/dist/index.js" ]; then
   exit 1
 fi
 
-node $ROOT_PATH/packages/dashmate/bin/run.js "$@"
+node -r $ROOT_PATH/.pnp.cjs --loader=$ROOT_PATH/.pnp.loader.mjs $ROOT_PATH/packages/dashmate/bin/run.js "$@"

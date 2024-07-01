@@ -114,7 +114,6 @@
     "mocha": "^10.2.0",
     "mocha-sinon": "^2.1.2",
     "oclif": "^4.13.11",
-    "pnpapi": "*",
     "sinon": "^17.0.1",
     "sinon-chai": "^3.7.0"
   },

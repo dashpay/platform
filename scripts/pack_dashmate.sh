@@ -45,7 +45,7 @@ cd $ROOT_PATH/packages/dashmate/package || exit 1
 # Install dependencies
 cp $ROOT_PATH/yarn.lock ./yarn.lock
 mkdir .yarn
-echo "nodeLinker: pnpm"  > .yarnrc.yml
+echo "nodeLinker: node-modules"  > .yarnrc.yml
 # Remove already bundled dependencies
 node "$DIR_PATH"/patch_dashmate_package_json.js
 yarn install --no-immutable

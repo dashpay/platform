@@ -21,6 +21,7 @@ packages/*/docs
 packages/*/dist
 packages/*/wasm
 packages/*/lib/wasm
+packages/*/node_modules
 packages/*/.env
 
 !packages/platform-test-suite/test
