@@ -186,9 +186,12 @@ impl Config {
                     if let Err(err) = std::fs::remove_dir_all(&dump_dir) {
                         tracing::warn!(?err, ?dump_dir, "failed to remove dump dir");
                     }
-                    std::fs::create_dir_all(&dump_dir).expect("create dump dir");
+                    std::fs::create_dir_all(&dump_dir)
+                        .expect(format!("create dump dir {}", dump_dir.display()).as_str());
                     // ensure dump dir is committed to git
-                    std::fs::write(dump_dir.join(".gitkeep"), "").expect("create .gitkeep file")
+                    let gitkeep = dump_dir.join(".gitkeep");
+                    std::fs::write(&gitkeep, "")
+                        .expect(format!("create {} file", gitkeep.display()).as_str());
                 }
 
                 builder.with_dump_dir(&dump_dir)
