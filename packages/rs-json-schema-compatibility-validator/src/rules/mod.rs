@@ -1,9 +1,9 @@
 mod compatibility_rules;
-mod ruleset;
+mod rule_set;
 mod value;
 
 #[cfg(any(test, feature = "examples"))]
 pub use compatibility_rules::CompatibilityRuleExample;
 pub use compatibility_rules::{CompatibilityRules, IsReplacementAllowedCallback};
-pub use ruleset::CompatibilityRulesCollection;
-pub use ruleset::KEYWORD_COMPATIBILITY_RULES;
+pub use rule_set::CompatibilityRulesCollection;
+pub use rule_set::KEYWORD_COMPATIBILITY_RULES;
