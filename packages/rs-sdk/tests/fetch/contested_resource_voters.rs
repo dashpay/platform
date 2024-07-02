@@ -14,7 +14,10 @@ use drive::query::{
 };
 use drive_proof_verifier::types::Voter;
 
-use crate::fetch::{common::setup_logs, config::Config};
+use crate::fetch::{
+    common::{setup_logs, TEST_DPNS_NAME},
+    config::Config,
+};
 
 /// When we request votes for a non-existing identity, we should get no votes.
 #[cfg_attr(
@@ -59,7 +62,7 @@ async fn test_contested_resource_voters_for_identity_not_found() {
 ///
 /// ## Preconditions
 ///
-/// 1. Votes exist for the given contestant.
+/// 1. Votes exist for DPNS name [TEST_DPNS_NAME].
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn contested_resource_voters_for_existing_contestant() {
     setup_logs();
@@ -69,8 +72,12 @@ async fn contested_resource_voters_for_existing_contestant() {
         .setup_api("contested_resource_voters_for_existing_contestant")
         .await;
 
+    super::contested_resource::check_mn_voting_prerequisities(&cfg)
+        .await
+        .expect("prerequisites");
+
     let index_name = "parentNameAndLabel".to_string();
-    let index_value = Value::Text("dada".to_string());
+    let index_value = Value::Text(TEST_DPNS_NAME.to_string());
 
     // fetch contestant
     let contestants_query = ContestedDocumentVotePollDriveQuery {

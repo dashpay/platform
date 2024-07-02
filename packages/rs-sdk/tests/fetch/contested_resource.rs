@@ -1,6 +1,9 @@
 //! Tests of ContestedResource object
 
-use crate::fetch::{common::setup_logs, config::Config};
+use crate::fetch::{
+    common::{setup_logs, TEST_DPNS_NAME},
+    config::Config,
+};
 use core::panic;
 use dash_sdk::platform::FetchMany;
 use dpp::{
@@ -18,8 +21,6 @@ use drive::query::{
 };
 use drive_proof_verifier::types::ContestedResource;
 use std::panic::catch_unwind;
-
-pub(crate) const INDEX_VALUE: &str = "dada";
 
 /// Test that we can fetch contested resources
 ///
@@ -238,19 +239,19 @@ async fn contested_resources_fields() {
     struct TestCase {
         name: &'static str,
         query_mut_fn: MutFn,
-        expect: Result<&'static str, &'static str>,
+        expect: Result<String, &'static str>,
     }
 
     let test_cases: Vec<TestCase> = vec![
         TestCase {
             name: "unmodified base query is Ok",
             query_mut_fn: |_q| {},
-            expect: Ok("ContestedResources([Value(Text("),
+            expect: Ok("ContestedResources([Value(Text(".into()),
         },
         TestCase {
             name: "index value empty string is Ok",
             query_mut_fn: |q| q.start_index_values = vec![Value::Text("".to_string())],
-            expect: Ok(""),
+            expect: Ok("".into()),
         },
         TestCase {
             name: "non existing document type returns InvalidArgument",
@@ -281,19 +282,19 @@ async fn contested_resources_fields() {
         TestCase {
             name: "start_index_values empty vec returns top-level keys",
             query_mut_fn: |q| q.start_index_values = vec![],
-            expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+            expect: Ok(r#"ContestedResources([Value(Text("dash"))])"#.into()),
         },
         TestCase {
             name: "start_index_values empty string returns zero results",
             query_mut_fn: |q| q.start_index_values = vec![Value::Text("".to_string())],
-            expect: Ok(r#"ContestedResources([])"#),
+            expect: Ok(r#"ContestedResources([])"#.into()),
         },
         TestCase {
             name: "start_index_values with two values returns error",
             query_mut_fn: |q| {
                 q.start_index_values = vec![
                     Value::Text("dash".to_string()),
-                    Value::Text("dada".to_string()),
+                    Value::Text(TEST_DPNS_NAME.to_string()),
                 ]
             },
             expect: Err("incorrect index values error: too many start index values were provided, since no end index values were provided, the start index values must be less than the amount of properties in the contested index"),
@@ -302,15 +303,15 @@ async fn contested_resources_fields() {
             name: "end_index_values one value with empty start_index_values returns 'dash'",
             query_mut_fn: |q| {
                 q.start_index_values = vec![];
-                q.end_index_values = vec![Value::Text("dada".to_string())];
+                q.end_index_values = vec![Value::Text(TEST_DPNS_NAME.to_string())];
             },
-            expect:Ok(r#"ContestedResources([Value(Text("dash"))])"#),
+            expect:Ok(r#"ContestedResources([Value(Text("dash"))])"#.into()),
         },
         TestCase {
             name: "end_index_values two values (1 nx) with empty start_index_values returns error",
             query_mut_fn: |q| {
                 q.start_index_values = vec![];
-                q.end_index_values = vec![Value::Text("dada".to_string()), Value::Text("non existing".to_string())];
+                q.end_index_values = vec![Value::Text(TEST_DPNS_NAME.to_string()), Value::Text("non existing".to_string())];
             },
             expect:Err("too many end index values were provided"),
         },
@@ -320,7 +321,7 @@ async fn contested_resources_fields() {
                 q.start_index_values = vec![];
                 q.end_index_values = vec![Value::Text("aaa non existing".to_string())];
             },
-            expect:Ok(r#"ContestedResources([])"#),
+            expect:Ok(r#"ContestedResources([])"#.into()),
         },
         TestCase {
             name: "end_index_values with 1 nx value 'zzz*' and empty start_index_values returns zero objects",
@@ -328,7 +329,7 @@ async fn contested_resources_fields() {
                 q.start_index_values = vec![];
                 q.end_index_values = vec![Value::Text("zzz non existing".to_string())];
             },
-            expect:Ok(r#"ContestedResources([])"#),
+            expect:Ok(r#"ContestedResources([])"#.into()),
         },
         TestCase {
             // fails due to PLAN-662
@@ -336,7 +337,7 @@ async fn contested_resources_fields() {
             query_mut_fn: |q| {
                 q.start_index_values = vec![
                     Value::Text("dash".to_string()),
-                    Value::Text("dada".to_string()),
+                    Value::Text(TEST_DPNS_NAME.to_string()),
                     Value::Text("eee".to_string()),
                 ]
             },
@@ -355,7 +356,7 @@ async fn contested_resources_fields() {
                 q.start_index_values = vec![];
                 q.end_index_values = vec![Value::Text("zzz non existing".to_string())]
             },
-            expect:Ok("ContestedResources([])"),
+            expect:Ok("ContestedResources([])".into()),
         },
         TestCase {
             name: "wrong type of end_index_values should return InvalidArgument",
@@ -376,10 +377,10 @@ async fn contested_resources_fields() {
             name: "exact match query returns one object PLAN-656",
             query_mut_fn: |q| {
                 q.start_index_values = vec![Value::Text("dash".to_string())];
-                q.start_at_value = Some((Value::Text("dada".to_string()), true));
+                q.start_at_value = Some((Value::Text(TEST_DPNS_NAME.to_string()), true));
                 q.limit = Some(1);
             },
-            expect: Ok(r#"ContestedResources([Value(Text("dada"))])"#),
+            expect: Ok(format!(r#"ContestedResources([Value(Text({}))])"#, TEST_DPNS_NAME)),
 
         }
         // start index + start at + limit 1
@@ -449,7 +450,7 @@ async fn contested_resources_fields() {
         match test_case.expect {
             Ok(expected) if result.is_ok() => {
                 let result_string = format!("{:?}", result.as_ref().expect("result"));
-                if !result_string.contains(expected) {
+                if !result_string.contains(&expected) {
                     failures.push((
                         test_case.name,
                         format!("EXPECTED: {} GOT: {:?}\n", expected, result),
@@ -535,7 +536,7 @@ pub async fn check_mn_voting_prerequisities(cfg: &Config) -> Result<(), Vec<Stri
             index_name: "parentNameAndLabel".to_string(),
             index_values: vec![
                 Value::Text("dash".into()),
-                Value::Text(INDEX_VALUE.to_string()),
+                Value::Text(TEST_DPNS_NAME.to_string()),
             ],
             document_type_name: cfg.existing_document_type_name.clone(),
             contract_id: cfg.existing_data_contract_id,
@@ -550,7 +551,7 @@ pub async fn check_mn_voting_prerequisities(cfg: &Config) -> Result<(), Vec<Stri
     if all_contenders.contenders.len() < 3 {
         errors.push(format!(
             "Please create 3 identities and create DPNS name `{}` for each of them, found {}",
-            INDEX_VALUE,
+            TEST_DPNS_NAME,
             all_contenders.contenders.len()
         ));
     }

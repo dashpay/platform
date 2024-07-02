@@ -1,5 +1,8 @@
 use dpp::{data_contract::DataContractFactory, prelude::Identifier};
 
+/// Test DPNS name for testing of the Sdk; at least 3 identities should request this name to be reserved
+pub(crate) const TEST_DPNS_NAME: &str = "testname";
+
 /// Create a mock document type for testing of mock API
 pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
     use dpp::{

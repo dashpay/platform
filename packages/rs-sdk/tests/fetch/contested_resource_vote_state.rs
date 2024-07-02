@@ -1,6 +1,8 @@
 //! Tests for SDK requests that return one or more [Contender] objects.
 use crate::fetch::{
-    common::setup_logs, config::Config, contested_resource::check_mn_voting_prerequisities,
+    common::{setup_logs, TEST_DPNS_NAME},
+    config::Config,
+    contested_resource::check_mn_voting_prerequisities,
 };
 use dash_sdk::platform::{Fetch, FetchMany};
 use dpp::{
@@ -117,7 +119,7 @@ async fn contested_resource_vote_states_nx_contract() {
 ///
 /// ## Preconditions
 ///
-/// 1. There must be at least one contender for name "dash" and value "dada".
+/// 1. There must be at least one contender for name "dash" and value "[TEST_DPNS_NAME]".
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn contested_resource_vote_states_ok() {
     setup_logs();
@@ -126,7 +128,7 @@ async fn contested_resource_vote_states_ok() {
     let sdk = cfg.setup_api("contested_resource_vote_states_ok").await;
     // Given some existing data contract and existing label
     let data_contract_id = cfg.existing_data_contract_id;
-    let label = Value::Text(convert_to_homograph_safe_chars("dada"));
+    let label = Value::Text(convert_to_homograph_safe_chars(TEST_DPNS_NAME));
     let document_type_name = "domain".to_string();
 
     let data_contract = DataContract::fetch_by_identifier(&sdk, data_contract_id)
@@ -176,7 +178,7 @@ async fn contested_resource_vote_states_ok() {
         assert!(seen.insert(doc.id()), "duplicate contender");
         let properties = doc.properties();
         assert_eq!(properties["parentDomainName"], Value::Text("dash".into()));
-        assert_eq!(properties["label"], Value::Text("dada".into()));
+        assert_eq!(properties["label"], Value::Text(TEST_DPNS_NAME.into()));
         tracing::debug!(?properties, "document properties");
     }
 }
@@ -185,7 +187,7 @@ async fn contested_resource_vote_states_ok() {
 ///
 /// ## Preconditions
 ///
-/// 1. There must be at least 3 condenders for name "dash" and value "dada".
+/// 1. There must be at least 3 condenders for name "dash" and value [TEST_DPNS_NAME].
 ///
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[allow(non_snake_case)]
@@ -203,7 +205,7 @@ async fn contested_resource_vote_states_with_limit_PLAN_674() {
     // Given more contenders for some `label` than the limit
     let data_contract_id = cfg.existing_data_contract_id;
     let limit: u16 = 2;
-    let label = Value::Text("dada".into());
+    let label = Value::Text(TEST_DPNS_NAME.into());
 
     // ensure we have enough contenders
     let query_all = ContestedDocumentVotePollDriveQuery {
@@ -341,7 +343,7 @@ async fn contested_resource_vote_states_fields() {
             query_mut_fn: |q| {
                 q.vote_poll.index_values = vec![
                     Value::Text("dash".to_string()),
-                    Value::Text("dada".to_string()),
+                    Value::Text(TEST_DPNS_NAME.to_string()),
                 ]
             },
             expect: Ok("contenders: {Identifier("),
@@ -351,7 +353,7 @@ async fn contested_resource_vote_states_fields() {
             query_mut_fn: |q| {
                 q.vote_poll.index_values = vec![
                     Value::Text("dash".to_string()),
-                    Value::Text("dada".to_string()),
+                    Value::Text(TEST_DPNS_NAME.to_string()),
                     Value::Text("eee".to_string()),
                 ]
             },
@@ -402,7 +404,10 @@ async fn contested_resource_vote_states_fields() {
         start_at: None,
         vote_poll: ContestedDocumentResourceVotePoll {
             index_name: "parentNameAndLabel".to_string(),
-            index_values: vec![Value::Text("dash".into()), Value::Text("dada".into())],
+            index_values: vec![
+                Value::Text("dash".into()),
+                Value::Text(TEST_DPNS_NAME.into()),
+            ],
             document_type_name: cfg.existing_document_type_name.clone(),
             contract_id: cfg.existing_data_contract_id,
         },

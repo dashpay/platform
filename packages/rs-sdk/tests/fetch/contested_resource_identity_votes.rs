@@ -2,11 +2,7 @@
 
 use crate::fetch::{common::setup_logs, config::Config};
 use dash_sdk::platform::FetchMany;
-use dpp::{
-    dashcore::{hashes::Hash, ProTxHash},
-    identifier::Identifier,
-    voting::votes::resource_vote::ResourceVote,
-};
+use dpp::{identifier::Identifier, voting::votes::resource_vote::ResourceVote};
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 
 /// When we request votes for a non-existing identity, we should get no votes.
@@ -48,10 +44,11 @@ async fn contested_resource_identity_votes_not_found() {
 ///
 /// In order to setup this test, you need to:
 ///
-/// 0. Ensure you have at least 1 contested DPNS name `dada` in the system.
+/// 0. Ensure you have at least 1 contested DPNS name in the system.
+/// See [check_mn_voting_prerequisities](super::contested_resource::check_mn_voting_prerequisities) for more details.
 ///
 /// 1. Grep log output of `yarn setup` to find `ProRegTx transaction ID` and `Owner Private Key`.
-/// Use `ProRegTx transaction ID` as `protx_hex` variable below.
+/// Use `ProRegTx transaction ID` to set `DASH_SDK_MASTERNODE_OWNER_PRO_REG_TX_HASH`  in `packages/rs-sdk/tests/.env`.
 ///
 /// 2. Load masternode identity into [rs-platform-explorer](https://github.com/dashpay/rs-platform-explorer/):
 ///
@@ -68,7 +65,7 @@ async fn contested_resource_identity_votes_not_found() {
 ///
 ///  * select `csnq`:  `c - Contracts` -> `s - Fetch system contract` -> `n - Fetch DPNS contract` -> `q - Back to Contracts `
 ///  * press ENTER to enter the fetched contract, then select `domain` -> `c - Query Contested Resources`
-///  * Select `string dada`, use `v - Vote`, select some identity.
+///  * Select one of displayed names, use `v - Vote`, select some identity.
 ///
 /// Now, vote should be casted and you can run this test.
 ///   
@@ -83,13 +80,10 @@ async fn contested_resource_identity_votes_ok() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("contested_resource_identity_votes_ok").await;
 
-    // Given some existing identity ID, that is, proTxHash of some Validator
-
-    // TODO: Fetch proTxHash from the network instead of hardcoding; it's not so trivial as it must support our mocking
-    // mechanisms
-    let protx_hex = "53fe73c78179e69a2e9dbe6c04ca0b6d4da596e5e8df0b5dc41a121bf5bda5a3";
-    let protx = ProTxHash::from_slice(&hex::decode(protx_hex).expect("ProTxHash from hex"))
-        .expect("ProTxHash from slice");
+    // Given some existing proTxHash of some Validator that alreday voted
+    let protx = cfg.existing_protxhash().expect(
+        "contested_resource_identity_votes_ok requires existing_protxhash to be set in config",
+    );
 
     // When I query for votes given by this identity
     let votes = ResourceVote::fetch_many(&sdk, protx)
