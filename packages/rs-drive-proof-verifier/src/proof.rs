@@ -1416,7 +1416,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
 
         let contract_provider_fn = provider.as_contract_lookup_fn();
         let (root_hash, voters) = drive_query
-            .verify_identity_votes_given_proof(
+            .verify_identity_votes_given_proof::<Vec<_>>(
                 &proof.grovedb_proof,
                 &contract_provider_fn,
                 platform_version,
@@ -1460,14 +1460,17 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, vote_polls) = drive_query
-            .verify_vote_polls_by_end_date_proof(&proof.grovedb_proof, platform_version)
+            .verify_vote_polls_by_end_date_proof::<BTreeMap<_, _>>(
+                &proof.grovedb_proof,
+                platform_version,
+            )
             .map_err(|e| Error::DriveError {
                 error: e.to_string(),
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let response = VotePollsGroupedByTimestamp::from_iter(vote_polls);
+        let response = VotePollsGroupedByTimestamp(vote_polls);
 
         Ok((response.into_option(), mtd.clone()))
     }

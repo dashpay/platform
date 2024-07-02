@@ -40,23 +40,20 @@ pub const ACTIVE_POLLS_TREE_KEY: char = 'p';
 /// A subtree made for being able to query votes that an identity has made
 pub const IDENTITY_VOTES_TREE_KEY: char = 'i';
 
-/// In the active vote poll this will contain votes for locking the contested resource
-pub const RESOURCE_LOCK_VOTE_TREE_KEY: char = 'l';
+/// The finished info
+pub const RESOURCE_STORED_INFO_KEY_U8_32: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
 
 /// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
-pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY: char = 'k';
+pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+];
 
 /// In the active vote poll this will contain votes for locking the contested resource
-pub const RESOURCE_LOCK_VOTE_TREE_KEY_U8: u8 = b'l';
-
-/// In the active vote poll this will contain votes for abstaining on the vote for the contested resource
-pub const RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8: u8 = b'k'; // 107 decimal
-
-/// The finished info
-pub const RESOURCE_STORED_INFO_KEY: char = 'b'; // 62 hex 98 decimal
-
-/// The finished info
-pub const RESOURCE_STORED_INFO_KEY_U8: u8 = b'b'; // 62 hex 98 decimal
+pub const RESOURCE_LOCK_VOTE_TREE_KEY_U8_32: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+];
 
 /// The tree key for storage of contested documents
 pub const CONTESTED_DOCUMENT_STORAGE_TREE_KEY: u8 = 0;

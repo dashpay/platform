@@ -6,7 +6,8 @@ use grovedb::{Element, GroveDb};
 use crate::error::Error;
 
 use crate::drive::votes::paths::{
-    RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8, RESOURCE_LOCK_VOTE_TREE_KEY_U8, RESOURCE_STORED_INFO_KEY_U8,
+    RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
+    RESOURCE_STORED_INFO_KEY_U8_32,
 };
 use crate::error::drive::DriveError;
 use crate::query::vote_poll_vote_state_query::{
@@ -50,6 +51,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, ContestedDocumentVotePollDriveQueryExecutionResult), Error> {
         let path_query = self.construct_path_query(platform_version)?;
+        // println!("{:?}", &path_query);
         let (root_hash, proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
 
         match self.result_type {
@@ -111,27 +113,27 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                                 ))));
                             }
 
-                            match identity_bytes.get(0) {
-                                Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
-                                    locked_vote_tally = Some(sum_tree_value as u32);
-                                }
-                                Some(key) if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 => {
-                                    abstaining_vote_tally = Some(sum_tree_value as u32);
-                                }
-                                _ => contenders.push(
+                            if identity_bytes.as_slice()
+                                == RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.as_slice()
+                            {
+                                locked_vote_tally = Some(sum_tree_value as u32);
+                            } else if identity_bytes.as_slice()
+                                == RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.as_slice()
+                            {
+                                abstaining_vote_tally = Some(sum_tree_value as u32);
+                            } else {
+                                contenders.push(
                                     ContenderWithSerializedDocumentV0 {
                                         identity_id: Identifier::try_from(identity_bytes)?,
                                         serialized_document: None,
                                         vote_tally: Some(sum_tree_value as u32),
                                     }
                                     .into(),
-                                ),
+                                );
                             }
                         }
                         Element::Item(serialized_item_info, _) => {
-                            if first_key.len() == 1
-                                && first_key.first() == Some(&RESOURCE_STORED_INFO_KEY_U8)
-                            {
+                            if first_key.as_slice() == &RESOURCE_STORED_INFO_KEY_U8_32 {
                                 // this is the stored info, let's check to see if the vote is over
                                 let finalized_contested_document_vote_poll_stored_info =
                                     ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(
@@ -227,25 +229,22 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                                     ))));
                             }
 
-                            match identity_bytes.get(0) {
-                                Some(key) if key == &RESOURCE_LOCK_VOTE_TREE_KEY_U8 => {
-                                    locked_vote_tally = Some(sum_tree_value as u32);
-                                }
-                                Some(key) if key == &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8 => {
-                                    abstaining_vote_tally = Some(sum_tree_value as u32);
-                                }
-                                _ => {
-                                    return Err(Error::Drive(DriveError::CorruptedDriveState(
-                                        "unexpected key for sum tree value in verification"
-                                            .to_string(),
-                                    )));
-                                }
+                            if identity_bytes.as_slice()
+                                == RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.as_slice()
+                            {
+                                locked_vote_tally = Some(sum_tree_value as u32);
+                            } else if identity_bytes.as_slice()
+                                == RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.as_slice()
+                            {
+                                abstaining_vote_tally = Some(sum_tree_value as u32);
+                            } else {
+                                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                                    "unexpected key for sum tree value in verification".to_string(),
+                                )));
                             }
                         }
                         Element::Item(serialized_item_info, _) => {
-                            if first_key.len() == 1
-                                && first_key.first() == Some(&RESOURCE_STORED_INFO_KEY_U8)
-                            {
+                            if first_key.as_slice() == &RESOURCE_STORED_INFO_KEY_U8_32 {
                                 // this is the stored info, let's check to see if the vote is over
                                 let finalized_contested_document_vote_poll_stored_info =
                                     ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(

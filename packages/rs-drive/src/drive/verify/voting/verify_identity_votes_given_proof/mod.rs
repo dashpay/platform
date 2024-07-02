@@ -15,7 +15,7 @@ use dpp::voting::votes::resource_vote::ResourceVote;
 impl ContestedResourceVotesGivenByIdentityQuery {
     /// Verifies a proof for the vote poll vote state proof.
     ///
-    /// This function verifies a given serialized proof and returns the root hash along with a vector of deserialized identifiers.
+    /// This function verifies a given serialized proof and returns the root hash along with a collection of deserialized identifiers and their corresponding resource votes.
     ///
     /// # Arguments
     ///
@@ -26,7 +26,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
     /// # Returns
     ///
     /// A `Result` containing:
-    /// * A tuple with the root hash and a vector of deserialized `Identifier`s if the proof is valid.
+    /// * A tuple with the root hash and a collection of `(Identifier, ResourceVote)` pairs if the proof is valid. The collection type is flexible and determined by the generic parameter `I`.
     /// * An `Error` variant if the proof verification fails or a deserialization error occurs.
     ///
     /// # Errors
@@ -34,12 +34,15 @@ impl ContestedResourceVotesGivenByIdentityQuery {
     /// This function will return an `Error` if:
     /// * The proof verification fails.
     /// * A deserialization error occurs when parsing the serialized document(s).
-    pub fn verify_identity_votes_given_proof(
+    pub fn verify_identity_votes_given_proof<I>(
         &self,
         proof: &[u8],
         contract_lookup_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, BTreeMap<Identifier, ResourceVote>), Error> {
+    ) -> Result<(RootHash, I), Error>
+    where
+        I: FromIterator<(Identifier, ResourceVote)>,
+    {
         match platform_version
             .drive
             .methods

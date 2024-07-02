@@ -13,8 +13,8 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::votes::paths::{
-    vote_contested_resource_contract_documents_indexes_path_vec, RESOURCE_ABSTAIN_VOTE_TREE_KEY,
-    RESOURCE_LOCK_VOTE_TREE_KEY,
+    vote_contested_resource_contract_documents_indexes_path_vec,
+    RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
 };
 use crate::error::drive::DriveError;
 use dpp::data_contract::document_type::IndexProperty;
@@ -210,7 +210,7 @@ impl Drive {
         )?;
 
         let inserted_abstain = self.batch_insert_empty_tree_if_not_exists(
-            DriveKeyInfo::Key(vec![RESOURCE_ABSTAIN_VOTE_TREE_KEY as u8])
+            DriveKeyInfo::Key(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec())
                 .add_path_info(index_path_info.clone()),
             false,
             storage_flags,
@@ -222,7 +222,7 @@ impl Drive {
         )?;
 
         let inserted_lock = self.batch_insert_empty_tree_if_not_exists(
-            DriveKeyInfo::Key(vec![RESOURCE_LOCK_VOTE_TREE_KEY as u8])
+            DriveKeyInfo::Key(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec())
                 .add_path_info(index_path_info.clone()),
             false,
             storage_flags,
@@ -257,9 +257,9 @@ impl Drive {
 
         if inserted_abstain {
             let mut towards_abstain_index_path_info = index_path_info.clone();
-            towards_abstain_index_path_info.push(DriveKeyInfo::Key(vec![
-                RESOURCE_ABSTAIN_VOTE_TREE_KEY as u8,
-            ]))?;
+            towards_abstain_index_path_info.push(DriveKeyInfo::Key(
+                RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec(),
+            ))?;
 
             self.add_contested_vote_subtree_operations(
                 towards_abstain_index_path_info,
@@ -273,8 +273,9 @@ impl Drive {
 
         if inserted_lock {
             let mut towards_lock_index_path_info = index_path_info;
-            towards_lock_index_path_info
-                .push(DriveKeyInfo::Key(vec![RESOURCE_LOCK_VOTE_TREE_KEY as u8]))?;
+            towards_lock_index_path_info.push(DriveKeyInfo::Key(
+                RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec(),
+            ))?;
 
             self.add_contested_vote_subtree_operations(
                 towards_lock_index_path_info,

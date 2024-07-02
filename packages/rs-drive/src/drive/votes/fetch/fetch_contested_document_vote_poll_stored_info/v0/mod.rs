@@ -1,5 +1,5 @@
 use crate::drive::grove_operations::DirectQueryType;
-use crate::drive::votes::paths::{VotePollPaths, RESOURCE_STORED_INFO_KEY_U8};
+use crate::drive::votes::paths::{VotePollPaths, RESOURCE_STORED_INFO_KEY_U8_32};
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -30,7 +30,7 @@ impl Drive {
         let mut cost_operations = vec![];
         let maybe_element = self.grove_get_raw_optional(
             path.as_slice().into(),
-            vec![RESOURCE_STORED_INFO_KEY_U8].as_slice(),
+            RESOURCE_STORED_INFO_KEY_U8_32.as_slice(),
             DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut cost_operations,

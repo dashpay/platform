@@ -1,5 +1,5 @@
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
-use crate::drive::votes::paths::{VotePollPaths, RESOURCE_STORED_INFO_KEY_U8};
+use crate::drive::votes::paths::{VotePollPaths, RESOURCE_STORED_INFO_KEY_U8_32};
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -51,7 +51,7 @@ impl Drive {
         self.batch_insert::<0>(
             PathKeyElement((
                 vote_poll_root_path.clone(),
-                vec![RESOURCE_STORED_INFO_KEY_U8],
+                RESOURCE_STORED_INFO_KEY_U8_32.to_vec(),
                 Element::new_item(serialization),
             )),
             &mut drive_operations,

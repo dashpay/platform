@@ -26,9 +26,10 @@ impl VotePollsByEndDateDriveQuery {
     /// # Returns
     ///
     /// A `Result` containing:
-    /// * A tuple with a root hash and a `BTreeMap` where the keys are timestamps (in milliseconds since
+    /// * A tuple with a root hash and a collection of items where the keys are timestamps (in milliseconds since
     ///   the epoch) and the values are vectors of `ContestedDocumentResourceVotePoll` objects,
-    ///   representing voting polls ending at those times. The map entries are sorted by the timestamps.
+    ///   representing voting polls ending at those times. The collection is flexible and determined by the
+    ///   generic parameter `I`.
     /// * An `Error` variant, in case the proof verification fails or if there are deserialization
     ///   errors while parsing the documents.
     ///
@@ -41,10 +42,13 @@ impl VotePollsByEndDateDriveQuery {
     /// 3. A required path component (timestamp) is missing in any of the paths returned in the proof,
     ///    indicating a potentially corrupted state.
     #[inline(always)]
-    pub(super) fn verify_vote_polls_by_end_date_proof_v0(
+    pub(super) fn verify_vote_polls_by_end_date_proof_v0<I>(
         &self,
         proof: &[u8],
-    ) -> Result<(RootHash, BTreeMap<TimestampMillis, Vec<VotePoll>>), Error> {
+    ) -> Result<(RootHash, I), Error>
+    where
+        I: FromIterator<(TimestampMillis, Vec<VotePoll>)>,
+    {
         let path_query = self.construct_path_query();
         let (root_hash, proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
         let vote_polls_by_end_date = proved_key_values
@@ -69,7 +73,9 @@ impl VotePollsByEndDateDriveQuery {
                     acc.entry(timestamp).or_default().push(vote_poll);
                     acc
                 },
-            );
+            )
+            .into_iter()
+            .collect::<I>();
 
         Ok((root_hash, vote_polls_by_end_date))
     }
