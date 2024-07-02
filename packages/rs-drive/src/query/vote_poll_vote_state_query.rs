@@ -310,7 +310,7 @@ impl ContestedDocumentVotePollDriveQuery {
     ) -> Result<Vec<u8>, Error> {
         let resolved = self.resolve(drive, transaction, platform_version)?;
         let path_query = resolved.construct_path_query(platform_version)?;
-        println!("{:?}", &path_query);
+        // println!("{:?}", &path_query);
         drive.grove_get_proved_path_query(
             &path_query,
             false,
@@ -410,7 +410,7 @@ impl ContestedDocumentVotePollDriveQuery {
     ) -> Result<ContestedDocumentVotePollDriveQueryExecutionResult, Error> {
         let resolved = self.resolve(drive, transaction, platform_version)?;
         let path_query = resolved.construct_path_query(platform_version)?;
-        println!("path_query {:?}", &path_query);
+        // println!("path_query {:?}", &path_query);
         let query_result = drive.grove_get_path_query(
             &path_query,
             transaction,

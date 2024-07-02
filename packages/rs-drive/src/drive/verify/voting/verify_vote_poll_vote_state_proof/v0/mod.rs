@@ -51,7 +51,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, ContestedDocumentVotePollDriveQueryExecutionResult), Error> {
         let path_query = self.construct_path_query(platform_version)?;
-        println!("{:?}", &path_query);
+        // println!("{:?}", &path_query);
         let (root_hash, proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
 
         match self.result_type {
