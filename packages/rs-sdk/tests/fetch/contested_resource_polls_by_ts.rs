@@ -1,7 +1,7 @@
 //! Test VotePollsByEndDateDriveQuery
 
 use crate::fetch::{common::setup_logs, config::Config};
-use chrono::Days;
+use chrono::{DateTime, Days, TimeZone, Utc};
 use dash_sdk::platform::FetchMany;
 use dpp::{identity::TimestampMillis, voting::vote_polls::VotePoll};
 use drive::query::VotePollsByEndDateDriveQuery;
@@ -134,10 +134,7 @@ async fn vote_polls_by_ts_limit() {
     const LIMIT: usize = 2;
     const LIMIT_ALL: usize = 100;
 
-    let _test_start_time: TimestampMillis = chrono::Utc::now().timestamp_millis() as u64;
-    let end_time = chrono::Utc::now()
-        .checked_add_days(Days::new(30))
-        .expect("30 days in future");
+    let end_time: DateTime<Utc> = Utc.with_ymd_and_hms(2035, 12, 24, 13, 59, 30).unwrap();
 
     let query_all = VotePollsByEndDateDriveQuery {
         limit: Some(LIMIT_ALL as u16),
