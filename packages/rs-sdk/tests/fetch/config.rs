@@ -153,7 +153,11 @@ impl Config {
     pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {
         let dump_dir = match namespace.is_empty() {
             true => self.dump_dir.clone(),
-            false => self.dump_dir.join(sanitize_filename::sanitize(namespace)),
+            false => {
+                // looks like spaces are not replaced by sanitize_filename, and we don't want them as they are confusing
+                let namespace = namespace.replace(' ', "_");
+                self.dump_dir.join(sanitize_filename::sanitize(namespace))
+            }
         };
 
         if dump_dir.is_relative() {
