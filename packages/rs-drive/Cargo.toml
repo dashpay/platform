@@ -51,10 +51,10 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "2.0.0", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.11.0", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", branch = "feat/QuerySumTree", optional = true }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "a4326b7ec36a639e94eaac397663166846c83f52", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "a4326b7ec36a639e94eaac397663166846c83f52", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "a4326b7ec36a639e94eaac397663166846c83f52" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "a4326b7ec36a639e94eaac397663166846c83f52", optional = true }
 
 [dev-dependencies]
 criterion = "0.3.5"
