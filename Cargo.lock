@@ -1370,6 +1370,7 @@ dependencies = [
  "sanitize-filename",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tokio-test",
@@ -5075,8 +5076,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#1f29dbc549dc1abe5de295e55728576b1a0c8a6b"
+version = "0.14.0-dev.12"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.12#17e57f509c2bb7015042d69976bd1f056fef923d"
 dependencies = [
  "bytes",
  "futures",
@@ -5097,8 +5098,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#1f29dbc549dc1abe5de295e55728576b1a0c8a6b"
+version = "0.14.0-dev.12"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.12#17e57f509c2bb7015042d69976bd1f056fef923d"
 dependencies = [
  "bytes",
  "chrono",
@@ -5117,8 +5118,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#1f29dbc549dc1abe5de295e55728576b1a0c8a6b"
+version = "0.14.0-dev.12"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.12#17e57f509c2bb7015042d69976bd1f056fef923d"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.6",
