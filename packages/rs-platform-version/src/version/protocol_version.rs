@@ -15,6 +15,25 @@ use crate::version::v1::PLATFORM_V1;
 use std::sync::OnceLock;
 
 pub type FeatureVersion = u16;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FeatureVersionWithSingleSubBlockInfo {
+    pub version: u16,
+    pub new_version: u16,
+    pub block_height_update: u64,
+}
+
+impl FeatureVersionWithSingleSubBlockInfo {
+    /// Gets the version for a specific block
+    pub fn version_for_block(&self, block_height: u64) -> u16 {
+        if block_height < self.block_height_update {
+            self.version
+        } else {
+            self.new_version
+        }
+    }
+}
+
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
 
 #[derive(Clone, Debug, Default)]
