@@ -161,6 +161,7 @@ pub enum DataContractResolvedInfo<'a> {
 impl<'a> From<&'a DataContractOwnedResolvedInfo> for DataContractResolvedInfo<'a> {
     fn from(value: &'a DataContractOwnedResolvedInfo) -> Self {
         match value {
+            #[cfg(feature = "server")]
             DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => {
                 DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info.clone())
             }

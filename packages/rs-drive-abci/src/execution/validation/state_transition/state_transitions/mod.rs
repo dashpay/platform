@@ -306,16 +306,12 @@ mod tests {
         let identity_2_info = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
 
         // Flip them if needed so identity 1 id is always smaller than identity 2 id
-        let (identity_1_info, identity_2_info) =
-            if identity_1_info.0.id() < identity_2_info.0.id() {
-                (
-                    identity_1_info, identity_2_info,
-                )
-            } else {
-                (
-                    identity_2_info, identity_1_info,
-                )
-            };
+        let (identity_1_info, identity_2_info) = if identity_1_info.0.id() < identity_2_info.0.id()
+        {
+            (identity_1_info, identity_2_info)
+        } else {
+            (identity_2_info, identity_1_info)
+        };
 
         let ((preorder_document_1, document_1), (preorder_document_2, document_2), dpns_contract) =
             create_dpns_name_contest_on_identities(
@@ -365,16 +361,12 @@ mod tests {
         let identity_2_info = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
 
         // Flip them if needed so identity 1 id is always smaller than identity 2 id
-        let (identity_1_info, identity_2_info) =
-            if identity_1_info.0.id() < identity_2_info.0.id() {
-                (
-                    identity_1_info, identity_2_info,
-                )
-            } else {
-                (
-                    identity_2_info, identity_1_info,
-                )
-            };
+        let (identity_1_info, identity_2_info) = if identity_1_info.0.id() < identity_2_info.0.id()
+        {
+            (identity_1_info, identity_2_info)
+        } else {
+            (identity_2_info, identity_1_info)
+        };
 
         let (_, _, dpns_contract) = create_dpns_name_contest_on_identities(
             platform,
