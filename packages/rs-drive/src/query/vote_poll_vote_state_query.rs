@@ -492,6 +492,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
         })
     }
 
+    #[cfg(feature = "server")]
     /// Executes the query with no proof
     pub fn execute(
         &self,
