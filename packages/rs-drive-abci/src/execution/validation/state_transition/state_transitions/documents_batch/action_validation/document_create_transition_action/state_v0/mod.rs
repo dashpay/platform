@@ -3,6 +3,7 @@ use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
+use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -16,7 +17,9 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{C
 use drive::error::drive::DriveError;
 use drive::query::TransactionArg;
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_contender::fetch_contender;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
 
@@ -37,7 +40,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
-        _execution_context: &mut StateTransitionExecutionContext,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -56,7 +59,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         // We should check to see if a document already exists in the state
-        let already_existing_document = fetch_document_with_id(
+        let (already_existing_document, fee_result) = fetch_document_with_id(
             platform.drive,
             contract,
             document_type,
@@ -64,6 +67,8 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
             transaction,
             platform_version,
         )?;
+
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
         if already_existing_document.is_some() {
             return Ok(ConsensusValidationResult::new_with_error(
@@ -126,7 +131,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
                         let time_ms_since_start = block_info.time_ms.checked_sub(start_block.time_ms).ok_or(Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(format!("it makes no sense that the start block time {} is before our current block time {}", start_block.time_ms, block_info.time_ms)))))?;
                         let join_time_allowed = platform_version.dpp.validation.voting.allow_other_contenders_time_ms;
                         if time_ms_since_start > join_time_allowed {
-                            Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::DocumentContestNotJoinableError(
+                            return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::DocumentContestNotJoinableError(
                                 DocumentContestNotJoinableError::new(
                                     contested_document_resource_vote_poll.into(),
                                     stored_info.clone(),
@@ -134,6 +139,16 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
                                     block_info.time_ms,
                                     join_time_allowed,
                                 )))))
+                        }
+
+                        // we need to also make sure that we are not already a contestant
+
+                        let (maybe_existing_contender, fee_result) = fetch_contender(platform.drive, contested_document_resource_vote_poll, owner_id, block_info, transaction, platform_version)?;
+
+                        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                        if maybe_existing_contender.is_some() {
+                            Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::DocumentContestIdentityAlreadyContestantError(DocumentContestIdentityAlreadyContestantError::new(contested_document_resource_vote_poll.into(), owner_id)))))
                         } else {
                             Ok(SimpleConsensusValidationResult::new())
                         }

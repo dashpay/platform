@@ -319,58 +319,6 @@ impl ContestedDocumentVotePollDriveQuery {
             &platform_version.drive,
         )
     }
-    //
-    // #[cfg(all(feature = "server", feature = "verify"))]
-    // /// Executes a query with proof and returns the root hash, items, and fee.
-    // pub fn execute_with_proof_only_get_elements(
-    //     self,
-    //     drive: &Drive,
-    //     block_info: Option<BlockInfo>,
-    //     transaction: TransactionArg,
-    //     platform_version: &PlatformVersion,
-    // ) -> Result<(RootHash, Vec<Vec<u8>>, u64), Error> {
-    //     let mut drive_operations = vec![];
-    //     let (root_hash, items) = self.execute_with_proof_only_get_elements_internal(
-    //         drive,
-    //         transaction,
-    //         &mut drive_operations,
-    //         platform_version,
-    //     )?;
-    //     let cost = if let Some(block_info) = block_info {
-    //         let fee_result = Drive::calculate_fee(
-    //             None,
-    //             Some(drive_operations),
-    //             &block_info.epoch,
-    //             drive.config.epochs_per_era,
-    //             platform_version,
-    //         )?;
-    //         fee_result.processing_fee
-    //     } else {
-    //         0
-    //     };
-    //     Ok((root_hash, items, cost))
-    // }
-    //
-    // #[cfg(all(feature = "server", feature = "verify"))]
-    // /// Executes an internal query with proof and returns the root hash and values.
-    // pub(crate) fn execute_with_proof_only_get_elements_internal(
-    //     self,
-    //     drive: &Drive,
-    //     transaction: TransactionArg,
-    //     drive_operations: &mut Vec<LowLevelDriveOperation>,
-    //     platform_version: &PlatformVersion,
-    // ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
-    //     let resolved = self.resolve(drive, transaction, platform_version)?;
-    //     let path_query = resolved.construct_path_query(platform_version)?;
-    //     let proof = drive.grove_get_proved_path_query(
-    //         &path_query,
-    //         self.start_at.is_some(),
-    //         transaction,
-    //         drive_operations,
-    //         &platform_version.drive,
-    //     )?;
-    //     self.verify_proof_keep_serialized(proof.as_slice(), platform_version)
-    // }
 
     #[cfg(feature = "server")]
     /// Executes a query with no proof and returns the items, skipped items, and fee.
@@ -409,7 +357,150 @@ impl ContestedDocumentVotePollDriveQuery {
         platform_version: &PlatformVersion,
     ) -> Result<ContestedDocumentVotePollDriveQueryExecutionResult, Error> {
         let resolved = self.resolve(drive, transaction, platform_version)?;
-        let path_query = resolved.construct_path_query(platform_version)?;
+        resolved.execute(drive, transaction, drive_operations, platform_version)
+    }
+}
+
+/// Vote Poll Drive Query struct
+#[derive(Debug, PartialEq, Clone)]
+pub struct ResolvedContestedDocumentVotePollDriveQuery<'a> {
+    /// What vote poll are we asking for?
+    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>,
+    /// What result type are we interested in
+    pub result_type: ContestedDocumentVotePollDriveQueryResultType,
+    /// Offset
+    pub offset: Option<u16>,
+    /// Limit
+    pub limit: Option<u16>,
+    /// Start at identity id, the bool is if it is also included
+    pub start_at: Option<([u8; 32], bool)>,
+    /// Include locked and abstaining vote tally
+    pub allow_include_locked_and_abstaining_vote_tally: bool,
+}
+
+impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
+    /// Operations to construct a path query.
+    pub fn construct_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        let path = self.vote_poll.contenders_path(platform_version)?;
+
+        let mut query = Query::new();
+
+        let allow_include_locked_and_abstaining_vote_tally = self
+            .allow_include_locked_and_abstaining_vote_tally
+            && self.result_type.has_vote_tally();
+
+        // We have the following
+        // Stored Info [[0;31],0] Abstain votes [[0;31],1] Lock Votes [[0;31],2]
+
+        // this is a range on all elements
+        let limit =
+            match &self.start_at {
+                None => {
+                    if allow_include_locked_and_abstaining_vote_tally {
+                        match &self.result_type {
+                        ContestedDocumentVotePollDriveQueryResultType::Documents => {
+                            // Documents don't care about the vote tallies
+                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
+                            self.limit
+                        }
+                        ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
+                            query.insert_all();
+                            self.limit.map(|limit| limit.saturating_add(3))
+                        }
+                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
+                            query.insert_all();
+                            self.limit.map(|limit| limit.saturating_mul(2).saturating_add(3))
+                        }
+                    }
+                    } else {
+                        match &self.result_type {
+                        ContestedDocumentVotePollDriveQueryResultType::Documents => {
+                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
+                            self.limit
+                        }
+                        ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
+                            query.insert_key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec());
+                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
+                            self.limit.map(|limit| limit.saturating_add(1))
+                        }
+                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
+                            query.insert_key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec());
+                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
+                            self.limit.map(|limit| limit.saturating_mul(2).saturating_add(1))
+                        }
+                    }
+                    }
+                }
+                Some((starts_at_key_bytes, start_at_included)) => {
+                    let starts_at_key = starts_at_key_bytes.to_vec();
+                    match start_at_included {
+                        true => query.insert_range_from(starts_at_key..),
+                        false => query.insert_range_after(starts_at_key..),
+                    }
+                    match &self.result_type {
+                        ContestedDocumentVotePollDriveQueryResultType::Documents
+                        | ContestedDocumentVotePollDriveQueryResultType::VoteTally => self.limit,
+                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
+                            self.limit.map(|limit| limit.saturating_mul(2))
+                        }
+                    }
+                }
+            };
+
+        let (subquery_path, subquery) = match self.result_type {
+            ContestedDocumentVotePollDriveQueryResultType::Documents => (Some(vec![vec![0]]), None),
+            ContestedDocumentVotePollDriveQueryResultType::VoteTally => (Some(vec![vec![1]]), None),
+            ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
+                let mut query = Query::new();
+                query.insert_keys(vec![vec![0], vec![1]]);
+                (None, Some(query.into()))
+            }
+        };
+
+        query.default_subquery_branch.subquery_path = subquery_path;
+        query.default_subquery_branch.subquery = subquery;
+
+        if allow_include_locked_and_abstaining_vote_tally {
+            query.add_conditional_subquery(
+                QueryItem::Key(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()),
+                Some(vec![vec![1]]),
+                None,
+            );
+            query.add_conditional_subquery(
+                QueryItem::Key(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec()),
+                Some(vec![vec![1]]),
+                None,
+            );
+        }
+
+        query.add_conditional_subquery(
+            QueryItem::Key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec()),
+            None,
+            None,
+        );
+
+        Ok(PathQuery {
+            path,
+            query: SizedQuery {
+                query,
+                limit,
+                offset: self.offset,
+            },
+        })
+    }
+
+    /// Executes the query with no proof
+    pub fn execute(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContestedDocumentVotePollDriveQueryExecutionResult, Error> {
+        let path_query = self.construct_path_query(platform_version)?;
         // println!("path_query {:?}", &path_query);
         let query_result = drive.grove_get_path_query(
             &path_query,
@@ -581,9 +672,9 @@ impl ContestedDocumentVotePollDriveQuery {
                                 Element::SumTree(_, sum_tree_value, _) => {
                                     if sum_tree_value < 0 || sum_tree_value > u32::MAX as i64 {
                                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                                                "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
-                                                sum_tree_value
-                                            ))));
+                                            "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
+                                            sum_tree_value
+                                        ))));
                                     }
 
                                     if identity_bytes.as_slice()
@@ -629,16 +720,16 @@ impl ContestedDocumentVotePollDriveQuery {
                                                     ))?,
                                             );
                                             winner = Some((
-                                                        finalized_contested_document_vote_poll_stored_info.winner(),
-                                                        finalized_contested_document_vote_poll_stored_info
-                                                            .last_finalization_block().ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                                                            "we should have a last finalization block".to_string(),
-                                                        )))?,
-                                                    ));
+                                                finalized_contested_document_vote_poll_stored_info.winner(),
+                                                finalized_contested_document_vote_poll_stored_info
+                                                    .last_finalization_block().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                    "we should have a last finalization block".to_string(),
+                                                )))?,
+                                            ));
                                             contenders = finalized_contested_document_vote_poll_stored_info
-                                                        .contender_votes_in_vec_of_contender_with_serialized_document().ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                                                        "we should have a last contender votes".to_string(),
-                                                    )))?;
+                                                .contender_votes_in_vec_of_contender_with_serialized_document().ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                                                "we should have a last contender votes".to_string(),
+                                            )))?;
                                         }
                                     } else {
                                         // We should find a sum tree paired with this document
@@ -656,9 +747,9 @@ impl ContestedDocumentVotePollDriveQuery {
                                                 || sum_tree_value > u32::MAX as i64
                                             {
                                                 return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                                                            "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
-                                                            sum_tree_value
-                                                        ))));
+                                                    "sum tree value for vote tally must be between 0 and u32::Max, received {} from state",
+                                                    sum_tree_value
+                                                ))));
                                             }
 
                                             let identity_id =
@@ -699,172 +790,5 @@ impl ContestedDocumentVotePollDriveQuery {
                 }
             }
         }
-    }
-
-    #[cfg(feature = "server")]
-    #[allow(unused)]
-    /// Executes an internal query with no proof and returns the values and skipped items.
-    pub(crate) fn execute_no_proof_internal(
-        &self,
-        drive: &Drive,
-        result_type: QueryResultType,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<(QueryResultElements, u16), Error> {
-        let resolved = self.resolve(drive, transaction, platform_version)?;
-        let path_query = resolved.construct_path_query(platform_version)?;
-        let query_result = drive.grove_get_path_query(
-            &path_query,
-            transaction,
-            result_type,
-            drive_operations,
-            &platform_version.drive,
-        );
-        match query_result {
-            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
-                Ok((QueryResultElements::new(), 0))
-            }
-            _ => {
-                let (data, skipped) = query_result?;
-                {
-                    Ok((data, skipped))
-                }
-            }
-        }
-    }
-}
-
-/// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
-pub struct ResolvedContestedDocumentVotePollDriveQuery<'a> {
-    /// What vote poll are we asking for?
-    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>,
-    /// What result type are we interested in
-    pub result_type: ContestedDocumentVotePollDriveQueryResultType,
-    /// Offset
-    pub offset: Option<u16>,
-    /// Limit
-    pub limit: Option<u16>,
-    /// Start at identity id, the bool is if it is also included
-    pub start_at: Option<([u8; 32], bool)>,
-    /// Include locked and abstaining vote tally
-    pub allow_include_locked_and_abstaining_vote_tally: bool,
-}
-
-impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
-    /// Operations to construct a path query.
-    pub fn construct_path_query(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<PathQuery, Error> {
-        let path = self.vote_poll.contenders_path(platform_version)?;
-
-        let mut query = Query::new();
-
-        let allow_include_locked_and_abstaining_vote_tally = self
-            .allow_include_locked_and_abstaining_vote_tally
-            && self.result_type.has_vote_tally();
-
-        // We have the following
-        // Stored Info [[0;31],0] Abstain votes [[0;31],1] Lock Votes [[0;31],2]
-
-        // this is a range on all elements
-        let limit =
-            match &self.start_at {
-                None => {
-                    if allow_include_locked_and_abstaining_vote_tally {
-                        match &self.result_type {
-                        ContestedDocumentVotePollDriveQueryResultType::Documents => {
-                            // Documents don't care about the vote tallies
-                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
-                            self.limit
-                        }
-                        ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
-                            query.insert_all();
-                            self.limit.map(|limit| limit.saturating_add(3))
-                        }
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
-                            query.insert_all();
-                            self.limit.map(|limit| limit.saturating_mul(2).saturating_add(3))
-                        }
-                    }
-                    } else {
-                        match &self.result_type {
-                        ContestedDocumentVotePollDriveQueryResultType::Documents => {
-                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
-                            self.limit
-                        }
-                        ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
-                            query.insert_key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec());
-                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
-                            self.limit.map(|limit| limit.saturating_add(1))
-                        }
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
-                            query.insert_key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec());
-                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
-                            self.limit.map(|limit| limit.saturating_mul(2).saturating_add(1))
-                        }
-                    }
-                    }
-                }
-                Some((starts_at_key_bytes, start_at_included)) => {
-                    let starts_at_key = starts_at_key_bytes.to_vec();
-                    match start_at_included {
-                        true => query.insert_range_from(starts_at_key..),
-                        false => query.insert_range_after(starts_at_key..),
-                    }
-                    match &self.result_type {
-                        ContestedDocumentVotePollDriveQueryResultType::Documents
-                        | ContestedDocumentVotePollDriveQueryResultType::VoteTally => self.limit,
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
-                            self.limit.map(|limit| limit.saturating_mul(2))
-                        }
-                    }
-                }
-            };
-
-        let (subquery_path, subquery) = match self.result_type {
-            ContestedDocumentVotePollDriveQueryResultType::Documents => (Some(vec![vec![0]]), None),
-            ContestedDocumentVotePollDriveQueryResultType::VoteTally => (Some(vec![vec![1]]), None),
-            ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
-                let mut query = Query::new();
-                query.insert_keys(vec![vec![0], vec![1]]);
-                (None, Some(query.into()))
-            }
-        };
-
-        query.default_subquery_branch.subquery_path = subquery_path;
-        query.default_subquery_branch.subquery = subquery;
-
-        if allow_include_locked_and_abstaining_vote_tally {
-            query.add_conditional_subquery(
-                QueryItem::Key(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()),
-                Some(vec![vec![1]]),
-                None,
-            );
-            query.add_conditional_subquery(
-                QueryItem::Key(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec()),
-                Some(vec![vec![1]]),
-                None,
-            );
-        }
-
-        query.add_conditional_subquery(
-            QueryItem::Key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec()),
-            None,
-            None,
-        );
-
-        Ok(PathQuery {
-            path,
-            query: SizedQuery {
-                query,
-                limit,
-                offset: self.offset,
-            },
-        })
     }
 }

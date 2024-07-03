@@ -25,6 +25,7 @@ use crate::execution::validation::state_transition::state_transitions::documents
 use crate::execution::validation::state_transition::ValidationMode;
 
 mod data_triggers;
+pub mod fetch_contender;
 pub mod fetch_documents;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStateValidationV0
