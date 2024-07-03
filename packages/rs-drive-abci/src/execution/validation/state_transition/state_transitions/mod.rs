@@ -305,6 +305,18 @@ mod tests {
 
         let identity_2_info = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
 
+        // Flip them if needed so identity 1 id is always smaller than identity 2 id
+        let (identity_1_info, identity_2_info) =
+            if identity_1_info.0.id() < identity_2_info.0.id() {
+                (
+                    identity_1_info, identity_2_info,
+                )
+            } else {
+                (
+                    identity_2_info, identity_1_info,
+                )
+            };
+
         let ((preorder_document_1, document_1), (preorder_document_2, document_2), dpns_contract) =
             create_dpns_name_contest_on_identities(
                 platform,
@@ -352,6 +364,18 @@ mod tests {
 
         let identity_2_info = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
 
+        // Flip them if needed so identity 1 id is always smaller than identity 2 id
+        let (identity_1_info, identity_2_info) =
+            if identity_1_info.0.id() < identity_2_info.0.id() {
+                (
+                    identity_1_info, identity_2_info,
+                )
+            } else {
+                (
+                    identity_2_info, identity_1_info,
+                )
+            };
+
         let (_, _, dpns_contract) = create_dpns_name_contest_on_identities(
             platform,
             &identity_1_info,
@@ -380,18 +404,6 @@ mod tests {
         let (identity_1, signer_1, key_1) = identity_1;
 
         let (identity_2, signer_2, key_2) = identity_2;
-
-        // Flip them if needed so identity 1 id is always smaller than identity 2 id
-        let (identity_1, identity_2, signer_1, signer_2, key_1, key_2, flipped) =
-            if identity_1.id() < identity_2.id() {
-                (
-                    identity_1, identity_2, signer_1, signer_2, key_1, key_2, false,
-                )
-            } else {
-                (
-                    identity_2, identity_1, signer_2, signer_1, key_2, key_1, true,
-                )
-            };
 
         let dpns = platform.drive.cache.system_data_contracts.load_dpns();
         let dpns_contract = dpns.clone();
@@ -640,19 +652,11 @@ mod tests {
             .expect("expected to commit transaction");
 
         assert_eq!(processing_result.valid_count(), 2);
-        if flipped {
-            (
-                ((preorder_document_2, entropy), (document_2, entropy)),
-                ((preorder_document_1, entropy), (document_1, entropy)),
-                dpns_contract,
-            )
-        } else {
-            (
-                ((preorder_document_1, entropy), (document_1, entropy)),
-                ((preorder_document_2, entropy), (document_2, entropy)),
-                dpns_contract,
-            )
-        }
+        (
+            ((preorder_document_1, entropy), (document_1, entropy)),
+            ((preorder_document_2, entropy), (document_2, entropy)),
+            dpns_contract,
+        )
     }
 
     pub(in crate::execution::validation::state_transition::state_transitions) fn add_contender_to_dpns_name_contest(
