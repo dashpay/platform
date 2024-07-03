@@ -284,6 +284,10 @@ async fn contested_resources_limit_PLAN_656() {
     q.limit = Some(1);
 }, Ok(format!(r#"ContestedResources([Value(Text({}))])"#, TEST_DPNS_NAME)); "exact match query returns one object PLAN-656")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
 async fn contested_resources_fields(
     query_mut_fn: fn(&mut VotePollsByDocumentTypeQuery),
     expect: Result<String, &'static str>,

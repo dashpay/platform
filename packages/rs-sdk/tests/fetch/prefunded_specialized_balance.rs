@@ -26,6 +26,10 @@ async fn test_prefunded_specialized_balance_not_found() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
 async fn test_prefunded_specialized_balance_ok() {
     setup_logs();
 
@@ -49,8 +53,7 @@ async fn test_prefunded_specialized_balance_ok() {
 
     let poll = polls
         .0
-        .iter()
-        .next()
+        .first()
         .expect("need at least one vote poll timestamp")
         .1
         .first()

@@ -64,6 +64,10 @@ async fn test_contested_resource_voters_for_identity_not_found() {
 ///
 /// 1. Votes exist for DPNS name [TEST_DPNS_NAME].
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
 async fn contested_resource_voters_for_existing_contestant() {
     setup_logs();
 

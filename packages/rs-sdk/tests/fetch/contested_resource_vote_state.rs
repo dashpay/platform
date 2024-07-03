@@ -121,6 +121,11 @@ async fn contested_resource_vote_states_nx_contract() {
 /// ## Preconditions
 ///
 /// 1. There must be at least one contender for name "dash" and value "[TEST_DPNS_NAME]".
+///
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "equires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn contested_resource_vote_states_ok() {
     setup_logs();
@@ -198,6 +203,10 @@ fn base_query(cfg: &Config) -> ContestedDocumentVotePollDriveQuery {
 /// 1. There must be at least 3 condenders for name "dash" and value [TEST_DPNS_NAME].
 ///
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "equires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
 #[allow(non_snake_case)]
 async fn contested_resource_vote_states_with_limit_PLAN_674() {
     setup_logs();
@@ -302,6 +311,10 @@ type MutFn = fn(&mut ContestedDocumentVotePollDriveQuery);
     q.result_type = ContestedDocumentVotePollDriveQueryResultType::VoteTally
 }, Ok(r#"serialized_document: None, vote_tally: Some"#); "result_type VoteTally")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "equires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
 async fn contested_rss_vote_state_fields(
     query_mut_fn: MutFn,
     expect: Result<&'static str, &'static str>,
