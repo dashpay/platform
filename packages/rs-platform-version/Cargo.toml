@@ -10,6 +10,7 @@ license = "MIT"
 [dependencies]
 thiserror = { version = "1.0.59" }
 sha2 = "0.10.5"
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 
 [features]
 mock-versions = []

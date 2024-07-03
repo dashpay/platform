@@ -1,8 +1,8 @@
-use crate::version::fee::data_contract::FeeDataContractValidationVersion;
+use bincode::{Decode, Encode};
 use sha2::{Digest, Sha256};
 
 pub mod v1;
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Encode, Decode, Default)]
 pub struct StateTransitionMinFees {
     pub credit_transfer: u64,
     pub credit_withdrawal: u64,

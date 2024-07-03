@@ -16,6 +16,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -53,6 +54,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         if !apply {
             return self.insert_contract(
@@ -126,14 +128,13 @@ impl Drive {
             .data_contracts
             .insert(updated_contract_fetch_info, transaction.is_some());
 
-        let cached_fee_versions = self.cache.cached_fee_version.read();
         Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            &cached_fee_versions,
+            previous_fee_versions,
         )
     }
 

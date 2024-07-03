@@ -11,6 +11,7 @@ use crate::drive::batch::drive_op_batch::finalize_task::{
 };
 use crate::error::drive::DriveError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -55,6 +56,7 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        _previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DataContractOperationType::ApplyContractWithSerialization {

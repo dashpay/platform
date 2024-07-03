@@ -51,7 +51,7 @@ pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
     block_count: u64,
     strategy: NetworkStrategy,
-    mut config: PlatformConfig,
+    config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
     // TODO: Do we want to sign instant locks or just disable verification?

@@ -4,6 +4,7 @@ use crate::version::fee::processing::FeeProcessingVersion;
 use crate::version::fee::signature::FeeSignatureVersion;
 use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
 use crate::version::fee::storage::FeeStorageVersion;
+use bincode::{Decode, Encode};
 use sha2::{Digest, Sha256};
 
 mod data_contract;
@@ -14,7 +15,7 @@ pub mod state_transition_min_fees;
 pub mod storage;
 pub mod v1;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Encode, Decode, Default)]
 pub struct FeeVersion {
     pub storage: FeeStorageVersion,
     pub signature: FeeSignatureVersion,

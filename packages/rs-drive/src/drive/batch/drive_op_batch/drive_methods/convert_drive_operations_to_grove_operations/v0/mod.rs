@@ -6,11 +6,11 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::GroveDbOp;
 use grovedb::TransactionArg;
 use itertools::Itertools;
-use dpp::prelude::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Convert a batch of drive operations to a batch of grove database operations.
@@ -37,7 +37,7 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &Option<CachedEpochIndexFeeVersions>,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<GroveDbOpBatch, Error> {
         let ops = drive_batch_operations
             .into_iter()

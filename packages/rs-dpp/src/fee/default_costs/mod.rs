@@ -58,10 +58,10 @@ pub enum KnownCostItem {
     FetchIdentityBalanceProcessingCost,
     /// The cost for fetching an identity key
     FetchSingleIdentityKeyProcessingCost,
-    /// The cost for a Double SHA256 operation
-    DoubleSHA256,
     /// The cost for a Single SHA256 operation
     SingleSHA256,
+    /// The cost for a Blake3 operation
+    Blake3,
     /// The cost for a EcdsaSecp256k1 signature verification
     VerifySignatureEcdsaSecp256k1,
     /// The cost for a BLS12_381 signature verification
@@ -101,9 +101,9 @@ impl KnownCostItem {
                     .processing
                     .fetch_single_identity_key_processing_cost
             }
-            KnownCostItem::DoubleSHA256 => {
-                //TODO: double_sha256_base or double_sha256_per_block?
-                fee_version.hashing.double_sha256_base
+            KnownCostItem::Blake3 => {
+                //TODO: blake3_base or blake3_per_block?
+                fee_version.hashing.blake3_base
             }
             KnownCostItem::SingleSHA256 => {
                 //TODO: single_sha256_base or single_sha256_per_block?
@@ -133,7 +133,7 @@ impl KnownCostItem {
         cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Credits {
         let version = epoch.active_fee_version(cached_fee_version);
-        self.lookup_cost(version)
+        self.lookup_cost(&version)
     }
 }
 
@@ -141,10 +141,7 @@ impl KnownCostItem {
 pub trait EpochCosts {
     /// Get the closest epoch in the past that has a cost table
     /// This is where the base costs last changed
-    fn active_fee_version(
-        &self,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
-    ) -> &'static FeeVersion;
+    fn active_fee_version(&self, cached_fee_version: &CachedEpochIndexFeeVersions) -> FeeVersion;
     /// Get the cost for the known cost item
     fn cost_for_known_cost_item(
         &self,
@@ -155,20 +152,18 @@ pub trait EpochCosts {
 
 impl EpochCosts for Epoch {
     /// Get the active fee version for an epoch
-    fn active_fee_version(
-        &self,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
-    ) -> &'static FeeVersion {
+    fn active_fee_version(&self, cached_fee_version: &CachedEpochIndexFeeVersions) -> FeeVersion {
         // If the exact EpochIndex is matching to a FeeVersion update
         if let Some(fee_version) = cached_fee_version.get(&self.index) {
-            return fee_version;
+            return fee_version.clone();
         }
         // else return the FeeVersion at  lower adjacent EpochIndex (if available, else the FeeVersion of first PlatformVersion)
         cached_fee_version
             .range(..=self.index)
             .next_back()
-            .map(|(_, &fee_version)| fee_version)
+            .map(|(_, &ref fee_version)| fee_version)
             .unwrap_or_else(|| &PlatformVersion::first().fee_version)
+            .clone()
     }
 
     /// Get the cost for the known cost item

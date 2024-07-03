@@ -68,7 +68,6 @@ mod tests {
 
     use dpp::version::PlatformVersion;
     use grovedb::batch::Op;
-    use dpp::prelude::CachedEpochIndexFeeVersions;
 
     #[test]
     fn should_add_delete_operations_v0() {
@@ -98,7 +97,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                &CachedEpochIndexFeeVersions::default(),
+                None,
             )
             .expect("should apply batch");
 

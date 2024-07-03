@@ -3,14 +3,11 @@ use crate::drive::cache::{DataContractCache, DriveCache, ProtocolVersionsCache};
 use crate::drive::config::DriveConfig;
 use crate::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::errors::ProtocolError;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
-use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
 use std::path::Path;
 
 impl Drive {
@@ -61,42 +58,9 @@ impl Drive {
                 system_data_contracts: SystemDataContracts::load_genesis_system_contracts(
                     platform_version,
                 )?,
-                cached_fee_version: parking_lot::RwLock::new(BTreeMap::default()),
             },
         };
 
-        drive.populate_cached_fee_version(platform_version)?;
-
         Ok((drive, protocol_version))
-    }
-
-    /// Function that populates drive.cache.cached_fee_version with the EpochIndex were FeeVersion where updated
-    fn populate_cached_fee_version(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
-        let epochs_protocol_versions =
-            self.get_epochs_protocol_versions(0, None, true, None, platform_version)?;
-        let mut cached_fee_versions = self.cache.cached_fee_version.write();
-
-        let mut last_fee_version_opt: Option<&FeeVersion> = None;
-        // Iterate all (epoch_index, protocol_version)
-        for (epoch_index, protocol_version) in epochs_protocol_versions.iter() {
-            let platform_version = PlatformVersion::get(*protocol_version).map_err(|e| {
-                Error::Drive(DriveError::CorruptedCacheState(format!(
-                    "unable to get platform version {e}"
-                )))
-            })?;
-            // Load the corresponding PlatformVersion from the protocol_version
-            if let Some(last_fee_version) = last_fee_version_opt {
-                // Insert the (epoch_index, fee_version) only if the fee_version is different from the last_fee_version.
-                if *last_fee_version != platform_version.fee_version {
-                    last_fee_version_opt = Some(&platform_version.fee_version);
-                    cached_fee_versions.insert(*epoch_index, &platform_version.fee_version);
-                }
-            } else {
-                // If last_fee_version_opt is none, insert anyway
-                last_fee_version_opt = Some(&platform_version.fee_version);
-                cached_fee_versions.insert(*epoch_index, &platform_version.fee_version);
-            }
-        }
-        Ok(())
     }
 }

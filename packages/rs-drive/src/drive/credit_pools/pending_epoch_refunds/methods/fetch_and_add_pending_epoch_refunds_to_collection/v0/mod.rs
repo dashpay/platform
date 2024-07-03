@@ -79,7 +79,6 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::epoch::CreditsPerEpoch;
-    use dpp::prelude::CachedEpochIndexFeeVersions;
 
     use dpp::version::PlatformVersion;
 
@@ -110,7 +109,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                &CachedEpochIndexFeeVersions::default(),
+                None,
             )
             .expect("should apply batch");
 

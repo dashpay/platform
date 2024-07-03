@@ -77,22 +77,23 @@ impl<C> Platform<C> {
                 .clear_version_information(Some(transaction), &platform_version.drive)
                 .map_err(Error::Drive)?;
 
+            let previous_fee_versions_map = block_platform_state.previous_fee_versions_mut();
+
             let platform_version = PlatformVersion::get(current_block_protocol_version)?;
-            let mut cached_fee_version = self.drive.cache.cached_fee_version.write();
             // If cached_fee_version is non-empty
-            if let Some((_, &last_fee_version)) = cached_fee_version.iter().last() {
+            if let Some((_, &ref last_fee_version)) = previous_fee_versions_map.iter().last() {
                 // Insert the new (epoch_index, fee_version) only if the new fee_version is different from the last_fee_version.
                 if *last_fee_version != platform_version.fee_version {
-                    cached_fee_version.insert(
+                    previous_fee_versions_map.insert(
                         epoch_info.current_epoch_index(),
-                        &platform_version.fee_version,
+                        platform_version.fee_version.clone(),
                     );
                 }
             // In case of empty cached_fee_version, insert the new (epoch_index, fee_version)
             } else {
-                cached_fee_version.insert(
+                previous_fee_versions_map.insert(
                     epoch_info.current_epoch_index(),
-                    &platform_version.fee_version,
+                    platform_version.fee_version.clone(),
                 );
             }
 

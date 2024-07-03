@@ -7,6 +7,7 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::prelude::CachedEpochIndexFeeVersions;
 use enum_map::EnumMap;
+use platform_version::version::fee::FeeVersion;
 
 impl Drive {
     /// Calculates fees for the given operations. Returns the storage and processing costs.
@@ -16,7 +17,8 @@ impl Drive {
         drive_operations: Option<Vec<LowLevelDriveOperation>>,
         epoch: &Epoch,
         epochs_per_era: u16,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
+        fee_version: &FeeVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         let mut aggregate_fee_result = FeeResult::default();
         if let Some(base_operations) = base_operations {
@@ -37,8 +39,8 @@ impl Drive {
                 drive_operations,
                 epoch,
                 epochs_per_era,
-                ,
-                cached_fee_version,
+                fee_version,
+                previous_fee_versions,
             )? {
                 aggregate_fee_result.checked_add_assign(drive_fee_result)?;
             }

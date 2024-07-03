@@ -1,11 +1,11 @@
 extern crate sha2;
 
-use sha2::digest::Update;
+use bincode::{Decode, Encode};
 use sha2::{Digest, Sha256};
 
 pub mod v1;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Encode, Decode, Default)]
 pub struct FeeStorageVersion {
     pub storage_disk_usage_credit_per_byte: u64,
     pub storage_processing_credit_per_byte: u64,

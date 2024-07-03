@@ -13,10 +13,11 @@ use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::AddNewIdentity;
 
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 use tracing::Level;
-use dpp::prelude::CachedEpochIndexFeeVersions;
 
 impl<C> Platform<C>
 where
@@ -135,13 +136,14 @@ where
             }
         }
 
+        let previous_fee_verions = platform_state.map(|state| state.previous_fee_versions());
         self.drive.apply_drive_operations(
             drive_operations,
             true,
             block_info,
             Some(transaction),
             platform_version,
-            &CachedEpochIndexFeeVersions::default(),
+            previous_fee_verions,
         )?;
 
         let height = block_info.height;

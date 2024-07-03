@@ -292,6 +292,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -494,6 +495,7 @@ mod tests {
                 false,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to apply contract successfully");
     }

@@ -8,7 +8,7 @@ use grovedb::batch::KeyInfoPath;
 
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::prelude::Revision;
+use dpp::prelude::{CachedEpochIndexFeeVersions, Revision};
 
 use dpp::version::PlatformVersion;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -27,6 +27,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         // TODO: In case of dry run we will get less because we replace the same bytes
 
@@ -52,15 +53,13 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
-
-        let cached_fee_versions = self.cache.cached_fee_version.read();
         let fees = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            &cached_fee_versions,
+            previous_fee_versions,
         )?;
 
         Ok(fees)

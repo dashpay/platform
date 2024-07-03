@@ -1,9 +1,9 @@
-use crate::version::fee::processing::FeeProcessingVersion;
+use bincode::{Decode, Encode};
 use sha2::{Digest, Sha256};
 
 pub mod v1;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Encode, Decode, Default)]
 pub struct FeeDataContractValidationVersion {
     pub document_type_base_fee: u64,
     pub document_type_size_fee: u64,

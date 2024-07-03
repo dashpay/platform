@@ -102,7 +102,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
+        _previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DocumentOperationType::AddDocument {

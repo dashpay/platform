@@ -36,7 +36,7 @@ impl Drive {
         epoch: &Epoch,
         epochs_per_era: u16,
         platform_version: &PlatformVersion,
-        cached_fee_version: &CachedEpochIndexFeeVersions,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version.drive.methods.fees.calculate_fee {
             0 => Self::calculate_fee_v0(
@@ -44,7 +44,8 @@ impl Drive {
                 drive_operations,
                 epoch,
                 epochs_per_era,
-                cached_fee_version,
+                &platform_version.fee_version,
+                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::calculate_fee".to_string(),

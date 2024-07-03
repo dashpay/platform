@@ -62,14 +62,13 @@ impl Drive {
         )?;
         cost_operations.push(CalculatedCostOperation(fetch_cost));
 
-        let cached_fee_versions = self.cache.cached_fee_version.read();
         let fees = Drive::calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
-            &cached_fee_versions,
+            None,
         )?;
         Ok(fees)
     }

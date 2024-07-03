@@ -24,6 +24,7 @@ use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -492,6 +493,18 @@ impl PlatformStateV0Methods for PlatformState {
     fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
+        }
+    }
+
+    fn previous_fee_versions(&self) -> &CachedEpochIndexFeeVersions {
+        match self {
+            PlatformState::V0(v0) => v0.previous_fee_versions(),
+        }
+    }
+
+    fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
+        match self {
+            PlatformState::V0(v0) => v0.previous_fee_versions_mut(),
         }
     }
 }

@@ -80,7 +80,7 @@ pub mod prelude {
     /// A 1 here means we pay 1% more in processing fees. A 100 means we pay 100% more.
     pub type UserFeeIncrease = u16;
 
-    pub type CachedEpochIndexFeeVersions = BTreeMap<EpochIndex, &'static FeeVersion>;
+    pub type CachedEpochIndexFeeVersions = BTreeMap<EpochIndex, FeeVersion>;
 }
 
 pub use bincode;

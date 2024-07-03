@@ -103,14 +103,13 @@ impl Drive {
             })
             .collect::<Result<Vec<Document>, ProtocolError>>()?;
         let cost = if let Some(epoch) = epoch {
-            let cached_fee_versions = self.cache.cached_fee_version.read();
             let fee_result = Drive::calculate_fee(
                 None,
                 Some(drive_operations),
                 epoch,
                 self.config.epochs_per_era,
                 platform_version,
-                &cached_fee_versions,
+                None,
             )?;
             fee_result.processing_fee
         } else {

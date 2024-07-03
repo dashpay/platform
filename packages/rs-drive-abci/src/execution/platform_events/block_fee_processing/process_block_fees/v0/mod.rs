@@ -54,6 +54,7 @@ use crate::execution::types::block_state_info::v0::{
 use crate::execution::types::processed_block_fees_outcome;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
+
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
@@ -81,6 +82,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         block_fees: BlockFees,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
         let epoch_info = block_execution_context.epoch_info();
         let block_info = block_execution_context.block_state_info();
@@ -181,7 +183,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             &block_info.to_block_info(epoch_info.try_into()?),
             Some(transaction),
             platform_version,
-            &CachedEpochIndexFeeVersions::default(),
+            previous_fee_versions,
         )?;
 
         let outcome = processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome {
@@ -304,6 +306,7 @@ mod tests {
                     block_fees.clone(),
                     transaction,
                     platform_version,
+                    None,
                 )
                 .expect("should process block fees");
 

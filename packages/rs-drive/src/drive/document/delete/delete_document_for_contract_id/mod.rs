@@ -12,7 +12,7 @@ use crate::error::Error;
 
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
-
+use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -41,6 +41,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -57,6 +58,7 @@ impl Drive {
                 apply,
                 transaction,
                 platform_version,
+                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_id".to_string(),

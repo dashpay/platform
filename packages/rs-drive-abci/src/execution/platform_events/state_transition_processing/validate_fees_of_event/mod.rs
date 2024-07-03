@@ -8,7 +8,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::prelude::{CachedEpochIndexFeeVersions, ConsensusValidationResult};
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
@@ -41,6 +41,7 @@ where
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match platform_version
             .drive_abci
@@ -48,7 +49,13 @@ where
             .state_transition_processing
             .validate_fees_of_event
         {
-            0 => self.validate_fees_of_event_v0(event, block_info, transaction, platform_version),
+            0 => self.validate_fees_of_event_v0(
+                event,
+                block_info,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "validate_fees_of_event".to_string(),
                 known_versions: vec![0],

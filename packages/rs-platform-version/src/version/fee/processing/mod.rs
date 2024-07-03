@@ -1,9 +1,9 @@
-use crate::version::fee::signature::FeeSignatureVersion;
+use bincode::{Decode, Encode};
 use sha2::{Digest, Sha256};
 
 pub mod v1;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Encode, Decode, Default)]
 pub struct FeeProcessingVersion {
     pub fetch_identity_balance_processing_cost: u64,
     pub fetch_identity_revision_processing_cost: u64,

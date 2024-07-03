@@ -39,7 +39,7 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
-use strategy_tests::{KeyMaps, Strategy};
+use strategy_tests::{Strategy};
 use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -60,10 +60,12 @@ use dpp::state_transition::documents_batch_transition::document_transition::{Doc
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
-use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
-use drive_abci::platform_types::signature_verification_quorum_set::{QuorumConfig, Quorums, SigningQuorum};
+use drive_abci::platform_types::signature_verification_quorum_set::{
+    QuorumConfig, Quorums, SigningQuorum,
+};
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;

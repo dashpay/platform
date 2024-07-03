@@ -7,7 +7,7 @@ pub mod fetch_next_withdrawal_transaction_index;
 mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
-    use dpp::prelude::CachedEpochIndexFeeVersions;
+
     use dpp::version::PlatformVersion;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
@@ -46,7 +46,7 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                &CachedEpochIndexFeeVersions::default(),
+                None,
             )
             .expect("to apply drive ops");
 

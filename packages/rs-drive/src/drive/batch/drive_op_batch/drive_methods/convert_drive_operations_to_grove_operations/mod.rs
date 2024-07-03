@@ -8,8 +8,8 @@ use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
 
-use grovedb::TransactionArg;
 use dpp::prelude::CachedEpochIndexFeeVersions;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Convert a batch of drive operations to a batch of grove database operations.
@@ -36,7 +36,7 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &Option<CachedEpochIndexFeeVersions>,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<GroveDbOpBatch, Error> {
         match platform_version
             .drive

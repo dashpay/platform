@@ -84,7 +84,7 @@ mod tests {
             perpetual_storage_epochs, CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX,
         };
         use dpp::fee::Credits;
-        use dpp::prelude::CachedEpochIndexFeeVersions;
+
         use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::DriveOperation;
         use drive::drive::config::DriveConfig;
@@ -197,7 +197,7 @@ mod tests {
                     &BlockInfo::default(),
                     Some(&transaction),
                     platform_version,
-                    &CachedEpochIndexFeeVersions::default(),
+                    None,
                 )
                 .expect("should apply batch");
 

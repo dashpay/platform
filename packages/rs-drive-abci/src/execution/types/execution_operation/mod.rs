@@ -87,8 +87,8 @@ impl ValidationOperation {
                     fee_result.processing_fee = fee_result
                         .processing_fee
                         .checked_add(
-                            platform_version.fee_version.hashing.double_sha256_base
-                                + platform_version.fee_version.hashing.double_sha256_per_block
+                            platform_version.fee_version.hashing.single_sha256_base
+                                + platform_version.fee_version.hashing.sha256_per_block
                                     * (*block_count as u64),
                         )
                         .ok_or(ExecutionError::Overflow(

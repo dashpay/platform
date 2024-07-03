@@ -25,12 +25,12 @@ mod tests {
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
+
     use drive::drive::batch::DataContractOperationType;
     use drive::drive::batch::DriveOperation::DataContractOperation;
     use platform_version::version::PlatformVersion;
     use std::borrow::Cow;
     use std::sync::Arc;
-    use dpp::prelude::CachedEpochIndexFeeVersions;
 
     pub fn setup_platform<'a>(
         with_genesis_state: bool,
@@ -72,7 +72,14 @@ mod tests {
 
         platform
             .drive
-            .apply_drive_operations(vec![operation], true, &block_info, None, platform_version, &CachedEpochIndexFeeVersions::default())
+            .apply_drive_operations(
+                vec![operation],
+                true,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
             .expect("expected to apply drive operations");
     }
 
