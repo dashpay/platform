@@ -15,7 +15,8 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
 
@@ -36,7 +37,7 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         platform: &PlatformStateRef,
         owner_id: Identifier,
         _block_info: &BlockInfo,
-        _execution_context: &mut StateTransitionExecutionContext,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -54,7 +55,7 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         };
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
-        let original_document = fetch_document_with_id(
+        let (original_document, fee) = fetch_document_with_id(
             platform.drive,
             contract,
             document_type,
@@ -62,6 +63,8 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
             transaction,
             platform_version,
         )?;
+
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         let Some(document) = original_document else {
             return Ok(ConsensusValidationResult::new_with_error(

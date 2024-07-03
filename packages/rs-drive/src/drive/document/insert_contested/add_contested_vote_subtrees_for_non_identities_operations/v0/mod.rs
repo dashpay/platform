@@ -18,7 +18,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Adds the contested vote subtree
     #[inline(always)]
-    pub(super) fn add_contested_vote_subtree_operations_v0(
+    pub(super) fn add_contested_vote_subtree_for_non_identities_operations_v0(
         &self,
         index_path_info: PathInfo<0>,
         storage_flags: Option<&StorageFlags>,
@@ -104,7 +104,7 @@ impl Drive {
 
         if !inserted {
             return Err(Error::Drive(DriveError::CorruptedContractIndexes(
-                "contested votes tree already exists",
+                "contested votes tree already exists for a non identity (abstain or lock)",
             )));
         }
 

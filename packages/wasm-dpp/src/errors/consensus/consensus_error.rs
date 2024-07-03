@@ -67,6 +67,7 @@ use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, Disabli
 use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
+use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
@@ -269,6 +270,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentContestNotJoinableError(e) => {
             generic_consensus_error!(DocumentContestNotJoinableError, e).into()
+        }
+        StateError::DocumentContestIdentityAlreadyContestantError(e) => {
+            generic_consensus_error!(DocumentContestIdentityAlreadyContestantError, e).into()
         }
         StateError::VotePollNotFoundError(e) => {
             generic_consensus_error!(VotePollNotFoundError, e).into()

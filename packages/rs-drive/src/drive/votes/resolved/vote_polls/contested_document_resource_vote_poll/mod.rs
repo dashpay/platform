@@ -84,6 +84,25 @@ pub struct ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
     pub index_values: Vec<Value>,
 }
 
+impl<'a> From<&'a ContestedDocumentResourceVotePollWithContractInfo>
+    for ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>
+{
+    fn from(value: &'a ContestedDocumentResourceVotePollWithContractInfo) -> Self {
+        let ContestedDocumentResourceVotePollWithContractInfo {
+            contract,
+            document_type_name,
+            index_name,
+            index_values,
+        } = value;
+        ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+            contract: contract.into(),
+            document_type_name: document_type_name.clone(),
+            index_name: index_name.clone(),
+            index_values: index_values.clone(),
+        }
+    }
+}
+
 impl<'a> From<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>>
     for ContestedDocumentResourceVotePoll
 {

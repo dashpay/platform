@@ -276,13 +276,15 @@ mod tests {
         use dpp::document::Document;
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
         use dpp::util::hash::hash_double;
+        use dpp::util::strings::convert_to_homograph_safe_chars;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
         use drive::drive::object_size_info::DataContractResolvedInfo;
         use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
-        use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_name_contest, fast_forward_to_block, perform_votes_multi};
+        use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_name_contest, create_dpns_name_contest_give_key_info, fast_forward_to_block, perform_votes_multi};
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
         #[test]
         fn test_document_creation() {
@@ -881,6 +883,92 @@ mod tests {
                 Some("Document Contest for vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } is not joinable V0(ContestedDocumentVotePollStoredInfoV0 { finalized_events: [], vote_poll_status: Started(BlockInfo { time_ms: 3000, height: 0, core_height: 0, epoch: 0 }), locked_count: 0 }), it started 3000 and it is now 1000003000, and you can only join for 604800000"), // this should fail, as we are over a week
                 platform_version,
             );
+        }
+
+        #[test]
+        fn test_that_a_contested_document_can_not_be_added_twice_by_the_same_identity() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (
+                (
+                    _contender_1,
+                    contender_1_signer,
+                    contender_1_key,
+                    _preorder_document_1,
+                    (document_1, entropy),
+                ),
+                (_contender_2, _, _, _, _),
+                dpns_contract,
+            ) = create_dpns_name_contest_give_key_info(
+                &mut platform,
+                &platform_state,
+                7,
+                "quantum",
+                platform_version,
+            );
+
+            let domain = dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type");
+
+            let documents_batch_create_transition_1 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document_1,
+                    domain,
+                    entropy.0,
+                    &contender_1_key,
+                    4,
+                    0,
+                    &contender_1_signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition_1 =
+                documents_batch_create_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition_1.clone()],
+                    &platform_state,
+                    &BlockInfo::default_with_time(
+                        &platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let result = processing_result.into_execution_results().remove(0);
+
+            let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result
+            else {
+                panic!("expected a paid consensus error");
+            };
+            assert_eq!(consensus_error.to_string(), "An Identity with the id Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
         }
 
         #[test]

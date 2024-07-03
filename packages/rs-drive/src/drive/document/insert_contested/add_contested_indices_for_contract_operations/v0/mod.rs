@@ -261,7 +261,7 @@ impl Drive {
                 RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec(),
             ))?;
 
-            self.add_contested_vote_subtree_operations(
+            self.add_contested_vote_subtree_for_non_identities_operations(
                 towards_abstain_index_path_info,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
@@ -277,7 +277,7 @@ impl Drive {
                 RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec(),
             ))?;
 
-            self.add_contested_vote_subtree_operations(
+            self.add_contested_vote_subtree_for_non_identities_operations(
                 towards_lock_index_path_info,
                 storage_flags,
                 estimated_costs_only_with_layer_info,

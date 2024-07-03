@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds the contested vote subtree
-    pub fn add_contested_vote_subtree_operations(
+    pub fn add_contested_vote_subtree_for_non_identities_operations(
         &self,
         index_path_info: PathInfo<0>,
         storage_flags: Option<&StorageFlags>,
@@ -33,7 +33,7 @@ impl Drive {
             .insert_contested
             .add_contested_vote_subtree_for_non_identities_operations
         {
-            0 => self.add_contested_vote_subtree_operations_v0(
+            0 => self.add_contested_vote_subtree_for_non_identities_operations_v0(
                 index_path_info,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
@@ -42,7 +42,7 @@ impl Drive {
                 drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "add_contested_vote_subtree_operations".to_string(),
+                method: "add_contested_vote_subtree_for_non_identities_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
