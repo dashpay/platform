@@ -1,6 +1,7 @@
 //! DAPI client request settings processing.
 
-use std::time::Duration;
+use dapi_grpc::tonic::transport::Certificate;
+use std::{fs::read_to_string, path::Path, time::Duration};
 
 /// Default low-level client timeout
 const DEFAULT_CONNECT_TIMEOUT: Option<Duration> = None;
@@ -15,7 +16,7 @@ const DEFAULT_BAN_FAILED_ADDRESS: bool = true;
 /// 2. [crate::DapiClient] settings;
 /// 3. [crate::DapiRequest]-specific settings;
 /// 4. settings for an exact request execution call.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct RequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
@@ -25,6 +26,8 @@ pub struct RequestSettings {
     pub retries: Option<usize>,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: Option<bool>,
+    /// Certificate Authority certificate to use for verifying the server's certificate.
+    pub ca_certificate: Option<Certificate>,
 }
 
 impl RequestSettings {
@@ -36,6 +39,7 @@ impl RequestSettings {
             timeout: None,
             retries: None,
             ban_failed_address: None,
+            ca_certificate: None,
         }
     }
 
@@ -48,6 +52,7 @@ impl RequestSettings {
             timeout: rhs.timeout.or(self.timeout),
             retries: rhs.retries.or(self.retries),
             ban_failed_address: rhs.ban_failed_address.or(self.ban_failed_address),
+            ca_certificate: rhs.ca_certificate.or(self.ca_certificate),
         }
     }
 
@@ -60,12 +65,22 @@ impl RequestSettings {
             ban_failed_address: self
                 .ban_failed_address
                 .unwrap_or(DEFAULT_BAN_FAILED_ADDRESS),
+            ca_certificate: self.ca_certificate,
         }
+    }
+
+    /// Load a certificate from a file and set it as a CA certificate.
+    pub fn with_ca_certificate(mut self, path: impl AsRef<Path>) -> std::io::Result<Self> {
+        let cert_bytes = read_to_string(path)?;
+        let cert = Certificate::from_pem(cert_bytes);
+
+        self.ca_certificate = Some(cert);
+        Ok(self)
     }
 }
 
 /// DAPI settings ready to use.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct AppliedRequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
@@ -75,4 +90,6 @@ pub struct AppliedRequestSettings {
     pub retries: usize,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: bool,
+    /// Certificate Authority certificate to use for verifying the server's certificate.
+    pub ca_certificate: Option<Certificate>,
 }

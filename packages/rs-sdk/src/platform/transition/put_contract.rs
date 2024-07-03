@@ -59,7 +59,7 @@ impl<S: Signer> PutContract<S> for DataContract {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
         let new_identity_nonce = sdk
-            .get_identity_nonce(self.owner_id(), true, settings)
+            .get_identity_nonce(self.owner_id(), true, settings.clone())
             .await?;
 
         let key_id = identity_public_key.id();

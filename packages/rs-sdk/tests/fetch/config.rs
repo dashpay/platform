@@ -3,6 +3,7 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
+use dash_sdk::RequestSettings;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
@@ -47,6 +48,10 @@ pub struct Config {
     /// When true, use SSL for the Dash Platform node grpc interface
     #[serde(default)]
     pub platform_ssl: bool,
+
+    /// When platform_ssl is true, use the PEM-encoded CA certificate from provided absolute path to verify the server
+    #[serde(default)]
+    pub platform_ca_cert_path: Option<PathBuf>,
 
     /// Directory where all generated test vectors will be saved.
     ///
@@ -172,16 +177,28 @@ impl Config {
             panic!("cannot use namespace with root dump dir");
         }
 
+        let request_settings = self
+            .platform_ca_cert_path
+            .as_ref()
+            .map(|cert| {
+                RequestSettings::default()
+                    .with_ca_certificate(cert)
+                    .expect("failed to load CA certificate")
+            })
+            .unwrap_or_default();
+
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
-            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
-                &self.platform_host,
-                self.core_port,
-                &self.core_user,
-                &self.core_password,
-            );
+            let builder = dash_sdk::SdkBuilder::new(self.address_list())
+                .with_core(
+                    &self.platform_host,
+                    self.core_port,
+                    &self.core_user,
+                    &self.core_password,
+                )
+                .with_settings(request_settings);
 
             #[cfg(feature = "generate-test-vectors")]
             let builder = {
@@ -209,6 +226,7 @@ impl Config {
         #[cfg(feature = "offline-testing")]
         let sdk = {
             let mut mock_sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_settings(request_settings)
                 .build()
                 .expect("initialize api");
 

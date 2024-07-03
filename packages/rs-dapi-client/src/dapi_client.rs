@@ -130,6 +130,7 @@ impl DapiRequestExecutor for DapiClient {
         // Join settings of different sources to get final version of the settings for this execution:
         let applied_settings = self
             .settings
+            .clone()
             .override_by(R::SETTINGS_OVERRIDES)
             .override_by(settings)
             .finalize();
@@ -151,6 +152,7 @@ impl DapiRequestExecutor for DapiClient {
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
         let routine = move || {
+            let applied_settings = applied_settings.clone();
             // Try to get an address to initialize transport on:
 
             let address_list = self
