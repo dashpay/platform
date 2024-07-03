@@ -1,9 +1,9 @@
 //! Test VotePollsByEndDateDriveQuery
 
 use crate::fetch::{common::setup_logs, config::Config};
-use chrono::{DateTime, Days, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use dash_sdk::platform::FetchMany;
-use dpp::{identity::TimestampMillis, voting::vote_polls::VotePoll};
+use dpp::voting::vote_polls::VotePoll;
 use drive::query::VotePollsByEndDateDriveQuery;
 use std::collections::BTreeMap;
 

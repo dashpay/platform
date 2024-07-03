@@ -1,6 +1,6 @@
 //! Tests for SDK requests that return one or more [Contender] objects.
 use crate::fetch::{
-    common::{setup_logs, TEST_DPNS_NAME},
+    common::{setup_logs, setup_sdk_for_test_case, TEST_DPNS_NAME},
     config::Config,
     contested_resource::check_mn_voting_prerequisities,
 };
@@ -21,7 +21,6 @@ use dpp::{
 use drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
 };
-use sha2::Digest;
 use test_case::test_case;
 
 /// Ensure we get proof of non-existence when querying for a non-existing index value.
@@ -129,32 +128,21 @@ async fn contested_resource_vote_states_ok() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("contested_resource_vote_states_ok").await;
     // Given some existing data contract and existing label
-    let data_contract_id = cfg.existing_data_contract_id;
-    let label = Value::Text(convert_to_homograph_safe_chars(TEST_DPNS_NAME));
-    let document_type_name = "domain".to_string();
+
+    let query = base_query(&cfg);
+
+    let data_contract_id = query.vote_poll.contract_id;
+    let document_type_name = &query.vote_poll.document_type_name;
 
     let data_contract = DataContract::fetch_by_identifier(&sdk, data_contract_id)
         .await
         .expect("fetch data contract")
         .expect("found data contract");
     let document_type = data_contract
-        .document_type_for_name(&document_type_name)
+        .document_type_for_name(document_type_name)
         .expect("found document type");
 
     // When I query for vote poll states with existing index values
-    let query = ContestedDocumentVotePollDriveQuery {
-        limit: None,
-        offset: None,
-        start_at: None,
-        vote_poll: ContestedDocumentResourceVotePoll {
-            index_name: "parentNameAndLabel".to_string(),
-            index_values: vec![Value::Text("dash".into()), label],
-            document_type_name,
-            contract_id: data_contract_id,
-        },
-        allow_include_locked_and_abstaining_vote_tally: true,
-        result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-    };
 
     let contenders = ContenderWithSerializedDocument::fetch_many(&sdk, query)
         .await
@@ -182,6 +170,24 @@ async fn contested_resource_vote_states_ok() {
         assert_eq!(properties["parentDomainName"], Value::Text("dash".into()));
         assert_eq!(properties["label"], Value::Text(TEST_DPNS_NAME.into()));
         tracing::debug!(?properties, "document properties");
+    }
+}
+
+fn base_query(cfg: &Config) -> ContestedDocumentVotePollDriveQuery {
+    let index_value_2 = Value::Text(convert_to_homograph_safe_chars(TEST_DPNS_NAME));
+
+    ContestedDocumentVotePollDriveQuery {
+        limit: None,
+        offset: None,
+        start_at: None,
+        vote_poll: ContestedDocumentResourceVotePoll {
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![Value::Text("dash".into()), index_value_2],
+            document_type_name: cfg.existing_document_type_name.clone(),
+            contract_id: cfg.existing_data_contract_id,
+        },
+        allow_include_locked_and_abstaining_vote_tally: true,
+        result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
     }
 }
 
@@ -307,46 +313,12 @@ async fn contested_rss_vote_state_fields(
         .await
         .expect("prerequisities");
 
-    let base_query = ContestedDocumentVotePollDriveQuery {
-        limit: None,
-        offset: None,
-        start_at: None,
-        vote_poll: ContestedDocumentResourceVotePoll {
-            index_name: "parentNameAndLabel".to_string(),
-            index_values: vec![
-                Value::Text("dash".into()),
-                Value::Text(TEST_DPNS_NAME.into()),
-            ],
-            document_type_name: cfg.existing_document_type_name.clone(),
-            contract_id: cfg.existing_data_contract_id,
-        },
-        allow_include_locked_and_abstaining_vote_tally: true,
-        result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-    };
-
-    // check if the base query works
-    // TODO: maybe move to another test
-    let base_query_sdk = cfg
-        .setup_api("contested_rss_vote_state_fields_base_query")
-        .await;
-    let result =
-        ContenderWithSerializedDocument::fetch_many(&base_query_sdk, base_query.clone()).await;
-    assert!(
-        result.is_ok_and(|v| !v.contenders.is_empty()),
-        "base query should return some results"
-    );
-
-    // we need some unique identifier for test vector
-
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(format!("{:?}", &expect).as_bytes());
-    let ns = format!("contested_rss_vote_state_fields_{:x}", hasher.finalize());
-
-    let sdk = cfg.setup_api(&ns).await;
-
-    let mut query = base_query.clone();
+    let mut query = base_query(&cfg);
     query_mut_fn(&mut query);
-    tracing::debug!(?query, ?ns, "Executing test case query");
+    let (test_case_id, sdk) =
+        setup_sdk_for_test_case(cfg, query.clone(), "contested_rss_vote_state_fields_").await;
+
+    tracing::debug!(test_case_id, ?query, "Executing test case query");
 
     let result = ContenderWithSerializedDocument::fetch_many(&sdk, query).await;
     tracing::debug!(?result, "Result of test case");

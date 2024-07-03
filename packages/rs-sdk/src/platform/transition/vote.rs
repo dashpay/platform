@@ -5,6 +5,7 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
+use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
@@ -17,7 +18,6 @@ use dpp::voting::votes::Vote;
 use drive::drive::Drive;
 use drive_proof_verifier::{error::ContextProviderError, DataContractProvider};
 use rs_dapi_client::DapiRequest;
-use sha2::{Digest, Sha256};
 
 #[async_trait::async_trait]
 /// A trait for putting a vote on platform
@@ -160,11 +160,8 @@ fn get_voting_identity_id(
 ) -> Result<Identifier, Error> {
     let pub_key_hash = voting_public_key.public_key_hash()?;
 
-    let mut hasher = Sha256::new();
-    hasher.update(voter_pro_tx_hash.as_bytes());
-    hasher.update(pub_key_hash);
-    let voting_identity_id_hashed = hasher.finalize();
-
-    Identifier::from_bytes(&voting_identity_id_hashed)
-        .map_err(|e| Error::Generic(format!("Couldn't convert id string to Identifier: {}", e)))
+    Ok(Identifier::create_voter_identifier(
+        voter_pro_tx_hash.as_bytes(),
+        &pub_key_hash,
+    ))
 }

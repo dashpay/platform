@@ -1,13 +1,10 @@
 //! Tests of ContestedResource object
 
 use crate::fetch::{
-    common::{setup_logs, TEST_DPNS_NAME},
+    common::{setup_logs, setup_sdk_for_test_case, TEST_DPNS_NAME},
     config::Config,
 };
-use dash_sdk::{
-    platform::{FetchMany, Query},
-    Error,
-};
+use dash_sdk::{platform::FetchMany, Error};
 use dpp::{
     platform_value::Value,
     voting::{
@@ -22,7 +19,6 @@ use drive::query::{
     vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery,
 };
 use drive_proof_verifier::types::ContestedResource;
-use hex::ToHex;
 use std::panic::catch_unwind;
 
 /// Test that we can fetch contested resources
@@ -307,14 +303,10 @@ async fn contested_resources_fields(
             pollster::block_on(async {
                 let mut query = base_query(&cfg);
                 query_mut_fn(&mut query);
-                let key = rs_dapi_client::mock::Key::new(
-                    &query.clone().query(true).expect("valid query"),
-                );
-                let test_case_id =
-                    format!("contested_resources_fields_{}", key.encode_hex::<String>());
 
-                // create new sdk to ensure that test cases don't interfere with each other
-                let sdk = cfg.setup_api(&test_case_id).await;
+                let (test_case_id, sdk) =
+                    setup_sdk_for_test_case(cfg, query.clone(), "contested_resources_fields").await;
+                tracing::debug!(test_case_id, ?query, "Executing query");
 
                 ContestedResource::fetch_many(&sdk, query).await
             })
