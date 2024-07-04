@@ -276,6 +276,77 @@ mod tests {
         platform.state.store(Arc::new(platform_state));
     }
 
+    pub(in crate::execution::validation::state_transition::state_transitions) fn create_dpns_name_contest_give_key_info(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        seed: u64,
+        name: &str,
+        platform_version: &PlatformVersion,
+    ) -> (
+        (
+            Identity,
+            SimpleSigner,
+            IdentityPublicKey,
+            (Document, Bytes32),
+            (Document, Bytes32),
+        ),
+        (
+            Identity,
+            SimpleSigner,
+            IdentityPublicKey,
+            (Document, Bytes32),
+            (Document, Bytes32),
+        ),
+        Arc<DataContract>,
+    ) {
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let identity_1_info = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
+
+        let identity_2_info = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
+
+        // Flip them if needed so identity 1 id is always smaller than identity 2 id
+        let (identity_1_info, identity_2_info) = if identity_1_info.0.id() < identity_2_info.0.id()
+        {
+            (identity_1_info, identity_2_info)
+        } else {
+            (identity_2_info, identity_1_info)
+        };
+
+        let ((preorder_document_1, document_1), (preorder_document_2, document_2), dpns_contract) =
+            create_dpns_name_contest_on_identities(
+                platform,
+                &identity_1_info,
+                &identity_2_info,
+                platform_state,
+                rng,
+                name,
+                platform_version,
+            );
+
+        let (identity_1, signer_1, identity_key_1) = identity_1_info;
+
+        let (identity_2, signer_2, identity_key_2) = identity_2_info;
+
+        (
+            (
+                identity_1,
+                signer_1,
+                identity_key_1,
+                preorder_document_1,
+                document_1,
+            ),
+            (
+                identity_2,
+                signer_2,
+                identity_key_2,
+                preorder_document_2,
+                document_2,
+            ),
+            dpns_contract,
+        )
+    }
+
     pub(in crate::execution::validation::state_transition::state_transitions) fn create_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
@@ -285,19 +356,46 @@ mod tests {
     ) -> (Identity, Identity, Arc<DataContract>) {
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let (identity_1, signer_1, key_1) =
-            setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
+        let identity_1_info = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
 
-        let (identity_2, signer_2, key_2) =
-            setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
+        let identity_2_info = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
 
         // Flip them if needed so identity 1 id is always smaller than identity 2 id
-        let (identity_1, identity_2, signer_1, signer_2, key_1, key_2) =
-            if identity_1.id() < identity_2.id() {
-                (identity_1, identity_2, signer_1, signer_2, key_1, key_2)
-            } else {
-                (identity_2, identity_1, signer_2, signer_1, key_2, key_1)
-            };
+        let (identity_1_info, identity_2_info) = if identity_1_info.0.id() < identity_2_info.0.id()
+        {
+            (identity_1_info, identity_2_info)
+        } else {
+            (identity_2_info, identity_1_info)
+        };
+
+        let (_, _, dpns_contract) = create_dpns_name_contest_on_identities(
+            platform,
+            &identity_1_info,
+            &identity_2_info,
+            platform_state,
+            rng,
+            name,
+            platform_version,
+        );
+        (identity_1_info.0, identity_2_info.0, dpns_contract)
+    }
+
+    fn create_dpns_name_contest_on_identities(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        identity_1: &(Identity, SimpleSigner, IdentityPublicKey),
+        identity_2: &(Identity, SimpleSigner, IdentityPublicKey),
+        platform_state: &PlatformState,
+        mut rng: StdRng,
+        name: &str,
+        platform_version: &PlatformVersion,
+    ) -> (
+        ((Document, Bytes32), (Document, Bytes32)),
+        ((Document, Bytes32), (Document, Bytes32)),
+        Arc<DataContract>,
+    ) {
+        let (identity_1, signer_1, key_1) = identity_1;
+
+        let (identity_2, signer_2, key_2) = identity_2;
 
         let dpns = platform.drive.cache.system_data_contracts.load_dpns();
         let dpns_contract = dpns.clone();
@@ -407,13 +505,13 @@ mod tests {
 
         let documents_batch_create_preorder_transition_1 =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
-                preorder_document_1,
+                preorder_document_1.clone(),
                 preorder,
                 entropy.0,
-                &key_1,
+                key_1,
                 2,
                 0,
-                &signer_1,
+                signer_1,
                 platform_version,
                 None,
                 None,
@@ -428,13 +526,13 @@ mod tests {
 
         let documents_batch_create_preorder_transition_2 =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
-                preorder_document_2,
+                preorder_document_2.clone(),
                 preorder,
                 entropy.0,
-                &key_2,
+                key_2,
                 2,
                 0,
-                &signer_2,
+                signer_2,
                 platform_version,
                 None,
                 None,
@@ -449,13 +547,13 @@ mod tests {
 
         let documents_batch_create_transition_1 =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
-                document_1,
+                document_1.clone(),
                 domain,
                 entropy.0,
-                &key_1,
+                key_1,
                 3,
                 0,
-                &signer_1,
+                signer_1,
                 platform_version,
                 None,
                 None,
@@ -469,13 +567,13 @@ mod tests {
 
         let documents_batch_create_transition_2 =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
-                document_2,
+                document_2.clone(),
                 domain,
                 entropy.0,
-                &key_2,
+                key_2,
                 3,
                 0,
-                &signer_2,
+                signer_2,
                 platform_version,
                 None,
                 None,
@@ -546,7 +644,11 @@ mod tests {
             .expect("expected to commit transaction");
 
         assert_eq!(processing_result.valid_count(), 2);
-        (identity_1, identity_2, dpns_contract)
+        (
+            ((preorder_document_1, entropy), (document_1, entropy)),
+            ((preorder_document_2, entropy), (document_2, entropy)),
+            dpns_contract,
+        )
     }
 
     pub(in crate::execution::validation::state_transition::state_transitions) fn add_contender_to_dpns_name_contest(

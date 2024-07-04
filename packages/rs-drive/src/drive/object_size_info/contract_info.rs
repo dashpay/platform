@@ -158,6 +158,20 @@ pub enum DataContractResolvedInfo<'a> {
     OwnedDataContract(DataContract),
 }
 
+impl<'a> From<&'a DataContractOwnedResolvedInfo> for DataContractResolvedInfo<'a> {
+    fn from(value: &'a DataContractOwnedResolvedInfo) -> Self {
+        match value {
+            #[cfg(feature = "server")]
+            DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => {
+                DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info.clone())
+            }
+            DataContractOwnedResolvedInfo::OwnedDataContract(data_contract) => {
+                DataContractResolvedInfo::BorrowedDataContract(data_contract)
+            }
+        }
+    }
+}
+
 impl<'a> DataContractResolvedInfo<'a> {
     /// The id of the contract
     pub fn id(&self) -> Identifier {

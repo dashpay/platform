@@ -276,13 +276,15 @@ mod tests {
         use dpp::document::Document;
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
         use dpp::util::hash::hash_double;
+        use dpp::util::strings::convert_to_homograph_safe_chars;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
         use drive::drive::object_size_info::DataContractResolvedInfo;
         use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
-        use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_name_contest, fast_forward_to_block, perform_votes_multi};
+        use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_name_contest, create_dpns_name_contest_give_key_info, fast_forward_to_block, perform_votes_multi};
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
         #[test]
         fn test_document_creation() {
@@ -884,6 +886,92 @@ mod tests {
         }
 
         #[test]
+        fn test_that_a_contested_document_can_not_be_added_twice_by_the_same_identity() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (
+                (
+                    _contender_1,
+                    contender_1_signer,
+                    contender_1_key,
+                    _preorder_document_1,
+                    (document_1, entropy),
+                ),
+                (_contender_2, _, _, _, _),
+                dpns_contract,
+            ) = create_dpns_name_contest_give_key_info(
+                &mut platform,
+                &platform_state,
+                7,
+                "quantum",
+                platform_version,
+            );
+
+            let domain = dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type");
+
+            let documents_batch_create_transition_1 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document_1,
+                    domain,
+                    entropy.0,
+                    &contender_1_key,
+                    4,
+                    0,
+                    &contender_1_signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition_1 =
+                documents_batch_create_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition_1.clone()],
+                    &platform_state,
+                    &BlockInfo::default_with_time(
+                        &platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let result = processing_result.into_execution_results().remove(0);
+
+            let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result
+            else {
+                panic!("expected a paid consensus error");
+            };
+            assert_eq!(consensus_error.to_string(), "An Identity with the id BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
+        }
+
+        #[test]
         fn test_that_a_contested_document_can_not_be_added_if_we_are_locked() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
@@ -963,7 +1051,7 @@ mod tests {
                 &platform_state,
                 9,
                 "quantum",
-                Some("Document Contest for vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 { finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 { resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX] }], start_block: BlockInfo { time_ms: 3000, height: 0, core_height: 0, epoch: 0 }, finalization_block: BlockInfo { time_ms: 2000000000, height: 900, core_height: 42, epoch: 0 }, winner: Locked }], vote_poll_status: Locked, locked_count: 1 }), unlocking is possible by paying 400000000000 credits"), // this should fail, as it is locked
+                Some("Document Contest for vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 { finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 { resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }], start_block: BlockInfo { time_ms: 3000, height: 0, core_height: 0, epoch: 0 }, finalization_block: BlockInfo { time_ms: 2000000000, height: 900, core_height: 42, epoch: 0 }, winner: Locked }], vote_poll_status: Locked, locked_count: 1 }), unlocking is possible by paying 400000000000 credits"), // this should fail, as it is locked
                 platform_version,
             );
         }

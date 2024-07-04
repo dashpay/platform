@@ -208,7 +208,7 @@ impl Drive {
             )?;
             if !inserted {
                 return Err(Error::Drive(DriveError::CorruptedDocumentAlreadyExists(
-                    "item already exists",
+                    "item already exists in insert contested",
                 )));
             }
         }

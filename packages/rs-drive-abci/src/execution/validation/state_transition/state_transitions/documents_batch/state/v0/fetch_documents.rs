@@ -12,6 +12,7 @@ use dpp::data_contract::DataContract;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
+use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::{
@@ -179,7 +180,7 @@ pub(crate) fn fetch_document_with_id(
     id: Identifier,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<Option<Document>, Error> {
+) -> Result<(Option<Document>, FeeResult), Error> {
     let drive_query = DriveQuery {
         contract,
         document_type,
@@ -202,7 +203,6 @@ pub(crate) fn fetch_document_with_id(
         block_time_ms: None,
     };
 
-    //todo: deal with cost of this operation
     let documents_outcome = drive.query_documents(
         drive_query,
         None,
@@ -211,11 +211,18 @@ pub(crate) fn fetch_document_with_id(
         Some(platform_version.protocol_version),
     )?;
 
+    let fee = documents_outcome.cost();
+    let fee_result = FeeResult {
+        storage_fee: 0,
+        processing_fee: fee,
+        fee_refunds: Default::default(),
+        removed_bytes_from_system: 0,
+    };
     let mut documents = documents_outcome.documents_owned();
 
     if documents.is_empty() {
-        Ok(None)
+        Ok((None, fee_result))
     } else {
-        Ok(Some(documents.remove(0)))
+        Ok((Some(documents.remove(0)), fee_result))
     }
 }
