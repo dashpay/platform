@@ -47,7 +47,7 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           if (lessCpuFrequency) {
             const cpuFrequency = (lessCpuFrequency.speed / 1000); // Convert to GHz
 
-            warnings.push(`${cpuFrequency.toFixed(1)}GHz CPU frequency. Minimum required is ${MINIMUM_CPU_FREQUENCY}GHz`);
+            warnings.push(`${cpuFrequency.toFixed(1)}GHz CPU frequency detected. At least ${MINIMUM_CPU_FREQUENCY}GHz is required`);
           }
 
           // Check RAM
