@@ -5,7 +5,6 @@ use crate::version::fee::signature::FeeSignatureVersion;
 use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
 use crate::version::fee::storage::FeeStorageVersion;
 use bincode::{Decode, Encode};
-use sha2::{Digest, Sha256};
 
 mod data_contract;
 mod hashing;
@@ -27,26 +26,11 @@ pub struct FeeVersion {
 
 impl PartialEq for FeeVersion {
     fn eq(&self, other: &Self) -> bool {
-        self.to_hash() == other.to_hash()
-    }
-}
-
-impl FeeVersion {
-    fn to_hash(&self) -> u64 {
-        let mut hasher = Sha256::new();
-        Digest::update(&mut hasher, &self.storage.to_hash().to_be_bytes());
-        Digest::update(&mut hasher, &self.signature.to_hash().to_be_bytes());
-        Digest::update(&mut hasher, &self.hashing.to_hash().to_be_bytes());
-        Digest::update(&mut hasher, &self.processing.to_hash().to_be_bytes());
-        Digest::update(&mut hasher, &self.data_contract.to_hash().to_be_bytes());
-        Digest::update(
-            &mut hasher,
-            &self.state_transition_min_fees.to_hash().to_be_bytes(),
-        );
-
-        let result = hasher.finalize();
-        // Use the first 8 bytes of the hash as the u64 representation
-        let hash_bytes: [u8; 8] = result[0..8].try_into().unwrap();
-        u64::from_be_bytes(hash_bytes)
+        self.storage == other.storage
+            && self.signature == other.signature
+            && self.hashing == other.hashing
+            && self.processing == other.processing
+            && self.data_contract == other.data_contract
+            && self.state_transition_min_fees == other.state_transition_min_fees
     }
 }
