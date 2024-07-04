@@ -8,7 +8,6 @@ use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
 
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use grovedb::TransactionArg;
 
 impl Drive {

@@ -6,7 +6,6 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::GroveDbOp;
 use grovedb::TransactionArg;

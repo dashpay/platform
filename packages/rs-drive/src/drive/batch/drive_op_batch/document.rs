@@ -12,7 +12,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::prelude::{CachedEpochIndexFeeVersions, Identifier};
+use dpp::prelude::Identifier;
 
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 

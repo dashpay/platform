@@ -33,7 +33,7 @@ use crate::drive::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use crate::error::drive::DriveError;
-use dpp::prelude::CachedEpochIndexFeeVersions;
+
 use std::collections::{BTreeMap, HashMap};
 
 /// A converter that will get Drive Operations from High Level Operations

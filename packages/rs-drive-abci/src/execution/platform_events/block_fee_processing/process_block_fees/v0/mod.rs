@@ -237,10 +237,10 @@ mod tests {
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
         use crate::platform_types::epoch_info::v0::EpochInfoV0;
         use crate::platform_types::epoch_info::EpochInfo;
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
         use crate::platform_types::platform_state::PlatformState;
         use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
-        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
         /// Process and validate block fees
         pub fn process_and_validate_block_fees<C>(
@@ -302,7 +302,9 @@ mod tests {
             };
 
             let block_execution_context_clone = block_execution_context.clone();
-            let previous_fee_versions = block_execution_context_clone.block_platform_state().previous_fee_versions();
+            let previous_fee_versions = block_execution_context_clone
+                .block_platform_state()
+                .previous_fee_versions();
             let storage_fee_distribution_outcome = platform
                 .process_block_fees_v0(
                     &block_execution_context.into(),

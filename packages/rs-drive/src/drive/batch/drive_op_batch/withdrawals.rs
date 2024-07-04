@@ -11,7 +11,7 @@ use crate::drive::identity::withdrawals::{
 use crate::drive::object_size_info::PathKeyElementInfo;
 use crate::{drive::Drive, error::Error, fee::op::LowLevelDriveOperation};
 use dpp::block::block_info::BlockInfo;
-use dpp::prelude::CachedEpochIndexFeeVersions;
+
 use dpp::version::PlatformVersion;
 use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};

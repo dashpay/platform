@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID};
-use dpp::prelude::{CachedEpochIndexFeeVersions, IdentityNonce, Revision};
+use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
 use dpp::version::PlatformVersion;
