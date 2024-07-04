@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { Listr } from 'listr2';
 import os from 'os';
 import * as diskusage from 'diskusage';
+import si from 'systeminformation';
 
 /**
  *
@@ -32,7 +33,7 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           const systemInfo = await docker.info();
 
           // Check CPU cores
-          const cpuCores = systemInfo.NCPU;
+          const cpuCores = systemInfo.NCPU || Number.MAX_SAFE_INTEGER;
 
           if (cpuCores < MINIMUM_CPU_CORES) {
             warnings.push(`${cpuCores} CPU cores detected. At least ${MINIMUM_CPU_CORES} are required`);
@@ -51,10 +52,19 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           }
 
           // Check RAM
-          const memoryGb = systemInfo.MemTotal / (1024 ** 3); // Convert to GB
+          const memoryGb = (systemInfo.MemTotal || Number.MAX_SAFE_INTEGER)
+            / (1024 ** 3); // Convert to GB
 
           if (memoryGb < MINIMUM_RAM) {
             warnings.push(`${memoryGb.toFixed(2)}GB RAM. Minimum required is ${MINIMUM_RAM}GB`);
+          }
+
+          // Check swap information
+          const swap = await si.mem();
+          const swapTotalGb = (swap.swaptotal / (1024 ** 3)); // Convert bytes to GB
+
+          if (swapTotalGb < 2) {
+            warnings.push(`Swap space is ${swapTotalGb.toFixed(2)}GB. 2GB is recommended`);
           }
 
           // Get disk usage info
