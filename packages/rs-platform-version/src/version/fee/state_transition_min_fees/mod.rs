@@ -21,3 +21,33 @@ impl PartialEq for StateTransitionMinFees {
             && self.contract_update == other.contract_update
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::StateTransitionMinFees;
+
+    #[test]
+    // If this test failed, then a new field was added in StateTransitionMinFees. And the corresponding eq needs to be updated as well
+    fn test_fee_state_transition_min_fees_version_equality() {
+        let version1 = StateTransitionMinFees {
+            credit_transfer: 1,
+            credit_withdrawal: 2,
+            identity_update: 3,
+            document_batch_sub_transition: 4,
+            contract_create: 5,
+            contract_update: 6,
+        };
+
+        let version2 = StateTransitionMinFees {
+            credit_transfer: 1,
+            credit_withdrawal: 2,
+            identity_update: 3,
+            document_batch_sub_transition: 4,
+            contract_create: 5,
+            contract_update: 6,
+        };
+
+        // This assertion will check if all fields are considered in the equality comparison
+        assert_eq!(version1, version2, "StateTransitionMinFees equality test failed. If a field was added or removed, update the Eq implementation.");
+    }
+}
