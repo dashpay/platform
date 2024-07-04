@@ -3,6 +3,7 @@
 use backon::{ExponentialBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
+use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::Instrument;
@@ -16,7 +17,7 @@ use crate::{
 
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error)]
-pub enum DapiClientError<TE> {
+pub enum DapiClientError<TE: Mockable> {
     /// The error happened on transport layer
     #[error("transport error with {1}: {0}")]
     Transport(TE, Address),
@@ -33,7 +34,7 @@ pub enum DapiClientError<TE> {
     Mock(#[from] crate::mock::MockError),
 }
 
-impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
+impl<TE: CanRetry + Mockable> CanRetry for DapiClientError<TE> {
     fn is_node_failure(&self) -> bool {
         use DapiClientError::*;
         match self {
@@ -42,6 +43,63 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
             AddressList(_) => false,
             #[cfg(feature = "mocks")]
             Mock(_) => false,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TransportErrorData {
+    transport_error: Vec<u8>,
+    address: Address,
+}
+
+impl<TE: Mockable> Mockable for DapiClientError<TE> {
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        let value = match self {
+            DapiClientError::Transport(e, address) => {
+                let error = TransportErrorData {
+                    transport_error: e.mock_serialize()?,
+                    address: address.clone(),
+                };
+                let mut buf = vec![0u8];
+                buf.append(&mut serde_json::to_vec(&error).expect("serialize transport error"));
+                buf
+            }
+            DapiClientError::NoAvailableAddresses => vec![1u8],
+            DapiClientError::AddressList(e) => {
+                let mut buf = vec![2u8];
+                buf.append(&mut serde_json::to_vec(e).expect("serialize address list error"));
+                buf
+            }
+            #[cfg(feature = "mocks")]
+            DapiClientError::Mock(e) => {
+                let mut buf = vec![255u8];
+                buf.append(&mut serde_json::to_vec(e).expect("serialize mock error"));
+                buf
+            }
+        };
+
+        Some(value)
+    }
+
+    fn mock_deserialize(data: &[u8]) -> Option<Self> {
+        match data[0] {
+            0 => {
+                let error: TransportErrorData =
+                    serde_json::from_slice(&data[1..]).expect("deserialize transport error");
+                let transport_error = TE::mock_deserialize(&error.transport_error)
+                    .expect("deserialize transport error");
+                let address = error.address;
+                Some(DapiClientError::Transport(transport_error, address))
+            }
+            1 => Some(DapiClientError::NoAvailableAddresses),
+            2 => Some(DapiClientError::AddressList(
+                serde_json::from_slice(&data[1..]).expect("deserialize address list error"),
+            )),
+            #[cfg(feature = "mocks")]
+            255 => Some(DapiClientError::Mock(
+                serde_json::from_slice(&data[1..]).expect("deserialize mock error"),
+            )),
+            n => panic!("unknown DAPI Client error type id {}", n),
         }
     }
 }
@@ -57,7 +115,8 @@ pub trait DapiRequestExecutor {
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
     where
         R: TransportRequest + Mockable,
-        R::Response: Mockable;
+        R::Response: Mockable,
+        <R::Client as TransportClient>::Error: Mockable;
 }
 
 /// Access point to DAPI.
@@ -97,6 +156,7 @@ impl DapiRequestExecutor for DapiClient {
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable,
+        <R::Client as TransportClient>::Error: Mockable,
     {
         // Join settings of different sources to get final version of the settings for this execution:
         let applied_settings = self
@@ -236,9 +296,7 @@ impl DapiRequestExecutor for DapiClient {
 
         // Dump request and response to disk if dump_dir is set:
         #[cfg(feature = "dump")]
-        if let Ok(result) = &result {
-            Self::dump_request_response(&dump_request, result, dump_dir);
-        }
+        Self::dump_request_response(&dump_request, &result, dump_dir);
 
         result
     }

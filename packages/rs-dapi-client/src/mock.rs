@@ -177,6 +177,7 @@ impl Display for Key {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 /// Mock errors
 pub enum MockError {
     #[error("mock expectation not found for request: {0}")]

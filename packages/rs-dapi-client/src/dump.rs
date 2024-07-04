@@ -2,7 +2,11 @@
 
 use dapi_grpc::mock::Mockable;
 
-use crate::{mock::Key, transport::TransportRequest, DapiClient};
+use crate::{
+    mock::Key,
+    transport::{TransportClient, TransportRequest},
+    DapiClient, DapiClientError,
+};
 use std::{any::type_name, path::PathBuf};
 
 /// Data format of dumps created with [DapiClient::dump_dir].
@@ -82,7 +86,13 @@ where
 
 impl<T: TransportRequest> DumpData<T> {
     /// Create new dump data.
-    pub fn new(request: &T, response: &T::Response) -> Self {
+    pub fn new(
+        request: &T,
+        response: &Result<
+            <T as TransportRequest>::Response,
+            DapiClientError<<<T as TransportRequest>::Client as TransportClient>::Error>,
+        >,
+    ) -> Self {
         let request = request
             .mock_serialize()
             .expect("unable to serialize request");
@@ -181,11 +191,14 @@ impl DapiClient {
     /// Any errors are logged on `warn` level and ignored.
     pub(crate) fn dump_request_response<R: TransportRequest>(
         request: &R,
-        response: &R::Response,
+        response: &Result<
+            <R as TransportRequest>::Response,
+            DapiClientError<<<R as TransportRequest>::Client as TransportClient>::Error>,
+        >,
         dump_dir: Option<PathBuf>,
     ) where
         R: Mockable,
-        R::Response: Mockable,
+        <R as TransportRequest>::Response: Mockable,
     {
         let path = match dump_dir {
             Some(p) => p,
