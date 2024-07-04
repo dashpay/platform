@@ -1216,7 +1216,7 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
                         contract_id,
                         document_type_name,
                         purposes,
-                        prove: _,
+                        ..
                     } = v0;
                     let identifiers = identities_ids
                         .into_iter()
