@@ -35,7 +35,7 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           const cpuCores = systemInfo.NCPU;
 
           if (cpuCores < MINIMUM_CPU_CORES) {
-            warnings.push(`${cpuCores} CPU cores. Minimum required is ${MINIMUM_CPU_CORES}`);
+            warnings.push(`${cpuCores} CPU cores detected. At least ${MINIMUM_CPU_CORES} are required`);
           }
 
           // Check CPU frequency
