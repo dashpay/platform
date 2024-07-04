@@ -773,7 +773,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-               None,
+                None,
             )
             .expect("expected to insert a document successfully");
 
