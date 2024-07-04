@@ -81,7 +81,7 @@ impl<C> Platform<C> {
 
             let platform_version = PlatformVersion::get(current_block_protocol_version)?;
             // If cached_fee_version is non-empty
-            if let Some((_, &ref last_fee_version)) = previous_fee_versions_map.iter().last() {
+            if let Some((_, last_fee_version)) = previous_fee_versions_map.iter().last() {
                 // Insert the new (epoch_index, fee_version) only if the new fee_version is different from the last_fee_version.
                 if *last_fee_version != platform_version.fee_version {
                     previous_fee_versions_map.insert(
