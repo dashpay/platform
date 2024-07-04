@@ -161,7 +161,7 @@ impl EpochCosts for Epoch {
         cached_fee_version
             .range(..=self.index)
             .next_back()
-            .map(|(_, &ref fee_version)| fee_version)
+            .map(|(_, fee_version)| fee_version)
             .unwrap_or_else(|| &PlatformVersion::first().fee_version)
             .clone()
     }
