@@ -46,7 +46,6 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
         _block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        _previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             SystemOperationType::AddToSystemCredits { amount } => drive

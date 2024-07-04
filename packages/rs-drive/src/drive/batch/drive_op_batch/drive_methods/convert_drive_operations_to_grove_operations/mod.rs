@@ -36,7 +36,6 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<GroveDbOpBatch, Error> {
         match platform_version
             .drive
@@ -49,7 +48,6 @@ impl Drive {
                 block_info,
                 transaction,
                 platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "convert_drive_operations_to_grove_operations".to_string(),

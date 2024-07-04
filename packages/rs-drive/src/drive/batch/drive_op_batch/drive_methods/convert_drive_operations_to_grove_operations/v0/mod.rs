@@ -37,7 +37,6 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<GroveDbOpBatch, Error> {
         let ops = drive_batch_operations
             .into_iter()
@@ -48,7 +47,6 @@ impl Drive {
                     block_info,
                     transaction,
                     platform_version,
-                    previous_fee_versions,
                 )?;
                 Ok(LowLevelDriveOperation::grovedb_operations_consume(
                     inner_drive_operations,

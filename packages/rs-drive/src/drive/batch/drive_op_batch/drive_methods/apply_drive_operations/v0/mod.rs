@@ -69,7 +69,6 @@ impl Drive {
                 block_info,
                 transaction,
                 platform_version,
-                previous_fee_versions,
             )?);
         }
 

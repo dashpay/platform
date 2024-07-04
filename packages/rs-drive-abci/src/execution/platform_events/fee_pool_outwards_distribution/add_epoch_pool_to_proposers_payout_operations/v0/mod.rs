@@ -153,7 +153,6 @@ impl<C> Platform<C> {
             &BlockInfo::default(),
             Some(transaction),
             platform_version,
-            None,
         )?;
 
         batch.push(DriveOperation::GroveDBOpBatch(operations));
