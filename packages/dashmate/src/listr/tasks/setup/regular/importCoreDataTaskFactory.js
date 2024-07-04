@@ -197,8 +197,8 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
           // TODO: Wording needs to be updated
           await task.prompt({
             type: 'confirm',
-            header: `  You need to stop your existing node before your start a dashmate
-    node\n`,
+            header: `  Please stop your existing Dash Core node before starting the new dashmate-based
+    node ("dashmate start"). Also, disable any automatic startup services (e.g., cron, systemd) for the existing existing Dash Core installation.\n`,
             message: 'Press any key to continue...',
             default: ' ',
             separator: () => '',
