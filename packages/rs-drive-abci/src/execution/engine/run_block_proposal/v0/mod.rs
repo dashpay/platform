@@ -337,11 +337,9 @@ where
             block_fees_v0.into(),
             transaction,
             platform_version,
-            Some(
-                block_execution_context
-                    .block_platform_state()
-                    .previous_fee_versions(),
-            ),
+            block_execution_context
+                .block_platform_state()
+                .previous_fee_versions(),
         )?;
 
         tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");

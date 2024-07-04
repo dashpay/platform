@@ -82,7 +82,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         block_fees: BlockFees,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
         let epoch_info = block_execution_context.epoch_info();
         let block_info = block_execution_context.block_state_info();
@@ -183,7 +183,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             &block_info.to_block_info(epoch_info.try_into()?),
             Some(transaction),
             platform_version,
-            previous_fee_versions,
+            Some(previous_fee_versions),
         )?;
 
         let outcome = processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome {
@@ -240,6 +240,7 @@ mod tests {
         use crate::platform_types::platform_state::PlatformState;
         use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
         /// Process and validate block fees
         pub fn process_and_validate_block_fees<C>(
@@ -300,13 +301,15 @@ mod tests {
                 proposer_results: None,
             };
 
+            let block_execution_context_clone = block_execution_context.clone();
+            let previous_fee_versions = block_execution_context_clone.block_platform_state().previous_fee_versions();
             let storage_fee_distribution_outcome = platform
                 .process_block_fees_v0(
                     &block_execution_context.into(),
                     block_fees.clone(),
                     transaction,
                     platform_version,
-                    None,
+                    previous_fee_versions,
                 )
                 .expect("should process block fees");
 

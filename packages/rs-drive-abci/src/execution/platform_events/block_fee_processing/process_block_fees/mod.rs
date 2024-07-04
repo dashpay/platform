@@ -41,7 +41,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         block_fees: BlockFees,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
         match platform_version
             .drive_abci
