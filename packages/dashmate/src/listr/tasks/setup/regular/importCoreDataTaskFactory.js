@@ -86,9 +86,9 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
         task: async (ctx, task) => {
           const doImport = await task.prompt({
             type: 'toggle',
-            header: `  If you run a masternode on the same machine, you can
-   import your existing data so you don't need to sync node from scratch.
-   You current user must have read access to this directory.\n`,
+            header: `  If you already run a masternode on this server, you can
+   import your existing Dash Core data instead of syncing a new dashmate node from scratch.
+   Your current user account must have read access to this directory.\n`,
             message: 'Import existing data?',
             enabled: 'Yes',
             disabled: 'No',
