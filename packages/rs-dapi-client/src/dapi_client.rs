@@ -17,10 +17,14 @@ use crate::{
 
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum DapiClientError<TE: Mockable> {
     /// The error happened on transport layer
     #[error("transport error with {1}: {0}")]
-    Transport(TE, Address),
+    Transport(
+        #[serde(with = "dapi_grpc::mock::serde_mockable")] TE,
+        Address,
+    ),
     /// There are no valid DAPI addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
@@ -52,55 +56,16 @@ struct TransportErrorData {
     address: Address,
 }
 
+/// Serialization of [DapiClientError].
+///
+/// We need to do manual serialization because of the generic type parameter which doesn't support serde derive.
 impl<TE: Mockable> Mockable for DapiClientError<TE> {
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        let value = match self {
-            DapiClientError::Transport(e, address) => {
-                let error = TransportErrorData {
-                    transport_error: e.mock_serialize()?,
-                    address: address.clone(),
-                };
-                let mut buf = vec![0u8];
-                buf.append(&mut serde_json::to_vec(&error).expect("serialize transport error"));
-                buf
-            }
-            DapiClientError::NoAvailableAddresses => vec![1u8],
-            DapiClientError::AddressList(e) => {
-                let mut buf = vec![2u8];
-                buf.append(&mut serde_json::to_vec(e).expect("serialize address list error"));
-                buf
-            }
-            #[cfg(feature = "mocks")]
-            DapiClientError::Mock(e) => {
-                let mut buf = vec![255u8];
-                buf.append(&mut serde_json::to_vec(e).expect("serialize mock error"));
-                buf
-            }
-        };
-
-        Some(value)
+        Some(serde_json::to_vec(self).expect("serialize DAPI client error"))
     }
 
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
-        match data[0] {
-            0 => {
-                let error: TransportErrorData =
-                    serde_json::from_slice(&data[1..]).expect("deserialize transport error");
-                let transport_error = TE::mock_deserialize(&error.transport_error)
-                    .expect("deserialize transport error");
-                let address = error.address;
-                Some(DapiClientError::Transport(transport_error, address))
-            }
-            1 => Some(DapiClientError::NoAvailableAddresses),
-            2 => Some(DapiClientError::AddressList(
-                serde_json::from_slice(&data[1..]).expect("deserialize address list error"),
-            )),
-            #[cfg(feature = "mocks")]
-            255 => Some(DapiClientError::Mock(
-                serde_json::from_slice(&data[1..]).expect("deserialize mock error"),
-            )),
-            n => panic!("unknown DAPI Client error type id {}", n),
-        }
+        Some(serde_json::from_slice(data).expect("deserialize DAPI client error"))
     }
 }
 

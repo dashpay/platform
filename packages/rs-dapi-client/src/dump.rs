@@ -3,9 +3,9 @@
 use dapi_grpc::mock::Mockable;
 
 use crate::{
-    mock::Key,
-    transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError,
+    mock::{Key, MockResult},
+    transport::TransportRequest,
+    DapiClient,
 };
 use std::{any::type_name, path::PathBuf};
 
@@ -21,19 +21,20 @@ pub struct DumpData<T: TransportRequest> {
 }
 impl<T: TransportRequest> DumpData<T> {
     /// Return deserialized request
-    pub fn deserialize(&self) -> (T, T::Response) {
+    pub fn deserialize(&self) -> (T, MockResult<T>) {
         let req = T::mock_deserialize(&self.serialized_request).unwrap_or_else(|| {
             panic!(
                 "unable to deserialize mock data of type {}",
                 type_name::<T>()
             )
         });
-        let resp = T::Response::mock_deserialize(&self.serialized_response).unwrap_or_else(|| {
-            panic!(
-                "unable to deserialize mock data of type {}",
-                type_name::<T::Response>()
-            )
-        });
+        let resp =
+            <MockResult<T>>::mock_deserialize(&self.serialized_response).unwrap_or_else(|| {
+                panic!(
+                    "unable to deserialize mock data of type {}",
+                    type_name::<T::Response>()
+                )
+            });
 
         (req, resp)
     }
@@ -86,13 +87,7 @@ where
 
 impl<T: TransportRequest> DumpData<T> {
     /// Create new dump data.
-    pub fn new(
-        request: &T,
-        response: &Result<
-            <T as TransportRequest>::Response,
-            DapiClientError<<<T as TransportRequest>::Client as TransportClient>::Error>,
-        >,
-    ) -> Self {
+    pub fn new(request: &T, response: &MockResult<T>) -> Self {
         let request = request
             .mock_serialize()
             .expect("unable to serialize request");
@@ -191,10 +186,7 @@ impl DapiClient {
     /// Any errors are logged on `warn` level and ignored.
     pub(crate) fn dump_request_response<R: TransportRequest>(
         request: &R,
-        response: &Result<
-            <R as TransportRequest>::Response,
-            DapiClientError<<<R as TransportRequest>::Client as TransportClient>::Error>,
-        >,
+        response: &MockResult<R>,
         dump_dir: Option<PathBuf>,
     ) where
         R: Mockable,

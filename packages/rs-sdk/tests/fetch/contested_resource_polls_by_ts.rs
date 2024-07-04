@@ -119,8 +119,6 @@ async fn vote_polls_by_ts_order_PLAN_661() {
     feature = "network-testing",
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
-
-// fails due to PLAN-659
 async fn vote_polls_by_ts_limit() {
     setup_logs();
 

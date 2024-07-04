@@ -19,7 +19,8 @@ async fn test_mock_get_identity_dapi_client() {
         }))
     };
 
-    dapi.expect(&request, &response).expect("expectation added");
+    dapi.expect(&request, &Ok(response.clone()))
+        .expect("expectation added");
 
     let settings = RequestSettings::default();
 
