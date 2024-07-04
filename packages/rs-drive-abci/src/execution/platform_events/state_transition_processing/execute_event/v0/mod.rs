@@ -50,7 +50,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         let maybe_fee_validation_result = match event {
             ExecutionEvent::PaidFromAssetLock { .. } | ExecutionEvent::Paid { .. } => {
@@ -59,7 +59,7 @@ where
                     block_info,
                     Some(transaction),
                     platform_version,
-                    previous_fee_versions,
+                    Some(previous_fee_versions),
                 )?)
             }
             ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
@@ -93,7 +93,7 @@ where
                             block_info,
                             Some(transaction),
                             platform_version,
-                            previous_fee_versions,
+                            Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
 
@@ -143,7 +143,7 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
-                        previous_fee_versions,
+                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -168,7 +168,7 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
-                        previous_fee_versions,
+                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
                 Ok(SuccessfulFreeExecution)

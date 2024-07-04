@@ -70,7 +70,7 @@ where
                 state_read_guard.last_block_info(),
                 transaction,
                 platform_ref.state.current_platform_version()?,
-                Some(platform_ref.state.previous_fee_versions()),
+                platform_ref.state.previous_fee_versions(),
             )
         } else {
             Ok(UnpaidConsensusExecutionError(

@@ -118,7 +118,7 @@ where
                             block_info,
                             transaction,
                             platform_version,
-                            Some(platform_ref.state.previous_fee_versions()),
+                            platform_ref.state.previous_fee_versions(),
                         )
                         .unwrap_or_else(error_to_internal_error_execution_result)
                     })
@@ -203,7 +203,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
         // State Transition is invalid
         if !validation_result.is_valid() {

@@ -44,7 +44,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         match platform_version
             .drive_abci
