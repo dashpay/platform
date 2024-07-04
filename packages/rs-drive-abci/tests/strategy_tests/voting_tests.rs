@@ -9,7 +9,7 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::platform_value::Value;
-    use drive_abci::config::{ExecutionConfig, PlatformConfig};
+    use drive_abci::config::{ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, ValidatorSetConfig};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
@@ -40,9 +40,8 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
@@ -335,9 +334,8 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
@@ -490,8 +488,9 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums,
+            current_validator_quorum_hash,
+            instant_lock_quorums,
             current_proposer_versions,
             end_time_ms,
             identity_nonce_counter,
@@ -544,8 +543,9 @@ mod tests {
                 core_height_start: 1,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums,
+                current_validator_quorum_hash,
+                instant_lock_quorums: Default::default(),
                 current_proposer_versions: Some(current_proposer_versions.clone()),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
@@ -686,9 +686,8 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
@@ -841,8 +840,9 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums,
+            current_validator_quorum_hash,
+            instant_lock_quorums,
             current_proposer_versions,
             end_time_ms,
             identity_nonce_counter,
@@ -895,8 +895,9 @@ mod tests {
                 core_height_start: 1,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums,
+                current_validator_quorum_hash,
+                instant_lock_quorums,
                 current_proposer_versions: Some(current_proposer_versions.clone()),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
@@ -1048,9 +1049,8 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
@@ -1203,8 +1203,9 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums,
+            current_validator_quorum_hash,
+            instant_lock_quorums,
             current_proposer_versions,
             end_time_ms,
             identity_nonce_counter,
@@ -1252,9 +1253,8 @@ mod tests {
             + 1;
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
@@ -1272,8 +1272,9 @@ mod tests {
                 core_height_start: 1,
                 block_count: 16,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums,
+                current_validator_quorum_hash,
+                instant_lock_quorums,
                 current_proposer_versions: Some(current_proposer_versions.clone()),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,

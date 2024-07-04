@@ -154,18 +154,23 @@ where
             return Ok(validation_result.into());
         }
 
+        // Verify commit
+
         // In production this will always be true
-        if self
+        #[cfg(not(feature = "testing-config"))]
+        let verify_commit_signature = true;
+
+        #[cfg(feature = "testing-config")]
+        let verify_commit_signature = self
             .config
             .testing_configs
-            .block_commit_signature_verification
-        {
-            // Verify commit
+            .block_commit_signature_verification;
 
+        if verify_commit_signature {
             let quorum_public_key = last_committed_state
                 .current_validator_set()?
                 .threshold_public_key();
-            let quorum_type = self.config.validator_set_quorum_type();
+            let quorum_type = self.config.validator_set.quorum_type;
             // TODO: We already had commit in the function above, why do we need to create it again with clone?
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),

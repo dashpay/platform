@@ -55,12 +55,28 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
           abci: {
             epochTime: 3600,
             validatorSet: {
-              llmqType: 6,
+              quorum: {
+                llmqType: 6,
+                dkgInterval: 24,
+                activeSigners: 24,
+                rotation: false,
+              },
             },
             chainLock: {
-              llmqType: 1,
-              dkgInterval: 24,
-              llmqSize: 50,
+              quorum: {
+                llmqType: 1,
+                dkgInterval: 24,
+                activeSigners: 24,
+                rotation: false,
+              },
+            },
+            instantLock: {
+              quorum: {
+                llmqType: 5,
+                dkgInterval: 288,
+                activeSigners: 32,
+                rotation: true,
+              },
             },
           },
           tenderdash: {

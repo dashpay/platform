@@ -205,7 +205,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::config::PlatformConfig;
+    use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::platform_types::event_execution_result::EventExecutionResult::{
         SuccessfulPaidExecution, UnpaidConsensusExecutionError, UnsuccessfulPaidExecution,
     };
@@ -276,14 +276,17 @@ mod tests {
     #[test]
     #[ignore]
     fn verify_check_tx_on_data_contract_create() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
@@ -370,14 +373,17 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
@@ -501,14 +507,17 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx_for_invalid_contract() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
@@ -693,14 +702,17 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx_priority() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
@@ -838,14 +850,17 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx_after_identity_balance_used_up() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
@@ -962,14 +977,17 @@ mod tests {
 
     #[test]
     fn data_contract_update_check_tx() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
@@ -1158,14 +1176,17 @@ mod tests {
 
     #[test]
     fn data_contract_update_check_tx_for_invalid_update() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
@@ -1389,15 +1410,18 @@ mod tests {
 
     #[test]
     fn document_update_check_tx() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_genesis_state();
-
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -1577,14 +1601,17 @@ mod tests {
 
     #[test]
     fn identity_top_up_check_tx() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -1716,14 +1743,17 @@ mod tests {
 
     #[test]
     fn identity_cant_double_top_up() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -1887,14 +1917,17 @@ mod tests {
 
     #[test]
     fn identity_top_up_with_unknown_identity_doesnt_panic() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -1981,14 +2014,17 @@ mod tests {
 
     #[test]
     fn identity_cant_create_with_used_outpoint() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -2199,14 +2235,17 @@ mod tests {
 
     #[test]
     fn identity_can_create_with_semi_used_outpoint() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -2513,14 +2552,17 @@ mod tests {
 
         config.abci.keys.dpns_second_public_key = high_public_key.serialize().to_vec();
 
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(config)
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -2627,14 +2669,17 @@ mod tests {
 
         config.abci.keys.dashpay_second_public_key = high_public_key.serialize().to_vec();
 
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(config)
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();

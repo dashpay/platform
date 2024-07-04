@@ -14,7 +14,10 @@ mod tests {
         ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease,
         MasternodeListChangesStrategy, NetworkStrategy, StrategyRandomness, UpgradingInfo,
     };
-    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
+        ValidatorSetConfig,
+    };
     use drive_abci::mimic::MimicExecuteBlockOptions;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
@@ -65,9 +68,9 @@ mod tests {
                 };
                 let twenty_minutes_in_ms = 1000 * 60 * 20;
                 let mut config = PlatformConfig {
-                    validator_set_quorum_size: 100,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig::default_100_67(),
+                    chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 125,
@@ -99,12 +102,13 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -164,11 +168,12 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -177,14 +182,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 200,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy.clone(),
                     config.clone(),
@@ -228,14 +234,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 400,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy,
                     config,
@@ -311,9 +318,12 @@ mod tests {
                 let one_hour_in_s = 60 * 60;
                 let thirty_seconds_in_ms = 1000 * 30;
                 let config = PlatformConfig {
-                    validator_set_quorum_size: 30,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig {
+                        quorum_size: 30,
+                        ..Default::default()
+                    },
+                    chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 30,
@@ -341,12 +351,13 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -403,11 +414,12 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -416,14 +428,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 1,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy.clone(),
                     config.clone(),
@@ -467,14 +480,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 120,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy,
                     config,
@@ -551,14 +565,23 @@ mod tests {
         let epoch_time_length_s = 60;
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 30,
+            validator_set: ValidatorSetConfig {
+                quorum_size: 30,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 epoch_time_length_s,
                 ..Default::default()
             },
             initial_protocol_version: TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE,
             block_spacing_ms: epoch_time_length_s * 1000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -569,8 +592,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             end_time_ms,
             ..
         } = run_chain_for_strategy(
@@ -715,9 +738,12 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
-                    validator_set_quorum_size: 40,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig {
+                        quorum_size: 40,
+                        ..Default::default()
+                    },
+                    chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 80,
@@ -750,12 +776,13 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -804,12 +831,13 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
 
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -818,14 +846,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 2500,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy.clone(),
                     config.clone(),
@@ -872,14 +901,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 400,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy,
                     config,
@@ -951,9 +981,12 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
-                    validator_set_quorum_size: 50,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig {
+                        quorum_size: 50,
+                        ..Default::default()
+                    },
+                    chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 50,
@@ -985,12 +1018,13 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -1031,12 +1065,13 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
 
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -1045,14 +1080,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 3000,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy,
                     config.clone(),
@@ -1127,13 +1163,14 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions,
 
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -1142,14 +1179,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 2000,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: None, //restart the proposer versions
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy.clone(),
                     config.clone(),
@@ -1198,14 +1236,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 100,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy,
                     config,
@@ -1284,9 +1323,12 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
-                    validator_set_quorum_size: 50,
-                    validator_set_quorum_type: "llmq_100_67".to_string(),
-                    chain_lock_quorum_type: "llmq_100_67".to_string(),
+                    validator_set: ValidatorSetConfig {
+                        quorum_size: 50,
+                        ..Default::default()
+                    },
+                    chain_lock: ChainLockConfig::default_100_67(),
+                    instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_rotation_block_count: 30,
@@ -1318,11 +1360,12 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
+                    instant_lock_quorums,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -1423,14 +1466,15 @@ mod tests {
                         core_height_start: 1,
                         block_count: 1100,
                         proposers,
-                        quorums,
-                        current_quorum_hash,
+                        validator_quorums: quorums,
+                        current_validator_quorum_hash: current_quorum_hash,
                         current_proposer_versions: None,
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
+                        instant_lock_quorums,
                     },
                     strategy,
                     config,

@@ -20,10 +20,11 @@ pub(in crate::execution) mod protocol_upgrade;
 pub(in crate::execution) mod state_transition_processing;
 /// Withdrawal methods
 pub(in crate::execution) mod withdrawals;
-
 /// Events happening what starting to process a block
 pub(in crate::execution) mod block_start;
-
 /// Verify the chain lock
 pub(in crate::execution) mod core_chain_lock;
-mod voting;
+/// Voting
+pub(in crate::execution) mod voting;
+/// Instant lock methods
+pub(in crate::execution) mod core_instant_send_lock;

@@ -184,6 +184,7 @@ impl ContextProvider for GrpcContextProvider {
             return Ok(Some(contract));
         };
         let sdk_guard = self.sdk.load();
+        
         let sdk = match sdk_guard.as_ref() {
             Some(sdk) => sdk,
             None => {
@@ -194,7 +195,9 @@ impl ContextProvider for GrpcContextProvider {
 
         let contract_id = *data_contract_id;
 
-        let data_contract: Option<DataContract> = DataContract::fetch(sdk, contract_id)
+        let sdk_cloned = sdk.clone();
+
+        let data_contract: Option<DataContract> = DataContract::fetch(&sdk_cloned, contract_id)
             .block_on()
             .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
 

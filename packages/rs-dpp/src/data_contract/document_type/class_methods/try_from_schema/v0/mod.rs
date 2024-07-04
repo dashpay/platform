@@ -40,7 +40,9 @@ use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
     TRADE_MODE, TRANSFERABLE,
 };
-use crate::data_contract::document_type::{property_names, DocumentType};
+use crate::data_contract::document_type::{
+    property_names, ByteArrayPropertySizes, DocumentType, StringPropertySizes,
+};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
@@ -430,7 +432,7 @@ impl DocumentTypeV0 {
                                         })?;
 
                                     // Validate indexed property type
-                                    match property_definition.property_type {
+                                    match &property_definition.property_type {
                                         // Array and objects aren't supported for indexing yet
                                         DocumentPropertyType::Array(_)
                                         | DocumentPropertyType::Object(_)
@@ -446,9 +448,9 @@ impl DocumentTypeV0 {
                                             )))
                                         }
                                         // Indexed byte array size must be limited
-                                        DocumentPropertyType::ByteArray(_, maybe_max_size)
-                                            if maybe_max_size.is_none()
-                                                || maybe_max_size.unwrap()
+                                        DocumentPropertyType::ByteArray(sizes)
+                                            if sizes.max_size.is_none()
+                                                || sizes.max_size.unwrap()
                                                     > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
                                         {
                                             Err(ProtocolError::ConsensusError(Box::new(
@@ -466,9 +468,9 @@ impl DocumentTypeV0 {
                                             )))
                                         }
                                         // Indexed string length must be limited
-                                        DocumentPropertyType::String(_, maybe_max_length)
-                                            if maybe_max_length.is_none()
-                                                || maybe_max_length.unwrap()
+                                        DocumentPropertyType::String(sizes)
+                                            if sizes.max_length.is_none()
+                                                || sizes.max_length.unwrap()
                                                     > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
                                         {
                                             Err(ProtocolError::ConsensusError(Box::new(
@@ -614,12 +616,14 @@ fn insert_values(
                                 Some("application/x.dash.dpp.identifier") => {
                                     DocumentPropertyType::Identifier
                                 }
-                                Some(_) | None => DocumentPropertyType::ByteArray(
-                                    inner_properties
-                                        .get_optional_integer(property_names::MIN_ITEMS)?,
-                                    inner_properties
-                                        .get_optional_integer(property_names::MAX_ITEMS)?,
-                                ),
+                                Some(_) | None => {
+                                    DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                                        min_size: inner_properties
+                                            .get_optional_integer(property_names::MIN_ITEMS)?,
+                                        max_size: inner_properties
+                                            .get_optional_integer(property_names::MAX_ITEMS)?,
+                                    })
+                                }
                             }
                         } else {
                             return Err(DataContractError::InvalidContractStructure(
@@ -669,10 +673,12 @@ fn insert_values(
             }
 
             "string" => {
-                field_type = DocumentPropertyType::String(
-                    inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
-                    inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
-                );
+                field_type = DocumentPropertyType::String(StringPropertySizes {
+                    min_length: inner_properties
+                        .get_optional_integer(property_names::MIN_LENGTH)?,
+                    max_length: inner_properties
+                        .get_optional_integer(property_names::MAX_LENGTH)?,
+                });
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -720,10 +726,10 @@ fn insert_values_nested(
     let field_type = match type_value {
         "integer" => DocumentPropertyType::Integer,
         "number" => DocumentPropertyType::Number,
-        "string" => DocumentPropertyType::String(
-            inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
-            inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
-        ),
+        "string" => DocumentPropertyType::String(StringPropertySizes {
+            min_length: inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
+            max_length: inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
+        }),
         "array" => {
             // Only handling bytearrays for v1
             // Return an error if it is not a byte array
@@ -736,10 +742,14 @@ fn insert_values_nested(
                             Some("application/x.dash.dpp.identifier") => {
                                 DocumentPropertyType::Identifier
                             }
-                            Some(_) | None => DocumentPropertyType::ByteArray(
-                                inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
-                                inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
-                            ),
+                            Some(_) | None => {
+                                DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                                    min_size: inner_properties
+                                        .get_optional_integer(property_names::MIN_ITEMS)?,
+                                    max_size: inner_properties
+                                        .get_optional_integer(property_names::MAX_ITEMS)?,
+                                })
+                            }
                         }
                     } else {
                         return Err(DataContractError::InvalidContractStructure(

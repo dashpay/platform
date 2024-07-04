@@ -457,7 +457,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         // We need to sign the block
 
-        let quorum_type = self.platform.config.validator_set_quorum_type();
+        let quorum_type = self.platform.config.validator_set.quorum_type;
         let state_id_hash = state_id
             .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot calculate state id hash");
@@ -480,7 +480,13 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             threshold_vote_extensions: extensions,
         };
         //if not in testing this will default to true
-        if self.platform.config.testing_configs.block_signing {
+        #[cfg(not(feature = "testing-config"))]
+        let sign_block = true;
+
+        #[cfg(feature = "testing-config")]
+        let sign_block = self.platform.config.testing_configs.block_signing;
+
+        if sign_block {
             let quorum_hash: [u8; 32] = quorum_hash.try_into().expect("wrong quorum hash len");
             let digest = commit
                 .calculate_sign_hash(

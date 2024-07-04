@@ -19,14 +19,15 @@ const validateNumber = (value, name, min = NaN, max = NaN) => {
 /**
  * @typedef {createBlockHeadersProviderFromOptions}
  * @param {DAPIClientOptions} options
+ * @param logger
  * @param {CoreMethodsFacade} coreMethods
  * @returns {BlockHeadersProvider}
  */
-function createBlockHeadersProviderFromOptions(options, coreMethods) {
+function createBlockHeadersProviderFromOptions(options, coreMethods, logger) {
   let blockHeadersProvider;
   if (options.blockHeadersProvider) {
     if (options.blockHeadersProviderOptions) {
-      throw new DAPIClientError("Can't use 'blockHeadersProviderOptions' with 'blockHeadersProvider' option");
+      throw new DAPIClientError('Can\'t use \'blockHeadersProviderOptions\' with \'blockHeadersProvider\' option');
     }
 
     blockHeadersProvider = options.blockHeadersProvider;
@@ -37,6 +38,7 @@ function createBlockHeadersProviderFromOptions(options, coreMethods) {
       coreMethods.subscribeToBlockHeadersWithChainLocks,
       {
         maxRetriesOnError: -1,
+        logger,
       },
     )({
       fromBlockHeight,

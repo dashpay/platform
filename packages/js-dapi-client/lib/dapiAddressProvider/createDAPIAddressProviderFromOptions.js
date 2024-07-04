@@ -6,10 +6,7 @@ const ListDAPIAddressProvider = require('./ListDAPIAddressProvider');
 
 const SimplifiedMasternodeListProvider = require('../SimplifiedMasternodeListProvider/SimplifiedMasternodeListProvider');
 const SimplifiedMasternodeListDAPIAddressProvider = require('./SimplifiedMasternodeListDAPIAddressProvider');
-
-const JsonRpcTransport = require('../transport/JsonRpcTransport/JsonRpcTransport');
-const requestJsonRpc = require('../transport/JsonRpcTransport/requestJsonRpc');
-const createJsonTransportError = require('../transport/JsonRpcTransport/createJsonTransportError');
+const createMasternodeListStreamFactory = require('../SimplifiedMasternodeListProvider/createMasternodeListStreamFactory');
 
 const DAPIClientError = require('../errors/DAPIClientError');
 
@@ -82,17 +79,15 @@ function createDAPIAddressProviderFromOptions(options) {
       options,
     );
 
-    const jsonRpcTransport = new JsonRpcTransport(
+    const createStream = createMasternodeListStreamFactory(
       createDAPIAddressProviderFromOptions,
-      requestJsonRpc,
       listDAPIAddressProvider,
-      createJsonTransportError,
       options,
     );
 
     const smlProvider = new SimplifiedMasternodeListProvider(
-      jsonRpcTransport,
-      { network: options.network },
+      createStream,
+      options,
     );
 
     return new SimplifiedMasternodeListDAPIAddressProvider(
