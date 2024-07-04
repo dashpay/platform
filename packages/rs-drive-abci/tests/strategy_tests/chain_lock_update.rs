@@ -5,8 +5,7 @@ mod tests {
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use crate::strategy::{MasternodeListChangesStrategy, NetworkStrategy};
     use drive_abci::config::{
-        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
-        ValidatorSetConfig,
+        ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
     };
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;

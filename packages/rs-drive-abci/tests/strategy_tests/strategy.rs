@@ -39,7 +39,7 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
-use strategy_tests::{KeyMaps, Strategy};
+use strategy_tests::Strategy;
 use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -391,7 +391,7 @@ impl NetworkStrategy {
         if block_info.height == 1 {
             if self.strategy.start_identities.number_of_identities > 0 {
                 let mut new_transitions = self.create_identities_state_transitions(
-                    self.strategy.start_identities.number_of_identities.into(),
+                    self.strategy.start_identities.number_of_identities,
                     signer,
                     rng,
                     instant_lock_quorums,

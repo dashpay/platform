@@ -107,6 +107,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<Option<Credits>, Error>` - The balance of the Identity if successful, or an error.
+    #[allow(unused)]
     pub(crate) fn fetch_prefunded_specialized_balance_operations(
         &self,
         prefunded_specialized_balance_id: [u8; 32],

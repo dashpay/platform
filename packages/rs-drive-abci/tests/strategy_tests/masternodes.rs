@@ -5,7 +5,6 @@ use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeTy
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::IdentityPublicKey;
-use dpp::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use platform_version::version::PlatformVersion;
 use rand::prelude::{IteratorRandom, StdRng};

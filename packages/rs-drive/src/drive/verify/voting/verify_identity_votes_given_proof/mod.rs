@@ -4,7 +4,6 @@ use crate::drive::verify::RootHash;
 use crate::error::drive::DriveError;
 use crate::query::ContractLookupFn;
 use dpp::identifier::Identifier;
-use std::collections::BTreeMap;
 
 use crate::error::Error;
 

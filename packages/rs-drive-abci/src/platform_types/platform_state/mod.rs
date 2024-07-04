@@ -482,7 +482,7 @@ impl PlatformStateV0Methods for PlatformState {
             PlatformState::V0(v0) => v0.last_committed_block_id_hash(),
         }
     }
-    
+
     fn full_masternode_list_changes(&self, previous: &PlatformState) -> MasternodeListChanges {
         match (self, previous) {
             (PlatformState::V0(v0), PlatformState::V0(v0_previous)) => {

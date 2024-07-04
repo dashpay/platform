@@ -26,7 +26,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 #[cfg(feature = "server")]
-use grovedb::query_result_type::{QueryResultElements, QueryResultType};
+use grovedb::query_result_type::QueryResultType;
 #[cfg(feature = "server")]
 use grovedb::{Element, TransactionArg};
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};

@@ -3,7 +3,6 @@ mod v0;
 use crate::drive::verify::RootHash;
 use crate::error::drive::DriveError;
 use dpp::prelude::TimestampMillis;
-use std::collections::BTreeMap;
 
 use crate::error::Error;
 

@@ -702,7 +702,6 @@ impl PlatformStateV0Methods for PlatformStateV0 {
             .unwrap_or_default()
     }
 
-
     fn full_masternode_list_changes(&self, previous: &PlatformStateV0) -> MasternodeListChanges {
         let mut new_masternodes = Vec::new();
         let mut removed_masternodes = Vec::new();

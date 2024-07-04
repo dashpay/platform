@@ -2732,9 +2732,32 @@ mod tests {
                             Some(4),
                             false,
                             None,
-                            ResultType::VoteTally,
+                            ResultType::Documents,
                             platform_version,
                         );
+
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (4, None, None, None)
+                    );
+
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            Some(4),
+                            true,
+                            None,
+                            ResultType::Documents,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (4, None, None, None)
+                    );
                 }
 
                 // VoteTally
@@ -2751,6 +2774,29 @@ mod tests {
                             ResultType::VoteTally,
                             platform_version,
                         );
+
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (4, None, None, None)
+                    );
+
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            Some(4),
+                            true,
+                            None,
+                            ResultType::VoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        (contenders.len(), abstaining, locking, finished_vote_info),
+                        (4, Some(10), Some(3), None)
+                    );
                 }
             }
         }

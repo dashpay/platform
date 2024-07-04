@@ -6,11 +6,9 @@ use crate::document::Document;
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::ProtocolError;
-use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::fmt;
-use std::fmt::format;
 
 pub use contender::v0::{ContenderV0, ContenderWithSerializedDocumentV0};
 pub use contender::{Contender, ContenderWithSerializedDocument};

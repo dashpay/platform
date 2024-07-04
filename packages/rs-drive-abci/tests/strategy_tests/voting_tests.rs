@@ -9,7 +9,7 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::platform_value::Value;
-    use drive_abci::config::{ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, ValidatorSetConfig};
+    use drive_abci::config::{ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
@@ -20,12 +20,11 @@ mod tests {
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
-    use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::{finished_vote_info, FinishedVoteInfo};
+    use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info::FinishedVoteOutcome;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-    use drive::drive::config::DriveConfig;
     use drive::drive::object_size_info::DataContractOwnedResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -40,6 +39,11 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
@@ -334,6 +338,11 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
@@ -545,7 +554,7 @@ mod tests {
                 proposers,
                 validator_quorums,
                 current_validator_quorum_hash,
-                instant_lock_quorums: Default::default(),
+                instant_lock_quorums,
                 current_proposer_versions: Some(current_proposer_versions.clone()),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
@@ -686,6 +695,11 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
@@ -1049,6 +1063,11 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {

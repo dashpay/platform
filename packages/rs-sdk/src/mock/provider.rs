@@ -184,7 +184,7 @@ impl ContextProvider for GrpcContextProvider {
             return Ok(Some(contract));
         };
         let sdk_guard = self.sdk.load();
-        
+
         let sdk = match sdk_guard.as_ref() {
             Some(sdk) => sdk,
             None => {

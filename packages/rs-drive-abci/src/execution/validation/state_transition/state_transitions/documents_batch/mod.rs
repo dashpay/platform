@@ -276,7 +276,6 @@ mod tests {
         use dpp::document::Document;
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
         use dpp::util::hash::hash_double;
-        use dpp::util::strings::convert_to_homograph_safe_chars;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
         use drive::drive::object_size_info::DataContractResolvedInfo;
