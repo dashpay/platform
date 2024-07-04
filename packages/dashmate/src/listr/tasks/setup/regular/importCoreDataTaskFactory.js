@@ -106,9 +106,9 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
             type: 'input',
             header: `  Please enter path to your existing Dash Core data directory.
 
-   - You current user must have read access to this directory.
-   - Data directory usually ends with .dashcore and contains dash.conf and data files (what files we expect)
-   - If dash.conf stored separately you should copy or link this file to data dire\n`,
+   - Your current user must have read access to this directory.
+   - The data directory usually ends with .dashcore and contains dash.conf and the data files to import
+   - If dash.conf is stored separately, you should copy or link to this file in the data directory\n`,
             message: 'Core data directory path',
             validate: validateCoreDataDirectoryPathFactory(ctx.config),
           });
