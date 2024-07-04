@@ -132,7 +132,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -225,7 +225,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -365,7 +365,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -400,7 +400,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -546,7 +546,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -577,7 +577,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -647,7 +647,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -822,7 +822,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -922,7 +922,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 

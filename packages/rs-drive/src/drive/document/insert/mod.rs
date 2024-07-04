@@ -140,7 +140,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -162,7 +162,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect_err("expected not to be able to insert same document twice");
 
@@ -236,7 +236,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -258,7 +258,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect_err("expected not to be able to insert same document twice");
 
@@ -332,7 +332,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -397,7 +397,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -467,7 +467,7 @@ mod tests {
                 false,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -527,7 +527,7 @@ mod tests {
                 false,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -549,7 +549,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -695,7 +695,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -773,7 +773,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+               None,
             )
             .expect("expected to insert a document successfully");
 
@@ -795,7 +795,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -817,7 +817,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -868,7 +868,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -890,7 +890,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
             )
             .expect_err(
                 "expected not to be able to insert document with already existing unique index",
