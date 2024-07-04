@@ -30,6 +30,12 @@ impl<C> Platform<C> {
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
         let protocol_versions_counter = self.drive.cache.protocol_versions_counter.read();
+
+        let mut votes_str = String::new();
+        for (protocol_version, votes) in protocol_versions_counter.global_cache.iter() {
+            votes_str.push_str(&format!("[{}->{}]", protocol_version, votes));
+        }
+
         let mut versions_passing_threshold =
             protocol_versions_counter.versions_passing_threshold(required_upgraded_hpmns);
         drop(protocol_versions_counter);
@@ -42,12 +48,36 @@ impl<C> Platform<C> {
             ));
         }
 
+        tracing::info!(
+            "{}",
+            format!(
+                "[ody] check_for_desired_protocol_upgrade: \
+        total_hpmns:{}\
+        required_upgraded_hpmns:{}\
+        current_votes:{}\
+        versions_passing_threshold:{}",
+                total_hpmns,
+                required_upgraded_hpmns,
+                votes_str,
+                versions_passing_threshold.len(),
+            )
+        );
+
         if !versions_passing_threshold.is_empty() {
             // same as equals 1
             let next_version = versions_passing_threshold.remove(0);
 
             // TODO: We stored next version here previously.
             //  It was never used so we can temporary remove it from here and move it to Epoch trees in upcoming PR
+
+                tracing::info!(
+                "{}",
+                format!(
+                    "[ody] check_for_desired_protocol_upgrade: \
+            next_version:{}",
+                    next_version,
+                )
+            );
 
             Ok(Some(next_version))
         } else {

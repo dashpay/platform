@@ -303,6 +303,21 @@ where
             platform_version,
         )?;
 
+        tracing::info!(
+            "{}",
+            format!(
+                "[ody] run_block_proposal: \
+        block_proposal.height:{}\
+        epoch_index:{}\
+        st_trans_res.storage_fees:{}\
+        st_trans_res.processing_fees:{}",
+                block_proposal.height,
+                epoch_info.current_epoch_index(),
+                state_transitions_result.aggregated_fees().storage_fee,
+                state_transitions_result.aggregated_fees().processing_fee
+            )
+        );
+
         // Pool withdrawals into transactions queue
 
         // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue
@@ -338,6 +353,21 @@ where
             transaction,
             platform_version,
         )?;
+
+        tracing::info!(
+            "{}",
+            format!(
+                "[ody] run_block_proposal: \
+        block_proposal.height:{}\
+        epoch_index:{}\
+        processed_block_fees.storage_fees:{}\
+        processed_block_fees.processing_fees:{}",
+                block_proposal.height,
+                epoch_info.current_epoch_index(),
+                processed_block_fees.fees_in_pools.storage_fees,
+                processed_block_fees.fees_in_pools.processing_fees
+            )
+        );
 
         tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
 
