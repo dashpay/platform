@@ -41,7 +41,7 @@ where
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
             ExecutionEvent::PaidFromAssetLock {
@@ -63,7 +63,7 @@ where
                         block_info,
                         transaction,
                         platform_version,
-                        previous_fee_versions,
+                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -115,7 +115,7 @@ where
                         block_info,
                         transaction,
                         platform_version,
-                        previous_fee_versions,
+                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 

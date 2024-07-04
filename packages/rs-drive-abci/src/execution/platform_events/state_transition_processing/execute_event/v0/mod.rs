@@ -59,7 +59,7 @@ where
                     block_info,
                     Some(transaction),
                     platform_version,
-                    Some(previous_fee_versions),
+                    previous_fee_versions,
                 )?)
             }
             ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
