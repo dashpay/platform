@@ -402,15 +402,12 @@ impl DocumentPropertyType {
     pub fn read_optionally_from(
         &self,
         buf: &mut BufReader<&[u8]>,
-        required: bool,
     ) -> Result<(Option<Value>, bool), DataContractError> {
-        if !required {
-            let marker = buf.read_u8().ok();
-            match marker {
-                None => return Ok((None, true)), // we have no more data
-                Some(0) => return Ok((None, false)),
-                _ => {}
-            }
+        let marker = buf.read_u8().ok();
+        match marker {
+            None => return Ok((None, true)), // we have no more data
+            Some(0) => return Ok((None, false)),
+            _ => {}
         }
         match self {
             DocumentPropertyType::String(_) => {
@@ -518,7 +515,7 @@ impl DocumentPropertyType {
 
                         let read_value = field
                             .property_type
-                            .read_optionally_from(&mut object_buf_reader, field.required);
+                            .read_optionally_from(&mut object_buf_reader);
 
                         match read_value {
                             Ok(read_value) => {
@@ -546,11 +543,7 @@ impl DocumentPropertyType {
         }
     }
 
-    pub fn encode_value_with_size(
-        &self,
-        value: Value,
-        required: bool,
-    ) -> Result<Vec<u8>, ProtocolError> {
+    pub fn encode_value_with_size(&self, value: Value) -> Result<Vec<u8>, ProtocolError> {
         if value.is_null() {
             return Ok(vec![]);
         }
@@ -568,38 +561,29 @@ impl DocumentPropertyType {
             DocumentPropertyType::Date => {
                 let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
-                if required {
-                    Ok(value_bytes)
-                } else {
-                    // if the value wasn't required we need to add a byte to prove it existed
-                    let mut r_vec = vec![255u8];
-                    r_vec.append(&mut value_bytes);
-                    Ok(r_vec)
-                }
+
+                // we need to add a byte to prove it existed
+                let mut r_vec = vec![255u8];
+                r_vec.append(&mut value_bytes);
+                Ok(r_vec)
             }
             DocumentPropertyType::Integer => {
                 let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_i64.to_be_bytes().to_vec();
-                if required {
-                    Ok(value_bytes)
-                } else {
-                    // if the value wasn't required we need to add a byte to prove it existed
-                    let mut r_vec = vec![255u8];
-                    r_vec.append(&mut value_bytes);
-                    Ok(r_vec)
-                }
+
+                // we need to add a byte to prove it existed
+                let mut r_vec = vec![255u8];
+                r_vec.append(&mut value_bytes);
+                Ok(r_vec)
             }
             DocumentPropertyType::Number => {
                 let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
-                if required {
-                    Ok(value_bytes)
-                } else {
-                    // if the value wasn't required we need to add a byte to prove it existed
-                    let mut r_vec = vec![255u8];
-                    r_vec.append(&mut value_bytes);
-                    Ok(r_vec)
-                }
+
+                // we need to add a byte to prove it existed
+                let mut r_vec = vec![255u8];
+                r_vec.append(&mut value_bytes);
+                Ok(r_vec)
             }
             DocumentPropertyType::ByteArray(_) => {
                 let mut bytes = value.into_binary_bytes()?;
@@ -631,19 +615,12 @@ impl DocumentPropertyType {
                     let mut r_vec = vec![];
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
-                            let mut serialized_value = field
-                                .property_type
-                                .encode_value_with_size(value, field.required)?;
+                            let mut serialized_value =
+                                field.property_type.encode_value_with_size(value)?;
                             r_vec.append(&mut serialized_value);
-                            Ok(())
-                        } else if field.required {
-                            Err(ProtocolError::DataContractError(
-                                DataContractError::MissingRequiredKey(
-                                    "a required field is not present".to_string(),
-                                ),
-                            ))
+                            Ok::<(), ProtocolError>(())
                         } else {
-                            // We don't have something that wasn't required
+                            // We don't have something
                             r_vec.push(0);
                             Ok(())
                         }
@@ -678,11 +655,7 @@ impl DocumentPropertyType {
         }
     }
 
-    pub fn encode_value_ref_with_size(
-        &self,
-        value: &Value,
-        required: bool,
-    ) -> Result<Vec<u8>, ProtocolError> {
+    pub fn encode_value_ref_with_size(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
         if value.is_null() {
             return Ok(vec![]);
         }
@@ -699,14 +672,11 @@ impl DocumentPropertyType {
             DocumentPropertyType::Date => {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
-                if required {
-                    Ok(value_bytes)
-                } else {
-                    // if the value wasn't required we need to add a byte to prove it existed
-                    let mut r_vec = vec![255u8];
-                    r_vec.append(&mut value_bytes);
-                    Ok(r_vec)
-                }
+
+                // if the value wasn't required we need to add a byte to prove it existed
+                let mut r_vec = vec![255u8];
+                r_vec.append(&mut value_bytes);
+                Ok(r_vec)
             }
             DocumentPropertyType::Integer => {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
@@ -744,22 +714,12 @@ impl DocumentPropertyType {
                 let mut r_vec = vec![];
                 inner_fields.iter().try_for_each(|(key, field)| {
                     if let Some(value) = value_map.get(key) {
-                        if !field.required {
-                            r_vec.push(1);
-                        }
-                        let value = field
-                            .property_type
-                            .encode_value_ref_with_size(value, field.required)?;
+                        r_vec.push(1);
+                        let value = field.property_type.encode_value_ref_with_size(value)?;
                         r_vec.extend(value.as_slice());
-                        Ok(())
-                    } else if field.required {
-                        Err(ProtocolError::DataContractError(
-                            DataContractError::MissingRequiredKey(
-                                "a required field is not present".to_string(),
-                            ),
-                        ))
+                        Ok::<(), ProtocolError>(())
                     } else {
-                        // We don't have something that wasn't required
+                        // We don't have something
                         r_vec.push(0);
                         Ok(())
                     }

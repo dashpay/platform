@@ -13,7 +13,7 @@ To use this crate, define it as a dependency in your `Cargo.toml`:
 ```toml
 [dependencies]
 
-dash-platform-sdk = { git="https://github.com/dashpay/platform"0 }
+dash-sdk = { git="https://github.com/dashpay/platform" }
 ```
 
 ### Implementing Dash Platform SDK application

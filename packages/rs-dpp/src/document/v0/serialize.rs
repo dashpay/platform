@@ -212,36 +212,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if property.required {
-                            Err(ProtocolError::DataContractError(
-                                DataContractError::MissingRequiredKey(
-                                    "a required field is not present".to_string(),
-                                ),
-                            ))
-                        } else {
-                            // dbg!("we pushed {} with 0", field_name);
-                            // We don't have something that wasn't required
-                            buffer.push(0);
-                            Ok(())
-                        }
+                        // dbg!("we pushed {} with 0", field_name);
+                        // We don't have something
+                        buffer.push(0);
+                        Ok::<(), ProtocolError>(())
                     } else {
-                        if !property.required {
-                            // dbg!("we added 1", field_name);
-                            buffer.push(1);
-                        }
-                        let value = property
-                            .property_type
-                            .encode_value_ref_with_size(value, property.required)?;
+                        // dbg!("we added 1", field_name);
+                        buffer.push(1);
+                        let value = property.property_type.encode_value_ref_with_size(value)?;
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey(format!(
-                            "a required field {field_name} is not present"
-                        )),
-                    ))
                 } else {
                     // dbg!("we pushed {} with 0", field_name);
                     // We don't have something that wasn't required
@@ -428,36 +410,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.remove(field_name) {
                     if value.is_null() {
-                        if property.required {
-                            Err(ProtocolError::DataContractError(
-                                DataContractError::MissingRequiredKey(
-                                    "a required field is not present".to_string(),
-                                ),
-                            ))
-                        } else {
-                            // dbg!("we pushed {} with 0", field_name);
-                            // We don't have something that wasn't required
-                            buffer.push(0);
-                            Ok(())
-                        }
+                        // dbg!("we pushed {} with 0", field_name);
+                        // We don't have something
+                        buffer.push(0);
+                        Ok::<(), ProtocolError>(())
                     } else {
-                        if !property.required {
-                            // dbg!("we added 1", field_name);
-                            buffer.push(1);
-                        }
-                        let value = property
-                            .property_type
-                            .encode_value_with_size(value, property.required)?;
+                        // dbg!("we added 1", field_name);
+                        buffer.push(1);
+                        let value = property.property_type.encode_value_with_size(value)?;
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey(format!(
-                            "a required field {field_name} is not present"
-                        )),
-                    ))
                 } else {
                     // dbg!("we pushed {} with 0", field_name);
                     // We don't have something that wasn't required
@@ -644,17 +608,9 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .iter()
             .filter_map(|(key, property)| {
                 if finished_buffer {
-                    return if property.required {
-                        Some(Err(DataContractError::CorruptedSerialization(
-                            "required field after finished buffer".to_string(),
-                        )))
-                    } else {
-                        None
-                    };
+                    return None;
                 }
-                let read_value = property
-                    .property_type
-                    .read_optionally_from(&mut buf, property.required);
+                let read_value = property.property_type.read_optionally_from(&mut buf);
 
                 match read_value {
                     Ok(read_value) => {
@@ -805,5 +761,121 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
                 received: version,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::document_type::random_document::CreateRandomDocument;
+    use crate::data_contract::document_type::v0::DocumentTypeV0;
+    use crate::data_contract::document_type::DocumentType;
+    use crate::document::{Document, DocumentV0Getters};
+    use platform_value::platform_value;
+
+    #[test]
+    fn deserialize_document_after_data_contract_update() {
+        let platform_version = PlatformVersion::latest();
+
+        let origin_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0,
+                },
+                "age": {
+                    "type": "integer",
+                    "position": 1,
+                }
+            },
+            "additionalProperties": false,
+            "required": ["name", "age"]
+        });
+
+        let origin_document_type = DocumentType::V0(
+            DocumentTypeV0::try_from_schema_v0(
+                Identifier::random(),
+                "test",
+                origin_schema,
+                None,
+                false,
+                false,
+                false,
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create a new document type"),
+        );
+
+        let origin_document = origin_document_type
+            .random_document(Some(5), platform_version)
+            .expect("failed to create a random document");
+
+        assert!(origin_document.get("name").is_some(), "name is not set");
+        assert!(origin_document.get("age").is_some(), "age is not set");
+
+        let origin_serialized_document = origin_document
+            .serialize(origin_document_type.as_ref(), platform_version)
+            .expect("failed to serialize document");
+
+        // Update document type to make fields optional
+
+        let updated_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0,
+                },
+                "age": {
+                    "type": "integer",
+                    "position": 1,
+                }
+            },
+            "additionalProperties": false,
+        });
+
+        let updated_document_type = DocumentType::V0(
+            DocumentTypeV0::try_from_schema_v0(
+                Identifier::random(),
+                "test",
+                updated_schema,
+                None,
+                false,
+                false,
+                false,
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create a new document type"),
+        );
+
+        // Ensure the update compatibility
+
+        let validation_result = origin_document_type
+            .as_ref()
+            .validate_update(updated_document_type.as_ref(), platform_version)
+            .expect("failed to validate update");
+
+        assert!(
+            validation_result.is_valid(),
+            "document type update is not compatible"
+        );
+
+        // Deserialize origin document with updated document type
+
+        let updated_document = Document::V0(
+            DocumentV0::from_bytes(
+                &origin_serialized_document,
+                updated_document_type.as_ref(),
+                platform_version,
+            )
+            .expect("failed to deserialize document"),
+        );
+
+        assert_eq!(origin_document, updated_document);
     }
 }
