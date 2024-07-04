@@ -56,7 +56,7 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
             / (1024 ** 3); // Convert to GB
 
           if (memoryGb < MINIMUM_RAM) {
-            warnings.push(`${memoryGb.toFixed(2)}GB RAM. Minimum required is ${MINIMUM_RAM}GB`);
+            warnings.push(`${memoryGb.toFixed(2)}GB RAM detected. At least ${MINIMUM_RAM}GB is required`);
           }
 
           // Check swap information
@@ -94,31 +94,30 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
             const availableDiskSpace = diskInfo.available / (1024 ** 3); // Convert to GB
 
             if (availableDiskSpace < MINIMUM_DISK_SPACE) {
-              warnings.push(`${availableDiskSpace.toFixed(2)}GB available disk space. Minimum required is ${MINIMUM_DISK_SPACE}GB`);
+              warnings.push(`${availableDiskSpace.toFixed(2)}GB available disk space detected. At least ${MINIMUM_DISK_SPACE}GB is required`);
             }
           }
 
           if (warnings.length > 0) {
             const warningsText = warnings.map((warning) => `    - ${warning}`).join('\n');
 
-            const header = chalk`  Minimal requirements aren't met:
+            const header = chalk`  Minimum requirements have not been met:
 
 {red ${warningsText}}
 
-    Dash Platform needs more minerals`;
-            // TODO: Write some text here
+    Dash Platform requires more resources than the current system provides. Evonode rewards are paid based on block production, and resource-limited nodes may not be able to produce blocks quickly enough to receive reward payments. Upgrading system resources is recommended before proceeding.
 
             const proceed = await task.prompt({
               type: 'toggle',
               header,
-              message: 'Are you sure you want to proceed?',
+              message: 'This server may not receive Dash Platform reward payments due to its resource limitations. Are you sure you want to proceed?',
               enabled: 'Yes',
               disabled: 'No',
               initial: false,
             });
 
             if (!proceed) {
-              throw new Error('System requirements are not met');
+              throw new Error('System requirements have not been met');
             }
           }
         },
