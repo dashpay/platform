@@ -5,6 +5,8 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
+use dpp::identifier::MasternodeIdentifiers;
+use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
@@ -50,8 +52,10 @@ impl<S: Signer> PutVote<S> for Vote {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
+        let voting_identity_id = get_voting_identity_id(voter_pro_tx_hash, voting_public_key)?;
+
         let new_masternode_voting_nonce = sdk
-            .get_identity_nonce(voter_pro_tx_hash, true, settings)
+            .get_identity_nonce(voting_identity_id, true, settings)
             .await?;
 
         let settings = settings.unwrap_or_default();
@@ -80,8 +84,10 @@ impl<S: Signer> PutVote<S> for Vote {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Vote, Error> {
+        let voting_identity_id = get_voting_identity_id(voter_pro_tx_hash, voting_public_key)?;
+
         let new_masternode_voting_nonce = sdk
-            .get_identity_nonce(voter_pro_tx_hash, true, settings)
+            .get_identity_nonce(voting_identity_id, true, settings)
             .await?;
 
         let settings = settings.unwrap_or_default();
@@ -146,4 +152,16 @@ impl<S: Signer> PutVote<S> for Vote {
             )),
         }
     }
+}
+
+fn get_voting_identity_id(
+    voter_pro_tx_hash: Identifier,
+    voting_public_key: &IdentityPublicKey,
+) -> Result<Identifier, Error> {
+    let pub_key_hash = voting_public_key.public_key_hash()?;
+
+    Ok(Identifier::create_voter_identifier(
+        voter_pro_tx_hash.as_bytes(),
+        &pub_key_hash,
+    ))
 }

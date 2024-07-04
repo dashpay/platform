@@ -1460,7 +1460,7 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, vote_polls) = drive_query
-            .verify_vote_polls_by_end_date_proof::<BTreeMap<_, _>>(
+            .verify_vote_polls_by_end_date_proof::<Vec<(_, _)>>(
                 &proof.grovedb_proof,
                 platform_version,
             )
@@ -1470,7 +1470,7 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let response = VotePollsGroupedByTimestamp(vote_polls);
+        let response = VotePollsGroupedByTimestamp(vote_polls).sorted(drive_query.order_ascending);
 
         Ok((response.into_option(), mtd.clone()))
     }
@@ -1655,7 +1655,7 @@ define_length!(Contenders, |x: &Contenders| x.contenders.len());
 define_length!(Voters, |x: &Voters| x.0.len());
 define_length!(
     VotePollsGroupedByTimestamp,
-    |x: &VotePollsGroupedByTimestamp| x.0.values().map(|v| v.len()).sum()
+    |x: &VotePollsGroupedByTimestamp| x.0.iter().map(|v| v.1.len()).sum()
 );
 trait IntoOption
 where

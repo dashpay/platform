@@ -1,8 +1,9 @@
 //! Test VotePollsByEndDateDriveQuery
 
 use crate::fetch::{common::setup_logs, config::Config};
+use chrono::{DateTime, TimeZone, Utc};
 use dash_sdk::platform::FetchMany;
-use dpp::{identity::TimestampMillis, voting::vote_polls::VotePoll};
+use dpp::voting::vote_polls::VotePoll;
 use drive::query::VotePollsByEndDateDriveQuery;
 use std::collections::BTreeMap;
 
@@ -51,8 +52,8 @@ async fn vote_polls_by_ts_ok() {
     feature = "network-testing",
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
-// fails due to PLAN-661
-async fn vote_polls_by_ts_order() {
+#[allow(non_snake_case)]
+async fn vote_polls_by_ts_order_PLAN_661() {
     setup_logs();
 
     let cfg = Config::new();
@@ -86,8 +87,8 @@ async fn vote_polls_by_ts_order() {
                 let (prev_ts, _) = &enumerated[&(i - 1)];
                 if order_ascending {
                     assert!(
-                        ts >= prev_ts,
-                        "ascending order: item {} ({}) must be >= than item {} ({})",
+                        ts > prev_ts,
+                        "ascending order: item {} ({}) must be > than item {} ({})",
                         ts,
                         i,
                         prev_ts,
@@ -95,8 +96,8 @@ async fn vote_polls_by_ts_order() {
                     );
                 } else {
                     assert!(
-                        ts <= prev_ts,
-                        "descending order: item {} ({}) must be >= than item {} ({})",
+                        ts < prev_ts,
+                        "descending order: item {} ({}) must be < than item {} ({})",
                         ts,
                         i,
                         prev_ts,
@@ -129,18 +130,18 @@ async fn vote_polls_by_ts_limit() {
         .await
         .expect("prerequisities");
 
-    // Given index with more than 2 contested resources
+    // Given index with more than 2 contested resources; note LIMIT must be > 1
     const LIMIT: usize = 2;
     const LIMIT_ALL: usize = 100;
 
-    let test_start_time: TimestampMillis = chrono::Utc::now().timestamp_millis() as u64;
+    let end_time: DateTime<Utc> = Utc.with_ymd_and_hms(2035, 12, 24, 13, 59, 30).unwrap();
 
     let query_all = VotePollsByEndDateDriveQuery {
         limit: Some(LIMIT_ALL as u16),
         offset: None,
         order_ascending: true,
         start_time: None,
-        end_time: Some((test_start_time, true)),
+        end_time: Some((end_time.timestamp_millis() as u64, true)), // 1 month in future
     };
 
     let all = VotePoll::fetch_many(&sdk, query_all.clone())
@@ -152,13 +153,18 @@ async fn vote_polls_by_ts_limit() {
 
     let all_values = all.0.into_iter().collect::<Vec<_>>();
 
-    tracing::debug!(count_all_timestamps, "Count all");
-    // When we query for 2 contested values at a time, we get all of them
-    let mut checked_count: usize = 0;
-    let mut start_time = None;
+    tracing::debug!(
+        count = count_all_timestamps,
+        all = ?all_values,
+        "All results"
+    );
 
     for inclusive in [true, false] {
-        while checked_count < LIMIT_ALL {
+        // When we query for 2 contested values at a time, we get all of them
+        let mut checked_count: usize = 0;
+        let mut start_time = None;
+
+        loop {
             let query = VotePollsByEndDateDriveQuery {
                 limit: Some(LIMIT as u16),
                 start_time,
@@ -169,7 +175,7 @@ async fn vote_polls_by_ts_limit() {
                 .await
                 .expect("fetch vote polls");
 
-            let Some(last) = rss.0.keys().last().copied() else {
+            let Some(last) = rss.0.last() else {
                 // no more vote polls
                 break;
             };
@@ -178,31 +184,43 @@ async fn vote_polls_by_ts_limit() {
             let length = rss.0.len();
 
             for (j, current) in rss.0.iter().enumerate() {
-                let all_idx = if inclusive && (j + checked_count > 0) {
+                let all_idx = if inclusive && (checked_count > 0) {
                     j + checked_count - 1
                 } else {
                     j + checked_count
                 };
                 let expected = &all_values[all_idx];
-                assert_eq!(*current.0, expected.0, "timestamp should match");
-                assert_eq!(current.1, &expected.1, "vote polls should match");
+                assert_eq!(
+                    current.0, expected.0,
+                    "inclusive {}: timestamp should match",
+                    inclusive
+                );
+                assert_eq!(
+                    &current.1, &expected.1,
+                    "inclusive {}: vote polls should match",
+                    inclusive
+                );
             }
 
-            let expected = if checked_count + LIMIT > count_all_timestamps {
-                count_all_timestamps - checked_count
-            } else {
-                LIMIT
-            };
-            assert_eq!(length, expected as usize);
-            tracing::debug!(polls=?rss, checked_count, "Vote polls");
+            tracing::debug!(polls=?rss, checked_count, ?start_time, "Vote polls");
 
-            start_time = Some((last, inclusive));
-            checked_count += if inclusive { length - 1 } else { length };
+            start_time = Some((last.0, inclusive));
+            // when inclusive, we include the first item in checked_count only on first iteration
+            checked_count += if inclusive && checked_count != 0 {
+                length - 1
+            } else {
+                length
+            };
+
+            if (inclusive && length == 1) || (!inclusive && length == 0) {
+                break;
+            }
         }
+
+        assert_eq!(
+            checked_count, count_all_timestamps,
+            "all vote polls should be checked when inclusive is {}",
+            inclusive
+        );
     }
-    assert_eq!(
-        checked_count,
-        count_all_timestamps * 2,
-        "all vote polls should be checked twice (inclusive and exclusive)"
-    );
 }

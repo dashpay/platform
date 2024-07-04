@@ -1370,6 +1370,8 @@ dependencies = [
  "sanitize-filename",
  "serde",
  "serde_json",
+ "sha2",
+ "test-case 3.3.1",
  "thiserror",
  "tokio",
  "tokio-test",
@@ -1631,7 +1633,7 @@ dependencies = [
  "serde_repr",
  "sha2",
  "strum 0.25.0",
- "test-case",
+ "test-case 2.2.2",
  "thiserror",
  "tokio",
 ]
@@ -5075,8 +5077,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#1f29dbc549dc1abe5de295e55728576b1a0c8a6b"
+version = "0.14.0-dev.12"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.12#17e57f509c2bb7015042d69976bd1f056fef923d"
 dependencies = [
  "bytes",
  "futures",
@@ -5097,8 +5099,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#1f29dbc549dc1abe5de295e55728576b1a0c8a6b"
+version = "0.14.0-dev.12"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.12#17e57f509c2bb7015042d69976bd1f056fef923d"
 dependencies = [
  "bytes",
  "chrono",
@@ -5117,8 +5119,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#1f29dbc549dc1abe5de295e55728576b1a0c8a6b"
+version = "0.14.0-dev.12"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.12#17e57f509c2bb7015042d69976bd1f056fef923d"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.6",
@@ -5151,7 +5153,28 @@ version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21d6cf5a7dffb3f9dceec8e6b8ca528d9bd71d36c9f074defb548ce161f598c0"
 dependencies = [
- "test-case-macros",
+ "test-case-macros 2.2.2",
+]
+
+[[package]]
+name = "test-case"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb2550dd13afcd286853192af8601920d959b14c401fcece38071d53bf0768a8"
+dependencies = [
+ "test-case-macros 3.3.1",
+]
+
+[[package]]
+name = "test-case-core"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adcb7fd841cd518e279be3d5a3eb0636409487998a4aff22f3de87b81e88384f"
+dependencies = [
+ "cfg-if",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.68",
 ]
 
 [[package]]
@@ -5165,6 +5188,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "test-case-macros"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c89e72a01ed4c579669add59014b9a524d609c0c88c6a585ce37485879f6ffb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.68",
+ "test-case-core",
 ]
 
 [[package]]

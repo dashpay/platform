@@ -1,6 +1,8 @@
 //! Tests for SDK requests that return one or more [Contender] objects.
 use crate::fetch::{
-    common::setup_logs, config::Config, contested_resource::check_mn_voting_prerequisities,
+    common::{setup_logs, setup_sdk_for_test_case, TEST_DPNS_NAME},
+    config::Config,
+    contested_resource::check_mn_voting_prerequisities,
 };
 use dash_sdk::platform::{Fetch, FetchMany};
 use dpp::{
@@ -19,6 +21,7 @@ use dpp::{
 use drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
 };
+use test_case::test_case;
 
 /// Ensure we get proof of non-existence when querying for a non-existing index value.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -40,12 +43,11 @@ async fn contested_resource_vote_states_not_found() {
         start_at: None,
         vote_poll: ContestedDocumentResourceVotePoll {
             index_name: "parentNameAndLabel".to_string(),
-            index_values: vec![label.into()],
+            index_values: vec!["nx".into(), label.into()],
             document_type_name: cfg.existing_document_type_name,
             contract_id: data_contract_id,
         },
         allow_include_locked_and_abstaining_vote_tally: true,
-        // TODO test other result types
         result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
     };
 
@@ -118,7 +120,12 @@ async fn contested_resource_vote_states_nx_contract() {
 ///
 /// ## Preconditions
 ///
-/// 1. There must be at least one contender for name "dash" and value "dada".
+/// 1. There must be at least one contender for name "dash" and value "[TEST_DPNS_NAME]".
+///
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "equires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn contested_resource_vote_states_ok() {
     setup_logs();
@@ -126,32 +133,21 @@ async fn contested_resource_vote_states_ok() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("contested_resource_vote_states_ok").await;
     // Given some existing data contract and existing label
-    let data_contract_id = cfg.existing_data_contract_id;
-    let label = Value::Text(convert_to_homograph_safe_chars("dada"));
-    let document_type_name = "domain".to_string();
+
+    let query = base_query(&cfg);
+
+    let data_contract_id = query.vote_poll.contract_id;
+    let document_type_name = &query.vote_poll.document_type_name;
 
     let data_contract = DataContract::fetch_by_identifier(&sdk, data_contract_id)
         .await
         .expect("fetch data contract")
         .expect("found data contract");
     let document_type = data_contract
-        .document_type_for_name(&document_type_name)
+        .document_type_for_name(document_type_name)
         .expect("found document type");
 
     // When I query for vote poll states with existing index values
-    let query = ContestedDocumentVotePollDriveQuery {
-        limit: None,
-        offset: None,
-        start_at: None,
-        vote_poll: ContestedDocumentResourceVotePoll {
-            index_name: "parentNameAndLabel".to_string(),
-            index_values: vec![Value::Text("dash".into()), label],
-            document_type_name,
-            contract_id: data_contract_id,
-        },
-        allow_include_locked_and_abstaining_vote_tally: true,
-        result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-    };
 
     let contenders = ContenderWithSerializedDocument::fetch_many(&sdk, query)
         .await
@@ -177,8 +173,26 @@ async fn contested_resource_vote_states_ok() {
         assert!(seen.insert(doc.id()), "duplicate contender");
         let properties = doc.properties();
         assert_eq!(properties["parentDomainName"], Value::Text("dash".into()));
-        assert_eq!(properties["label"], Value::Text("dada".into()));
+        assert_eq!(properties["label"], Value::Text(TEST_DPNS_NAME.into()));
         tracing::debug!(?properties, "document properties");
+    }
+}
+
+fn base_query(cfg: &Config) -> ContestedDocumentVotePollDriveQuery {
+    let index_value_2 = Value::Text(convert_to_homograph_safe_chars(TEST_DPNS_NAME));
+
+    ContestedDocumentVotePollDriveQuery {
+        limit: None,
+        offset: None,
+        start_at: None,
+        vote_poll: ContestedDocumentResourceVotePoll {
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![Value::Text("dash".into()), index_value_2],
+            document_type_name: cfg.existing_document_type_name.clone(),
+            contract_id: cfg.existing_data_contract_id,
+        },
+        allow_include_locked_and_abstaining_vote_tally: true,
+        result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
     }
 }
 
@@ -186,10 +200,15 @@ async fn contested_resource_vote_states_ok() {
 ///
 /// ## Preconditions
 ///
-/// 1. There must be at least 3 condenders for name "dash" and value "dada".
+/// 1. There must be at least 3 condenders for name "dash" and value [TEST_DPNS_NAME].
 ///
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn contested_resource_vote_states_with_limit() {
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "equires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
+#[allow(non_snake_case)]
+async fn contested_resource_vote_states_with_limit_PLAN_674() {
     setup_logs();
 
     let cfg = Config::new();
@@ -203,7 +222,7 @@ async fn contested_resource_vote_states_with_limit() {
     // Given more contenders for some `label` than the limit
     let data_contract_id = cfg.existing_data_contract_id;
     let limit: u16 = 2;
-    let label = Value::Text("dada".into());
+    let label = Value::Text(TEST_DPNS_NAME.into());
 
     // ensure we have enough contenders
     let query_all = ContestedDocumentVotePollDriveQuery {
@@ -223,10 +242,12 @@ async fn contested_resource_vote_states_with_limit() {
     let all_contenders = ContenderWithSerializedDocument::fetch_many(&sdk, query_all.clone())
         .await
         .expect("fetch many contenders")
-        .contenders
-        .len();
+        .contenders;
+
+    tracing::debug!(?all_contenders, "All contenders");
+
     assert!(
-        all_contenders > limit as usize,
+        all_contenders.len() > limit as usize,
         "we need more than {} contenders for this test",
         limit
     );
@@ -237,11 +258,11 @@ async fn contested_resource_vote_states_with_limit() {
         ..query_all
     };
 
-    let contenders = ContenderWithSerializedDocument::fetch_many(&sdk, query)
+    let contenders = ContenderWithSerializedDocument::fetch_many(&sdk, query.clone())
         .await
         .expect("fetch many contenders");
     // Then I get no more than the limit of contenders
-    tracing::debug!(contenders=?contenders, "Contenders");
+    tracing::debug!(contenders=?contenders, ?query, "Contenders");
 
     assert_eq!(
         contenders.contenders.len(),
@@ -252,235 +273,84 @@ async fn contested_resource_vote_states_with_limit() {
     );
 }
 
-/// Check various queries for [ContenderWithSerializedDocument] that contain invalid field values
-///
-/// ## Preconditions
-///
-/// None
+type MutFn = fn(&mut ContestedDocumentVotePollDriveQuery);
+
+#[test_case(|q| q.limit = Some(0), Err("limit 0 out of bounds of [1, 100]"); "limit 0")]
+#[test_case(|q| q.limit = Some(std::u16::MAX), Err("limit 65535 out of bounds of [1, 100]"); "limit std::u16::MAX")]
+#[test_case(|q| q.start_at = Some(([0x11; 32], true)), Ok("Contenders { contenders: {Identifier("); "start_at does not exist should return next contenders")]
+#[test_case(|q| q.start_at = Some(([0xff; 32], true)), Ok("Contenders { contenders: {}, abstain_vote_tally: None, lock_vote_tally: None }"); "start_at 0xff;32 should return zero contenders")]
+#[test_case(|q| q.vote_poll.document_type_name = "nx doctype".to_string(), Err(r#"code: InvalidArgument, message: "document type nx doctype not found"#); "non existing document type returns InvalidArgument")]
+#[test_case(|q| q.vote_poll.index_name = "nx index".to_string(), Err(r#"code: InvalidArgument, message: "index with name nx index is not the contested index"#); "non existing index returns InvalidArgument")]
+#[test_case(|q| q.vote_poll.index_name = "dashIdentityId".to_string(), Err(r#"code: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#); "existing non-contested index returns InvalidArgument")]
+#[test_case(|q| q.vote_poll.index_values = vec![], Err("query uses index parentNameAndLabel, this index has 2 properties, but the query provided 0 index values instead"); "index_values empty vec returns error")]
+#[test_case(|q| q.vote_poll.index_values = vec![Value::Text("".to_string())], Err("query uses index parentNameAndLabel, this index has 2 properties, but the query provided 1 index values instead"); "index_values empty string returns error")]
+#[test_case(|q| q.vote_poll.index_values = vec![Value::Text("dash".to_string())], Err("query uses index parentNameAndLabel, this index has 2 properties, but the query provided 1 index values instead"); "index_values with one value returns error")]
+#[test_case(|q| {
+    q.vote_poll.index_values = vec![
+        Value::Text("dash".to_string()),
+        Value::Text(TEST_DPNS_NAME.to_string()),
+    ]
+}, Ok("contenders: {Identifier("); "index_values with two values returns contenders")]
+#[test_case(|q| {
+    q.vote_poll.index_values = vec![
+        Value::Text("dash".to_string()),
+        Value::Text(TEST_DPNS_NAME.to_string()),
+        Value::Text("eee".to_string()),
+    ]
+}, Err("query uses index parentNameAndLabel, this index has 2 properties, but the query provided 3 index values instead"); "index_values too many items should return error")]
+#[test_case(|q| q.vote_poll.contract_id = Identifier::from([0xff; 32]), Err(r#"InvalidArgument, message: "contract not found error"#); "invalid contract id should cause InvalidArgument error")]
+#[test_case(|q| q.allow_include_locked_and_abstaining_vote_tally = false, Ok(r#"contenders: {Identifier(IdentifierBytes32"#); "allow_include_locked_and_abstaining_vote_tally false should return some contenders")]
+#[test_case(|q| {
+    q.result_type = ContestedDocumentVotePollDriveQueryResultType::Documents
+}, Ok(r#"]), vote_tally: None })"#); "result_type Documents")]
+#[test_case(|q| {
+    q.result_type = ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally
+}, Ok(r#"]), vote_tally: Some("#); "result_type DocumentsAndVoteTally")]
+#[test_case(|q| {
+    q.result_type = ContestedDocumentVotePollDriveQueryResultType::VoteTally
+}, Ok(r#"serialized_document: None, vote_tally: Some"#); "result_type VoteTally")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn contested_resource_vote_states_fields() {
+#[cfg_attr(
+    feature = "network-testing",
+    ignore = "equires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+)]
+async fn contested_rss_vote_state_fields(
+    query_mut_fn: MutFn,
+    expect: Result<&'static str, &'static str>,
+) -> Result<(), String> {
     setup_logs();
-
-    type MutFn = fn(&mut ContestedDocumentVotePollDriveQuery);
-    struct TestCase {
-        name: &'static str,
-        query_mut_fn: MutFn,
-        expect: Result<&'static str, &'static str>,
-    }
-
-    let test_cases: Vec<TestCase> = vec![
-        TestCase {
-            name: "limit 0 PLAN-664",
-            query_mut_fn: |q| q.limit = Some(0),
-            expect: Ok("..."),
-        },
-        TestCase {
-            name: "limit std::u16::MAX PLAN-664",
-            query_mut_fn: |q| q.limit = Some(std::u16::MAX),
-            expect: Ok("..."),
-        },
-        TestCase {
-            name: "offset not None",
-            query_mut_fn: |q| q.offset = Some(1),
-            expect: Err(
-                r#"Generic("ContestedDocumentVotePollDriveQuery.offset field is internal and must be set to None")"#,
-            ),
-        },
-        TestCase {
-            //  TODO: pagination test
-            name: "start_at does not exist",
-            query_mut_fn: |q| q.start_at = Some(([0x11; 32], true)),
-            expect: Ok("Contenders { contenders: {Identifier("),
-        },
-        TestCase {
-            name: "start_at 0xff;32",
-            query_mut_fn: |q| q.start_at = Some(([0xff; 32], true)),
-            expect: Ok("Contenders { contenders: {Identifier("),
-        },
-        TestCase {
-            name: "non existing document type returns InvalidArgument",
-            query_mut_fn: |q| q.vote_poll.document_type_name = "nx doctype".to_string(),
-            expect: Err(r#"code: InvalidArgument, message: "document type nx doctype not found"#),
-        },
-        TestCase {
-            name: "non existing index returns InvalidArgument",
-            query_mut_fn: |q| q.vote_poll.index_name = "nx index".to_string(),
-            expect: Err(
-                r#"code: InvalidArgument, message: "index with name nx index is not the contested index"#,
-            ),
-        },
-        TestCase {
-            name: "existing non-contested index returns InvalidArgument",
-            query_mut_fn: |q| q.vote_poll.index_name = "dashIdentityId".to_string(),
-            expect: Err(
-                r#"code: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#,
-            ),
-        },
-        TestCase {
-            // todo maybe this should fail? or return everything?
-            name: "index_values empty vec returns zero results PLAN-665",
-            query_mut_fn: |q| q.vote_poll.index_values = vec![],
-            expect: Ok(r#"Contenders { contenders: {},"#),
-        },
-        TestCase {
-            name: "index_values empty string returns zero results",
-            query_mut_fn: |q| q.vote_poll.index_values = vec![Value::Text("".to_string())],
-            expect: Ok("contenders: {}"),
-        },
-        TestCase {
-            name: "index_values with one value returns results PLAN-665",
-            query_mut_fn: |q| q.vote_poll.index_values = vec![Value::Text("dash".to_string())],
-            expect: Ok("contenders: {...}"),
-        },
-        TestCase {
-            name: "index_values with two values returns contenders ",
-            query_mut_fn: |q| {
-                q.vote_poll.index_values = vec![
-                    Value::Text("dash".to_string()),
-                    Value::Text("dada".to_string()),
-                ]
-            },
-            expect: Ok("contenders: {Identifier("),
-        },
-        TestCase {
-            name: "index_values too many items should return error PLAN-665",
-            query_mut_fn: |q| {
-                q.vote_poll.index_values = vec![
-                    Value::Text("dash".to_string()),
-                    Value::Text("dada".to_string()),
-                    Value::Text("eee".to_string()),
-                ]
-            },
-            expect: Ok(
-                r#"code: InvalidArgument, message: "incorrect index values error: the start index values and the end index"#,
-            ),
-        },
-        TestCase {
-            name: "invalid contract id should cause InvalidArgument error",
-            query_mut_fn: |q| q.vote_poll.contract_id = Identifier::from([0xff; 32]),
-            expect: Err(r#"InvalidArgument, message: "contract not found error"#),
-        },
-        TestCase {
-            name:
-                "allow_include_locked_and_abstaining_vote_tally false should return some contenders",
-            query_mut_fn: |q| q.allow_include_locked_and_abstaining_vote_tally = false,
-            expect: Ok(r#"contenders: {Identifier(IdentifierBytes32"#),
-        },
-        TestCase {
-            name: "result_type Documents",
-            query_mut_fn: |q| {
-                q.result_type = ContestedDocumentVotePollDriveQueryResultType::Documents
-            },
-            expect: Ok(r#"]), vote_tally: None })"#),
-        },
-        TestCase {
-            name: "result_type DocumentsAndVoteTally",
-            query_mut_fn: |q| {
-                q.result_type = ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally
-            },
-            expect: Ok(r#"]), vote_tally: Some("#),
-        },
-        TestCase {
-            name: "result_type VoteTally",
-            query_mut_fn: |q| {
-                q.result_type = ContestedDocumentVotePollDriveQueryResultType::VoteTally
-            },
-            expect: Ok(r#"serialized_document: None, vote_tally: Some"#),
-        },
-    ];
 
     let cfg = Config::new();
     check_mn_voting_prerequisities(&cfg)
         .await
         .expect("prerequisities");
 
-    let base_query = ContestedDocumentVotePollDriveQuery {
-        limit: None,
-        offset: None,
-        start_at: None,
-        vote_poll: ContestedDocumentResourceVotePoll {
-            index_name: "parentNameAndLabel".to_string(),
-            index_values: vec![Value::Text("dash".into()), Value::Text("dada".into())],
-            document_type_name: cfg.existing_document_type_name.clone(),
-            contract_id: cfg.existing_data_contract_id,
-        },
-        allow_include_locked_and_abstaining_vote_tally: true,
-        result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-    };
+    let mut query = base_query(&cfg);
+    query_mut_fn(&mut query);
+    let (test_case_id, sdk) =
+        setup_sdk_for_test_case(cfg, query.clone(), "contested_rss_vote_state_fields_").await;
 
-    // check if the base query works
-    let base_query_sdk = cfg
-        .setup_api("contested_resource_vote_states_fields_base_query")
-        .await;
-    let result =
-        ContenderWithSerializedDocument::fetch_many(&base_query_sdk, base_query.clone()).await;
-    assert!(
-        result.is_ok_and(|v| !v.contenders.is_empty()),
-        "base query should return some results"
-    );
+    tracing::debug!(test_case_id, ?query, "Executing test case query");
 
-    let mut failures: Vec<(&'static str, String)> = Default::default();
-
-    for test_case in test_cases {
-        tracing::debug!("Running test case: {}", test_case.name);
-        // create new sdk to ensure that test cases don't interfere with each other
-        let sdk = cfg
-            .setup_api(&format!(
-                "contested_resources_vote_states_fields_{}",
-                test_case.name
-            ))
-            .await;
-
-        let mut query = base_query.clone();
-        (test_case.query_mut_fn)(&mut query);
-
-        let result = ContenderWithSerializedDocument::fetch_many(&sdk, query).await;
-        match test_case.expect {
-            Ok(expected) if result.is_ok() => {
-                let result_string = format!("{:?}", result.as_ref().expect("result"));
-                if !result_string.contains(expected) {
-                    failures.push((
-                        test_case.name,
-                        format!("expected: {:#?}\ngot: {:?}\n", expected, result),
-                    ));
-                }
-            }
-            Err(expected) if result.is_err() => {
-                let result = result.expect_err("error");
-                if !result.to_string().contains(expected) {
-                    failures.push((
-                        test_case.name,
-                        format!("expected: {:#?}\ngot {:?}\n", expected, result),
-                    ));
-                }
-            }
-            expected => {
-                failures.push((
-                    test_case.name,
-                    format!("expected: {:#?}\ngot: {:?}\n", expected, result),
-                ));
+    let result = ContenderWithSerializedDocument::fetch_many(&sdk, query).await;
+    tracing::debug!(?result, "Result of test case");
+    match expect {
+        Ok(expected) if result.is_ok() => {
+            let result_string = format!("{:?}", result.as_ref().expect("result"));
+            if !result_string.contains(expected) {
+                Err(format!("expected: {:#?}\ngot: {:?}\n", expected, result))
+            } else {
+                Ok(())
             }
         }
-    }
-    if !failures.is_empty() {
-        for failure in &failures {
-            tracing::error!(?failure, "Failed: {}", failure.0);
+        Err(expected) if result.is_err() => {
+            let result = result.expect_err("error");
+            if !result.to_string().contains(expected) {
+                Err(format!("expected: {:#?}\ngot {:?}\n", expected, result))
+            } else {
+                Ok(())
+            }
         }
-        let failed_cases = failures
-            .iter()
-            .map(|(name, _)| name.to_string())
-            .collect::<Vec<String>>()
-            .join("\n* ");
-
-        panic!(
-            "{} test cases failed:\n* {}\n\n{}\n",
-            failures.len(),
-            failed_cases,
-            failures
-                .iter()
-                .map(|(name, msg)| format!("===========================\n{}:\n\n{:?}", name, msg))
-                .collect::<Vec<String>>()
-                .join("\n")
-        );
+        expected => Err(format!("expected: {:#?}\ngot: {:?}\n", expected, result)),
     }
 }
