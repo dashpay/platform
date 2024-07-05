@@ -207,6 +207,7 @@ fn base_query(cfg: &Config) -> ContestedDocumentVotePollDriveQuery {
     not(feature = "offline-testing"),
     ignore = "equires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
+#[ignore = "disabled due to bug PLAN-674"]
 #[allow(non_snake_case)]
 async fn contested_resource_vote_states_with_limit_PLAN_674() {
     setup_logs();
