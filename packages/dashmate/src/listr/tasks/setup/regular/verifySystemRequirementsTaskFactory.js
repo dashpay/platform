@@ -105,12 +105,17 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
 
 {red ${warningsText}}
 
-    Dash Platform requires more resources than the current system provides. Evonode rewards are paid based on block production, and resource-limited nodes may not be able to produce blocks quickly enough to receive reward payments. Upgrading system resources is recommended before proceeding.
+    Dash Platform requires more resources than the current system provides.
+    Evonode rewards are paid based on block production, and resource-limited
+    nodes may not be able to produce blocks quickly enough to receive reward
+    payments. Upgrading system resources is recommended before proceeding.
+
+    {bold This server may not receive Dash Platform reward payments due to its resource limitations.}\n`;
 
             const proceed = await task.prompt({
               type: 'toggle',
               header,
-              message: 'This server may not receive Dash Platform reward payments due to its resource limitations. Are you sure you want to proceed?',
+              message: ' Are you sure you want to proceed?',
               enabled: 'Yes',
               disabled: 'No',
               initial: false,
