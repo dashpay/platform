@@ -5,3 +5,6 @@ node_modules
 
 # ignore generated code coverage output
 .nyc_output
+
+# Ultra runner build cache
+.ultra.cache.json

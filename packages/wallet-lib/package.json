@@ -18,6 +18,11 @@
     "test": "yarn run test:types && yarn run test:unit && yarn run test:integration && yarn run test:browsers",
     "prepublishOnly": "yarn run build:web"
   },
+  "ultra": {
+    "concurrent": [
+      "test"
+    ]
+  },
   "files": [
     "dist",
     "docs",

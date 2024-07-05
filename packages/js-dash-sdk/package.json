@@ -10,7 +10,7 @@
     "start:dev": "nodemon --exec 'yarn run build && yarn run test:unit'",
     "start:ts": "tsc -p tsconfig.build.json --watch",
     "build": "yarn run build:ts && webpack --stats-error-details",
-    "build:ts": "yarn tsc -p tsconfig.build.json",
+    "build:ts": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "yarn run test:types && yarn run test:unit && yarn run test:browsers",

@@ -3,3 +3,6 @@ clients/*/v*/python
 clients/*/v*/java
 
 node_modules
+
+# Ultra runner build cache
+.ultra.cache.json

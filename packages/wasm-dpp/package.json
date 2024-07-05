@@ -17,6 +17,12 @@
     "lint:fix": "eslint . --fix",
     "clean": "yarn exec scripts/clean.sh"
   },
+  "ultra": {
+    "concurrent": [
+      "test",
+      "lint"
+    ]
+  },
   "author": "Dash Core Team",
   "contributors": [
     {

@@ -2,3 +2,6 @@
 
 # do not track dependencies
 node_modules
+
+# Ultra runner build cache
+.ultra.cache.json
