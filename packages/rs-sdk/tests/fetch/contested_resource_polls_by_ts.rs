@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 ///
 /// 1. At least one vote poll exists
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -49,7 +49,7 @@ async fn vote_polls_by_ts_ok() {
 /// 1. At least 2 vote polls exist
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
 #[allow(non_snake_case)]
@@ -116,7 +116,7 @@ async fn vote_polls_by_ts_order_PLAN_661() {
 /// 1. At least 3 vote poll exists
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
 async fn vote_polls_by_ts_limit() {
