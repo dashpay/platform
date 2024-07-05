@@ -131,6 +131,9 @@ where
     let invalid_paid_tx_count = state_transitions_result.invalid_paid_count();
     let invalid_unpaid_tx_count = state_transitions_result.invalid_unpaid_count();
 
+    let storage_fees = state_transitions_result.aggregated_fees().storage_fee;
+    let processing_fees = state_transitions_result.aggregated_fees().processing_fee;
+
     let mut tx_results = Vec::new();
     let mut tx_records = Vec::new();
 
@@ -207,7 +210,9 @@ where
         valid_tx_count,
         delayed_tx_count,
         failed_tx_count,
-        "Prepared proposal with {} transition{} for height: {}, round: {} in {} ms",
+        storage_fees,
+        processing_fees,
+        "Prepared proposal with {} transition{} for height: {}, round: {}, storage_fees: {}, processing_fees: {} in {} ms",
         valid_tx_count + invalid_paid_tx_count,
         if valid_tx_count + invalid_paid_tx_count > 0 {
             "s"
@@ -216,6 +221,8 @@ where
         },
         request.height,
         request.round,
+        storage_fees,
+        processing_fees,
         elapsed_time_ms,
     );
 

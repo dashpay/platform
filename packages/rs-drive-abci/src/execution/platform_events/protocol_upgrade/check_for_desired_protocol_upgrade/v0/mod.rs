@@ -48,37 +48,21 @@ impl<C> Platform<C> {
             ));
         }
 
-        tracing::info!(
-            "{}",
-            format!(
-                "[ody] check_for_desired_protocol_upgrade: \
-        total_hpmns:{}\
-        required_upgraded_hpmns:{}\
-        current_votes:{}\
-        versions_passing_threshold:{}",
-                total_hpmns,
-                required_upgraded_hpmns,
-                votes_str,
-                versions_passing_threshold.len(),
-            )
+        tracing::trace!(
+            total_hpmns = total_hpmns,
+            required_upgraded_hpmns = required_upgraded_hpmns,
+            current_votes = votes_str,
+            versions_passing_threshold = versions_passing_threshold.len(),
+            "Check protocol upgrade: check_for_desired_protocol_upgrade: total_hpmns: {}, required_upgraded_hpmns: {}, current_votes: {}, versions_passing_threshold: {}",
+            total_hpmns,
+            required_upgraded_hpmns,
+            votes_str,
+            versions_passing_threshold.len()
         );
 
         if !versions_passing_threshold.is_empty() {
             // same as equals 1
             let next_version = versions_passing_threshold.remove(0);
-
-            // TODO: We stored next version here previously.
-            //  It was never used so we can temporary remove it from here and move it to Epoch trees in upcoming PR
-
-                tracing::info!(
-                "{}",
-                format!(
-                    "[ody] check_for_desired_protocol_upgrade: \
-            next_version:{}",
-                    next_version,
-                )
-            );
-
             Ok(Some(next_version))
         } else {
             Ok(None)

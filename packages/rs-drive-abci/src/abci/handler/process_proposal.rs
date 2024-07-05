@@ -220,6 +220,9 @@ where
     let invalid_unpaid_tx_count = state_transition_results.invalid_unpaid_count();
     let unexpected_execution_results = failed_tx_count + invalid_unpaid_tx_count;
 
+    let storage_fees = state_transition_results.aggregated_fees().storage_fee;
+    let processing_fees = state_transition_results.aggregated_fees().processing_fee;
+
     // Reject block if proposal contains failed or unpaid state transitions
     if unexpected_execution_results > 0 {
         let response = proto::ResponseProcessProposal {
@@ -275,10 +278,14 @@ where
         invalid_tx_count,
         valid_tx_count,
         elapsed_time_ms,
-        "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
+        storage_fees,
+        processing_fees,
+        "Processed proposal with {} transactions for height: {}, round: {}, storage_fees: {}, processing_fees: {} in {} ms",
         valid_tx_count + invalid_tx_count,
         request.height,
         request.round,
+        storage_fees,
+        processing_fees,
         elapsed_time_ms,
     );
 
