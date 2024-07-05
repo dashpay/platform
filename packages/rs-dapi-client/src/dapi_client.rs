@@ -22,7 +22,7 @@ pub enum DapiClientError<TE: Mockable> {
     /// The error happened on transport layer
     #[error("transport error with {1}: {0}")]
     Transport(
-        #[serde(with = "dapi_grpc::mock::serde_mockable")] TE,
+        #[cfg_attr(feature = "mocks", serde(with = "dapi_grpc::mock::serde_mockable"))] TE,
         Address,
     ),
     /// There are no valid DAPI addresses to use.
@@ -50,6 +50,8 @@ impl<TE: CanRetry + Mockable> CanRetry for DapiClientError<TE> {
         }
     }
 }
+
+#[cfg(feature = "mocks")]
 #[derive(serde::Serialize, serde::Deserialize)]
 struct TransportErrorData {
     transport_error: Vec<u8>,
@@ -60,10 +62,12 @@ struct TransportErrorData {
 ///
 /// We need to do manual serialization because of the generic type parameter which doesn't support serde derive.
 impl<TE: Mockable> Mockable for DapiClientError<TE> {
+    #[cfg(feature = "mocks")]
     fn mock_serialize(&self) -> Option<Vec<u8>> {
         Some(serde_json::to_vec(self).expect("serialize DAPI client error"))
     }
 
+    #[cfg(feature = "mocks")]
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
         Some(serde_json::from_slice(data).expect("deserialize DAPI client error"))
     }
