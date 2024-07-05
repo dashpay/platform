@@ -1168,7 +1168,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "3beaf287fb5fb712715e688ef3cf642e3e4042270907ebd022050b06af0cb433".to_string()
+            "7b1b0c747d78f45bb72c124a49009aaf614547aabc7c3b1c4321d6aa14850f83".to_string()
         )
     }
 
@@ -1878,7 +1878,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "10fbe38850d752b491305b2587468788acbd6dd130272c5a8844d0da05e3a9cf".to_string()
+            "97b602adc5a3e2f83ba41ea04bc12e70866988edafc32f61b34272ab2f5f257f".to_string()
         )
     }
 
@@ -2007,7 +2007,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "9ed86b1ed5d0f7a981cb0ff2f3943603a095a031c463b3389bce8a6f60e2b21e".to_string()
+            "c3226a194c99f32fa8bffeaa3c45d57f2dc7825867b1046d3ba797106f035ded".to_string()
         )
     }
 
