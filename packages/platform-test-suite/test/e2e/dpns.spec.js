@@ -218,11 +218,13 @@ describe('DPNS', () => {
 
       delete rawDocument.$createdAt;
       delete rawDocument.$updatedAt;
+      delete rawDocument.$transferredAt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
 
       delete rawRegisteredDomain.$createdAt;
       delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$transferredAt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
@@ -234,11 +236,13 @@ describe('DPNS', () => {
 
       delete rawDocument.$createdAt;
       delete rawDocument.$updatedAt;
+      delete rawDocument.$transferredAt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
 
       delete rawRegisteredDomain.$createdAt;
       delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$transferredAt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
@@ -253,11 +257,13 @@ describe('DPNS', () => {
 
       delete rawDocument.$createdAt;
       delete rawDocument.$updatedAt;
+      delete rawDocument.$transferredAt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
 
       delete rawRegisteredDomain.$createdAt;
       delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$transferredAt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
