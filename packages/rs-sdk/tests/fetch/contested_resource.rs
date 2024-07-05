@@ -28,7 +28,7 @@ use std::panic::catch_unwind;
 /// 1. At least one contested resource (DPNS name) exists
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
 async fn test_contested_resources_ok() {
@@ -65,7 +65,7 @@ fn base_query(cfg: &Config) -> VotePollsByDocumentTypeQuery {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
 /// Test [ContestedResource] start index (`start_at_value`)
@@ -145,7 +145,7 @@ async fn contested_resources_start_at_value() {
 /// 1. At least 3 contested resources (eg. different DPNS names) exist
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
 #[allow(non_snake_case)]
@@ -285,7 +285,7 @@ async fn contested_resources_limit_PLAN_656() {
 }, Ok(format!(r#"ContestedResources([Value(Text({}))])"#, TEST_DPNS_NAME)); "exact match query returns one object PLAN-656")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
 async fn contested_resources_fields(

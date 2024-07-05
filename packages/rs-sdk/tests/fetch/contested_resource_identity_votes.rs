@@ -70,7 +70,7 @@ async fn contested_resource_identity_votes_not_found() {
 /// Now, vote should be casted and you can run this test.
 ///   
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see docs of contested_resource_identity_votes_ok()"
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

@@ -129,7 +129,7 @@ async fn test_data_contracts_2_nx() {
 ///    ```
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "This test requires special procedure to regenerate test vectors"
 )]
 async fn test_data_contract_history_read() {
