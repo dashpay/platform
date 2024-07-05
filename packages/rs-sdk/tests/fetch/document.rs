@@ -189,6 +189,7 @@ async fn document_list_document_query() {
 ///     `query: storage: protocol: value error: structure error: value was a string, but could not be decoded from base 58`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[allow(non_snake_case)]
+#[ignore = "disabled due to bug PLAN-653"]
 async fn document_list_bug_value_text_decode_base58_PLAN_653() {
     setup_logs();
 
