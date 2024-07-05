@@ -5,11 +5,30 @@
 //! /// ## Example
 ///
 /// ```rust
+/// struct SomeObject {
+///    field: u32,
+/// }
+///
+/// impl dapi_grpc::mock::Mockable for SomeObject {
+///   fn mock_serialize(&self) -> Option<Vec<u8>> {
+///       Some(self.field.to_be_bytes().to_vec())
+///   }
+///
+///   fn mock_deserialize(bytes: &[u8]) -> Option<Self> {
+///      if bytes.len() != 4 {
+///         return None;
+///      }
+///
+///      Some(SomeObject {   
+///         field: u32::from_be_bytes(bytes.try_into().expect("4 bytes")),
+///      })
+///   }
+/// }
 ///
 /// #[derive(serde::Serialize,serde::Deserialize)]
 /// struct TestStruct {
 ///     #[serde(with="dapi_grpc::mock::serde_mockable")]
-///     field: u32,
+///     field: SomeObject,
 /// }
 /// ```
 use super::Mockable;
