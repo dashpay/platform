@@ -1,5 +1,9 @@
 {
   "domain": {
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 1,
+    "tradeMode": 1,
     "type": "object",
     "documentsMutable": false,
     "canBeDeleted": false,
@@ -98,7 +102,6 @@
             "contentMediaType": "application/x.dash.dpp.identifier",
             "description": "Identity ID to be used to create the primary name the Identity",
             "$comment": "Must be equal to the document owner"
-
           },
           "dashAliasIdentityId": {
             "type": "array",
@@ -134,6 +137,9 @@
       }
     },
     "required": [
+      "$createdAt",
+      "$updatedAt",
+      "$transferredAt",
       "label",
       "normalizedLabel",
       "normalizedParentDomainName",
@@ -145,6 +151,8 @@
     "$comment": "In order to register a domain you need to create a preorder. The preorder step is needed to prevent man-in-the-middle attacks. normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035. Domain documents are immutable: modification and deletion are restricted"
   },
   "preorder": {
+    "documentsMutable": false,
+    "canBeDeleted": true,
     "type": "object",
     "documentsMutable": false,
     "canBeDeleted": true,

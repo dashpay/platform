@@ -27,6 +27,7 @@
       "avatarUrl": {
         "type": "string",
         "format": "uri",
+        "minLength": 1,
         "maxLength": 2048,
         "position": 0
       },
@@ -48,14 +49,22 @@
       },
       "publicMessage": {
         "type": "string",
+        "minLength": 1,
         "maxLength": 140,
         "position": 3
       },
       "displayName": {
         "type": "string",
+        "minLength": 1,
         "maxLength": 25,
         "position": 4
       }
+    },
+    "minProperties": 1,
+    "dependentRequired": {
+      "avatarUrl": ["avatarHash", "avatarFingerprint"],
+      "avatarHash": ["avatarUrl", "avatarFingerprint"],
+      "avatarFingerprint": ["avatarUrl", "avatarHash"]
     },
     "required": [
       "$createdAt",
@@ -230,15 +239,11 @@
         "minItems": 38,
         "maxItems": 102,
         "position": 6
-      },
-      "coreHeightCreatedAt": {
-        "type": "integer",
-        "minimum": 1,
-        "position": 7
       }
     },
     "required": [
       "$createdAt",
+      "$createdAtCoreBlockHeight",
       "toUserId",
       "encryptedPublicKey",
       "senderKeyIndex",

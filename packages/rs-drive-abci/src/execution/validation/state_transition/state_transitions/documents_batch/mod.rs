@@ -1416,7 +1416,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -2000,7 +1999,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -2163,7 +2161,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -2258,7 +2255,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 9951520);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 9945520);
         }
 
         #[test]
@@ -2307,7 +2304,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
