@@ -9,7 +9,7 @@ FULL_PATH=$(realpath $0)
 DIR_PATH=$(dirname $FULL_PATH)
 ROOT_PATH=$(dirname $DIR_PATH)
 
-DASHMATE="$PATH_TO_PROJECT_ROOT"/scripts/dashmate
+DASHMATE="$ROOT_PATH"/scripts/dashmate
 
 $DASHMATE setup local --verbose \
                                   --debug-logs \

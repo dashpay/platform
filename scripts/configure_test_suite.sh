@@ -25,7 +25,7 @@ echo "Mint 50 Dash to the first faucet"
 
 MINT_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/mint.log
 
-$DASHMATE config wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PATH}"
+$DASHMATE wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PATH}"
 FAUCET_1_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
 FAUCET_1_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
 
