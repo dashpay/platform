@@ -15,14 +15,15 @@ use platform_version::version::PlatformVersion;
 
 /// The votes tree structure looks like this
 ///
-///     Votes
+/// ```text
+/// Votes
 ///
-///     |- End date Queries [key: "e"]
-///     |- Decisions [key: "d"]
-///     |- Contested Resource [key: "c"]
-///        |- Active polls [key: "p"]
-///        |- Identifier Votes Query [key: "i"]
-///
+/// |- End date Queries [key: "e"]
+/// |- Decisions [key: "d"]
+/// |- Contested Resource [key: "c"]
+///    |- Active polls [key: "p"]
+///    |- Identifier Votes Query [key: "i"]
+/// ```
 ///
 
 /// A subtree made for polls to the network that represent decisions.

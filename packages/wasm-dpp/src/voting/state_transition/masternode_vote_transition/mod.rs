@@ -18,7 +18,7 @@ use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
-use js_sys::{Array, Object, Reflect, Uint8Array};
+use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
