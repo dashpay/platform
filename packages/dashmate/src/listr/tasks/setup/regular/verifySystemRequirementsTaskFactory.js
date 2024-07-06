@@ -112,17 +112,23 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
 
     {bold This server may not receive Dash Platform reward payments due to its resource limitations.}\n`;
 
-            const proceed = await task.prompt({
-              type: 'toggle',
-              header,
-              message: ' Are you sure you want to proceed?',
-              enabled: 'Yes',
-              disabled: 'No',
-              initial: false,
-            });
+            // This option is used for tests
+            if (ctx.acceptUnmetSystemRequirements) {
+              // eslint-disable-next-line no-console
+              console.warn(header);
+            } else {
+              const proceed = await task.prompt({
+                type: 'toggle',
+                header,
+                message: ' Are you sure you want to proceed?',
+                enabled: 'Yes',
+                disabled: 'No',
+                initial: false,
+              });
 
-            if (!proceed) {
-              throw new Error('System requirements have not been met');
+              if (!proceed) {
+                throw new Error('System requirements have not been met');
+              }
             }
           }
         },
