@@ -414,7 +414,7 @@ mod tests {
 
         assert!(!domain.documents_mutable());
         assert!(!domain.documents_can_be_deleted());
-        assert!(!domain.documents_transferable().is_transferable());
+        assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
 
