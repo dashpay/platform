@@ -109,13 +109,6 @@
         "properties": {
           "$ref": "#/$defs/documentProperties"
         },
-        "dependentSchemas": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": {
-            "$ref": "#/$defs/documentSchema"
-          }
-        },
         "dependentRequired": {
           "type": "object",
           "minProperties": 1,

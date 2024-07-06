@@ -214,15 +214,37 @@ describe('DPNS', () => {
 
       expect(documents).to.have.lengthOf(1);
 
-      const [document] = documents;
+      const rawDocument = documents[0].toObject();
 
-      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
+      delete rawDocument.$createdAt;
+      delete rawDocument.$updatedAt;
+      delete rawDocument.$transferredAt;
+
+      const rawRegisteredDomain = registeredDomain.toObject();
+
+      delete rawRegisteredDomain.$createdAt;
+      delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$transferredAt;
+
+      expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
 
     it('should be able to resolve domain by it\'s name', async () => {
       const document = await client.platform.names.resolve(`${secondLevelDomain}0.${topLevelDomain}`);
 
-      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
+      const rawDocument = document.toObject();
+
+      delete rawDocument.$createdAt;
+      delete rawDocument.$updatedAt;
+      delete rawDocument.$transferredAt;
+
+      const rawRegisteredDomain = registeredDomain.toObject();
+
+      delete rawRegisteredDomain.$createdAt;
+      delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$transferredAt;
+
+      expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
 
     it('should be able to resolve domain by it\'s record', async () => {
@@ -231,7 +253,19 @@ describe('DPNS', () => {
         registeredDomain.getData().records.dashUniqueIdentityId,
       );
 
-      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
+      const rawDocument = document.toObject();
+
+      delete rawDocument.$createdAt;
+      delete rawDocument.$updatedAt;
+      delete rawDocument.$transferredAt;
+
+      const rawRegisteredDomain = registeredDomain.toObject();
+
+      delete rawRegisteredDomain.$createdAt;
+      delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$transferredAt;
+
+      expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
 
     it('should not be able to update domain', async () => {

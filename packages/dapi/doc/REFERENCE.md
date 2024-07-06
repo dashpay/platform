@@ -9,7 +9,6 @@
     - [generate](#generate)
     - [getBestBlockHash](#getbestblockhash)
     - [getBlockHash](#getblockhash)
-    - [getMnListDiff](#getmnlistdiff)
 
 ## Layer 1 endpoints
 
@@ -24,6 +23,20 @@ Returns best block hash (hash of the chaintip)
 | name         | type             | description                            |
 |--------------|------------------|----------------------------------------|
 | blockHash  | promise (string) | hash of chaintip                 |
+
+---
+
+### getBestBlockHeight
+
+Returns best block height (height of the chaintip)
+
+*takes no arguments*
+
+##### Response
+
+| name   | type             | description        |
+|--------|------------------|--------------------|
+| height | promise (string) | height of chaintip |
 
 ---
 
@@ -42,21 +55,3 @@ Returns block hash for a given height.
 | name       | type             | description                                 |
 |------------|------------------|---------------------------------------------|
 | blockHash  | promise (string) | promise containing a string of a block hash |
-
----
-
-### getMnListDiff
-
-*needs definition*
-
-##### Params
-
-| name    | type   | description                            |
-|---------|--------|----------------------------------------|
-| packet  | string | ST Packet object serialized using CBOR |
-
-##### Response
-
-| name    | type   | description                            |
-|---------|--------|----------------------------------------|
-| packet  | string | ST Packet object serialized using CBOR |

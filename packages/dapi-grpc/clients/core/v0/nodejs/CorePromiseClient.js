@@ -30,6 +30,8 @@ const {
             GetMasternodeStatusResponse: PBJSGetMasternodeStatusResponse,
             GetBlockRequest: PBJSGetBlockRequest,
             GetBlockResponse: PBJSGetBlockResponse,
+            GetBestBlockHeightRequest: PBJSGetBestBlockHeightRequest,
+            GetBestBlockHeightResponse: PBJSGetBestBlockHeightResponse,
             BroadcastTransactionRequest: PBJSBroadcastTransactionRequest,
             BroadcastTransactionResponse: PBJSBroadcastTransactionResponse,
             GetTransactionRequest: PBJSGetTransactionRequest,
@@ -40,6 +42,8 @@ const {
             GetEstimatedTransactionFeeResponse: PBJSGetEstimatedTransactionFeeResponse,
             TransactionsWithProofsRequest: PBJSTransactionsWithProofsRequest,
             TransactionsWithProofsResponse: PBJSTransactionsWithProofsResponse,
+            MasternodeListRequest: PBJSMasternodeListRequest,
+            MasternodeListResponse: PBJSMasternodeListResponse,
           },
         },
       },
@@ -51,11 +55,13 @@ const {
   GetBlockchainStatusResponse: ProtocGetBlockchainStatusResponse,
   GetMasternodeStatusResponse: ProtocGetMasternodeStatusResponse,
   GetBlockResponse: ProtocGetBlockResponse,
+  GetBestBlockHeightResponse: ProtocGetBestBlockHeightResponse,
   BroadcastTransactionResponse: ProtocBroadcastTransactionResponse,
   GetTransactionResponse: ProtocGetTransactionResponse,
   BlockHeadersWithChainLocksResponse: ProtocBlockHeadersWithChainLocksResponse,
   GetEstimatedTransactionFeeResponse: ProtocGetEstimatedTransactionFeeResponse,
   TransactionsWithProofsResponse: ProtocTransactionsWithProofsResponse,
+  MasternodeListResponse: ProtocMasternodeListResponse,
 } = require('./core_protoc');
 
 const getCoreDefinition = require('../../../../lib/getCoreDefinition');
@@ -92,6 +98,10 @@ class CorePromiseClient {
 
     this.client.getBlock = promisify(
       this.client.getBlock.bind(this.client),
+    );
+
+    this.client.getBestBlockHeight = promisify(
+      this.client.getBestBlockHeight.bind(this.client),
     );
 
     this.client.broadcastTransaction = promisify(
@@ -161,6 +171,37 @@ class CorePromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetBlockRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetBestBlockHeightRequest} getBestBlockHeightRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetBestBlockHeightResponse>}
+   */
+  getBestBlockHeight(getBestBlockHeightRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getBestBlockHeight(
+      getBestBlockHeightRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetBestBlockHeightResponse,
+              PBJSGetBestBlockHeightResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetBestBlockHeightRequest,
             ),
           ),
         ],
@@ -353,6 +394,38 @@ class CorePromiseClient {
             ),
             protobufToJsonFactory(
               PBJSTransactionsWithProofsRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {MasternodeListRequest} masternodeListRequest The request proto
+   * @param {?Object<string, string>} metadata User defined call metadata
+   * @param {CallOptions} [options={}]
+   * @return {!grpc.web.ClientReadableStream<!MasternodeListResponse>|undefined}
+   *     The XHR Node Readable Stream
+   */
+  subscribeToMasternodeList(masternodeListRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.subscribeToMasternodeList(
+      masternodeListRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocMasternodeListResponse,
+              PBJSMasternodeListResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSMasternodeListRequest,
             ),
           ),
         ],

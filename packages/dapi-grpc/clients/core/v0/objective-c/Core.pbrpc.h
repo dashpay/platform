@@ -18,6 +18,8 @@
 @class BlockHeadersWithChainLocksResponse;
 @class BroadcastTransactionRequest;
 @class BroadcastTransactionResponse;
+@class GetBestBlockHeightRequest;
+@class GetBestBlockHeightResponse;
 @class GetBlockRequest;
 @class GetBlockResponse;
 @class GetBlockchainStatusRequest;
@@ -28,6 +30,8 @@
 @class GetMasternodeStatusResponse;
 @class GetTransactionRequest;
 @class GetTransactionResponse;
+@class MasternodeListRequest;
+@class MasternodeListResponse;
 @class TransactionsWithProofsRequest;
 @class TransactionsWithProofsResponse;
 
@@ -57,6 +61,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getBlockWithMessage:(GetBlockRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getBestBlockHeight(GetBestBlockHeightRequest) returns (GetBestBlockHeightResponse)
+
+- (GRPCUnaryProtoCall *)getBestBlockHeightWithMessage:(GetBestBlockHeightRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)
 
 - (GRPCUnaryProtoCall *)broadcastTransactionWithMessage:(BroadcastTransactionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
@@ -76,6 +84,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark subscribeToTransactionsWithProofs(TransactionsWithProofsRequest) returns (stream TransactionsWithProofsResponse)
 
 - (GRPCUnaryProtoCall *)subscribeToTransactionsWithProofsWithMessage:(TransactionsWithProofsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark subscribeToMasternodeList(MasternodeListRequest) returns (stream MasternodeListResponse)
+
+- (GRPCUnaryProtoCall *)subscribeToMasternodeListWithMessage:(MasternodeListRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -104,6 +116,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getBlockWithRequest:(GetBlockRequest *)request handler:(void(^)(GetBlockResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetBlockWithRequest:(GetBlockRequest *)request handler:(void(^)(GetBlockResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getBestBlockHeight(GetBestBlockHeightRequest) returns (GetBestBlockHeightResponse)
+
+- (void)getBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request handler:(void(^)(GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request handler:(void(^)(GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)
@@ -139,6 +158,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)subscribeToTransactionsWithProofsWithRequest:(TransactionsWithProofsRequest *)request eventHandler:(void(^)(BOOL done, TransactionsWithProofsResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 - (GRPCProtoCall *)RPCTosubscribeToTransactionsWithProofsWithRequest:(TransactionsWithProofsRequest *)request eventHandler:(void(^)(BOOL done, TransactionsWithProofsResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+
+
+#pragma mark subscribeToMasternodeList(MasternodeListRequest) returns (stream MasternodeListResponse)
+
+- (void)subscribeToMasternodeListWithRequest:(MasternodeListRequest *)request eventHandler:(void(^)(BOOL done, MasternodeListResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+
+- (GRPCProtoCall *)RPCTosubscribeToMasternodeListWithRequest:(MasternodeListRequest *)request eventHandler:(void(^)(BOOL done, MasternodeListResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 
 @end

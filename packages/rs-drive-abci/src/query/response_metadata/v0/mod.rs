@@ -28,7 +28,7 @@ impl<C> Platform<C> {
         Proof {
             grovedb_proof: proof,
             quorum_hash: platform_state.last_committed_quorum_hash().to_vec(),
-            quorum_type: self.config.validator_set_quorum_type() as u32,
+            quorum_type: self.config.validator_set.quorum_type as u32,
             block_id_hash: platform_state.last_committed_block_id_hash().to_vec(),
             signature: platform_state.last_committed_block_signature().to_vec(),
             round: platform_state.last_committed_block_round(),

@@ -52,12 +52,11 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use crate::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig};
     use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
@@ -174,7 +173,10 @@ mod tests {
             .data_contract_owned();
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
+            validator_set: ValidatorSetConfig {
+                quorum_size: 10,
+                ..Default::default()
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_rotation_block_count: 25,
