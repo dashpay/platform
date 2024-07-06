@@ -8,10 +8,10 @@ use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
+use dapi_grpc::tonic::transport::Uri;
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
-use http::Uri;
 
 /// Platform Client using gRPC transport.
 pub type PlatformGrpcClient = PlatformClient<Channel>;

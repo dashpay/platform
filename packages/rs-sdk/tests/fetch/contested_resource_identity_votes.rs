@@ -2,7 +2,11 @@
 
 use crate::fetch::{common::setup_logs, config::Config};
 use dash_sdk::platform::FetchMany;
-use dpp::{identifier::Identifier, voting::votes::resource_vote::ResourceVote};
+use dpp::{
+    dashcore::{hashes::Hash, ProTxHash},
+    identifier::Identifier,
+    voting::votes::resource_vote::ResourceVote,
+};
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 
 /// When we request votes for a non-existing identity, we should get no votes.
@@ -70,7 +74,7 @@ async fn contested_resource_identity_votes_not_found() {
 /// Now, vote should be casted and you can run this test.
 ///   
 #[cfg_attr(
-    feature = "network-testing",
+    not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see docs of contested_resource_identity_votes_ok()"
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -81,9 +85,15 @@ async fn contested_resource_identity_votes_ok() {
     let sdk = cfg.setup_api("contested_resource_identity_votes_ok").await;
 
     // Given some existing proTxHash of some Validator that alreday voted
-    let protx = cfg.existing_protxhash().expect(
-        "contested_resource_identity_votes_ok requires existing_protxhash to be set in config",
-    );
+    // Note: we hardcode default protxhash for offline testing in github actions
+    let protx = cfg.existing_protxhash().unwrap_or_else(|_| {
+        ProTxHash::from_byte_array(
+            hex::decode("2f01ab3b0a273b1fc436477cdb051ba8f7c5b699d552579ae1a947dae60b85d7")
+                .expect("valid hex-encoded protx hash")
+                .try_into()
+                .expect("valid protx hash length"),
+        )
+    });
 
     // When I query for votes given by this identity
     let votes = ResourceVote::fetch_many(&sdk, protx)

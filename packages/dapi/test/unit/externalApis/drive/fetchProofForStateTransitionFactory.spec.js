@@ -86,6 +86,7 @@ describe('fetchProofForStateTransition', () => {
         getDataContractId: this.sinon.stub().returns(await generateRandomIdentifierAsync()),
         getType: this.sinon.stub().returns('niceDocument'),
         getId: this.sinon.stub().returns(await generateRandomIdentifierAsync()),
+        hasPrefundedBalance: this.sinon.stub().returns(true),
       },
     ]);
 
