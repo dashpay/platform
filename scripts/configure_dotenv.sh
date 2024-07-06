@@ -24,7 +24,7 @@ cp "${DAPI_PATH}"/.env.example "${DAPI_PATH}"/.env
 FAUCET_ADDRESS=$(grep -m 1 "Address:" "${LOGS_PATH}"/mint.log | awk '{printf $3}')
 FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${LOGS_PATH}"/mint.log | awk '{printf $4}')
 # TODO This will be removed from dashmate. Please use hardcoded ID from contract crates
-DPNS_CONTRACT_ID=$($DASHMATE config get platform.dpns.contract.id)
+DPNS_CONTRACT_ID=$($DASHMATE config get --config local platform.dpns.contract.id)
 
 SDK_ENV_FILE_PATH=${SDK_PATH}/.env
 rm -f "${SDK_ENV_FILE_PATH}"
@@ -54,10 +54,10 @@ NETWORK=regtest" >>"${WALLET_LIB_ENV_FILE_PATH}"
 
 # DASH_SDK tests config
 
-CORE_RPC_PORT=$($DASHMATE config get core.rpc.port)
-CORE_RPC_USER=$($DASHMATE config get core.rpc.user)
-CORE_RPC_PASSWORD=$($DASHMATE config get core.rpc.password)
-PLATFORM_RPC_PORT=$($DASHMATE config get platform.gateway.listeners.dapiAndDrive.port)
+CORE_RPC_PORT=$($DASHMATE config get --config local_seed core.rpc.port)
+CORE_RPC_USER=$($DASHMATE config get --config local_seed core.rpc.user)
+CORE_RPC_PASSWORD=$($DASHMATE config get --config local_seed core.rpc.password)
+PLATFORM_RPC_PORT=$($DASHMATE config get --config local_seed platform.gateway.listeners.dapiAndDrive.port)
 
 cat <<EOF >"${DASH_SDK_PATH}"/tests/.env
 # Configuration of dash-sdk network tests
