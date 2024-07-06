@@ -51,7 +51,7 @@ impl AsRef<Options> for Options {
 ///
 /// ```
 /// use serde_json::json;
-/// use json_schema_compatibility_validator::validate_schemas_compatibility;
+/// use json_schema_compatibility_validator::{validate_schemas_compatibility, Options};
 ///
 /// let original_schema = json!({
 ///     "type": "object",
@@ -72,7 +72,7 @@ impl AsRef<Options> for Options {
 ///     "required": ["name"]
 /// });
 ///
-/// let result = validate_schemas_compatibility(&original_schema, &new_schema, Default::default())
+/// let result = validate_schemas_compatibility(&original_schema, &new_schema, Options::default())
 ///  .expect("compatibility validation failed");
 ///
 /// assert!(result.is_compatible());
