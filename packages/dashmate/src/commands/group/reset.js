@@ -59,7 +59,7 @@ export default class GroupResetCommand extends GroupBaseCommand {
               task: () => resetNodeTask(config),
             }));
 
-            return new Listr(resetTasks);
+            return new Listr(resetTasks, { concurrent: true });
           },
         },
         {
