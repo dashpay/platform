@@ -54,14 +54,11 @@ impl<C> Platform<C> {
         let unpaid_epoch_block_count = unpaid_epoch.block_count()?;
 
         tracing::trace!(
-            block_count = unpaid_epoch_block_count,
-            unpaid_epoch_index = unpaid_epoch_tree.index,
-            storage_and_processing_fees = storage_and_processing_fees,
-            core_block_rewards = core_block_rewards,
-            remaining_payouts = remaining_payouts,
-            "Proposers reward shares. block_count: {}, unpaid_epoch_index: {}, storage_and_processing_fees: {}, core_block_rewards: {}, remaining_payouts: {}",
+            unpaid_block_count = unpaid_epoch_block_count,
+            unpaid_epoch_index = unpaid_epoch.epoch_index(),
+            "Unpaid epoch pool details. unpaid_block_count: {}, unpaid_epoch_index: {}, storage_and_processing_fees: {}, core_block_rewards: {}, remaining_payouts: {}",
             unpaid_epoch_block_count,
-            unpaid_epoch_tree.index,
+            unpaid_epoch.epoch_index(),
             storage_and_processing_fees,
             core_block_rewards,
             remaining_payouts

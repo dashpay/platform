@@ -53,11 +53,9 @@ impl<C> Platform<C> {
             required_upgraded_hpmns = required_upgraded_hpmns,
             current_votes = votes_str,
             versions_passing_threshold = versions_passing_threshold.len(),
-            "Check protocol upgrade: check_for_desired_protocol_upgrade: total_hpmns: {}, required_upgraded_hpmns: {}, current_votes: {}, versions_passing_threshold: {}",
-            total_hpmns,
-            required_upgraded_hpmns,
-            votes_str,
-            versions_passing_threshold.len()
+            "Protocol version voting is finished. {} versions passing the threshold: {:?}",
+            versions_passing_threshold.len(),
+            versions_passing_threshold
         );
 
         if !versions_passing_threshold.is_empty() {

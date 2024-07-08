@@ -280,12 +280,10 @@ where
         elapsed_time_ms,
         storage_fees,
         processing_fees,
-        "Processed proposal with {} transactions for height: {}, round: {}, storage_fees: {}, processing_fees: {} in {} ms",
+        "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_tx_count,
         request.height,
         request.round,
-        storage_fees,
-        processing_fees,
         elapsed_time_ms,
     );
 

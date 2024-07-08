@@ -212,7 +212,7 @@ where
         failed_tx_count,
         storage_fees,
         processing_fees,
-        "Prepared proposal with {} transition{} for height: {}, round: {}, storage_fees: {}, processing_fees: {} in {} ms",
+        "Prepared proposal with {} transition{} for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_paid_tx_count,
         if valid_tx_count + invalid_paid_tx_count > 0 {
             "s"
@@ -221,8 +221,6 @@ where
         },
         request.height,
         request.round,
-        storage_fees,
-        processing_fees,
         elapsed_time_ms,
     );
 
