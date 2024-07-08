@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "1.0.0-pr.1883.2"
+version = "1.0.0-dev.16"
 edition = "2021"
 rust-version = "1.76"
 authors = [
@@ -38,7 +38,6 @@ itertools = { version = "0.12.1" }
 jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "feat-unevaluated-properties", default-features = false, features = [
   "draft202012",
 ], optional = true }
-json-schema-faker = { git = "https://github.com/fominok/json-schema-faker-rs", rev = "2dd1cf7", optional = true }
 lazy_static = { version = "1.4" }
 log = { version = "0.4.6" }
 num_enum = "0.5.7"
@@ -266,6 +265,3 @@ extended-document = [
 
 factories = []
 client = ["factories", "state-transitions"]
-
-# Faker feature requires `npm` and `javy` to be installed at build time
-documents-faker = ["dep:json-schema-faker", "document-serde-conversion"]

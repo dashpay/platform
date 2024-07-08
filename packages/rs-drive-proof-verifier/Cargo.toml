@@ -1,6 +1,6 @@
 [package]
 name = "drive-proof-verifier"
-version = "1.0.0-pr.1883.2"
+version = "1.0.0-dev.16"
 edition = "2021"
 rust-version = "1.76"
 
@@ -18,9 +18,11 @@ dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
-dpp = { path = "../rs-dpp", features = ["bls-signatures"], default-features = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.12", features = [
-  "crypto"
+dpp = { path = "../rs-dpp", features = [
+  "bls-signatures",
+], default-features = false }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.0.0", tag = "v1.0.0", features = [
+  "crypto",
 ], default-features = false }
 tracing = { version = "0.1.37" }
 serde = { version = "1.0.197", default-features = false, optional = true }

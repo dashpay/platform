@@ -48,15 +48,6 @@ export default function updateNodeFactory(getServiceList, docker) {
                   } else if (status.status.includes('Downloaded newer image for')) {
                     updated = 'updated';
                   }
-                } else {
-                  if (process.env.DEBUG) {
-                    // eslint-disable-next-line no-console
-                    console.error('Failed to read docker json data, status not found');
-                  }
-
-                  resolve({
-                    name, title, image, updated: 'error',
-                  });
                 }
               });
               stream.on('error', () => {

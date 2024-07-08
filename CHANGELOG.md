@@ -1,3 +1,53 @@
+## [1.0.0-dev.16](https://github.com/dashpay/platform/compare/v1.0.0-dev.15...v1.0.0-dev.16) (2024-06-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** verify instant lock signatures with Drive (#1875)
+* **dapi:** replace `getMnListDiff` with a streaming endpoint (#1859)
+* **dapi:** disable unnecessary for v1 endpoints (#1857)
+* **sdk:** dapi-grpc generated files overwritten on conflicting features (#1854)
+
+### Features
+
+* **dapi:** introduce `getBestBlockHeight` endpoint ([#1863](https://github.com/dashpay/platform/issues/1863))
+* **dpp:** random documents based on JSON schema ([#1710](https://github.com/dashpay/platform/issues/1710))
+* make data contract factory and json schema validator public
+
+
+### Bug Fixes
+
+* **dashmate:** background SSL renewal stuck on error ([#1897](https://github.com/dashpay/platform/issues/1897))
+* **dashmate:** failed to read docker data on update ([#1903](https://github.com/dashpay/platform/issues/1903))
+* **sdk:** dapi-grpc generated files overwritten on conflicting features ([#1854](https://github.com/dashpay/platform/issues/1854))
+* **sdk:** invalid error returned when identity create fails ([#1856](https://github.com/dashpay/platform/issues/1856))
+* security vulnerabilities in NPM deps ([#1860](https://github.com/dashpay/platform/issues/1860))
+* validator field didn't need to be public for JsonSchemaValidator
+
+
+### Performance Improvements
+
+* **dapi:** cache `getBestBlockHash` endpoint ([#1867](https://github.com/dashpay/platform/issues/1867))
+* **dapi:** cache `getBlockchainStatus` endpoint ([#1866](https://github.com/dashpay/platform/issues/1866))
+* **dapi:** get many transactions at once ([#1858](https://github.com/dashpay/platform/issues/1858))
+* **dapi:** replace `getMnListDiff` with a streaming endpoint ([#1859](https://github.com/dashpay/platform/issues/1859))
+* **dapi:** use cached core height in streaming endpoints ([#1865](https://github.com/dashpay/platform/issues/1865))
+* **drive:** verify instant lock signatures with Drive ([#1875](https://github.com/dashpay/platform/issues/1875))
+
+
+### Miscellaneous Chores
+
+* **dapi:** disable unnecessary for v1 endpoints ([#1857](https://github.com/dashpay/platform/issues/1857))
+* mute NPM audit warnings ([#1879](https://github.com/dashpay/platform/issues/1879))
+* update Karma to recent version ([#1901](https://github.com/dashpay/platform/issues/1901))
+* update websocket client ([#1895](https://github.com/dashpay/platform/issues/1895))
+
+
+### Code Refactoring
+
+* **dpp:** change String and ByteArray DocumentPropertyType sizes to structs ([#1874](https://github.com/dashpay/platform/issues/1874))
+* **drive:** encapsulate chain lock validation quorum logic ([#1868](https://github.com/dashpay/platform/issues/1868))
+
 ## [1.0.0-dev.15](https://github.com/dashpay/platform/compare/v1.0.0-dev.14...v1.0.0-dev.15) (2024-05-22)
 
 
