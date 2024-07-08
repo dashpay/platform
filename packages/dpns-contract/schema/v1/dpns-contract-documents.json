@@ -1,12 +1,10 @@
 {
   "domain": {
-    "documentsMutable": true,
+    "documentsMutable": false,
     "canBeDeleted": true,
     "transferable": 1,
     "tradeMode": 1,
     "type": "object",
-    "documentsMutable": false,
-    "canBeDeleted": false,
     "indices": [
       {
         "name": "parentNameAndLabel",
@@ -154,8 +152,6 @@
     "documentsMutable": false,
     "canBeDeleted": true,
     "type": "object",
-    "documentsMutable": false,
-    "canBeDeleted": true,
     "indices": [
       {
         "name": "saltedHash",
