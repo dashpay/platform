@@ -72,7 +72,6 @@ impl<C> Platform<C> {
             core_block_rewards,
             total_payouts,
             "Pay {total_payouts} credits to {proposers_len} proposers for {} proposed blocks in epoch {}",
-            total_payouts,
             unpaid_epoch_block_count,
             unpaid_epoch.epoch_index(),
         );
