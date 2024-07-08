@@ -35,7 +35,6 @@ impl<C> Platform<C> {
             protocol_versions_counter.versions_passing_threshold(required_upgraded_hpmns);
 
         if versions_passing_threshold.len() > 1 {
-            drop(protocol_versions_counter);
             return Err(Error::Execution(
                 ExecutionError::ProtocolUpgradeIncoherence(
                     "only at most 1 version should be able to pass the threshold to upgrade",
@@ -52,7 +51,6 @@ impl<C> Platform<C> {
             versions_passing_threshold.len(),
             versions_passing_threshold
         );
-        drop(protocol_versions_counter);
 
         if !versions_passing_threshold.is_empty() {
             // same as equals 1
