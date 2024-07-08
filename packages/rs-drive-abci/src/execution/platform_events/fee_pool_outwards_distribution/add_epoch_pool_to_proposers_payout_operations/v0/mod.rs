@@ -66,6 +66,17 @@ impl<C> Platform<C> {
 
         let proposers_len = proposers.len() as u16;
 
+        tracing::trace!(
+            unpaid_block_count = unpaid_epoch_block_count,
+            unpaid_epoch_index = unpaid_epoch.epoch_index(),
+            fees = storage_and_processing_fees,
+            core_block_rewards,
+            total_payouts,
+            "Pay {total_payouts} credits to {proposers_len} proposers for {} proposed blocks in epoch {}",
+            unpaid_epoch_block_count,
+            unpaid_epoch.epoch_index(),
+        );
+
         for (i, (proposer_tx_hash, proposed_block_count)) in proposers.into_iter().enumerate() {
             let i = i as u16;
 

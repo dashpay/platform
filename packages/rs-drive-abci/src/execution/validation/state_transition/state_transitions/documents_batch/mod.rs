@@ -780,7 +780,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -1367,7 +1366,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -1531,7 +1529,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -1626,7 +1623,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 9999800);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 9993800);
             // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
@@ -1676,7 +1673,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 

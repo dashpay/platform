@@ -66,6 +66,11 @@ impl<C> Platform<C> {
                 self.check_for_desired_protocol_upgrade(hpmn_list_len, platform_version)?;
 
             if let Some(protocol_version) = next_epoch_protocol_version {
+                tracing::trace!(
+                    current_epoch_index = epoch_info.current_epoch_index(),
+                    "Next protocol version set to {}",
+                    protocol_version
+                );
                 block_platform_state.set_next_epoch_protocol_version(protocol_version);
             }
 
