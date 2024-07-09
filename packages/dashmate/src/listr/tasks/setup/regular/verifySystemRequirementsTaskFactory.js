@@ -30,52 +30,89 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           const warnings = [];
 
           // Get system info
-          const systemInfo = await docker.info();
+          let systemInfo;
+          try {
+            systemInfo = await docker.info();
+          } catch (e) {
+            if (process.env.DEBUG) {
+              // eslint-disable-next-line no-console
+              console.warn(`Can't get docker info: ${e}`);
+            }
+          }
 
-          // Check CPU cores
-          const cpuCores = systemInfo.NCPU || Number.MAX_SAFE_INTEGER;
+          if (systemInfo) {
+            if (Number.isInteger(systemInfo.NCPU)) {
+              // Check CPU cores
+              const cpuCores = systemInfo.NCPU;
 
-          if (cpuCores < MINIMUM_CPU_CORES) {
-            warnings.push(`${cpuCores} CPU cores detected. At least ${MINIMUM_CPU_CORES} are required`);
+              if (cpuCores < MINIMUM_CPU_CORES) {
+                warnings.push(`${cpuCores} CPU cores detected. At least ${MINIMUM_CPU_CORES} are required`);
+              }
+            } else {
+              // eslint-disable-next-line no-console
+              console.warn('Can\'t get NCPU from docker info');
+            }
+
+            // Check RAM
+            if (Number.isInteger(systemInfo.MemTotal)) {
+              const memoryGb = systemInfo.MemTotal / (1024 ** 3); // Convert to GB
+
+              if (memoryGb < MINIMUM_RAM) {
+                warnings.push(`${memoryGb.toFixed(2)}GB RAM detected. At least ${MINIMUM_RAM}GB is required`);
+              }
+            } else {
+              // eslint-disable-next-line no-console
+              console.warn('Can\'t get MemTotal from docker info');
+            }
           }
 
           // Check CPU frequency
-          const hostCpuCores = os.cpus();
-
-          const lessCpuFrequency = hostCpuCores
-            .find((core) => (core.speed / 1000) < MINIMUM_CPU_FREQUENCY);
-
-          if (lessCpuFrequency) {
-            const cpuFrequency = (lessCpuFrequency.speed / 1000); // Convert to GHz
-
-            warnings.push(`${cpuFrequency.toFixed(1)}GHz CPU frequency detected. At least ${MINIMUM_CPU_FREQUENCY}GHz is required`);
+          let hostCpu;
+          try {
+            hostCpu = await si.cpu();
+          } catch {
+            if (process.env.DEBUG) {
+              // eslint-disable-next-line no-console
+              console.warn('Can\'t get CPU info');
+            }
           }
 
-          // Check RAM
-          const memoryGb = (systemInfo.MemTotal || Number.MAX_SAFE_INTEGER)
-            / (1024 ** 3); // Convert to GB
-
-          if (memoryGb < MINIMUM_RAM) {
-            warnings.push(`${memoryGb.toFixed(2)}GB RAM detected. At least ${MINIMUM_RAM}GB is required`);
+          if (hostCpu) {
+            if (hostCpu.speed < MINIMUM_CPU_FREQUENCY) {
+              warnings.push(`${hostCpu.speed.toFixed(1)}GHz CPU frequency detected. At least ${MINIMUM_CPU_FREQUENCY}GHz is required`);
+            }
           }
 
           // Check swap information
-          const swap = await si.mem();
-          const swapTotalGb = (swap.swaptotal / (1024 ** 3)); // Convert bytes to GB
+          let swap;
+          try {
+            swap = await si.mem();
+          } catch (e) {
+            if (process.env.DEBUG) {
+              // eslint-disable-next-line no-console
+              console.warn(`Can't get swap info: ${e}`);
+            }
+          }
 
-          if (swapTotalGb < 2) {
-            warnings.push(`Swap space is ${swapTotalGb.toFixed(2)}GB. 2GB is recommended`);
+          if (swap) {
+            const swapTotalGb = (swap.swaptotal / (1024 ** 3)); // Convert bytes to GB
+
+            if (swapTotalGb < 2) {
+              warnings.push(`Swap space is ${swapTotalGb.toFixed(2)}GB. 2GB is recommended`);
+            }
           }
 
           // Get disk usage info
           let diskInfo;
 
-          try {
-            diskInfo = await diskusage.check(systemInfo.DockerRootDir);
-          } catch (e) {
-            if (process.env.DEBUG) {
-              // eslint-disable-next-line no-console
-              console.error(e);
+          if (systemInfo) {
+            try {
+              diskInfo = await diskusage.check(systemInfo.DockerRootDir);
+            } catch (e) {
+              if (process.env.DEBUG) {
+                // eslint-disable-next-line no-console
+                console.warn(`Can't get disk usage for '${systemInfo.DockerRootDir}': ${e}`);
+              }
             }
           }
 
@@ -85,7 +122,7 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
             } catch (e) {
               if (process.env.DEBUG) {
                 // eslint-disable-next-line no-console
-                console.error(e);
+                console.warn(`Can't get disk usage for root directory: ${e}`);
               }
             }
           }
