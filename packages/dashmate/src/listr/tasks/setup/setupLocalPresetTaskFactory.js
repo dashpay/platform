@@ -14,6 +14,7 @@ import generateRandomString from '../../../util/generateRandomString.js';
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
+ * @param {DockerCompose} dockerCompose
  */
 export default function setupLocalPresetTaskFactory(
   configFile,
@@ -23,6 +24,7 @@ export default function setupLocalPresetTaskFactory(
   resolveDockerHostIp,
   generateHDPrivateKeys,
   homeDir,
+  dockerCompose,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -30,6 +32,10 @@ export default function setupLocalPresetTaskFactory(
    */
   function setupLocalPresetTask() {
     return new Listr([
+      {
+        title: 'System requirements',
+        task: async () => dockerCompose.throwErrorIfNotInstalled(),
+      },
       {
         title: 'Set the number of nodes',
         enabled: (ctx) => ctx.nodeCount === undefined,
