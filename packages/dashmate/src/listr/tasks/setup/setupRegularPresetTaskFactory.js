@@ -93,8 +93,10 @@ export default function setupRegularPresetTaskFactory(
             ctx.config.set('platform.drive.tenderdash.mode', 'full');
           }
 
-          ctx.config.set('core.rpc.user', generateRandomString(8));
-          ctx.config.set('core.rpc.password', generateRandomString(12));
+          Object.values(ctx.config.get('core.rpc.users')).forEach((options) => {
+            // eslint-disable-next-line no-param-reassign
+            options.password = generateRandomString(12);
+          });
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.nodeType ? ctx.nodeType : nodeTypeName;

@@ -181,8 +181,12 @@ export default function setupLocalPresetTaskFactory(
                 config.set('group', 'local');
                 config.set('core.p2p.port', config.get('core.p2p.port') + (i * 100));
                 config.set('core.rpc.port', config.get('core.rpc.port') + (i * 100));
-                config.set('core.rpc.user', generateRandomString(8));
-                config.set('core.rpc.password', generateRandomString(12));
+
+                Object.values(config.get('core.rpc.users')).forEach((options) => {
+                  // eslint-disable-next-line no-param-reassign
+                  options.password = generateRandomString(12);
+                });
+
                 config.set('externalIp', hostDockerInternalIp);
 
                 const subnet = config.get('docker.network.subnet')

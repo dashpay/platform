@@ -1,5 +1,6 @@
 import fs from 'fs';
 import dots from 'dot';
+import crypto from 'crypto';
 
 /**
  * @return {renderTemplate}
@@ -18,7 +19,7 @@ export default function renderTemplateFactory() {
     const templateString = fs.readFileSync(templatePath, 'utf-8');
     const template = dots.template(templateString);
 
-    return template(variables);
+    return template({ ...variables, crypto });
   }
 
   return renderTemplate;

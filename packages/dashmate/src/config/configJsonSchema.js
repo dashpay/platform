@@ -253,13 +253,35 @@ export default {
             port: {
               $ref: '#/definitions/port',
             },
-            user: {
-              type: 'string',
-              minLength: 1,
-            },
-            password: {
-              type: 'string',
-              minLength: 1,
+            users: {
+              type: 'object',
+              minProperties: 1,
+              propertyNames: {
+                type: 'string',
+                minLength: 1,
+              },
+              additionalProperties: {
+                type: 'object',
+                properties: {
+                  password: {
+                    type: 'string',
+                    minLength: 1,
+                  },
+                  whitelist: {
+                    type: ['null', 'array'],
+                    items: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    minItems: 1,
+                  },
+                  lowPriority: {
+                    type: 'boolean',
+                  },
+                },
+                required: ['password', 'whitelist', 'lowPriority'],
+                additionalProperties: false,
+              },
             },
             allowIps: {
               type: 'array',
@@ -268,7 +290,7 @@ export default {
               },
             },
           },
-          required: ['host', 'port', 'user', 'password'],
+          required: ['host', 'port', 'users', 'allowIps'],
           additionalProperties: false,
         },
         spork: {

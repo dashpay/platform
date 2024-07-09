@@ -170,11 +170,6 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                 )?;
 
                 if !data_trigger_execution_result.is_valid() {
-                    tracing::debug!(
-                        "{:?} state transition data trigger was not valid, errors are {:?}",
-                        transition,
-                        data_trigger_execution_result.errors,
-                    );
                     // If a state transition isn't valid because of data triggers we still need
                     // to bump the identity data contract nonce
                     let consensus_errors: Vec<ConsensusError> = data_trigger_execution_result
