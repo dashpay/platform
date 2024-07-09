@@ -78,7 +78,12 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           }
 
           if (hostCpu) {
-            if (hostCpu.speed < MINIMUM_CPU_FREQUENCY) {
+            if (hostCpu.speed === 0) {
+              if (process.env.DEBUG) {
+                // eslint-disable-next-line no-console
+                console.warn('Can\'t get CPU frequency');
+              }
+            } else if (hostCpu.speed < MINIMUM_CPU_FREQUENCY) {
               warnings.push(`${hostCpu.speed.toFixed(1)}GHz CPU frequency detected. At least ${MINIMUM_CPU_FREQUENCY}GHz is required`);
             }
           }
