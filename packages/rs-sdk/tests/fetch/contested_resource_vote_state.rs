@@ -124,7 +124,7 @@ async fn contested_resource_vote_states_nx_contract() {
 ///
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "equires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn contested_resource_vote_states_ok() {
@@ -205,9 +205,8 @@ fn base_query(cfg: &Config) -> ContestedDocumentVotePollDriveQuery {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "equires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
-#[ignore = "disabled due to bug PLAN-674"]
 #[allow(non_snake_case)]
 async fn contested_resource_vote_states_with_limit_PLAN_674() {
     setup_logs();
