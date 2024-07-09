@@ -1004,8 +1004,6 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     max_depth: 256,
                     recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
                         traversal_validator: 0,
-                        byte_array_has_no_items_as_parent_validator: 0,
-                        pattern_is_valid_regex_validator: 0,
                     },
                     validate_schema_compatibility: 0,
                 },

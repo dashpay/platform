@@ -26,6 +26,7 @@ import generateRandomString from '../../../util/generateRandomString.js';
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
  * @param {DefaultConfigs} defaultConfigs
  * @param {verifySystemRequirementsTask} verifySystemRequirementsTask
+ * @param {importCoreDataTask} importCoreDataTask
  */
 export default function setupRegularPresetTaskFactory(
   configFile,
@@ -36,6 +37,7 @@ export default function setupRegularPresetTaskFactory(
   configureNodeTask,
   configureSSLCertificateTask,
   defaultConfigs,
+  importCoreDataTask,
   verifySystemRequirementsTask,
 ) {
   /**
@@ -136,6 +138,10 @@ export default function setupRegularPresetTaskFactory(
       {
         enabled: (ctx) => !ctx.isMasternodeRegistered && ctx.nodeType === NODE_TYPE_MASTERNODE,
         task: () => registerMasternodeGuideTask(),
+      },
+      {
+        enabled: (ctx) => ctx.isMasternodeRegistered,
+        task: () => importCoreDataTask(),
       },
       {
         enabled: (ctx) => ctx.isMasternodeRegistered || ctx.nodeType === NODE_TYPE_FULLNODE,

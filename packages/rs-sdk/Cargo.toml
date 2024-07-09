@@ -1,9 +1,10 @@
 [package]
 name = "dash-sdk"
-version = "1.0.0-dev.15"
+version = "1.0.0-dev.16"
 edition = "2021"
 
 [dependencies]
+arc-swap = { version = "1.7.1" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }
@@ -34,7 +35,7 @@ derive_more = { version = "0.99.17" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.2" }
 lru = { version = "0.12.3", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
-
+pollster = { version = "0.3.0" }
 
 [dev-dependencies]
 tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
