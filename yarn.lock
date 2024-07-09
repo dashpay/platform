@@ -7376,7 +7376,7 @@ __metadata:
     es6-promise: "npm:^4.2.8"
     nan: "npm:^2.18.0"
     node-gyp: "npm:latest"
-  checksum: cf37552dd9b2731f44d802a6b4d9ea7fbff4f6d33d3f67ce736538fd09fbb276d146a61be0d3e40e27afe232c7cd54d91487c5ca3770f1fe11c865ac240b9674
+  checksum: 10/cf37552dd9b2731f44d802a6b4d9ea7fbff4f6d33d3f67ce736538fd09fbb276d146a61be0d3e40e27afe232c7cd54d91487c5ca3770f1fe11c865ac240b9674
   languageName: node
   linkType: hard
 
@@ -11597,7 +11597,7 @@ __metadata:
   resolution: "nan@npm:2.20.0"
   dependencies:
     node-gyp: "npm:latest"
-  checksum: 5f16e4c9953075d9920229c703c1d781c0b74118ce3d9e926b448a4eef92b7d8be5ac6adc748a13a5fafb594436cbfe63250e3471aefdd78e3a0cd14603b9ba7
+  checksum: 10/5f16e4c9953075d9920229c703c1d781c0b74118ce3d9e926b448a4eef92b7d8be5ac6adc748a13a5fafb594436cbfe63250e3471aefdd78e3a0cd14603b9ba7
   languageName: node
   linkType: hard
 
@@ -14338,7 +14338,7 @@ __metadata:
   resolution: "systeminformation@npm:5.22.11"
   bin:
     systeminformation: lib/cli.js
-  checksum: 315cd3f2cc2aefbee9201fac043521d073e8c94a77f8900617dad67fdb798116fd2963a365d4d3da81dbca6da360d1f7008c61e1fe33ef9f8f3b77aa4f506014
+  checksum: 10/315cd3f2cc2aefbee9201fac043521d073e8c94a77f8900617dad67fdb798116fd2963a365d4d3da81dbca6da360d1f7008c61e1fe33ef9f8f3b77aa4f506014
   conditions: (os=darwin | os=linux | os=win32 | os=freebsd | os=openbsd | os=netbsd | os=sunos | os=android)
   languageName: node
   linkType: hard
