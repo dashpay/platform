@@ -1,6 +1,6 @@
 import { Command, Flags, settings } from '@oclif/core';
 
-import { asValue, InjectionMode } from 'awilix';
+import { asValue } from 'awilix';
 
 import graceful from 'node-graceful';
 
