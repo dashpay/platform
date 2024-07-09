@@ -82,7 +82,6 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         let path_query = self.construct_path_query()?;
         drive.grove_get_proved_path_query(
             &path_query,
-            false,
             transaction,
             drive_operations,
             &platform_version.drive,

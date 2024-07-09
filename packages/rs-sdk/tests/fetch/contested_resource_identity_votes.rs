@@ -84,11 +84,11 @@ async fn contested_resource_identity_votes_ok() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("contested_resource_identity_votes_ok").await;
 
-    // Given some existing proTxHash of some Validator that alreday voted
+    // Given some existing proTxHash of some Validator that already voted
     // Note: we hardcode default protxhash for offline testing in github actions
     let protx = cfg.existing_protxhash().unwrap_or_else(|_| {
         ProTxHash::from_byte_array(
-            hex::decode("2f01ab3b0a273b1fc436477cdb051ba8f7c5b699d552579ae1a947dae60b85d7")
+            hex::decode("eddaa22953d348b86f2044e6582a383ba9fb90cec4ef8c7f0f231e248bd00916")
                 .expect("valid hex-encoded protx hash")
                 .try_into()
                 .expect("valid protx hash length"),

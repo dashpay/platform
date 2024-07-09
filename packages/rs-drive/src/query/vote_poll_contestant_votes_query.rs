@@ -158,7 +158,6 @@ impl ContestedDocumentVotePollVotesDriveQuery {
         let path_query = resolved.construct_path_query(platform_version)?;
         drive.grove_get_proved_path_query(
             &path_query,
-            false,
             transaction,
             drive_operations,
             &platform_version.drive,

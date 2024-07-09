@@ -37,7 +37,6 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut path_queries = vec![];
-        let mut count = 0;
         if !identity_queries.is_empty() {
             for identity_query in identity_queries {
                 match identity_query.prove_request_type {
@@ -59,7 +58,6 @@ impl Drive {
                     }
                 }
             }
-            count += identity_queries.len();
         }
 
         let (contract_ids, historical_contract_ids): (Vec<_>, Vec<_>) = contract_ids
@@ -79,7 +77,6 @@ impl Drive {
                 Self::fetch_non_historical_contracts_query(contract_ids.as_slice());
             path_query.query.limit = None;
             path_queries.push(path_query);
-            count += contract_ids.len();
         }
 
         if !historical_contract_ids.is_empty() {
@@ -87,7 +84,6 @@ impl Drive {
                 Self::fetch_historical_contracts_query(historical_contract_ids.as_slice());
             path_query.query.limit = None;
             path_queries.push(path_query);
-            count += historical_contract_ids.len();
         }
         if !document_queries.is_empty() {
             path_queries.extend(document_queries.iter().filter_map(|drive_query| {
@@ -96,7 +92,6 @@ impl Drive {
                 path_query.query.limit = None;
                 Some(path_query)
             }));
-            count += document_queries.len();
         }
 
         if !vote_queries.is_empty() {
@@ -107,23 +102,12 @@ impl Drive {
                 path_query.query.limit = None;
                 Some(path_query)
             }));
-            count += path_queries.len();
         }
-
-        let verbose = match count {
-            0 => {
-                return Err(Error::Query(QuerySyntaxError::NoQueryItems(
-                    "we are asking to prove nothing",
-                )))
-            }
-            1 => false,
-            _ => true,
-        };
+        
         let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
 
         self.grove_get_proved_path_query(
             &path_query,
-            verbose,
             transaction,
             &mut vec![],
             &platform_version.drive,

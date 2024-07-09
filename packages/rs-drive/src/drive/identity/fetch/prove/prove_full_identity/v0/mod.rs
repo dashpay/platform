@@ -16,7 +16,6 @@ impl Drive {
         let query = Self::full_identity_query(&identity_id)?;
         self.grove_get_proved_path_query(
             &query,
-            false,
             transaction,
             &mut drive_operations,
             drive_version,

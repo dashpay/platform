@@ -149,7 +149,6 @@ async fn contested_resources_start_at_value() {
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
 )]
 #[allow(non_snake_case)]
-#[ignore = "disabled due to bug PLAN-656"]
 async fn contested_resources_limit_PLAN_656() {
     // TODO: fails due to PLAN-656, not tested enough so it can be faulty
     setup_logs();

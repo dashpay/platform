@@ -89,7 +89,6 @@ impl Drive {
 
         self.grove_get_proved_path_query(
             &contracts_query,
-            true,
             transaction,
             &mut vec![],
             &platform_version.drive,

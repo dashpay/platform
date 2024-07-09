@@ -16,7 +16,6 @@ impl Drive {
         let balance_query = Self::balance_for_identity_id_query(identity_id);
         self.grove_get_proved_path_query(
             &balance_query,
-            false,
             transaction,
             &mut vec![],
             drive_version,
@@ -33,7 +32,6 @@ impl Drive {
         let balance_query = Self::balance_and_revision_for_identity_id_query(identity_id);
         self.grove_get_proved_path_query(
             &balance_query,
-            true,
             transaction,
             &mut vec![],
             drive_version,
@@ -50,7 +48,6 @@ impl Drive {
         let balance_query = Self::balances_for_identity_ids_query(identity_ids)?;
         self.grove_get_proved_path_query(
             &balance_query,
-            false,
             transaction,
             &mut vec![],
             drive_version,
