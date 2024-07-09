@@ -248,6 +248,8 @@ describe('Withdrawals', function withdrawalsTest() {
         await wait(1000);
       }
 
+      console.dir(withdrawalDocument);
+
       try {
         await client.platform.documents.broadcast({
           delete: [withdrawalDocument],
