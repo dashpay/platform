@@ -34,7 +34,6 @@ impl Drive {
         let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
         self.grove_get_proved_path_query(
             &path_query,
-            true,
             transaction,
             &mut vec![],
             &platform_version.drive,
@@ -89,7 +88,9 @@ mod tests {
                     .filter(|public_key| public_key.key_type().is_unique_key_type())
                     .map(move |public_key| {
                         (
-                            public_key.hash().expect("expected to be 20 bytes"),
+                            public_key
+                                .public_key_hash()
+                                .expect("expected to be 20 bytes"),
                             Some(identity.clone()),
                         )
                     })
@@ -105,7 +106,9 @@ mod tests {
                     .filter(|public_key| public_key.key_type().is_unique_key_type())
                     .map(move |public_key| {
                         (
-                            public_key.hash().expect("expected to be 20 bytes"),
+                            public_key
+                                .public_key_hash()
+                                .expect("expected to be 20 bytes"),
                             Some(identity.id().to_buffer()),
                         )
                     })

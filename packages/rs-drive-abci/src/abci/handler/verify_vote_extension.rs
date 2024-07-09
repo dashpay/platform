@@ -7,7 +7,7 @@ use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::ExtendVoteExtension;
 
-/// Todo: Verify vote extension not really needed because extend vote is deterministic
+/// Todo: Verify votes extension not really needed because extend votes is deterministic
 pub fn verify_vote_extension<A, C>(
     app: &A,
     request: proto::RequestVerifyVoteExtension,
@@ -18,7 +18,7 @@ where
 {
     let _timer = crate::metrics::abci_request_duration("verify_vote_extension");
 
-    // Verify that this is a vote extension for our current executed block and our proposer
+    // Verify that this is a votes extension for our current executed block and our proposer
     let proto::RequestVerifyVoteExtension {
         height,
         round,
@@ -33,7 +33,7 @@ where
     let block_execution_context_ref = app.block_execution_context().read().unwrap();
     let Some(block_execution_context) = block_execution_context_ref.as_ref() else {
         tracing::warn!(
-                "vote extensions for height: {}, round: {} are rejected because we are not in a block execution phase",
+                "votes extensions for height: {}, round: {} are rejected because we are not in a block execution phase",
                 height,
                 round,
             );
@@ -43,17 +43,17 @@ where
         });
     };
 
-    // Make sure vote extension is for our currently executing block
+    // Make sure votes extension is for our currently executing block
 
     let block_state_info = block_execution_context.block_state_info();
 
-    // We might get vote extension to verify for previous (in case if other node is behind)
+    // We might get votes extension to verify for previous (in case if other node is behind)
     // or future round (in case if the current node is behind), so we make sure that only height
     // is matching. It's fine because withdrawal transactions to sign are the same for any round
     // of the same height
     if block_state_info.height() != height {
         tracing::warn!(
-            "vote extensions for height: {}, round: {} are rejected because we are at height: {}",
+            "votes extensions for height: {}, round: {} are rejected because we are at height: {}",
             height,
             round,
             block_state_info.height(),
@@ -75,7 +75,7 @@ where
         tracing::error!(
             received_extensions = ?vote_extensions,
             ?expected_extensions,
-            "vote extensions for height: {}, round: {} mismatch",
+            "votes extensions for height: {}, round: {} mismatch",
             height, round
         );
 
@@ -85,7 +85,7 @@ where
     }
 
     tracing::debug!(
-        "vote extensions for height: {}, round: {} are successfully verified",
+        "votes extensions for height: {}, round: {} are successfully verified",
         height,
         round,
     );

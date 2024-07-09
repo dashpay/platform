@@ -20,6 +20,7 @@ impl Drive {
     >(
         &self,
         path_key_info: PathKeyInfo<N>,
+        use_sum_tree: bool,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -28,11 +29,19 @@ impl Drive {
     ) -> Result<bool, Error> {
         match path_key_info {
             PathKeyRef((path, key)) => {
-                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
-                    path.clone(),
-                    key.to_vec(),
-                    storage_flags,
-                );
+                let drive_operation = if use_sum_tree {
+                    LowLevelDriveOperation::for_known_path_key_empty_sum_tree(
+                        path.clone(),
+                        key.to_vec(),
+                        storage_flags,
+                    )
+                } else {
+                    LowLevelDriveOperation::for_known_path_key_empty_tree(
+                        path.clone(),
+                        key.to_vec(),
+                        storage_flags,
+                    )
+                };
                 // we only add the operation if it doesn't already exist in the current batch
                 if !drive_operations.contains(&drive_operation) {
                     let has_raw = self.grove_has_raw(
@@ -55,11 +64,19 @@ impl Drive {
                 DriveError::NotSupportedPrivate("document sizes in batch operations not supported"),
             )),
             PathKey((path, key)) => {
-                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
-                    path.clone(),
-                    key.clone(),
-                    storage_flags,
-                );
+                let drive_operation = if use_sum_tree {
+                    LowLevelDriveOperation::for_known_path_key_empty_sum_tree(
+                        path.clone(),
+                        key.to_vec(),
+                        storage_flags,
+                    )
+                } else {
+                    LowLevelDriveOperation::for_known_path_key_empty_tree(
+                        path.clone(),
+                        key.to_vec(),
+                        storage_flags,
+                    )
+                };
                 // we only add the operation if it doesn't already exist in the current batch
                 if !drive_operations.contains(&drive_operation) {
                     let has_raw = self.grove_has_raw(
@@ -80,11 +97,19 @@ impl Drive {
             }
             PathFixedSizeKey((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
-                    path_items,
-                    key.to_vec(),
-                    storage_flags,
-                );
+                let drive_operation = if use_sum_tree {
+                    LowLevelDriveOperation::for_known_path_key_empty_sum_tree(
+                        path_items,
+                        key.to_vec(),
+                        storage_flags,
+                    )
+                } else {
+                    LowLevelDriveOperation::for_known_path_key_empty_tree(
+                        path_items,
+                        key.to_vec(),
+                        storage_flags,
+                    )
+                };
                 // we only add the operation if it doesn't already exist in the current batch
                 if !drive_operations.contains(&drive_operation) {
                     let has_raw = self.grove_has_raw(
@@ -105,11 +130,19 @@ impl Drive {
             }
             PathFixedSizeKeyRef((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
-                    path_items,
-                    key.to_vec(),
-                    storage_flags,
-                );
+                let drive_operation = if use_sum_tree {
+                    LowLevelDriveOperation::for_known_path_key_empty_sum_tree(
+                        path_items,
+                        key.to_vec(),
+                        storage_flags,
+                    )
+                } else {
+                    LowLevelDriveOperation::for_known_path_key_empty_tree(
+                        path_items,
+                        key.to_vec(),
+                        storage_flags,
+                    )
+                };
                 // we only add the operation if it doesn't already exist in the current batch
                 if !drive_operations.contains(&drive_operation) {
                     let has_raw = self.grove_has_raw(

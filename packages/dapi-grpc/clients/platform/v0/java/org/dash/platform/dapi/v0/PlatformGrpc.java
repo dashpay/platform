@@ -604,6 +604,192 @@ public final class PlatformGrpc {
     return getGetEpochsInfoMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse> getGetContestedResourcesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContestedResources",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse> getGetContestedResourcesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse> getGetContestedResourcesMethod;
+    if ((getGetContestedResourcesMethod = PlatformGrpc.getGetContestedResourcesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContestedResourcesMethod = PlatformGrpc.getGetContestedResourcesMethod) == null) {
+          PlatformGrpc.getGetContestedResourcesMethod = getGetContestedResourcesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContestedResources"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContestedResources"))
+              .build();
+        }
+      }
+    }
+    return getGetContestedResourcesMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse> getGetContestedResourceVoteStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContestedResourceVoteState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse> getGetContestedResourceVoteStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse> getGetContestedResourceVoteStateMethod;
+    if ((getGetContestedResourceVoteStateMethod = PlatformGrpc.getGetContestedResourceVoteStateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContestedResourceVoteStateMethod = PlatformGrpc.getGetContestedResourceVoteStateMethod) == null) {
+          PlatformGrpc.getGetContestedResourceVoteStateMethod = getGetContestedResourceVoteStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContestedResourceVoteState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContestedResourceVoteState"))
+              .build();
+        }
+      }
+    }
+    return getGetContestedResourceVoteStateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse> getGetContestedResourceVotersForIdentityMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContestedResourceVotersForIdentity",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse> getGetContestedResourceVotersForIdentityMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse> getGetContestedResourceVotersForIdentityMethod;
+    if ((getGetContestedResourceVotersForIdentityMethod = PlatformGrpc.getGetContestedResourceVotersForIdentityMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContestedResourceVotersForIdentityMethod = PlatformGrpc.getGetContestedResourceVotersForIdentityMethod) == null) {
+          PlatformGrpc.getGetContestedResourceVotersForIdentityMethod = getGetContestedResourceVotersForIdentityMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContestedResourceVotersForIdentity"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContestedResourceVotersForIdentity"))
+              .build();
+        }
+      }
+    }
+    return getGetContestedResourceVotersForIdentityMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse> getGetContestedResourceIdentityVotesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContestedResourceIdentityVotes",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse> getGetContestedResourceIdentityVotesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse> getGetContestedResourceIdentityVotesMethod;
+    if ((getGetContestedResourceIdentityVotesMethod = PlatformGrpc.getGetContestedResourceIdentityVotesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContestedResourceIdentityVotesMethod = PlatformGrpc.getGetContestedResourceIdentityVotesMethod) == null) {
+          PlatformGrpc.getGetContestedResourceIdentityVotesMethod = getGetContestedResourceIdentityVotesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContestedResourceIdentityVotes"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContestedResourceIdentityVotes"))
+              .build();
+        }
+      }
+    }
+    return getGetContestedResourceIdentityVotesMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> getGetVotePollsByEndDateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getVotePollsByEndDate",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> getGetVotePollsByEndDateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> getGetVotePollsByEndDateMethod;
+    if ((getGetVotePollsByEndDateMethod = PlatformGrpc.getGetVotePollsByEndDateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetVotePollsByEndDateMethod = PlatformGrpc.getGetVotePollsByEndDateMethod) == null) {
+          PlatformGrpc.getGetVotePollsByEndDateMethod = getGetVotePollsByEndDateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getVotePollsByEndDate"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getVotePollsByEndDate"))
+              .build();
+        }
+      }
+    }
+    return getGetVotePollsByEndDateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> getGetPrefundedSpecializedBalanceMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getPrefundedSpecializedBalance",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> getGetPrefundedSpecializedBalanceMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> getGetPrefundedSpecializedBalanceMethod;
+    if ((getGetPrefundedSpecializedBalanceMethod = PlatformGrpc.getGetPrefundedSpecializedBalanceMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetPrefundedSpecializedBalanceMethod = PlatformGrpc.getGetPrefundedSpecializedBalanceMethod) == null) {
+          PlatformGrpc.getGetPrefundedSpecializedBalanceMethod = getGetPrefundedSpecializedBalanceMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getPrefundedSpecializedBalance"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getPrefundedSpecializedBalance"))
+              .build();
+        }
+      }
+    }
+    return getGetPrefundedSpecializedBalanceMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> getGetPathElementsMethod;
 
@@ -817,6 +1003,63 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * What votes are currently happening for a specific contested index
+     * </pre>
+     */
+    public void getContestedResources(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContestedResourcesMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * What's the state of a contested resource vote? (ie who is winning?)
+     * </pre>
+     */
+    public void getContestedResourceVoteState(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContestedResourceVoteStateMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Who voted for a contested resource to go to a specific identity?
+     * </pre>
+     */
+    public void getContestedResourceVotersForIdentity(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContestedResourceVotersForIdentityMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * How did an identity vote?
+     * </pre>
+     */
+    public void getContestedResourceIdentityVotes(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContestedResourceIdentityVotesMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * What vote polls will end soon?
+     * </pre>
+     */
+    public void getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetVotePollsByEndDateMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getPrefundedSpecializedBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetPrefundedSpecializedBalanceMethod(), responseObserver);
+    }
+
+    /**
      */
     public void getPathElements(org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> responseObserver) {
@@ -958,6 +1201,48 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoResponse>(
                   this, METHODID_GET_EPOCHS_INFO)))
+          .addMethod(
+            getGetContestedResourcesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse>(
+                  this, METHODID_GET_CONTESTED_RESOURCES)))
+          .addMethod(
+            getGetContestedResourceVoteStateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse>(
+                  this, METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE)))
+          .addMethod(
+            getGetContestedResourceVotersForIdentityMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse>(
+                  this, METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY)))
+          .addMethod(
+            getGetContestedResourceIdentityVotesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse>(
+                  this, METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES)))
+          .addMethod(
+            getGetVotePollsByEndDateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse>(
+                  this, METHODID_GET_VOTE_POLLS_BY_END_DATE)))
+          .addMethod(
+            getGetPrefundedSpecializedBalanceMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse>(
+                  this, METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE)))
           .addMethod(
             getGetPathElementsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -1136,6 +1421,69 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * What votes are currently happening for a specific contested index
+     * </pre>
+     */
+    public void getContestedResources(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContestedResourcesMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * What's the state of a contested resource vote? (ie who is winning?)
+     * </pre>
+     */
+    public void getContestedResourceVoteState(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContestedResourceVoteStateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Who voted for a contested resource to go to a specific identity?
+     * </pre>
+     */
+    public void getContestedResourceVotersForIdentity(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContestedResourceVotersForIdentityMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * How did an identity vote?
+     * </pre>
+     */
+    public void getContestedResourceIdentityVotes(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContestedResourceIdentityVotesMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * What vote polls will end soon?
+     * </pre>
+     */
+    public void getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetVotePollsByEndDateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getPrefundedSpecializedBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetPrefundedSpecializedBalanceMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
      */
     public void getPathElements(org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> responseObserver) {
@@ -1289,6 +1637,63 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoResponse getEpochsInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetEpochsInfoMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * What votes are currently happening for a specific contested index
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse getContestedResources(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContestedResourcesMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * What's the state of a contested resource vote? (ie who is winning?)
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse getContestedResourceVoteState(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContestedResourceVoteStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Who voted for a contested resource to go to a specific identity?
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse getContestedResourceVotersForIdentity(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContestedResourceVotersForIdentityMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * How did an identity vote?
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse getContestedResourceIdentityVotes(org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContestedResourceIdentityVotesMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * What vote polls will end soon?
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetVotePollsByEndDateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse getPrefundedSpecializedBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetPrefundedSpecializedBalanceMethod(), getCallOptions(), request);
     }
 
     /**
@@ -1466,6 +1871,69 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * What votes are currently happening for a specific contested index
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse> getContestedResources(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContestedResourcesMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * What's the state of a contested resource vote? (ie who is winning?)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse> getContestedResourceVoteState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContestedResourceVoteStateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * Who voted for a contested resource to go to a specific identity?
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse> getContestedResourceVotersForIdentity(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContestedResourceVotersForIdentityMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * How did an identity vote?
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse> getContestedResourceIdentityVotes(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContestedResourceIdentityVotesMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * What vote polls will end soon?
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> getVotePollsByEndDate(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetVotePollsByEndDateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> getPrefundedSpecializedBalance(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetPrefundedSpecializedBalanceMethod(), getCallOptions()), request);
+    }
+
+    /**
      */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> getPathElements(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request) {
@@ -1493,7 +1961,13 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 16;
   private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 17;
   private static final int METHODID_GET_EPOCHS_INFO = 18;
-  private static final int METHODID_GET_PATH_ELEMENTS = 19;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 19;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 20;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 21;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 22;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 23;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 24;
+  private static final int METHODID_GET_PATH_ELEMENTS = 25;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1588,6 +2062,30 @@ public final class PlatformGrpc {
           serviceImpl.getEpochsInfo((org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoResponse>) responseObserver);
           break;
+        case METHODID_GET_CONTESTED_RESOURCES:
+          serviceImpl.getContestedResources((org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourcesResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE:
+          serviceImpl.getContestedResourceVoteState((org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVoteStateResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY:
+          serviceImpl.getContestedResourceVotersForIdentity((org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceVotersForIdentityResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES:
+          serviceImpl.getContestedResourceIdentityVotes((org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse>) responseObserver);
+          break;
+        case METHODID_GET_VOTE_POLLS_BY_END_DATE:
+          serviceImpl.getVotePollsByEndDate((org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse>) responseObserver);
+          break;
+        case METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE:
+          serviceImpl.getPrefundedSpecializedBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse>) responseObserver);
+          break;
         case METHODID_GET_PATH_ELEMENTS:
           serviceImpl.getPathElements((org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse>) responseObserver);
@@ -1672,6 +2170,12 @@ public final class PlatformGrpc {
               .addMethod(getGetProtocolVersionUpgradeStateMethod())
               .addMethod(getGetProtocolVersionUpgradeVoteStatusMethod())
               .addMethod(getGetEpochsInfoMethod())
+              .addMethod(getGetContestedResourcesMethod())
+              .addMethod(getGetContestedResourceVoteStateMethod())
+              .addMethod(getGetContestedResourceVotersForIdentityMethod())
+              .addMethod(getGetContestedResourceIdentityVotesMethod())
+              .addMethod(getGetVotePollsByEndDateMethod())
+              .addMethod(getGetPrefundedSpecializedBalanceMethod())
               .addMethod(getGetPathElementsMethod())
               .build();
         }

@@ -6,13 +6,15 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request;
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::RequestType;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
-use drive::query::SingleDocumentDriveQuery;
+use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -21,8 +23,12 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::voting::votes::Vote;
+use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
+use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
+use drive::drive::votes::resolved::votes::ResolvedVote;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
@@ -101,6 +107,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             identities: vec![],
             contracts: vec![],
             documents: vec![],
+            votes: vec![],
         };
 
         if let Some(action) = action {
@@ -207,6 +214,18 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         .transitions()
                         .iter()
                         .for_each(|transition| {
+                            let document_contested_status =
+                                if let DocumentTransitionAction::CreateAction(create_action) =
+                                    transition
+                                {
+                                    if create_action.prefunded_voting_balance().is_some() {
+                                        SingleDocumentDriveQueryContestedStatus::Contested as u8
+                                    } else {
+                                        SingleDocumentDriveQueryContestedStatus::NotContested as u8
+                                    }
+                                } else {
+                                    SingleDocumentDriveQueryContestedStatus::NotContested as u8
+                                };
                             proofs_request
                                 .documents
                                 .push(get_proofs_request_v0::DocumentRequest {
@@ -241,6 +260,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         .expect("expected a base for the document transition")
                                         .id()
                                         .to_vec(),
+                                    document_contested_status: document_contested_status as i32,
                                 });
                         });
                     let versioned_request = GetProofsRequest {
@@ -272,6 +292,19 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     .as_str(),
                             )
                             .expect("get document type");
+                        let contested_status =
+                            if let DocumentTransitionAction::CreateAction(create_action) =
+                                document_transition_action
+                            {
+                                if create_action.prefunded_voting_balance().is_some() {
+                                    SingleDocumentDriveQueryContestedStatus::Contested
+                                } else {
+                                    SingleDocumentDriveQueryContestedStatus::NotContested
+                                }
+                            } else {
+                                SingleDocumentDriveQueryContestedStatus::NotContested
+                            };
+
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition_action
                                 .base()
@@ -290,6 +323,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 .id()
                                 .into_buffer(),
                             block_time_ms: None, //None because we want latest
+                            contested_status,
                         };
 
                         // dbg!(
@@ -520,7 +554,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         false,
                         platform_version,
                     )
-                    .expect("expected to verify balance identity");
+                    .expect("expected to verify balance identity for top up");
                     let balance = balance.expect("expected a balance");
                     assert_eq!(
                         &root_hash,
@@ -582,7 +616,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         false,
                         platform_version,
                     )
-                    .expect("expected to verify balance identity");
+                    .expect("expected to verify balance identity for withdrawal");
                     let _balance = balance.expect("expected a balance");
                     assert_eq!(
                         &root_hash,
@@ -683,7 +717,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             true,
                             platform_version,
                         )
-                        .expect("expected to verify balance identity");
+                        .expect("expected to verify balance identity for credit transfer");
 
                     assert_eq!(
                         &root_hash_identity,
@@ -714,6 +748,80 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         assert!(
                             balance_recipient >= identity_credit_transfer_action.transfer_amount()
                         );
+                    }
+                }
+                StateTransitionAction::MasternodeVoteAction(masternode_vote_action) => {
+                    let data_contract = match masternode_vote_action.vote_ref() {
+                        ResolvedVote::ResolvedResourceVote(resource_vote) => match resource_vote
+                            .vote_poll()
+                        {
+                            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
+                                contested_document_resource_vote_poll,
+                            ) => {
+                                let config = bincode::config::standard()
+                                    .with_big_endian()
+                                    .with_no_limit();
+                                let serialized_index_values = contested_document_resource_vote_poll
+                                    .index_values
+                                    .iter()
+                                    .map(|value| {
+                                        bincode::encode_to_vec(value, config)
+                                            .expect("expected to encode value in path")
+                                    })
+                                    .collect();
+
+                                proofs_request
+                                .votes
+                                .push(get_proofs_request_v0::VoteStatusRequest{
+                                    request_type: Some(RequestType::ContestedResourceVoteStatusRequest(vote_status_request::ContestedResourceVoteStatusRequest {
+                                        contract_id: contested_document_resource_vote_poll.contract.id().to_vec(),
+                                        document_type_name: contested_document_resource_vote_poll.document_type_name.clone(),
+                                        index_name: contested_document_resource_vote_poll.index_name.clone(),
+                                        voter_identifier: masternode_vote_action.pro_tx_hash().to_vec(),
+                                        index_values: serialized_index_values,
+                                    }))
+                                });
+                                contested_document_resource_vote_poll.contract.as_ref()
+                            }
+                        },
+                    };
+
+                    let versioned_request = GetProofsRequest {
+                        version: Some(get_proofs_request::Version::V0(proofs_request)),
+                    };
+
+                    let result = abci_app
+                        .platform
+                        .query_proofs(versioned_request, &state, platform_version)
+                        .expect("expected to query proofs");
+                    let response = result.into_data().expect("expected queries to be valid");
+
+                    let response_proof = response.proof_owned().expect("proof should be present");
+
+                    let vote: Vote = masternode_vote_action.vote_ref().clone().into();
+
+                    // we expect to get a vote that matches the state transition
+                    let (root_hash_vote, maybe_vote) = Drive::verify_masternode_vote(
+                        &response_proof.grovedb_proof,
+                        masternode_vote_action.pro_tx_hash().into_buffer(),
+                        &vote,
+                        data_contract,
+                        false, // we are not in a subset, we have just one vote
+                        platform_version,
+                    )
+                    .expect("expected to verify balance identity");
+
+                    assert_eq!(
+                        &root_hash_vote,
+                        expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info()
+                    );
+
+                    if *was_executed {
+                        let executed_vote = maybe_vote.expect("expected a vote");
+
+                        assert_eq!(&executed_vote, &vote);
                     }
                 }
                 StateTransitionAction::BumpIdentityNonceAction(_) => {}

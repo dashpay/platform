@@ -11,13 +11,6 @@ use std::collections::HashMap;
 use std::option::Option::None;
 
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
-use crate::drive::document::{
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
-    contract_documents_keeping_history_storage_time_reference_path_size,
-    contract_documents_primary_key_path,
-};
-
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
@@ -45,6 +38,12 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
+use crate::drive::document::paths::{
+    contract_documents_keeping_history_primary_key_path_for_document_id,
+    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
+    contract_documents_keeping_history_storage_time_reference_path_size,
+    contract_documents_primary_key_path,
+};
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -135,6 +134,7 @@ impl Drive {
             // we first insert an empty tree if the document is new
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
+                false,
                 storage_flags,
                 apply_type,
                 transaction,

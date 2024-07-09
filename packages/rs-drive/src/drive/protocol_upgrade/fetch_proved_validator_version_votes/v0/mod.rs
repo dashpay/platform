@@ -35,12 +35,6 @@ impl Drive {
             SizedQuery::new(Query::new_single_query_item(query_item), Some(count), None),
         );
 
-        self.grove_get_proved_path_query(
-            &path_query,
-            false,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&path_query, transaction, &mut vec![], drive_version)
     }
 }

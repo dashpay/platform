@@ -9,7 +9,9 @@ use platform_value::Value;
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("JsonSchemaError: {error_summary}, path: {instance_path}")]
 #[platform_serialize(unversioned)]
 pub struct JsonSchemaError {

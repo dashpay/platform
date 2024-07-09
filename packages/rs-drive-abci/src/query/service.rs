@@ -11,7 +11,11 @@ use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
-    GetConsensusParamsResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
+    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
+    GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
     GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
     GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
@@ -20,9 +24,11 @@ use dapi_grpc::platform::v0::{
     GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
     GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
     GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetProofsRequest, GetProofsResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -451,6 +457,78 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_path_elements,
             "get_path_elements",
+        )
+        .await
+    }
+
+    async fn get_contested_resources(
+        &self,
+        request: Request<GetContestedResourcesRequest>,
+    ) -> Result<Response<GetContestedResourcesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contested_resources,
+            "get_contested_resources",
+        )
+        .await
+    }
+
+    async fn get_contested_resource_vote_state(
+        &self,
+        request: Request<GetContestedResourceVoteStateRequest>,
+    ) -> Result<Response<GetContestedResourceVoteStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contested_resource_vote_state,
+            "get_contested_resource_vote_state",
+        )
+        .await
+    }
+
+    async fn get_contested_resource_voters_for_identity(
+        &self,
+        request: Request<GetContestedResourceVotersForIdentityRequest>,
+    ) -> Result<Response<GetContestedResourceVotersForIdentityResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contested_resource_voters_for_identity,
+            "get_contested_resource_voters_for_identity",
+        )
+        .await
+    }
+
+    async fn get_contested_resource_identity_votes(
+        &self,
+        request: Request<GetContestedResourceIdentityVotesRequest>,
+    ) -> Result<Response<GetContestedResourceIdentityVotesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contested_resource_identity_votes,
+            "get_contested_resource_identity_votes",
+        )
+        .await
+    }
+
+    async fn get_vote_polls_by_end_date(
+        &self,
+        request: Request<GetVotePollsByEndDateRequest>,
+    ) -> Result<Response<GetVotePollsByEndDateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_vote_polls_by_end_date_query,
+            "get_vote_polls_by_end_date",
+        )
+        .await
+    }
+
+    async fn get_prefunded_specialized_balance(
+        &self,
+        request: Request<GetPrefundedSpecializedBalanceRequest>,
+    ) -> Result<Response<GetPrefundedSpecializedBalanceResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_prefunded_specialized_balance,
+            "get_prefunded_specialized_balance",
         )
         .await
     }

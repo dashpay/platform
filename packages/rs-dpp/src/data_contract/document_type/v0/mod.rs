@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -41,7 +41,7 @@ pub const STORAGE_FLAGS_SIZE: usize = 2;
 pub struct DocumentTypeV0 {
     pub(in crate::data_contract) name: String,
     pub(in crate::data_contract) schema: Value,
-    pub(in crate::data_contract) indices: Vec<Index>,
+    pub(in crate::data_contract) indices: BTreeMap<String, Index>,
     pub(in crate::data_contract) index_structure: IndexLevel,
     /// Flattened properties flatten all objects for quick lookups for indexes
     /// Document field should not contain sub objects.

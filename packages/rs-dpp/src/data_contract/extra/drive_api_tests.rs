@@ -129,7 +129,7 @@ mod test {
             let document_type = data_contract
                 .document_type_for_name(expect.document_name)
                 .unwrap();
-            assert_eq!(expect.indexes.len(), document_type.indices().len());
+            assert_eq!(expect.indexes.len(), document_type.indexes().len());
         }
     }
 
@@ -175,23 +175,25 @@ mod test {
             .document_types
             .get("contactInfo")
             .unwrap()
-            .indices();
+            .indexes()
+            .values()
+            .collect::<Vec<_>>();
         assert_eq!(contact_info_indices.len(), 2);
-        assert!(contact_info_indices[0].unique);
-        assert!(!contact_info_indices[1].unique);
-        assert_eq!(contact_info_indices[0].properties.len(), 3);
+        assert!(contact_info_indices[1].unique);
+        assert!(!contact_info_indices[0].unique);
+        assert_eq!(contact_info_indices[1].properties.len(), 3);
 
-        assert_eq!(contact_info_indices[0].properties[0].name, "$ownerId");
+        assert_eq!(contact_info_indices[1].properties[0].name, "$ownerId");
         assert_eq!(
-            contact_info_indices[0].properties[1].name,
+            contact_info_indices[1].properties[1].name,
             "rootEncryptionKeyIndex"
         );
         assert_eq!(
-            contact_info_indices[0].properties[2].name,
+            contact_info_indices[1].properties[2].name,
             "derivationEncryptionKeyIndex"
         );
 
-        assert!(contact_info_indices[0].properties[0].ascending);
+        assert!(contact_info_indices[1].properties[0].ascending);
     }
 
     #[test]

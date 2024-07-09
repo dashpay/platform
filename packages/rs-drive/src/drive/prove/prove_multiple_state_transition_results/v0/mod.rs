@@ -2,7 +2,7 @@ use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::SingleDocumentDriveQuery;
+use crate::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, TransactionArg};
@@ -17,6 +17,8 @@ impl Drive {
     /// - `contract_ids`: A list of Data Contract IDs to prove
     /// - `document_queries`: A list of [SingleDocumentDriveQuery]. These specify the documents
     ///   to be proven.
+    /// - `vote_queries`: A list of [IdentityBasedVoteDriveQuery]. These would be to figure out the
+    ///   result of votes based on identities making them.
     /// - `transaction`: An optional grovedb transaction
     /// - `platform_version`: A reference to the [PlatformVersion] object that specifies the version of
     ///   the function to call.
@@ -30,11 +32,11 @@ impl Drive {
         identity_queries: &[IdentityDriveQuery],
         contract_ids: &[([u8; 32], Option<bool>)], //bool is history
         document_queries: &[SingleDocumentDriveQuery],
+        vote_queries: &[IdentityBasedVoteDriveQuery],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut path_queries = vec![];
-        let mut count = 0;
         if !identity_queries.is_empty() {
             for identity_query in identity_queries {
                 match identity_query.prove_request_type {
@@ -56,7 +58,6 @@ impl Drive {
                     }
                 }
             }
-            count += identity_queries.len();
         }
 
         let (contract_ids, historical_contract_ids): (Vec<_>, Vec<_>) = contract_ids
@@ -76,7 +77,6 @@ impl Drive {
                 Self::fetch_non_historical_contracts_query(contract_ids.as_slice());
             path_query.query.limit = None;
             path_queries.push(path_query);
-            count += contract_ids.len();
         }
 
         if !historical_contract_ids.is_empty() {
@@ -84,29 +84,30 @@ impl Drive {
                 Self::fetch_historical_contracts_query(historical_contract_ids.as_slice());
             path_query.query.limit = None;
             path_queries.push(path_query);
-            count += historical_contract_ids.len();
         }
         if !document_queries.is_empty() {
-            path_queries.extend(document_queries.iter().map(|drive_query| {
-                let mut path_query = drive_query.construct_path_query();
+            path_queries.extend(document_queries.iter().filter_map(|drive_query| {
+                // The path query construction can only fail in extremely rare circumstances.
+                let mut path_query = drive_query.construct_path_query().ok()?;
                 path_query.query.limit = None;
-                path_query
+                Some(path_query)
             }));
-            count += document_queries.len();
         }
-        let verbose = match count {
-            0 => {
-                return Err(Error::Query(QuerySyntaxError::NoQueryItems(
-                    "we are asking to prove nothing",
-                )))
-            }
-            1 => false,
-            _ => true,
-        };
+
+        if !vote_queries.is_empty() {
+            path_queries.extend(vote_queries.iter().filter_map(|vote_query| {
+                // The path query construction can only fail if the serialization fails.
+                // Because the serialization will pretty much never fail, we can do this.
+                let mut path_query = vote_query.construct_path_query().ok()?;
+                path_query.query.limit = None;
+                Some(path_query)
+            }));
+        }
+
         let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
+
         self.grove_get_proved_path_query(
             &path_query,
-            verbose,
             transaction,
             &mut vec![],
             &platform_version.drive,

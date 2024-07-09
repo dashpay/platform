@@ -106,7 +106,7 @@ export declare type Strategy = "simpleDescendingAccumulator"
     | 'simpleTransactionOptimizedAccumulator'
     | Function;
 export declare type AddressType = "external" | "internal" | "misc";
-// todo: actually, I would vote to move hdextpublic to hdextpubkey
+// todo: actually, I would votes to move hdextpublic to hdextpubkey
 export declare type WalletType = "single_address" | "hdwallet" | "hdextpublic";
 export declare type WalletObj = {
     network?: Network;

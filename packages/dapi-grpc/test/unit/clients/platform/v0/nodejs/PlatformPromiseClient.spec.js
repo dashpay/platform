@@ -122,7 +122,7 @@ describe('PlatformPromiseClient', () => {
   });
 
   describe('#getProtocolVersionUpgradeVoteStatus', () => {
-    it('should get version upgrade vote status', async () => {
+    it('should get version upgrade votes status', async () => {
       const result = await platformPromiseClient.getProtocolVersionUpgradeVoteStatus(request);
 
       expect(result).to.equal(response);

@@ -11,6 +11,7 @@ use grovedb::element::MaxReferenceHop;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::{batch::GroveDbOp, Element, ElementFlags};
 use grovedb_costs::OperationCost;
+use itertools::Itertools;
 
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::fee::get_overflow_error;
@@ -290,6 +291,36 @@ impl LowLevelDriveOperation {
         GroveDbOpBatch::from_operations(operations)
     }
 
+    /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    pub fn grovedb_operations_batch_consume(
+        insert_operations: Vec<LowLevelDriveOperation>,
+    ) -> GroveDbOpBatch {
+        let operations = insert_operations
+            .into_iter()
+            .filter_map(|op| match op {
+                GroveOperation(grovedb_op) => Some(grovedb_op),
+                _ => None,
+            })
+            .collect();
+        GroveDbOpBatch::from_operations(operations)
+    }
+
+    /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    pub fn grovedb_operations_batch_consume_with_leftovers(
+        insert_operations: Vec<LowLevelDriveOperation>,
+    ) -> (GroveDbOpBatch, Vec<LowLevelDriveOperation>) {
+        let (grove_operations, other_operations): (Vec<_>, Vec<_>) =
+            insert_operations.into_iter().partition_map(|op| match op {
+                GroveOperation(grovedb_op) => itertools::Either::Left(grovedb_op),
+                _ => itertools::Either::Right(op),
+            });
+
+        (
+            GroveDbOpBatch::from_operations(grove_operations),
+            other_operations,
+        )
+    }
+
     /// Filters the groveDB ops from a list of operations and collects them in a `Vec<GroveDbOp>`.
     pub fn grovedb_operations_consume(
         insert_operations: Vec<LowLevelDriveOperation>,
@@ -314,6 +345,22 @@ impl LowLevelDriveOperation {
                 Element::empty_tree_with_flags(storage_flags.to_some_element_flags())
             }
             None => Element::empty_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty sum tree at the given path and key
+    pub fn for_known_path_key_empty_sum_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_sum_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_sum_tree(),
         };
 
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)

@@ -32,7 +32,7 @@ class GetProtocolVersionUpgradeVoteStatusResponse extends AbstractResponse {
     );
 
     if (!versions && !proof) {
-      throw new InvalidResponseError('Version upgrade vote status is not defined');
+      throw new InvalidResponseError('Version upgrade votes status is not defined');
     }
 
     let versionSignals = [];

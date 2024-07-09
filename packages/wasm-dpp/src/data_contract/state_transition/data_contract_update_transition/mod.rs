@@ -132,6 +132,11 @@ impl DataContractUpdateTransitionWasm {
         self.0.is_identity_state_transition()
     }
 
+    #[wasm_bindgen(js_name=isVotingStateTransition)]
+    pub fn is_voting_state_transition(&self) -> bool {
+        self.0.is_voting_state_transition()
+    }
+
     // #[wasm_bindgen(js_name=hash)]
     // pub fn hash(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
     //     let bytes = self

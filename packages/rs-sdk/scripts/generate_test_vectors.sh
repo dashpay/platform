@@ -23,6 +23,6 @@ pushd "$CARGO_DIR"
 cargo test -p dash-sdk \
     --no-default-features \
     --features generate-test-vectors \
-    "$1"
+    "$@"
 
 popd

@@ -1,4 +1,3 @@
-use crate::drive::document::query::query_documents::QueryDocumentsOutcome;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -50,12 +49,6 @@ impl QueryDocumentsOutcomeV0Methods for QueryDocumentsOutcomeV0 {
 
     fn cost(&self) -> u64 {
         self.cost
-    }
-}
-
-impl From<QueryDocumentsOutcomeV0> for QueryDocumentsOutcome {
-    fn from(val: QueryDocumentsOutcomeV0) -> Self {
-        QueryDocumentsOutcome::V0(val)
     }
 }
 

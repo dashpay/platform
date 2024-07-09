@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::DriveQuery;
+use derive_more::From;
 use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -16,6 +17,7 @@ pub use v0::*;
 /// This enum provides versioning for the outcomes of querying documents.
 /// As the system evolves, new versions of the outcome structure can be
 /// added to this enum without breaking existing implementations.
+#[derive(From, Debug)]
 pub enum QueryDocumentsOutcome {
     /// Version 0 of the `QueryDocumentsOutcome`.
     ///

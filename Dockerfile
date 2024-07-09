@@ -174,6 +174,9 @@ WORKDIR /platform
 
 COPY . .
 
+# Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
+RUN touch /platform/packages/dapi-grpc/build.rs
+
 #
 # STAGE: BUILD RS-DRIVE-ABCI
 #

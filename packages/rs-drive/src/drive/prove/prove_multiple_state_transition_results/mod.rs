@@ -2,7 +2,7 @@ use crate::drive::identity::IdentityDriveQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::SingleDocumentDriveQuery;
+use crate::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -33,6 +33,7 @@ impl Drive {
         identity_queries: &[IdentityDriveQuery],
         contract_ids: &[([u8; 32], Option<bool>)], //bool represents if it is historical
         document_queries: &[SingleDocumentDriveQuery],
+        vote_queries: &[IdentityBasedVoteDriveQuery],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -46,6 +47,7 @@ impl Drive {
                 identity_queries,
                 contract_ids,
                 document_queries,
+                vote_queries,
                 transaction,
                 platform_version,
             ),

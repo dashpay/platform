@@ -2,12 +2,13 @@ mod v0;
 
 use crate::prelude::Identity;
 use crate::ProtocolError;
+use platform_value::Identifier;
 
 use platform_version::version::PlatformVersion;
 
 impl Identity {
     pub fn create_basic_identity(
-        id: [u8; 32],
+        id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version

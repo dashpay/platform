@@ -87,6 +87,7 @@ impl Drive {
                     // We need to insert the security level if it doesn't yet exist
                     self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
                         PathFixedSizeKey((purpose_path, vec![security_level as u8])),
+                        false,
                         None,
                         apply_type,
                         transaction,

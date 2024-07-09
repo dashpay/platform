@@ -16,7 +16,6 @@ impl Drive {
         let path_query = Self::identity_ids_by_unique_public_key_hash_query(public_key_hashes);
         self.grove_get_proved_path_query(
             &path_query,
-            false,
             transaction,
             &mut vec![],
             &platform_version.drive,
@@ -71,7 +70,9 @@ mod tests {
                     .filter(|public_key| public_key.key_type().is_unique_key_type())
                     .map(move |public_key| {
                         (
-                            public_key.hash().expect("expected to be 20 bytes"),
+                            public_key
+                                .public_key_hash()
+                                .expect("expected to be 20 bytes"),
                             Some(identity.id().to_buffer()),
                         )
                     })

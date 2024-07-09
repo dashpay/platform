@@ -68,9 +68,6 @@ pub mod key;
 #[cfg(feature = "server")]
 pub mod update;
 
-#[cfg(feature = "server")]
-pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
-
 use crate::drive::identity::contract_info::ContractInfoStructure;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use fetch::queries::*;
