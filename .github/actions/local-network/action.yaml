@@ -42,7 +42,7 @@ runs:
         key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
 
     - name: Restore dashmate volumes
-      run: ./scripts/dashmate/volumes/restore.sh
+      run: ./packages/dashmate/scripts/volumes/restore.sh
       shell: bash
       if: steps.local-network-data.outputs.cache-hit == 'true'
 
@@ -63,7 +63,7 @@ runs:
       if: steps.local-network-data.outputs.cache-hit != 'true'
 
     - name: Dump dashmate volumes
-      run: ./scripts/dashmate/volumes/dump.sh
+      run: ./packages/dashmate/scripts/volumes/dump.sh
       shell: bash
       if: steps.local-network-data.outputs.cache-hit != 'true'
 

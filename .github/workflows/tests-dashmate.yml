@@ -95,7 +95,7 @@ jobs:
         if: inputs.restore_local_network_data == true
 
       - name: Restore dashmate volumes
-        run: ./scripts/dashmate/volumes/restore.sh
+        run: ./packages/dashmate/scripts/volumes/restore.sh
         if: steps.local-network-data.outputs.cache-hit == 'true'
 
       - name: Run tests with cache
