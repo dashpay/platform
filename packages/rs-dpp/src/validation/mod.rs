@@ -11,7 +11,7 @@ use crate::version::PlatformVersion;
 #[cfg(feature = "validation")]
 use crate::ProtocolError;
 #[cfg(feature = "validation")]
-pub(crate) mod byte_array_meta;
+pub(crate) mod byte_array_keyword;
 #[cfg(feature = "validation")]
 pub mod json_schema_validator;
 #[cfg(feature = "validation")]

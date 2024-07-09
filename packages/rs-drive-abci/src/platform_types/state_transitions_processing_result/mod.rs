@@ -91,4 +91,9 @@ impl StateTransitionsProcessingResult {
     pub fn into_execution_results(self) -> Vec<StateTransitionExecutionResult> {
         self.execution_results
     }
+
+    /// State Transition execution results
+    pub fn execution_results(&self) -> &Vec<StateTransitionExecutionResult> {
+        &self.execution_results
+    }
 }

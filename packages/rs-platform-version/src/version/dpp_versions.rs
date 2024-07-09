@@ -219,8 +219,6 @@ pub struct DocumentTypeSchemaVersions {
 #[derive(Clone, Debug, Default)]
 pub struct RecursiveSchemaValidatorVersions {
     pub traversal_validator: FeatureVersion,
-    pub byte_array_has_no_items_as_parent_validator: FeatureVersion,
-    pub pattern_is_valid_regex_validator: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
