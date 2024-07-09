@@ -24,7 +24,6 @@ impl Drive {
                 Self::full_identity_with_public_key_hash_query(public_key_hash, identity_id)?;
             self.grove_get_proved_path_query(
                 &query,
-                true,
                 transaction,
                 &mut vec![],
                 &platform_version.drive,
@@ -34,7 +33,6 @@ impl Drive {
             let query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
             self.grove_get_proved_path_query(
                 &query,
-                false,
                 transaction,
                 &mut vec![],
                 &platform_version.drive,

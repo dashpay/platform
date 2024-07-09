@@ -250,13 +250,12 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 111); //it + left + right
+        assert_eq!(proof.len(), 112); //it + left + right
 
         // Merk Level 1
         let mut query = Query::new();
@@ -273,7 +272,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -295,7 +293,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -318,7 +315,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -340,7 +336,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -362,7 +357,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -384,7 +378,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -408,7 +401,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -432,7 +424,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -454,7 +445,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -476,7 +466,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -498,7 +487,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,
@@ -520,7 +508,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(
                 &root_path_query,
-                false,
                 None,
                 &mut drive_operations,
                 drive_version,

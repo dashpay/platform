@@ -27,7 +27,6 @@ impl Drive {
     pub fn grove_get_proved_path_query(
         &self,
         path_query: &PathQuery,
-        verbose: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
@@ -39,7 +38,6 @@ impl Drive {
         {
             0 => self.grove_get_proved_path_query_v0(
                 path_query,
-                verbose,
                 transaction,
                 drive_operations,
             ),

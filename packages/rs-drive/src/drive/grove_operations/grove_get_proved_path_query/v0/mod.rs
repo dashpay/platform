@@ -13,13 +13,12 @@ impl Drive {
     pub(super) fn grove_get_proved_path_query_v0(
         &self,
         path_query: &PathQuery,
-        verbose: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<u8>, Error> {
         let CostContext { value, cost } =
             self.grove
-                .get_proved_path_query(path_query, verbose, transaction);
+                .get_proved_path_query(path_query, None, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

@@ -439,7 +439,7 @@ mod tests {
             original_data_contract.id().to_buffer(),
             start_at_ms,
             Some(10),
-            Some(0),
+            None,
             version,
         )
         .expect("To verify contract history");

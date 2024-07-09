@@ -1707,7 +1707,6 @@ impl<'a> DriveQuery<'a> {
         )?;
         drive.grove_get_proved_path_query(
             &path_query,
-            false,
             transaction,
             drive_operations,
             &platform_version.drive,
@@ -1764,7 +1763,6 @@ impl<'a> DriveQuery<'a> {
 
         let proof = drive.grove_get_proved_path_query(
             &path_query,
-            self.start_at.is_some(),
             transaction,
             drive_operations,
             &platform_version.drive,

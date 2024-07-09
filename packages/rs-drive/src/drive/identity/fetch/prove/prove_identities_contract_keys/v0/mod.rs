@@ -27,7 +27,6 @@ impl Drive {
         );
         self.grove_get_proved_path_query(
             &query,
-            false,
             transaction,
             &mut drive_operations,
             drive_version,

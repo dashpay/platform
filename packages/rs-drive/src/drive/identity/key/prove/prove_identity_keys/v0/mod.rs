@@ -34,7 +34,6 @@ impl Drive {
         let identity_query = key_request.into_path_query();
         self.grove_get_proved_path_query(
             &identity_query,
-            false,
             transaction,
             &mut vec![],
             &platform_version.drive,

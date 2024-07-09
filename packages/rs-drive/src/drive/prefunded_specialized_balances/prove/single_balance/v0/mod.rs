@@ -18,7 +18,6 @@ impl Drive {
         let balance_query = PathQuery::new_single_key(balance_path, balance_id.to_vec());
         self.grove_get_proved_path_query(
             &balance_query,
-            false,
             transaction,
             &mut vec![],
             &platform_version.drive,
