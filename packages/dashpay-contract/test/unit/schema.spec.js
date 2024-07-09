@@ -235,7 +235,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to
@@ -326,7 +326,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to
@@ -681,7 +681,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to
@@ -731,7 +731,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to
