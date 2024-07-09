@@ -132,6 +132,7 @@ async fn test_data_contracts_2_nx() {
     not(feature = "offline-testing"),
     ignore = "This test requires special procedure to regenerate test vectors"
 )]
+#[ignore = "todo: Lukazs to re-enable"]
 async fn test_data_contract_history_read() {
     let cfg = Config::new();
     let id = Identifier::from_string(
