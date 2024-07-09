@@ -2814,7 +2814,7 @@ source = "git+https://github.com/dashpay/jsonschema-rs?branch=configure_regexp#a
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
- "base64 0.13.1",
+ "base64 0.22.0",
  "bytecount",
  "fancy-regex",
  "fraction",
