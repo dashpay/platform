@@ -71,6 +71,7 @@ describe('Testnet Fullnode', function main() {
           chainFilePath: certificatePath,
           privateFilePath: privKeyPath,
         },
+        acceptUnmetSystemRequirements: true,
         isVerbose: true,
       });
 

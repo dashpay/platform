@@ -67,10 +67,6 @@ export default class SetupCommand extends BaseCommand {
     const tasks = new Listr(
       [
         {
-          title: 'System requirements',
-          task: async () => dockerCompose.throwErrorIfNotInstalled(),
-        },
-        {
           title: 'Configuration preset',
           task: async (ctx, task) => {
             if (ctx.preset === undefined) {

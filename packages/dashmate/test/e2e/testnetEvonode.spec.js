@@ -74,6 +74,7 @@ describe('Testnet Evonode', function main() {
           chainFilePath: certificatePath,
           privateFilePath: privKeyPath,
         },
+        acceptUnmetSystemRequirements: true,
         isVerbose: true,
       });
 

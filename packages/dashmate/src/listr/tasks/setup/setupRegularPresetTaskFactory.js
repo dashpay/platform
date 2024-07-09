@@ -23,6 +23,7 @@ import generateRandomString from '../../../util/generateRandomString.js';
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
  * @param {DefaultConfigs} defaultConfigs
  * @param {importCoreDataTask} importCoreDataTask
+ * @param {verifySystemRequirementsTask} verifySystemRequirementsTask
  */
 export default function setupRegularPresetTaskFactory({
   configFile,
@@ -31,6 +32,7 @@ export default function setupRegularPresetTaskFactory({
   configureSSLCertificateTask,
   defaultConfigs,
   importCoreDataTask,
+  verifySystemRequirementsTask,
 }) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -75,6 +77,7 @@ export default function setupRegularPresetTaskFactory({
 
           ctx.config = defaultConfigs.get(ctx.preset);
 
+          // TODO: We need to change this and enable platform on mainnet
           ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
 
@@ -93,6 +96,9 @@ export default function setupRegularPresetTaskFactory({
         options: {
           persistentOutput: true,
         },
+      },
+      {
+        task: () => verifySystemRequirementsTask(),
       },
       {
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE,
