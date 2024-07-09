@@ -103,7 +103,7 @@ export default function getBaseConfigFactory(homeDir) {
                 'getbestblockhash', 'getblockhash', 'sendrawtransaction', 'getrawtransaction',
                 'getblockstats', 'getmerkleblocks', 'getrawtransactionmulti', 'getrawmempool',
                 'getblockcount', 'getbestchainlock', 'getblock', 'getblockheader', 'getblockheaders',
-                'protx diff', 'getnetworkinfo', 'getblockchaininfo', 'mnsync status', 'masternode status',
+                'protxdiff', 'getnetworkinfo', 'getblockchaininfo', 'mnsyncstatus', 'masternodestatus',
               ],
               lowPriority: true,
             },
@@ -111,8 +111,8 @@ export default function getBaseConfigFactory(homeDir) {
               password: 'rpcpassword',
               whitelist: [
                 'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
-                'verifychainlock', 'protx listdiff', 'quorum listextended', 'quorum info',
-                'getassetunlockstatuses', 'sendrawtransaction', 'mnsync status',
+                'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
+                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus',
               ],
               lowPriority: false,
             },
@@ -124,7 +124,7 @@ export default function getBaseConfigFactory(homeDir) {
             tenderdash: {
               password: 'rpcpassword',
               whitelist: [
-                'quorum info', 'quorum verify', 'quorum sign', 'masternode status', 'masternodelist',
+                'quoruminfo', 'quorumverify', 'quorumplatformsign', 'masternodestatus', 'masternodelist',
                 'ping', 'getnetworkinfo',
               ],
               lowPriority: false,
