@@ -21,7 +21,6 @@ for (const dep in packageJson.dependencies) {
   }
 }
 
-// Step 3: Iterate over the dependencies in the package.json object and remove any that are not in the external array
 for (const dep in packageJson.devDependencies) {
   if (dep !== 'oclif') {
     delete packageJson.devDependencies[dep];
