@@ -646,7 +646,7 @@ impl Value {
         Ok(None)
     }
 
-    /// Gets the inner index map sorted my a special
+    /// Gets the inner index map sorted by a specified property
     pub fn inner_optional_index_map<'a, T>(
         document_type: &'a [(Value, Value)],
         key: &'a str,

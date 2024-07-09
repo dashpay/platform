@@ -329,6 +329,7 @@ mod tests {
 
     mod creation_tests {
         use super::*;
+        use assert_matches::assert_matches;
         use dpp::data_contract::accessors::v0::DataContractV0Setters;
         use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 
@@ -408,7 +409,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
