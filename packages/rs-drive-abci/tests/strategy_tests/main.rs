@@ -28,6 +28,7 @@ mod query;
 mod strategy;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
+mod voting_tests;
 
 pub type BlockHeight = u64;
 
@@ -131,7 +132,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -176,7 +177,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
     }
 
     #[test]
@@ -235,7 +236,14 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             ..
-        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
+        } = run_chain_for_strategy(
+            &mut platform,
+            15,
+            strategy.clone(),
+            config.clone(),
+            40,
+            &mut None,
+        );
 
         let known_root_hash = abci_app
             .platform
@@ -297,6 +305,7 @@ mod tests {
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
@@ -369,7 +378,14 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             ..
-        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
+        } = run_chain_for_strategy(
+            &mut platform,
+            15,
+            strategy.clone(),
+            config.clone(),
+            40,
+            &mut None,
+        );
 
         let known_root_hash = abci_app
             .platform
@@ -431,6 +447,7 @@ mod tests {
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
@@ -494,7 +511,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
 
         let balance = outcome
             .abci_app
@@ -508,7 +525,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864825980)
+        assert_eq!(balance, 99864759120)
     }
 
     #[test]
@@ -556,7 +573,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -606,7 +623,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -664,7 +681,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -737,7 +754,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40);
+            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40, &mut None);
 
         // With these params if we didn't rotate we would have at most 240
         // of the 500 hpmns that could get paid, however we are expecting that most
@@ -833,7 +850,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be 100, but we
         // can expect it to be much higher.
@@ -916,7 +933,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
@@ -997,7 +1014,7 @@ mod tests {
             abci_app,
             proposers,
             ..
-        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
@@ -1090,7 +1107,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
 
         assert_eq!(outcome.identities.len(), 100);
     }
@@ -1149,7 +1166,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1168,7 +1185,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "3beaf287fb5fb712715e688ef3cf642e3e4042270907ebd022050b06af0cb433".to_string()
+            "2c1628cbe2b7f67b48078045146890fb4ac5498a2826201ce01f5c290d8be0ac".to_string()
         )
     }
 
@@ -1233,7 +1250,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -1352,7 +1369,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 30, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 30, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -1443,7 +1460,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -1547,7 +1564,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -1633,7 +1650,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1745,7 +1763,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1858,7 +1877,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1878,7 +1898,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "10fbe38850d752b491305b2587468788acbd6dd130272c5a8844d0da05e3a9cf".to_string()
+            "f86815bbe9f0596b0ebe5c5e093efcd7e768f1fdb3701955918d9b20f2c7d9ae".to_string()
         )
     }
 
@@ -1988,7 +2008,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -2007,7 +2028,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "9ed86b1ed5d0f7a981cb0ff2f3943603a095a031c463b3389bce8a6f60e2b21e".to_string()
+            "2a3c97f0c35ee026715121f1c21c076f0adadfd59ab9ee7672c28f56724f8df3".to_string()
         )
     }
 
@@ -2113,7 +2134,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, result) in tx_results_per_block {
                 assert_eq!(
@@ -2227,7 +2249,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
@@ -2345,7 +2368,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, 470);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2478,7 +2502,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, 90);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2627,7 +2652,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, 97);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2695,7 +2721,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
         let balances = outcome
@@ -2779,7 +2805,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
         let state = outcome.abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
@@ -2868,7 +2894,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         let identities = outcome
             .abci_app
@@ -3041,8 +3067,14 @@ mod tests {
             },
             last_block_pooled_withdrawals_amount,
         ) = {
-            let outcome =
-                run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 1);
+            let outcome = run_chain_for_strategy(
+                &mut platform,
+                2,
+                strategy.clone(),
+                config.clone(),
+                1,
+                &mut None,
+            );
 
             // Withdrawal transactions are not populated to block execution context yet
             assert_eq!(outcome.withdrawals.len(), 0);
@@ -3092,6 +3124,7 @@ mod tests {
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
@@ -3175,6 +3208,7 @@ mod tests {
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
@@ -3289,6 +3323,7 @@ mod tests {
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
@@ -3397,6 +3432,7 @@ mod tests {
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
@@ -3575,7 +3611,8 @@ mod tests {
                     })
                 });
 
-            let outcome = run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7);
+            let outcome =
+                run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7, &mut None);
             outcomes.push(outcome);
         }
 
@@ -3761,9 +3798,15 @@ mod tests {
                 })
             });
 
-        let outcome_a =
-            run_chain_for_strategy(&mut platform_a, 18, strategy.clone(), config.clone(), 7);
-        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7);
+        let outcome_a = run_chain_for_strategy(
+            &mut platform_a,
+            18,
+            strategy.clone(),
+            config.clone(),
+            7,
+            &mut None,
+        );
+        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7, &mut None);
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -3916,9 +3959,16 @@ mod tests {
                 })
             });
 
-        let outcome_a =
-            run_chain_for_strategy(&mut platform_a, 100, strategy.clone(), config.clone(), 7);
-        let outcome_b = run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7);
+        let outcome_a = run_chain_for_strategy(
+            &mut platform_a,
+            100,
+            strategy.clone(),
+            config.clone(),
+            7,
+            &mut None,
+        );
+        let outcome_b =
+            run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7, &mut None);
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -4049,7 +4099,14 @@ mod tests {
             identity_nonce_counter,
             identity_contract_nonce_counter,
             ..
-        } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
+        } = run_chain_for_strategy(
+            &mut platform,
+            100,
+            strategy.clone(),
+            config.clone(),
+            89,
+            &mut None,
+        );
 
         let state = abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
@@ -4110,6 +4167,7 @@ mod tests {
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
             },
@@ -4185,7 +4243,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15, &mut None);
 
         let _balances = &outcome
             .abci_app
@@ -4244,7 +4302,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
         let state_transitions = outcome
             .state_transition_results_per_block
             .get(&1)

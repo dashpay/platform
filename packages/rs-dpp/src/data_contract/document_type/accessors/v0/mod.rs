@@ -10,7 +10,7 @@ use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use indexmap::IndexMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
@@ -21,7 +21,10 @@ pub trait DocumentTypeV0Getters {
     fn schema_owned(self) -> Value;
 
     /// Returns the indices of the document type.
-    fn indices(&self) -> &Vec<Index>;
+    fn indexes(&self) -> &BTreeMap<String, Index>;
+
+    /// The contested index if one exists
+    fn find_contested_index(&self) -> Option<&Index>;
 
     /// Returns the index structure of the document type.
     fn index_structure(&self) -> &IndexLevel;

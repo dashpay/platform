@@ -1,31 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
@@ -179,7 +151,11 @@ impl<C> Platform<C> {
             self.register_system_identity_operations(identity, &mut operations);
         }
 
-        self.register_dpns_top_level_domain_operations(&dpns_data_contract, &mut operations)?;
+        self.register_dpns_top_level_domain_operations(
+            &dpns_data_contract,
+            genesis_time,
+            &mut operations,
+        )?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
@@ -228,6 +204,7 @@ impl<C> Platform<C> {
     fn register_dpns_top_level_domain_operations<'a>(
         &'a self,
         contract: &'a DataContract,
+        genesis_time: TimestampMillis,
         operations: &mut Vec<DriveOperation<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
@@ -255,9 +232,9 @@ impl<C> Platform<C> {
             properties: document_stub_properties,
             owner_id: contract.owner_id(),
             revision: None,
-            created_at: None,
-            updated_at: None,
-            transferred_at: None,
+            created_at: Some(genesis_time),
+            updated_at: Some(genesis_time),
+            transferred_at: Some(genesis_time),
             created_at_block_height: None,
             updated_at_block_height: None,
             transferred_at_block_height: None,
@@ -315,8 +292,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    162, 81, 50, 217, 246, 11, 77, 233, 231, 192, 228, 176, 197, 102, 24, 18, 160,
-                    5, 182, 75, 119, 174, 75, 155, 86, 92, 88, 197, 201, 60, 60, 157
+                    37, 162, 178, 238, 218, 180, 162, 24, 34, 199, 191, 38, 43, 39, 197, 101, 133,
+                    229, 130, 128, 20, 135, 168, 126, 219, 15, 235, 112, 139, 89, 187, 115
                 ]
             )
         }

@@ -7,6 +7,7 @@ mod tests {
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
     use drive::drive::config::DriveConfig;
+    use std::collections::BTreeMap;
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
@@ -115,6 +116,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     13,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -185,6 +187,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
@@ -236,6 +239,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
@@ -361,6 +365,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     13,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -428,6 +433,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
@@ -479,6 +485,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
@@ -518,7 +525,7 @@ mod tests {
 
     #[test]
     fn run_chain_on_epoch_change_with_new_version_and_removing_votes() {
-        // Add a new version to upgrade to new protocol version only with one vote
+        // Add a new version to upgrade to new protocol version only with one votes
         const TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE: u32 =
             (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 4;
 
@@ -589,7 +596,14 @@ mod tests {
             current_validator_quorum_hash: current_quorum_hash,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 13);
+        } = run_chain_for_strategy(
+            &mut platform,
+            1,
+            strategy.clone(),
+            config.clone(),
+            13,
+            &mut None,
+        );
 
         let platform = abci_app.platform;
 
@@ -776,6 +790,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     16,
+                    &mut None,
                 );
                 let platform = abci_app.platform;
                 let state = platform.state.load();
@@ -836,6 +851,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
@@ -890,6 +906,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
@@ -1015,6 +1032,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     15,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -1067,6 +1085,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
@@ -1165,6 +1184,7 @@ mod tests {
                         current_proposer_versions: None, //restart the proposer versions
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
@@ -1221,6 +1241,7 @@ mod tests {
                         current_proposer_versions: Some(current_proposer_versions),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
@@ -1346,7 +1367,14 @@ mod tests {
                     identity_contract_nonce_counter,
                     instant_lock_quorums,
                     ..
-                } = run_chain_for_strategy(&mut platform, 1400, strategy, config.clone(), 15);
+                } = run_chain_for_strategy(
+                    &mut platform,
+                    1400,
+                    strategy,
+                    config.clone(),
+                    15,
+                    &mut None,
+                );
                 let state = abci_app.platform.state.load();
                 {
                     let platform = abci_app.platform;
@@ -1443,6 +1471,7 @@ mod tests {
                         current_proposer_versions: None,
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                        current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,

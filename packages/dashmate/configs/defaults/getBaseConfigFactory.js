@@ -91,8 +91,45 @@ export default function getBaseConfigFactory(homeDir) {
         rpc: {
           host: '127.0.0.1',
           port: 9998,
-          user: 'dashrpc',
-          password: 'rpcpassword',
+          users: {
+            dashmate: {
+              password: 'rpcpassword',
+              whitelist: null,
+              lowPriority: false,
+            },
+            dapi: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestblockhash', 'getblockhash', 'sendrawtransaction', 'getrawtransaction',
+                'getblockstats', 'getmerkleblocks', 'getrawtransactionmulti', 'getrawmempool',
+                'getblockcount', 'getbestchainlock', 'getblock', 'getblockheader', 'getblockheaders',
+                'protxdiff', 'getnetworkinfo', 'getblockchaininfo', 'mnsyncstatus', 'masternodestatus',
+              ],
+              lowPriority: true,
+            },
+            drive_consensus: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
+                'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
+                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus',
+              ],
+              lowPriority: false,
+            },
+            drive_check_tx: {
+              password: 'rpcpassword',
+              whitelist: ['getrawtransaction'],
+              lowPriority: true,
+            },
+            tenderdash: {
+              password: 'rpcpassword',
+              whitelist: [
+                'quoruminfo', 'quorumverify', 'quorumplatformsign', 'masternodestatus', 'masternodelist',
+                'ping', 'getnetworkinfo',
+              ],
+              lowPriority: false,
+            },
+          },
           allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
         },
         spork: {
@@ -279,7 +316,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.0.0-dev.2',
+              image: 'dashpay/tenderdash:1.0.0',
             },
             p2p: {
               host: '0.0.0.0',

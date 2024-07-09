@@ -1,5 +1,4 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
@@ -26,6 +25,7 @@ use crate::execution::validation::state_transition::state_transitions::documents
 use crate::execution::validation::state_transition::ValidationMode;
 
 mod data_triggers;
+pub mod fetch_contender;
 pub mod fetch_documents;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStateValidationV0
@@ -34,7 +34,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
         &self,
         action: DocumentsBatchTransitionAction,
         platform: &PlatformStateRef,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
@@ -54,7 +54,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         &self,
         mut state_transition_action: DocumentsBatchTransitionAction,
         platform: &PlatformStateRef,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -81,7 +81,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -90,7 +90,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -99,7 +99,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -108,7 +108,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -117,7 +117,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     update_price_action.validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -127,7 +127,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(
                         platform,
                         owner_id,
-                        epoch,
+                        block_info,
                         execution_context,
                         transaction,
                         platform_version,
@@ -170,11 +170,6 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                 )?;
 
                 if !data_trigger_execution_result.is_valid() {
-                    tracing::debug!(
-                        "{:?} state transition data trigger was not valid, errors are {:?}",
-                        transition,
-                        data_trigger_execution_result.errors,
-                    );
                     // If a state transition isn't valid because of data triggers we still need
                     // to bump the identity data contract nonce
                     let consensus_errors: Vec<ConsensusError> = data_trigger_execution_result

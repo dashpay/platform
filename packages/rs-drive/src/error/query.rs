@@ -132,4 +132,16 @@ pub enum QuerySyntaxError {
     /// Invalid identity prove request error
     #[error("invalid identity prove request error: {0}")]
     InvalidIdentityProveRequest(&'static str),
+
+    /// Requesting proof with offset error
+    #[error("requesting proof with offset error: {0}")]
+    RequestingProofWithOffset(String),
+
+    /// Unknown index error
+    #[error("unknown error: {0}")]
+    UnknownIndex(String),
+
+    /// Missing index values for query
+    #[error("incorrect index values error: {0}")]
+    IndexValuesError(String),
 }

@@ -7,8 +7,6 @@ pub mod document_types {
 
         pub mod properties {
             pub const TO_USER_ID: &str = "toUserId";
-            pub const CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
-            pub const CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
         }
     }
 }

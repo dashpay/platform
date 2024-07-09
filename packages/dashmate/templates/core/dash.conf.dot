@@ -12,18 +12,25 @@ debuglogfile=/var/log/dash/{{= it.core.log.file.path.split('/').pop() }}
 logips={{=it.core.logIps }}
 fallbackfee=0.00001
 
-# JSONRPC
+# JSON RPC
 server=1
-rpcuser={{=it.core.rpc.user}}
-rpcpassword={{=it.core.rpc.password}}
 rpcwallet=main
 deprecatedrpc=hpmn
+rpcworkqueue=64
+rpcthreads=16
+#rpcwhitelistdefault=0
+rpcexternaluser={{= Object.entries(it.core.rpc.users).filter(([username, options]) => options.lowPriority).map(([username, options]) => username).join(',') }}
+{{~ Object.keys(it.core.rpc.users) :user}}
+{{ salt = it.crypto.randomBytes(16).toString('hex'); }}
+{{ hmac = it.crypto.createHmac('sha256', salt).update(it.core.rpc.users[user].password); }}
+rpcauth={{=user}}:{{=salt}}${{=hmac.digest('hex') }}
+{{? it.core.rpc.users[user].whitelist !== null }}
+#rpcwhitelist={{=user}}:{{=it.core.rpc.users[user].whitelist.join(',')}}
+{{?}}
+{{~}}
 
 {{~it.core.rpc.allowIps :host}}
 rpcallowip={{=host}}{{~}}
-
-rpcworkqueue=64
-rpcthreads=16
 
 # external network
 listen=1

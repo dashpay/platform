@@ -1,9 +1,14 @@
+use std::sync::Arc;
+
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{WhereClause, WhereOperator},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     ordering::OrderClause,
     single_document_drive_query::SingleDocumentDriveQuery,
+    single_document_drive_query::SingleDocumentDriveQueryContestedStatus,
+    vote_polls_by_end_date_query::VotePollsByEndDateDriveQuery,
+    vote_query::IdentityBasedVoteDriveQuery,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -71,6 +76,62 @@ mod single_document_drive_query;
 // Module declarations exclusively for "server" feature
 #[cfg(feature = "server")]
 mod test_index;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote poll vote state query module
+pub mod vote_poll_vote_state_query;
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote Query module
+pub mod vote_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote poll contestant votes query module
+pub mod vote_poll_contestant_votes_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote polls by end date query
+pub mod vote_polls_by_end_date_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote polls by document type query
+pub mod vote_polls_by_document_type_query;
+
+/// Function type for looking up a contract by identifier
+///
+/// This function is used to look up a contract by its identifier.
+/// It should be implemented by the caller in order to provide data
+/// contract required for operations like proof verification.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<Option<Arc<DataContract>>, crate::error::Error>
+    + 'a;
+
+/// Creates a [ContractLookupFn] function that returns provided data contract when requested.
+///
+/// # Arguments
+///
+/// * `data_contract` - [Arc<DataContract>](DataContract) to return
+///
+/// # Returns
+///
+/// [ContractLookupFn] that will return the `data_contract`, or `None` if
+/// the requested contract is not the same as the provided one.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn contract_lookup_fn_for_contract<'a>(
+    data_contract: Arc<DataContract>,
+) -> Box<ContractLookupFn<'a>> {
+    let func = move
+        |id: &dpp::identifier::Identifier| -> Result<Option<Arc<DataContract>>, crate::error::Error> {
+            if data_contract.id().ne(id) {
+                return Ok(None);
+            }
+            Ok(Some(Arc::clone(&data_contract)))
+        };
+    Box::new(func)
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// A query to get the votes given out by an identity
+pub mod contested_resource_votes_given_by_identity_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
@@ -250,6 +311,7 @@ impl QueryResultEncoding {
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Drive query struct
+// todo: rename to DriveDocumentQuery
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveQuery<'a> {
     ///DataContract
@@ -264,7 +326,7 @@ pub struct DriveQuery<'a> {
     pub limit: Option<u16>,
     /// Order by
     pub order_by: IndexMap<String, OrderClause>,
-    /// Start at
+    /// Start at document id
     pub start_at: Option<[u8; 32]>,
     /// Start at included
     pub start_at_included: bool,
@@ -1137,7 +1199,7 @@ impl<'a> DriveQuery<'a> {
             .ok_or(Error::Query(
                 QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
                     "query must be for valid indexes, valid indexes are: {:?}",
-                    self.document_type.indices()
+                    self.document_type.indexes()
                 )),
             ))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
@@ -1645,7 +1707,6 @@ impl<'a> DriveQuery<'a> {
         )?;
         drive.grove_get_proved_path_query(
             &path_query,
-            false,
             transaction,
             drive_operations,
             &platform_version.drive,
@@ -1702,7 +1763,6 @@ impl<'a> DriveQuery<'a> {
 
         let proof = drive.grove_get_proved_path_query(
             &path_query,
-            self.start_at.is_some(),
             transaction,
             drive_operations,
             &platform_version.drive,

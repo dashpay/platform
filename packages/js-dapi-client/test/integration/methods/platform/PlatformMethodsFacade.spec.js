@@ -215,7 +215,7 @@ describe('PlatformMethodsFacade', () => {
   });
 
   describe('#getProtocolVersionUpgradeVoteStatus', () => {
-    it('should get version upgrade vote status', async () => {
+    it('should get version upgrade votes status', async () => {
       const startProTxHash = Buffer.alloc(32).fill('a').toString('hex');
       const proTxHash = Buffer.alloc(32).fill('b').toString('hex');
 

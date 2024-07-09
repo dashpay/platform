@@ -16,7 +16,9 @@ use dpp::prelude::Identifier;
 
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -61,6 +63,23 @@ pub enum DocumentOperationType<'a> {
         document_type_info: DocumentTypeInfo<'a>,
         /// Should we override the document if one already exists?
         override_document: bool,
+    },
+    /// Adds a contested document to a contract matching the desired info.
+    /// A contested document is a document that is trying to a acquire a
+    /// unique index that has a conflict resolution mechanism
+    AddContestedDocument {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        /// The vote poll in question that will should be created
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+        /// Should we insert without verifying first that the document doesn't already exist
+        insert_without_check: bool,
+        /// Should we also insert the vote poll stored info
+        also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
     },
     /// Updates a document and returns the associated fee.
     UpdateDocument {
@@ -130,6 +149,44 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     document_and_contract_info,
                     override_document,
                     block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
+            }
+            DocumentOperationType::AddContestedDocument {
+                owned_document_info,
+                contested_document_resource_vote_poll,
+                contract_info,
+                document_type_info,
+                insert_without_check,
+                also_insert_vote_poll_stored_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                let mut operations = drive.add_contested_document_for_contract_operations(
+                    document_and_contract_info,
+                    contested_document_resource_vote_poll,
+                    insert_without_check,
+                    block_info,
+                    also_insert_vote_poll_stored_info,
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,

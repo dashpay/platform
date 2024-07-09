@@ -109,6 +109,12 @@ pub enum ProtocolError {
     #[error("Invalid key contract bounds error {0}")]
     InvalidKeyContractBoundsError(String),
 
+    #[error("unknown storage key requirements {0}")]
+    UnknownStorageKeyRequirements(String),
+
+    #[error("unknown contested index resolution {0}")]
+    UnknownContestedIndexResolution(String),
+
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
 
@@ -130,6 +136,9 @@ pub enum ProtocolError {
 
     #[error("Generic Error: {0}")]
     Generic(String),
+
+    #[error("Not supported Error: {0}")]
+    NotSupported(String),
 
     #[cfg(feature = "message-signing")]
     #[error("Invalid signing type error: {0}")]
@@ -216,6 +225,9 @@ pub enum ProtocolError {
         errors: Vec<ConsensusError>,
         raw_identity: Value,
     },
+
+    #[error("votes error {0}")]
+    VoteError(String),
 
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),

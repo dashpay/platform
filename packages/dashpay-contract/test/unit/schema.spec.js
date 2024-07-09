@@ -11,14 +11,14 @@ const whitepaperMasternodeText = 'Full nodes are servers running on a P2P networ
 const encoded32Chars = '4fafc98bbfe597f7ba2c9f767d52036d';
 const encoded64Chars = '4fafc98bbfe597f7ba2c9f767d52036d2226175960a908e355e5c575711eb166';
 
-const expectJsonSchemaError = (validationResult) => {
+const expectJsonSchemaError = (validationResult, count = 1, index = 0) => {
   const errors = validationResult.getErrors();
   expect(errors)
     .to
     .have
-    .length(1);
+    .length(count);
 
-  const error = validationResult.getErrors()[0];
+  const error = validationResult.getErrors()[index];
   expect(error)
     .to
     .be
@@ -55,7 +55,6 @@ describe('Dashpay Contract', () => {
       beforeEach(() => {
         profileData = {
           displayName: 'Bob',
-          publicMessage: 'Hello Dashpay!',
         };
       });
 
@@ -97,11 +96,15 @@ describe('Dashpay Contract', () => {
 
       describe('avatarUrl', () => {
         it('should not be empty', async () => {
-          profileData.avatarUrl = '';
+          profileData = {
+            avatarUrl: '',
+            avatarHash: Buffer.alloc(32),
+            avatarFingerprint: Buffer.alloc(8),
+          };
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to
@@ -113,7 +116,11 @@ describe('Dashpay Contract', () => {
         });
 
         it('should have less than 2048 chars length', async () => {
-          profileData.avatarUrl = `https://github.com/dashpay/dash/wiki/Whitepaper?text=${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}`;
+          profileData = {
+            avatarUrl: `https://github.com/dashpay/dash/wiki/Whitepaper?text=${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}`,
+            avatarHash: Buffer.alloc(32),
+            avatarFingerprint: Buffer.alloc(8),
+          };
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -129,7 +136,11 @@ describe('Dashpay Contract', () => {
         });
 
         it('should be of type URL', async () => {
-          profileData.avatarUrl = 'notAUrl';
+          profileData = {
+            avatarUrl: 'notAUrl',
+            avatarHash: Buffer.alloc(32),
+            avatarFingerprint: Buffer.alloc(8),
+          };
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -143,11 +154,44 @@ describe('Dashpay Contract', () => {
             .deep
             .equal('/avatarUrl');
         });
+
+        it('should be present if other avatar properties are present', async () => {
+          profileData = {
+            avatarHash: Buffer.alloc(32),
+            avatarFingerprint: Buffer.alloc(8),
+          };
+
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          let error = expectJsonSchemaError(validationResult, 2, 0);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params)
+            .to
+            .deep
+            .equal({ missingProperty: 'avatarUrl' });
+
+          error = expectJsonSchemaError(validationResult, 2, 1);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params)
+            .to
+            .deep
+            .equal({ missingProperty: 'avatarUrl' });
+        });
       });
 
       describe('avatarHash', () => {
         it('should have minimum length of 32', async () => {
-          profileData.avatarHash = Buffer.alloc(0);
+          profileData = {
+            avatarUrl: 'https://github.com/dashpay/dash.jpg',
+            avatarHash: Buffer.alloc(0),
+            avatarFingerprint: Buffer.alloc(8),
+          };
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -163,7 +207,11 @@ describe('Dashpay Contract', () => {
         });
 
         it('should have maximum length of 32', async () => {
-          profileData.avatarHash = Buffer.alloc(33);
+          profileData = {
+            avatarUrl: 'https://github.com/dashpay/dash.jpg',
+            avatarHash: Buffer.alloc(33),
+            avatarFingerprint: Buffer.alloc(8),
+          };
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -179,11 +227,15 @@ describe('Dashpay Contract', () => {
         });
 
         it('should be of type array', async () => {
-          profileData.avatarHash = 'notAnArray';
+          profileData = {
+            avatarUrl: 'https://github.com/dashpay/dash.jpg',
+            avatarHash: 'notAnArray',
+            avatarFingerprint: Buffer.alloc(8),
+          };
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to
@@ -193,11 +245,44 @@ describe('Dashpay Contract', () => {
             .deep
             .equal('/avatarHash');
         });
+
+        it('should be present if other avatar properties are present', async () => {
+          profileData = {
+            avatarUrl: 'https://github.com/dashpay/dash.jpg',
+            avatarFingerprint: Buffer.alloc(8),
+          };
+
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          let error = expectJsonSchemaError(validationResult, 2, 0);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params)
+            .to
+            .deep
+            .equal({ missingProperty: 'avatarHash' });
+
+          error = expectJsonSchemaError(validationResult, 2, 1);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params)
+            .to
+            .deep
+            .equal({ missingProperty: 'avatarHash' });
+        });
       });
 
       describe('avatarFingerprint', () => {
         it('should have minimum length of 8', async () => {
-          profileData.avatarFingerprint = Buffer.alloc(0);
+          profileData = {
+            avatarUrl: 'https://github.com/dashpay/dash.jpg',
+            avatarHash: Buffer.alloc(32),
+            avatarFingerprint: Buffer.alloc(0),
+          };
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -213,7 +298,11 @@ describe('Dashpay Contract', () => {
         });
 
         it('should have maximum length of 8', async () => {
-          profileData.avatarFingerprint = Buffer.alloc(33);
+          profileData = {
+            avatarUrl: 'https://github.com/dashpay/dash.jpg',
+            avatarHash: Buffer.alloc(32),
+            avatarFingerprint: Buffer.alloc(33),
+          };
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -229,11 +318,15 @@ describe('Dashpay Contract', () => {
         });
 
         it('should be of type array', async () => {
-          profileData.avatarFingerprint = 'notAnArray';
+          profileData = {
+            avatarUrl: 'https://github.com/dashpay/dash.jpg',
+            avatarHash: Buffer.alloc(32),
+            avatarFingerprint: 'notAnArray',
+          };
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to
@@ -242,6 +335,35 @@ describe('Dashpay Contract', () => {
             .to
             .deep
             .equal('/avatarFingerprint');
+        });
+
+        it('should be present if other avatar properties are present', async () => {
+          profileData = {
+            avatarUrl: 'https://github.com/dashpay/dash.jpg',
+            avatarHash: Buffer.alloc(32),
+          };
+
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          let error = expectJsonSchemaError(validationResult, 2, 0);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params)
+            .to
+            .deep
+            .equal({ missingProperty: 'avatarFingerprint' });
+
+          error = expectJsonSchemaError(validationResult, 2, 1);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params)
+            .to
+            .deep
+            .equal({ missingProperty: 'avatarFingerprint' });
         });
       });
 
@@ -259,6 +381,18 @@ describe('Dashpay Contract', () => {
           .to
           .deep
           .equal(['someOtherProperty']);
+      });
+
+      it('at least one of avatarUrl, publicMessage or displayName should be present', async () => {
+        const profile = dpp.document.create(contract, identityId, 'profile', { });
+
+        const result = profile.validate(dpp.protocolVersion);
+
+        const error = expectJsonSchemaError(result);
+
+        expect(error.keyword)
+          .to
+          .equal('minProperties');
       });
 
       it('should be valid', async () => {
@@ -547,7 +681,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to
@@ -597,7 +731,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to
@@ -638,23 +772,6 @@ describe('Dashpay Contract', () => {
           expect(error.instancePath)
             .to
             .equal('/accountReference');
-        });
-      });
-
-      describe('coreHeightCreatedAt', () => {
-        it('should not be less than 1', async () => {
-          contactRequestData.coreHeightCreatedAt = -1;
-
-          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword)
-            .to
-            .equal('minimum');
-          expect(error.instancePath)
-            .to
-            .equal('/coreHeightCreatedAt');
         });
       });
 

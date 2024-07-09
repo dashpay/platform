@@ -7,4 +7,5 @@ pub struct StateTransitionMinFees {
     pub document_batch_sub_transition: u64,
     pub contract_create: u64,
     pub contract_update: u64,
+    pub masternode_vote: u64,
 }

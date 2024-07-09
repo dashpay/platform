@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
 
@@ -68,7 +39,7 @@ pub mod grove_operations;
 pub mod identity;
 #[cfg(feature = "server")]
 pub mod initialization;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod object_size_info;
 
 /// Protocol upgrade module
@@ -89,11 +60,16 @@ mod open;
 mod operations;
 #[cfg(feature = "server")]
 mod platform_state;
+mod prefunded_specialized_balances;
 #[cfg(feature = "server")]
 mod prove;
 /// Contains a set of useful grovedb proof verification functions
 #[cfg(feature = "verify")]
 pub mod verify;
+
+/// Vote module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod votes;
 
 #[cfg(feature = "server")]
 use crate::drive::cache::DriveCache;
@@ -115,13 +91,13 @@ pub struct Drive {
 // is at the top of the tree in order to reduce proof size
 // the most import tree is theDataContract Documents tree
 
-//                                   DataContract_Documents 64
-//                      /                                            \
-//             Identities 32                                       Balances 96
-//             /        \                                  /                              \
-//   Token_Balances 16    Pools 48      WithdrawalTransactions 80                       Misc  112
-//       /      \                                /                                              \
-//     NUPKH->I 8 UPKH->I 24    SpentAssetLockTransactions 72                                 Versions 120
+//                                                      DataContract_Documents 64
+//                                 /                                                                         \
+//                       Identities 32                                                                        Balances 96
+//             /                            \                                              /                                               \
+//   Token_Balances 16                    Pools 48                    WithdrawalTransactions 80                                        Votes  112
+//       /      \                           /                                      /                                                    /                          \
+//     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40          SpentAssetLockTransactions 72                             Misc 104                          Versions 120
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -134,22 +110,27 @@ pub enum RootTree {
     Identities = 32,
     /// Unique Public Key Hashes to Identities
     UniquePublicKeyHashesToIdentities = 24, // UPKH->I above
-    /// Non Unique Public Key Hashes to Identities, useful for Masternode Identities
+    /// Non-Unique Public Key Hashes to Identities, useful for Masternode Identities
     NonUniquePublicKeyKeyHashesToIdentities = 8, // NUPKH->I
     /// Pools
     Pools = 48,
+    /// PreFundedSpecializedBalances are balances that can fund specific state transitions that match
+    /// predefined criteria
+    PreFundedSpecializedBalances = 40,
     /// Spent Asset Lock Transactions
     SpentAssetLockTransactions = 72,
     /// Misc
-    Misc = 112,
+    Misc = 104,
     /// Asset Unlock Transactions
     WithdrawalTransactions = 80,
-    /// Balances
+    /// Balances (For identities)
     Balances = 96,
     /// Token Balances
     TokenBalances = 16,
     /// Versions desired by proposers
     Versions = 120,
+    /// Registered votes
+    Votes = 112,
 }
 
 /// Storage cost
@@ -179,12 +160,14 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::UniquePublicKeyHashesToIdentities => &[24],
             RootTree::SpentAssetLockTransactions => &[72],
             RootTree::Pools => &[48],
-            RootTree::Misc => &[112],
+            RootTree::PreFundedSpecializedBalances => &[40],
+            RootTree::Misc => &[104],
             RootTree::WithdrawalTransactions => &[80],
             RootTree::Balances => &[96],
             RootTree::TokenBalances => &[16],
             RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
             RootTree::Versions => &[120],
+            RootTree::Votes => &[112],
         }
     }
 }

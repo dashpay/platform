@@ -1,4 +1,6 @@
+#[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
+#[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;

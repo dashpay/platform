@@ -30,6 +30,13 @@ function fetchProofForStateTransitionFactory(driveClient) {
         documentRequest.setContractId(documentTransition.getDataContractId().toBuffer());
         documentRequest.setDocumentType(documentTransition.getType());
         documentRequest.setDocumentId(documentTransition.getId().toBuffer());
+
+        const status = documentTransition.hasPrefundedBalance()
+          ? DocumentRequest.DocumentContestedStatus.CONTESTED
+          : DocumentRequest.DocumentContestedStatus.NOT_CONTESTED;
+
+        documentRequest.setDocumentContestedStatus(status);
+
         return documentRequest;
       });
 
@@ -75,6 +82,30 @@ function fetchProofForStateTransitionFactory(driveClient) {
       });
 
       requestV0.setContractsList(contractsList);
+    } if (stateTransition.isVotingStateTransition()) {
+      const { VoteStatusRequest } = GetProofsRequestV0;
+      const { ContestedResourceVoteStatusRequest } = VoteStatusRequest;
+
+      const contestedResourceVoteStatusRequest = new ContestedResourceVoteStatusRequest();
+
+      const contestedVotePoll = stateTransition.getContestedDocumentResourceVotePoll();
+
+      if (!contestedVotePoll) {
+        throw new Error('Masternode vote state transition should have a contested vote poll');
+      }
+
+      contestedResourceVoteStatusRequest.setContractId(contestedVotePoll.contractId.toBuffer());
+      contestedResourceVoteStatusRequest.setDocumentTypeName(contestedVotePoll.documentTypeName);
+      contestedResourceVoteStatusRequest.setIndexName(contestedVotePoll.indexName);
+      contestedResourceVoteStatusRequest.setIndexValuesList(contestedVotePoll.indexValues);
+      contestedResourceVoteStatusRequest.setVoterIdentifier(
+        stateTransition.getProTxHash().toBuffer(),
+      );
+
+      const voteStatus = new VoteStatusRequest();
+      voteStatus.setContestedResourceVoteStatusRequest(contestedResourceVoteStatusRequest);
+
+      requestV0.setVotesList([voteStatus]);
     }
 
     const request = new GetProofsRequest();

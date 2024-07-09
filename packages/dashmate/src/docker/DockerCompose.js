@@ -480,7 +480,15 @@ export default class DockerCompose {
 
     this.#isDockerSetupVerified = true;
 
-    const dockerComposeInstallLink = 'https://docs.docker.com/compose/install/';
+    await this.throwErrorIfDockerIsNotInstalled();
+
+    await this.throwErrorIfDockerComposeIsNotInstalled();
+  }
+
+  /**
+   * @private
+   */
+  async throwErrorIfDockerIsNotInstalled() {
     const dockerInstallLink = 'https://docs.docker.com/engine/install/';
     const dockerPostInstallLinuxLink = 'https://docs.docker.com/engine/install/linux-postinstall/';
     const dockerContextLink = 'https://docs.docker.com/engine/context/working-with-contexts/';
@@ -499,22 +507,55 @@ export default class DockerCompose {
 
     if (typeof dockerVersionInfo === 'string') {
       // Old versions
-      const version = semver.coerce(dockerVersionInfo);
-      if (semver.lt(version, DockerCompose.DOCKER_MIN_VERSION)) {
+      const parsedVersion = semver.coerce(dockerVersionInfo);
+
+      if (parsedVersion === null) {
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.warn(`Can't parse version from dockerVersionInfo: ${util.inspect(dockerVersionInfo)}`);
+        }
+
+        return;
+      }
+
+      if (semver.lt(parsedVersion, DockerCompose.DOCKER_MIN_VERSION)) {
         throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher. Please follow instructions ${dockerInstallLink}`);
       }
     } else {
       // Since 1.39
-      if (typeof dockerVersionInfo.Components[0].Details.ApiVersion !== 'string') {
-        throw new Error(`docker version is not a string: ${util.inspect(dockerVersionInfo)}`);
+      if (typeof dockerVersionInfo?.Components[0]?.Details?.ApiVersion !== 'string') {
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.warn(`Docker API version must be a string: ${util.inspect(dockerVersionInfo)}`);
+        }
+
+        return;
       }
 
-      const version = semver.coerce(dockerVersionInfo.Components[0].Details.ApiVersion);
+      const parsedVersion = semver.coerce(dockerVersionInfo.Components[0].Details.ApiVersion);
+
+      if (parsedVersion === null) {
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.warn(`Can't parse docker API version: ${util.inspect(dockerVersionInfo)}`);
+        }
+
+        return;
+      }
+
       const minVersion = '1.25.0';
-      if (semver.lt(version, minVersion)) {
+
+      if (semver.lt(parsedVersion, minVersion)) {
         throw new Error(`Update Docker Engine to version ${minVersion} or higher. Please follow instructions ${dockerInstallLink}`);
       }
     }
+  }
+
+  /**
+   * @private
+   */
+  async throwErrorIfDockerComposeIsNotInstalled() {
+    const dockerComposeInstallLink = 'https://docs.docker.com/compose/install/';
 
     // Check docker compose
     let version;
@@ -525,10 +566,26 @@ export default class DockerCompose {
     }
 
     if (typeof version !== 'string') {
-      throw new Error(`docker compose version is not a string: ${util.inspect(version)}`);
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.warn(`docker compose version is not a string: ${util.inspect(version)}`);
+      }
+
+      return;
     }
 
-    if (semver.lt(semver.coerce(version), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
+    const parsedVersion = semver.coerce(version);
+
+    if (parsedVersion === null) {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.warn(`Can't parse docker compose version: ${util.inspect(version)}`);
+      }
+
+      return;
+    }
+
+    if (semver.lt(parsedVersion, DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
       throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher. Please follow instructions ${dockerComposeInstallLink}`);
     }
   }

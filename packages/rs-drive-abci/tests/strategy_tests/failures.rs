@@ -98,7 +98,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -190,13 +190,20 @@ mod tests {
                     signature: [2; 96].into(),
                 })
             });
-        run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 15);
+        run_chain_for_strategy(
+            &mut platform,
+            1,
+            strategy.clone(),
+            config.clone(),
+            15,
+            &mut None,
+        );
 
         //platform block didn't complete, so it should get another init chain
 
         strategy.failure_testing = None;
 
-        run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 15, strategy, config, 15, &mut None);
     }
 
     // #[test]

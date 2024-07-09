@@ -14,13 +14,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let query = Self::full_identities_query(identity_ids)?;
-        self.grove_get_proved_path_query(
-            &query,
-            false,
-            transaction,
-            &mut drive_operations,
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&query, transaction, &mut drive_operations, drive_version)
     }
 }
 

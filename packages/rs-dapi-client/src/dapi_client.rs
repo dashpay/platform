@@ -3,6 +3,7 @@
 use backon::{ExponentialBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
+use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::Instrument;
@@ -16,10 +17,14 @@ use crate::{
 
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error)]
-pub enum DapiClientError<TE> {
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub enum DapiClientError<TE: Mockable> {
     /// The error happened on transport layer
     #[error("transport error with {1}: {0}")]
-    Transport(TE, Address),
+    Transport(
+        #[cfg_attr(feature = "mocks", serde(with = "dapi_grpc::mock::serde_mockable"))] TE,
+        Address,
+    ),
     /// There are no valid DAPI addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
@@ -33,7 +38,7 @@ pub enum DapiClientError<TE> {
     Mock(#[from] crate::mock::MockError),
 }
 
-impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
+impl<TE: CanRetry + Mockable> CanRetry for DapiClientError<TE> {
     fn is_node_failure(&self) -> bool {
         use DapiClientError::*;
         match self {
@@ -43,6 +48,28 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
             #[cfg(feature = "mocks")]
             Mock(_) => false,
         }
+    }
+}
+
+#[cfg(feature = "mocks")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TransportErrorData {
+    transport_error: Vec<u8>,
+    address: Address,
+}
+
+/// Serialization of [DapiClientError].
+///
+/// We need to do manual serialization because of the generic type parameter which doesn't support serde derive.
+impl<TE: Mockable> Mockable for DapiClientError<TE> {
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        Some(serde_json::to_vec(self).expect("serialize DAPI client error"))
+    }
+
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(data: &[u8]) -> Option<Self> {
+        Some(serde_json::from_slice(data).expect("deserialize DAPI client error"))
     }
 }
 
@@ -57,7 +84,8 @@ pub trait DapiRequestExecutor {
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
     where
         R: TransportRequest + Mockable,
-        R::Response: Mockable;
+        R::Response: Mockable,
+        <R::Client as TransportClient>::Error: Mockable;
 }
 
 /// Access point to DAPI.
@@ -97,6 +125,7 @@ impl DapiRequestExecutor for DapiClient {
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable,
+        <R::Client as TransportClient>::Error: Mockable,
     {
         // Join settings of different sources to get final version of the settings for this execution:
         let applied_settings = self
@@ -236,9 +265,7 @@ impl DapiRequestExecutor for DapiClient {
 
         // Dump request and response to disk if dump_dir is set:
         #[cfg(feature = "dump")]
-        if let Ok(result) = &result {
-            Self::dump_request_response(&dump_request, result, dump_dir);
-        }
+        Self::dump_request_response(&dump_request, &result, dump_dir);
 
         result
     }

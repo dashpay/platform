@@ -1,6 +1,7 @@
 use crate::drive::object_size_info::path_key_info::PathKeyInfo::{
     PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
 };
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -9,7 +10,7 @@ use grovedb_storage::worst_case_costs::WorstKeyLength;
 use std::collections::HashSet;
 
 /// Path key info
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum PathKeyInfo<'a, const N: usize> {
     /// An into iter Path with a Key
     PathFixedSizeKey(([&'a [u8]; N], Vec<u8>)),
@@ -22,6 +23,21 @@ pub enum PathKeyInfo<'a, const N: usize> {
     PathKeyRef((Vec<Vec<u8>>, &'a [u8])),
     /// A path size
     PathKeySize(KeyInfoPath, KeyInfo),
+}
+
+impl<'a> TryFrom<Vec<Vec<u8>>> for PathKeyInfo<'a, 0> {
+    type Error = Error;
+
+    fn try_from(mut value: Vec<Vec<u8>>) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            Err(Error::Drive(DriveError::InvalidPath(
+                "path must not be none to convert into a path key info",
+            )))
+        } else {
+            let last = value.remove(value.len() - 1);
+            Ok(PathKey((value, last)))
+        }
+    }
 }
 
 impl<'a, const N: usize> PathKeyInfo<'a, N> {
@@ -132,9 +148,6 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
     }
 
     /// Get the KeyInfoPath for grovedb estimated costs
-    #[allow(dead_code)]
-    #[deprecated(note = "This function is marked as unused.")]
-    #[allow(deprecated)]
     pub(crate) fn convert_to_key_info_path(self) -> Result<KeyInfoPath, Error> {
         match self {
             PathKey((path, key)) => {

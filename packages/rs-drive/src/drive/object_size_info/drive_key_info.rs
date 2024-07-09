@@ -3,9 +3,7 @@ use crate::drive::object_size_info::path_key_info::PathKeyInfo::{
     PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
 };
 use crate::drive::object_size_info::PathInfo;
-use crate::drive::object_size_info::PathInfo::{
-    PathFixedSizeIterator, PathIterator, PathWithSizes,
-};
+use crate::drive::object_size_info::PathInfo::{PathAsVec, PathFixedSizeArray, PathWithSizes};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -52,24 +50,22 @@ impl<'a> DriveKeyInfo<'a> {
     pub fn add_path_info<const N: usize>(self, path_info: PathInfo<'a, N>) -> PathKeyInfo<'a, N> {
         match self {
             Key(key) => match path_info {
-                PathFixedSizeIterator(iter) => PathFixedSizeKey((iter, key)),
-                PathIterator(iter) => PathKey((iter, key)),
+                PathFixedSizeArray(iter) => PathFixedSizeKey((iter, key)),
+                PathAsVec(iter) => PathKey((iter, key)),
                 PathWithSizes(key_info_path) => PathKeySize(key_info_path, KnownKey(key)),
             },
             KeyRef(key_ref) => match path_info {
-                PathFixedSizeIterator(iter) => PathFixedSizeKeyRef((iter, key_ref)),
-                PathIterator(iter) => PathKeyRef((iter, key_ref)),
+                PathFixedSizeArray(iter) => PathFixedSizeKeyRef((iter, key_ref)),
+                PathAsVec(iter) => PathKeyRef((iter, key_ref)),
                 PathWithSizes(key_info_path) => {
                     PathKeySize(key_info_path, KnownKey(key_ref.to_vec()))
                 }
             },
             KeySize(key_info) => match path_info {
-                PathFixedSizeIterator(iter) => {
+                PathFixedSizeArray(iter) => {
                     PathKeySize(KeyInfoPath::from_known_path(iter), key_info)
                 }
-                PathIterator(iter) => {
-                    PathKeySize(KeyInfoPath::from_known_owned_path(iter), key_info)
-                }
+                PathAsVec(iter) => PathKeySize(KeyInfoPath::from_known_owned_path(iter), key_info),
                 PathWithSizes(key_info_path) => PathKeySize(key_info_path, key_info),
             },
         }

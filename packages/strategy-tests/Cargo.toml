@@ -37,6 +37,8 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 simple-signer = { path = "../simple-signer" }
 platform-version = { path = "../rs-platform-version" }
+platform-serialization = { path = "../rs-platform-serialization" }
+platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [

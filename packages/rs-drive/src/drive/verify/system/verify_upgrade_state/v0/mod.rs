@@ -20,7 +20,7 @@ impl Drive {
     /// # Returns
     ///
     /// Returns a `Result` with a tuple of `RootHash` and `IntMap<ProtocolVersion, u64>`. The `IntMap<ProtocolVersion, u64>`
-    /// represents vote count of each version in the current epoch.
+    /// represents votes count of each version in the current epoch.
     ///
     /// # Errors
     ///

@@ -15,7 +15,7 @@ pub struct CleanedCommitInfo {
     pub quorum_hash: [u8; 32],
     /// The aggregated BLS signature for the block
     pub block_signature: [u8; 96],
-    /// The list of additional vote extensions, if any
+    /// The list of additional votes extensions, if any
     pub threshold_vote_extensions: Vec<VoteExtension>,
 }
 

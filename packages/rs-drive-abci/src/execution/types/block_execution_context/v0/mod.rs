@@ -44,7 +44,7 @@ pub struct BlockExecutionContextV0 {
     pub epoch_info: EpochInfo,
     /// Total hpmn count
     pub hpmn_count: u32,
-    /// Unsigned withdrawal transactions to be available for extend and verify vote handlers
+    /// Unsigned withdrawal transactions to be available for extend and verify votes handlers
     pub unsigned_withdrawal_transactions: UnsignedWithdrawalTxs,
     /// Block state
     pub block_platform_state: PlatformState,

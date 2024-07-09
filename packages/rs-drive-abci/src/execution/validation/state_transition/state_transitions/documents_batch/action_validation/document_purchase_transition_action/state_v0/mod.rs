@@ -1,4 +1,4 @@
-use dpp::block::epoch::Epoch;
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -17,7 +17,7 @@ pub(super) trait DocumentPurchaseTransitionActionStateValidationV0 {
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -28,7 +28,7 @@ impl DocumentPurchaseTransitionActionStateValidationV0 for DocumentPurchaseTrans
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        _epoch: &Epoch,
+        _block_info: &BlockInfo,
         _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -51,7 +51,7 @@ impl DocumentPurchaseTransitionActionStateValidationV0 for DocumentPurchaseTrans
 
         // We need to verify that the resultant document doesn't violate any unique properties
 
-        if document_type.indices().iter().any(|index| index.unique) {
+        if document_type.indexes().values().any(|index| index.unique) {
             platform
                 .drive
                 .validate_document_purchase_transition_action_uniqueness(

@@ -107,9 +107,9 @@ impl Platform<DefaultCoreRPC> {
     ) -> Result<Platform<DefaultCoreRPC>, Error> {
         let config = config.unwrap_or(PlatformConfig::default_testnet());
         let core_rpc = DefaultCoreRPC::open(
-            config.core.rpc.url().as_str(),
-            config.core.rpc.username.clone(),
-            config.core.rpc.password.clone(),
+            config.core.consensus_rpc.url().as_str(),
+            config.core.consensus_rpc.username.clone(),
+            config.core.consensus_rpc.password.clone(),
         )
         .map_err(|_e| {
             Error::Execution(ExecutionError::CorruptedCodeExecution(

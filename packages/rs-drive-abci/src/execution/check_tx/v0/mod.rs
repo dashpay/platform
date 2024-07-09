@@ -19,7 +19,6 @@ use crate::execution::types::state_transition_container::v0::{
 };
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use crate::platform_types::platform_state::PlatformState;
 #[cfg(test)]
 use dpp::serialization::PlatformDeserializable;
 #[cfg(test)]
@@ -97,7 +96,7 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
-        platform_state: &PlatformState,
+        platform_ref: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
         let mut state_transition_hash = None;
@@ -144,13 +143,6 @@ where
             }
         };
 
-        let platform_ref = PlatformRef {
-            drive: &self.drive,
-            state: platform_state,
-            config: &self.config,
-            core_rpc: &self.core_rpc,
-        };
-
         let user_fee_increase = state_transition.user_fee_increase() as u32;
 
         check_tx_result.priority =
@@ -182,7 +174,7 @@ where
         if let Some(execution_event) = validation_result.into_data()? {
             let validation_result = self.validate_fees_of_event(
                 &execution_event,
-                platform_state.last_block_info(),
+                platform_ref.state.last_block_info(),
                 None,
                 platform_version,
             )?;
@@ -254,6 +246,7 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use crate::platform_types::platform::PlatformRef;
     use dpp::consensus::state::state_error::StateError;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
@@ -291,6 +284,13 @@ mod tests {
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let tx: Vec<u8> = vec![
             0, 0, 0, 104, 37, 39, 102, 34, 99, 205, 58, 189, 155, 27, 93, 128, 49, 86, 24, 164, 86,
@@ -342,13 +342,13 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let check_result = platform
-            .check_tx(&tx, FirstTimeCheck, &platform_state, platform_version)
+            .check_tx(&tx, FirstTimeCheck, &platform_ref, platform_version)
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
 
         let check_result = platform
-            .check_tx(&tx, Recheck, &platform_state, platform_version)
+            .check_tx(&tx, Recheck, &platform_ref, platform_version)
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
@@ -365,7 +365,7 @@ mod tests {
             .expect("expected to process state transition");
 
         let check_result = platform
-            .check_tx(&tx, Recheck, &platform_state, platform_version)
+            .check_tx(&tx, Recheck, &platform_ref, platform_version)
             .expect("expected to check tx");
 
         assert!(!check_result.is_valid());
@@ -388,6 +388,13 @@ mod tests {
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -433,11 +440,18 @@ mod tests {
             )
             .expect("expected to insert identity");
 
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let validation_result = platform
             .check_tx(
                 serialized.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -448,7 +462,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -468,13 +482,13 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2985330);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3055480);
 
         let check_result = platform
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -492,7 +506,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -522,6 +536,20 @@ mod tests {
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -629,7 +657,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -640,7 +668,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -663,13 +691,13 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 905460);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 905380);
 
         let check_result = platform
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -687,7 +715,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -717,6 +745,13 @@ mod tests {
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -769,7 +804,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -782,7 +817,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -808,14 +843,14 @@ mod tests {
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            2985330 * 2
+            3055480 * 2
         );
 
         let check_result = platform
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -835,7 +870,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -865,6 +900,13 @@ mod tests {
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -914,7 +956,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -925,7 +967,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -949,7 +991,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -967,7 +1009,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -992,6 +1034,13 @@ mod tests {
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -1052,7 +1101,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2985330);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3055480);
 
         platform
             .drive
@@ -1100,7 +1149,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1111,7 +1160,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1136,14 +1185,14 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            7125710
+            7420280
         );
 
         let check_result = platform
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1161,7 +1210,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1191,6 +1240,13 @@ mod tests {
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -1251,7 +1307,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2985330);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3055480);
 
         platform
             .drive
@@ -1337,7 +1393,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1348,7 +1404,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1371,13 +1427,13 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1231130);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1231050);
 
         let check_result = platform
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1395,7 +1451,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1425,6 +1481,13 @@ mod tests {
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -1591,7 +1654,7 @@ mod tests {
             .check_tx(
                 documents_batch_update_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1615,6 +1678,13 @@ mod tests {
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -1719,7 +1789,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1758,6 +1828,13 @@ mod tests {
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let mut signer = SimpleSigner::default();
 
         let mut rng = StdRng::seed_from_u64(567);
@@ -1861,7 +1938,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1886,7 +1963,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1902,7 +1979,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1931,6 +2008,13 @@ mod tests {
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -1999,7 +2083,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2028,6 +2112,13 @@ mod tests {
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -2132,7 +2223,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2204,7 +2295,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2220,7 +2311,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2249,6 +2340,13 @@ mod tests {
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -2427,7 +2525,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2499,7 +2597,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2515,7 +2613,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2566,6 +2664,13 @@ mod tests {
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let genesis_time = 0;
 
@@ -2635,7 +2740,7 @@ mod tests {
             .check_tx(
                 update_transition_bytes.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to execute identity top up tx");
@@ -2683,6 +2788,13 @@ mod tests {
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let genesis_time = 0;
 
@@ -2769,7 +2881,7 @@ mod tests {
             .check_tx(
                 update_transition_bytes.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to execute identity top up tx");

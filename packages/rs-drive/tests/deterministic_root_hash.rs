@@ -426,12 +426,12 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         "e34e316e84c4639f44c512c5e602ee7d674d33ce69f02237de87af5f6151cdf6"
     );
 
-    let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+    let dashpay_contract = load_system_data_contract(SystemDataContract::Dashpay, platform_version)
         .expect("should load dpns contract");
 
     drive
         .apply_contract(
-            &dpns_contract,
+            &dashpay_contract,
             BlockInfo::genesis(),
             true,
             StorageFlags::optional_default_as_cow(),
@@ -446,7 +446,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         .unwrap()
         .expect("should return app hash");
 
-    let expected_app_hash = "fa23fefadd8b0254b9e4c594f09026c070148f5de9c39ff9ea227a327761e062";
+    let expected_app_hash = "d4adde72efa33c20ba41ae2c6b34255060bea5f51592e4e9977dd41e893bd21e";
 
     assert_eq!(hex::encode(app_hash), expected_app_hash);
 }

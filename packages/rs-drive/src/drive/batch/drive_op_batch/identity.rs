@@ -7,7 +7,10 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
+use crate::drive::votes::resolved::votes::ResolvedVote;
+use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -74,7 +77,17 @@ pub enum IdentityOperationType {
         /// The revision we are updating to
         revision: Revision,
     },
-
+    /// Casts a votes as a masternode.
+    MasternodeCastVote {
+        /// The pro tx hash of the masternode doing the voting
+        voter_pro_tx_hash: [u8; 32],
+        /// The strength of the vote, masternodes have 1, evonodes have 4,
+        strength: u8,
+        /// Contested Vote type
+        vote: ResolvedVote,
+        /// Remove previous contested resource vote choice
+        previous_resource_vote_choice_to_remove: Option<(ResourceVoteChoice, PreviousVoteCount)>,
+    },
     /// Updates an identities nonce for a specific contract.
     UpdateIdentityNonce {
         /// The revision id
@@ -182,6 +195,23 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             )?]),
+            IdentityOperationType::MasternodeCastVote {
+                voter_pro_tx_hash,
+                strength,
+                vote,
+                previous_resource_vote_choice_to_remove,
+            } => {
+                // No need to have estimated_costs_only_with_layer_info and block_info here
+                // This is because voting is a special operation with a fixed cost
+                drive.register_identity_vote_operations(
+                    voter_pro_tx_hash,
+                    strength,
+                    vote,
+                    previous_resource_vote_choice_to_remove,
+                    transaction,
+                    platform_version,
+                )
+            }
             IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id,
                 contract_id,

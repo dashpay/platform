@@ -121,10 +121,10 @@ laddr = ""
 core-rpc-host = "core:{{= it.core.rpc.port}}"
 
 # Local Dash Core RPC Username
-core-rpc-username = "{{= it.core.rpc.user}}"
+core-rpc-username = "tenderdash"
 
 # Local Dash Core RPC Password
-core-rpc-password = "{{= it.core.rpc.password}}"
+core-rpc-password = "{{= it.core.rpc.users.tenderdash.password}}"
 
 # Path to the client certificate generated while creating needed files for secure connection.
 # If a remote validator address is provided but no certificate, the connection will be insecure

@@ -3,8 +3,10 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::dashcore::hashes::Hash;
+use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
+use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
@@ -16,8 +18,7 @@ where
         voting_key: &[u8; 20],
         platform_version: &PlatformVersion,
     ) -> Result<Identity, Error> {
-        let voting_identifier =
-            Self::get_voter_identifier(pro_tx_hash, voting_key, platform_version)?;
+        let voting_identifier = Identifier::create_voter_identifier(pro_tx_hash, voting_key);
         let mut identity = Identity::create_basic_identity(voting_identifier, platform_version)?;
         identity.add_public_keys([Self::get_voter_identity_key(
             *voting_key,

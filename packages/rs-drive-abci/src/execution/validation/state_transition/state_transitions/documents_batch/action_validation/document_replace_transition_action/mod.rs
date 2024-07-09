@@ -1,4 +1,4 @@
-use dpp::block::epoch::Epoch;
+use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 
 use dpp::validation::SimpleConsensusValidationResult;
@@ -25,7 +25,7 @@ pub trait DocumentReplaceTransitionActionValidation {
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -57,7 +57,7 @@ impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionActi
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -72,7 +72,7 @@ impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionActi
             0 => self.validate_state_v0(
                 platform,
                 owner_id,
-                epoch,
+                block_info,
                 execution_context,
                 transaction,
                 platform_version,
