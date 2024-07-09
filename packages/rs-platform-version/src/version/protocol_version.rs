@@ -13,6 +13,7 @@ use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::v1::PLATFORM_V1;
 #[cfg(feature = "mock-versions")]
 use std::sync::OnceLock;
+use crate::version::v2::PLATFORM_V2;
 
 pub type FeatureVersion = u16;
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
@@ -56,7 +57,7 @@ pub struct PlatformVersion {
     pub system_data_contracts: SystemDataContractVersions,
 }
 
-pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1];
+pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1, PLATFORM_V2];
 
 #[cfg(feature = "mock-versions")]
 // We use OnceLock to be able to modify the version mocks
@@ -64,7 +65,7 @@ pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::ne
 #[cfg(feature = "mock-versions")]
 const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V1;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V2;
 
 impl PlatformVersion {
     pub fn get<'a>(version: u32) -> Result<&'a Self, PlatformVersionError> {

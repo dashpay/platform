@@ -1,6 +1,7 @@
 use bincode::{Decode, Encode};
 
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Encode, Decode, Default)]
 pub struct FeeStorageVersion {

@@ -13,6 +13,7 @@ pub mod signature;
 pub mod state_transition_min_fees;
 pub mod storage;
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Encode, Decode, Default)]
 pub struct FeeVersion {

@@ -1,5 +1,6 @@
 /// Version 0
 pub mod v0;
+mod v1;
 
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::{
@@ -27,6 +28,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
+use crate::platform_types::platform_state::v1::PlatformStateForSavingV1;
 
 /// Platform state
 #[derive(Clone, Debug, From)]
@@ -40,6 +42,7 @@ pub enum PlatformState {
 pub enum PlatformStateForSaving {
     /// Version 0
     V0(PlatformStateForSavingV0),
+    V1(PlatformStateForSavingV1)
 }
 
 impl PlatformStateForSaving {
@@ -55,6 +58,7 @@ impl PlatformStateForSaving {
     pub fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         match self {
             PlatformStateForSaving::V0(v0) => v0.current_protocol_version_in_consensus,
+            PlatformStateForSaving::V1(v1) => v1.current_protocol_version_in_consensus.parse().unwrap_or(0),
         }
     }
 }
