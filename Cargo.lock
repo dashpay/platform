@@ -2895,8 +2895,8 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.15.0"
-source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-properties#bb4800c8bb00803e088ac6ca724116d4fda12efe"
+version = "0.18.0"
+source = "git+https://github.com/dashpay/jsonschema-rs?branch=configure_regexp#7b00a2442ce44772e278b468bc4c2adc5e252226"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
@@ -2904,11 +2904,12 @@ dependencies = [
  "bytecount",
  "fancy-regex",
  "fraction",
+ "getrandom",
  "iso8601",
  "itoa",
- "lazy_static",
  "memchr",
  "num-cmp",
+ "once_cell",
  "parking_lot",
  "percent-encoding",
  "regex",
