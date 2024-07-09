@@ -14,12 +14,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
-        self.grove_get_proved_path_query(
-            &path_query,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&path_query, transaction, &mut vec![], drive_version)
     }
 }
 

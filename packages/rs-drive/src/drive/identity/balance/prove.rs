@@ -14,12 +14,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let balance_query = Self::balance_for_identity_id_query(identity_id);
-        self.grove_get_proved_path_query(
-            &balance_query,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 
     /// Proves an Identity's balance and revision from the backing store
@@ -30,12 +25,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let balance_query = Self::balance_and_revision_for_identity_id_query(identity_id);
-        self.grove_get_proved_path_query(
-            &balance_query,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 
     /// Proves multiple Identity balances from the backing store
@@ -46,12 +36,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let balance_query = Self::balances_for_identity_ids_query(identity_ids)?;
-        self.grove_get_proved_path_query(
-            &balance_query,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 }
 
