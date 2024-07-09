@@ -23,9 +23,9 @@ describe('getOverviewScopeFactory', () => {
       };
 
       getOverviewScope = getOverviewScopeFactory({
-        mockGetCoreScope,
-        mockGetMasternodeScope,
-        mockGetPlatformScope,
+        getCoreScope: mockGetCoreScope,
+        getMasternodeScope: mockGetMasternodeScope,
+        getPlatformScope: mockGetPlatformScope,
       });
     });
 

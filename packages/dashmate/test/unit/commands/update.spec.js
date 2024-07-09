@@ -17,7 +17,7 @@ describe('Update command', () => {
   });
 
   beforeEach(async function it() {
-    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    const getBaseConfig = getBaseConfigFactory({ homeDir: HomeDir.createTemp() });
 
     config = getBaseConfig();
 
@@ -35,11 +35,14 @@ describe('Update command', () => {
 
     const command = new UpdateCommand();
 
-    const updateNode = updateNodeFactory({ mockGetServicesList, mockDocker });
+    const updateNode = updateNodeFactory({
+      getServiceList: mockGetServicesList,
+      docker: mockDocker,
+    });
 
     await command.runWithDependencies({
       flags: { format: 'json' },
-      mockDocker,
+      docker: mockDocker,
       config,
       updateNode,
     });
@@ -61,11 +64,14 @@ describe('Update command', () => {
           : cb(false, mockDockerStream))),
     };
 
-    let updateNode = updateNodeFactory({ mockGetServicesList, mockDocker });
+    let updateNode = updateNodeFactory({
+      getServiceList: mockGetServicesList,
+      docker: mockDocker,
+    });
 
     await command.runWithDependencies({
       flags: { format: 'json' },
-      mockDocker,
+      docker: mockDocker,
       config,
       updateNode,
     });
@@ -84,11 +90,14 @@ describe('Update command', () => {
     mockGetServicesList = this.sinon.stub().callsFake(() => mockServicesList);
     mockDocker = { pull: this.sinon.stub().callsFake((image, cb) => cb(false, mockDockerStream)) };
 
-    updateNode = updateNodeFactory({ mockGetServicesList, mockDocker });
+    updateNode = updateNodeFactory({
+      getServiceList: mockGetServicesList,
+      docker: mockDocker,
+    });
 
     await command.runWithDependencies({
       flags: { format: 'json' },
-      mockDocker,
+      docker: mockDocker,
       config,
       updateNode,
     });

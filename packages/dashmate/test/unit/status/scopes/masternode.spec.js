@@ -25,9 +25,9 @@ describe('getMasternodeScopeFactory', () => {
 
       config = getConfigMock(this.sinon);
       getMasternodeScope = getMasternodeScopeFactory({
-        mockDockerCompose,
-        mockCreateRpcClient,
-        mockGetConnectionHost,
+        dockerCompose: mockDockerCompose,
+        createRpcClient: mockCreateRpcClient,
+        getConnectionHost: mockGetConnectionHost,
       });
     });
 

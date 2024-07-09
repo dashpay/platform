@@ -51,9 +51,9 @@ describe('getCoreScopeFactory', () => {
       p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
 
       getCoreScope = getCoreScopeFactory({
-        mockDockerCompose,
-        mockCreateRpcClient,
-        mockGetConnectionHost,
+        dockerCompose: mockDockerCompose,
+        createRpcClient: mockCreateRpcClient,
+        getConnectionHost: mockGetConnectionHost,
       });
     });
 

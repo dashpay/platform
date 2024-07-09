@@ -54,9 +54,9 @@ describe('getPlatformScopeFactory', () => {
       rpcPort = config.get('platform.drive.tenderdash.rpc.port');
       rpcService = `127.0.0.1:${rpcPort}`;
       getPlatformScope = getPlatformScopeFactory({
-        mockDockerCompose,
-        mockCreateRpcClient,
-        mockGetConnectionHost,
+        dockerCompose: mockDockerCompose,
+        createRpcClient: mockCreateRpcClient,
+        getConnectionHost: mockGetConnectionHost,
       });
     });
 
