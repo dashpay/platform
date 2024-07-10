@@ -3716,6 +3716,7 @@ name = "platform-version"
 version = "1.0.0-dev.16"
 dependencies = [
  "thiserror",
+ "versioned-feature-core",
 ]
 
 [[package]]
@@ -5813,6 +5814,11 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "versioned-feature-core"
+version = "1.0.0"
+source = "git+https://github.com/dashpay/versioned-feature-core#560157096c8405a46ce0f21a2e7e1bd11d6625b4"
 
 [[package]]
 name = "virtue"
