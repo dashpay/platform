@@ -1616,6 +1616,7 @@ dependencies = [
  "log",
  "nohash-hasher",
  "num_enum",
+ "once_cell",
  "platform-serialization",
  "platform-serialization-derive",
  "platform-value",
@@ -2862,6 +2863,7 @@ dependencies = [
 name = "json-schema-compatibility-validator"
 version = "0.25.16-rc.8"
 dependencies = [
+ "assert_matches",
  "json-patch",
  "json-schema-compatibility-validator",
  "once_cell",

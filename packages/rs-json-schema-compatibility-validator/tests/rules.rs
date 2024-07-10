@@ -1,5 +1,5 @@
 use json_schema_compatibility_validator::{
-    validate_schemas_compatibility, CompatibilityRuleExample, KEYWORD_COMPATIBILITY_RULES,
+    validate_schemas_compatibility, CompatibilityRuleExample, Options, KEYWORD_COMPATIBILITY_RULES,
 };
 
 #[test]
@@ -16,9 +16,11 @@ fn test_schema_keyword_rules() {
 }
 
 fn assert_examples(keyword: &str, examples: &[CompatibilityRuleExample]) {
+    let options = Options::default();
     for example in examples {
-        let result = validate_schemas_compatibility(&example.original_schema, &example.new_schema)
-            .expect("should not fail");
+        let result =
+            validate_schemas_compatibility(&example.original_schema, &example.new_schema, &options)
+                .expect("should not fail");
 
         if let Some(change) = &example.incompatible_change {
             let expected_change = vec![change.clone()];
