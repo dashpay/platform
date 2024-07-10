@@ -62,7 +62,7 @@ impl PlatformSerializable for PlatformState {
     type Error = Error;
 
     fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        let platform_version = PlatformVersion::get(self.current_protocol_version_in_consensus())?;
+        let platform_version = self.current_platform_version()?;
         let config = config::standard().with_big_endian().with_no_limit();
         let platform_state_for_saving: PlatformStateForSaving =
             self.clone().try_into_platform_versioned(platform_version)?;
@@ -108,12 +108,6 @@ impl PlatformState {
             self.serialize_to_bytes()
                 .expect("expected to serialize state"),
         )
-    }
-    /// Get the current platform version
-    pub fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
-        Ok(PlatformVersion::get(
-            self.current_protocol_version_in_consensus(),
-        )?)
     }
 
     /// The default state at platform start
@@ -288,6 +282,18 @@ impl PlatformStateV0Methods for PlatformState {
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         match self {
             PlatformState::V0(v0) => v0.current_protocol_version_in_consensus(),
+        }
+    }
+
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion> {
+        match self {
+            PlatformState::V0(v0) => v0.patched_platform_version(),
+        }
+    }
+
+    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>) {
+        match self {
+            PlatformState::V0(v0) => v0.set_patched_platform_version(version),
         }
     }
 

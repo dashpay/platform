@@ -10,3 +10,5 @@ pub mod storage;
 pub mod types;
 /// Validation module
 pub mod validation;
+
+pub use platform_events::block_start::patch_platform_version;

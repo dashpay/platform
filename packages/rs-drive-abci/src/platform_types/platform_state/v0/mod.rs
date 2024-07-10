@@ -42,6 +42,10 @@ pub struct PlatformStateV0 {
     pub current_validator_set_quorum_hash: QuorumHash,
     /// next quorum
     pub next_validator_set_quorum_hash: Option<QuorumHash>,
+    /// In case of emerge changes in code
+    /// a patched platform version will be placed here to fix a bug
+    /// which is not a part of normal upgrade process
+    pub patched_platform_version: Option<&'static PlatformVersion>,
     /// current validator set quorums
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
@@ -149,7 +153,7 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
     type Error = Error;
 
     fn try_from(value: PlatformStateV0) -> Result<Self, Self::Error> {
-        let platform_version = PlatformVersion::get(value.current_protocol_version_in_consensus)?;
+        let platform_version = value.current_platform_version()?;
         Ok(PlatformStateForSavingV0 {
             genesis_block_info: value.genesis_block_info,
             last_committed_block_info: value.last_committed_block_info,
@@ -206,6 +210,7 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
             next_validator_set_quorum_hash: value
                 .next_validator_set_quorum_hash
                 .map(|bytes| QuorumHash::from_byte_array(bytes.to_buffer())),
+            patched_platform_version: None,
             validator_sets: value
                 .validator_sets
                 .into_iter()
@@ -242,6 +247,7 @@ impl PlatformStateV0 {
             next_epoch_protocol_version,
             current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
+            patched_platform_version: None,
             validator_sets: Default::default(),
             chain_lock_validating_quorums: SignatureVerificationQuorumSet::new(
                 &config.chain_lock,
@@ -305,7 +311,19 @@ pub trait PlatformStateV0Methods {
     fn last_committed_block_info(&self) -> &Option<ExtendedBlockInfo>;
     /// Returns the current protocol version that is in consensus.
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion;
-
+    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion>;
+    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
+    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>);
+    /// Get the current platform version or patched if present
+    fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
+        self.patched_platform_version()
+            .map(|version| Ok(version))
+            .unwrap_or_else(|| {
+                PlatformVersion::get(self.current_protocol_version_in_consensus())
+                    .map_err(Error::from)
+            })
+    }
     /// Returns the upcoming protocol version for the next epoch.
     fn next_epoch_protocol_version(&self) -> ProtocolVersion;
 
@@ -529,6 +547,16 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     /// Get the current protocol version in consensus
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         self.current_protocol_version_in_consensus
+    }
+
+    /// Patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion> {
+        self.patched_platform_version
+    }
+
+    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
+    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>) {
+        self.patched_platform_version = version;
     }
 
     /// Returns the upcoming protocol version for the next epoch.

@@ -33,6 +33,7 @@ use crate::execution::validation::state_transition::processor::v0::{
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl ValidationMode {
     /// Returns a bool on whether we should validate that documents are valid against the state
@@ -235,6 +236,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
 #[cfg(test)]
 mod tests {
     use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
@@ -1076,9 +1078,8 @@ mod tests {
 
             let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-owner.json";
 
-            let platform_version = platform
-                .state
-                .load()
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
                 .current_platform_version()
                 .expect("expected to get current platform version");
 
@@ -1947,9 +1948,8 @@ mod tests {
 
             let contract_path = "tests/supporting_files/contract/dashpay/dashpay-contract-contact-request-mutable-and-can-not-be-deleted.json";
 
-            let platform_version = platform
-                .state
-                .load()
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
                 .current_platform_version()
                 .expect("expected to get current platform version");
 
@@ -2109,9 +2109,8 @@ mod tests {
 
             let contract_path = "tests/supporting_files/contract/dashpay/dashpay-contract-contact-request-not-mutable-and-can-be-deleted.json";
 
-            let platform_version = platform
-                .state
-                .load()
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
                 .current_platform_version()
                 .expect("expected to get current platform version");
 
@@ -2508,9 +2507,8 @@ mod tests {
 
             let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-all-transferable-no-owner-indexes.json";
 
-            let platform_version = platform
-                .state
-                .load()
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
                 .current_platform_version()
                 .expect("expected to get current platform version");
 

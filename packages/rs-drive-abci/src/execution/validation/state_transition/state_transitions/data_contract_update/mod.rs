@@ -18,6 +18,7 @@ use crate::execution::validation::state_transition::data_contract_update::state:
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
@@ -78,6 +79,7 @@ mod tests {
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
 
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract;
@@ -577,9 +579,8 @@ mod tests {
 
         let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-owner.json";
 
-        let platform_version = platform
-            .state
-            .load()
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
             .current_platform_version()
             .expect("expected to get current platform version");
 

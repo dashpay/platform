@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use dashcore_rpc::dashcore::BlockHash;
 
+use crate::execution::patch_platform_version::patch_platform_version;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -213,16 +214,21 @@ impl<C> Platform<C> {
         drive: Drive,
         core_rpc: C,
         config: PlatformConfig,
-        platform_state: PlatformState,
+        mut platform_state: PlatformState,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
     {
-        PlatformVersion::set_current(PlatformVersion::get(
-            platform_state.current_protocol_version_in_consensus(),
-        )?);
+        let platform_version =
+            PlatformVersion::get(platform_state.current_protocol_version_in_consensus())?;
+
+        PlatformVersion::set_current(platform_version);
 
         let height = platform_state.last_committed_block_height();
+
+        let block_info = *platform_state.last_block_info();
+
+        patch_platform_version(&block_info, platform_version, &mut platform_state)?;
 
         let platform: Platform<C> = Platform {
             drive,

@@ -5,6 +5,7 @@ use crate::execution::validation::state_transition::data_contract_update::state:
 use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;

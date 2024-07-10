@@ -23,6 +23,7 @@ use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::advanced_structure::v0::IdentityCreateStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;

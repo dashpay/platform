@@ -156,6 +156,7 @@ where
             &platform_ref,
             state_transition,
             check_tx_level,
+            platform_version,
         )?;
 
         // If there are any validation errors happen we return

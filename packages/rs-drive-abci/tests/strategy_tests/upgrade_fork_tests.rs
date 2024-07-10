@@ -18,6 +18,7 @@ mod tests {
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
+    use drive_abci::logging::LogLevel;
     use drive_abci::mimic::MimicExecuteBlockOptions;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
@@ -944,6 +945,8 @@ mod tests {
 
     #[test]
     fn run_chain_version_upgrade_slow_upgrade_quick_reversion_after_lock_in() {
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
+
         // Define the desired stack size
         let stack_size = 4 * 1024 * 1024; //Lets set the stack size to be higher than the default 2MB
 

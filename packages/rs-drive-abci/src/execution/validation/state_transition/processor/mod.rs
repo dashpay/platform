@@ -9,6 +9,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
 
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
 
 /// There are multiple stages in a state transition processing:

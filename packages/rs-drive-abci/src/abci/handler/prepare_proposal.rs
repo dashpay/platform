@@ -8,7 +8,6 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
-use dpp::version::PlatformVersion;
 use dpp::version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -117,12 +116,9 @@ where
         app_hash,
         state_transitions_result,
         validator_set_update,
-        protocol_version,
+        platform_version,
         mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
-
-    let platform_version = PlatformVersion::get(protocol_version)
-        .expect("must be set in run block proposal from existing protocol version");
 
     // We need to let Tenderdash know about the transactions we should remove from execution
     let valid_tx_count = state_transitions_result.valid_count();
@@ -158,7 +154,7 @@ where
         };
 
         let tx_result: ExecTxResult =
-            state_transition_execution_result.try_into_platform_versioned(platform_version)?;
+            state_transition_execution_result.try_into_platform_versioned(&platform_version)?;
 
         if tx_action != TxAction::Removed {
             tx_results.push(tx_result);
@@ -192,7 +188,7 @@ where
         validator_set_update,
         // TODO: implement consensus param updates
         consensus_param_updates: None,
-        app_version: protocol_version as u64,
+        app_version: platform_version.protocol_version as u64,
     };
 
     block_execution_context.set_proposer_results(Some(response.clone()));

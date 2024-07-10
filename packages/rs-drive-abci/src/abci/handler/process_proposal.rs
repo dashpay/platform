@@ -202,12 +202,9 @@ where
         app_hash,
         state_transitions_result: state_transition_results,
         validator_set_update,
-        protocol_version,
+        platform_version,
         block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
-
-    let platform_version = PlatformVersion::get(protocol_version)
-        .expect("must be set in run block proposer from existing platform version");
 
     app.block_execution_context()
         .write()
