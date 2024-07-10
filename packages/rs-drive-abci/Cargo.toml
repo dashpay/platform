@@ -100,7 +100,6 @@ drive = { path = "../rs-drive" }
 strategy-tests = { path = "../strategy-tests" }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config"] }
-once_cell = "1.19.0"
 
 # For tests of grovedb verify
 rocksdb = { version = "0.22.0" }
