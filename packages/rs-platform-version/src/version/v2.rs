@@ -68,6 +68,7 @@ use crate::version::drive_versions::{
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
+use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::fee::v2::FEE_VERSION2;
 
 pub const PROTOCOL_VERSION_2: u32 = 2;

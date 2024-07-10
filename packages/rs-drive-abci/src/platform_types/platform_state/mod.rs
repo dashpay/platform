@@ -42,6 +42,7 @@ pub enum PlatformState {
 pub enum PlatformStateForSaving {
     /// Version 0
     V0(PlatformStateForSavingV0),
+    /// Version 1
     V1(PlatformStateForSavingV1)
 }
 
@@ -202,6 +203,22 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSaving)"
                                 .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                }
+            }
+            PlatformStateForSaving::V1(v1) => {
+                match platform_version.drive_abci.structs.platform_state_structure {
+                    1 => {
+                        let platform_state_v0 = PlatformStateV0::from(v1);
+
+                        Ok(platform_state_v0.into())
+                    }
+                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method:
+                        "PlatformState::try_from_platform_versioned(PlatformStateForSaving)"
+                            .to_string(),
                         known_versions: vec![0],
                         received: version,
                     })),

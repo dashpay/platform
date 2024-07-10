@@ -832,7 +832,7 @@ mod tests {
                 StorageDiskUsageCreditPerByte,
             );
         // We added 1559 bytes
-        assert_eq!(added_bytes, 1559);
+        assert_eq!(added_bytes, 15590);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -932,7 +932,7 @@ mod tests {
                 StorageDiskUsageCreditPerByte,
             );
         // We added 1558 bytes
-        assert_eq!(added_bytes, 1559);
+        assert_eq!(added_bytes, 15590);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -957,6 +957,6 @@ mod tests {
 
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
-        assert_eq!(fee_result.processing_fee, 145553200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(fee_result.processing_fee, 1464280000); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 }

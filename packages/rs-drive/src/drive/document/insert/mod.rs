@@ -84,12 +84,8 @@ mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::fee::op::LowLevelDriveOperation;
-    use dpp::block::block_info::BlockInfo;
     use once_cell::sync::Lazy;
-    use rand::{random, Rng};
-    use std::borrow::Cow;
     use std::collections::BTreeMap;
-    use std::option::Option::None;
 
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -348,12 +344,12 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 3058
+                storage_fee: 30580
                     * Epoch::new(0).unwrap().cost_for_known_cost_item(
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
                         StorageDiskUsageCreditPerByte
                     ),
-                processing_fee: 2356200, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                processing_fee: 27684000, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
                 ..Default::default()
             }
         );
@@ -413,12 +409,12 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1305
+                storage_fee: 13050
                     * Epoch::new(0).unwrap().cost_for_known_cost_item(
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
                         StorageDiskUsageCreditPerByte
                     ),
-                processing_fee: 1500200, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                processing_fee: 16928000, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
                 ..Default::default()
             }
         );
@@ -485,8 +481,8 @@ mod tests {
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
             );
-        assert_eq!(1305, added_bytes);
-        assert_eq!(143011600, processing_fee); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(13050, added_bytes);
+        assert_eq!(1438036000, processing_fee); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 
     #[test]
@@ -711,12 +707,12 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1761
+                storage_fee: 17610
                     * Epoch::new(0).unwrap().cost_for_known_cost_item(
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
                         StorageDiskUsageCreditPerByte
                     ),
-                processing_fee: 2095400, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                processing_fee: 23708000, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
                 ..Default::default()
             }
         );

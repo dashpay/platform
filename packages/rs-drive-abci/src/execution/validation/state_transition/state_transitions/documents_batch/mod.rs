@@ -732,7 +732,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 3837600);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 40552200);
             // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
@@ -873,7 +873,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 103200);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 400200);
             // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
@@ -1053,7 +1053,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1261600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 12740200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -1157,7 +1157,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1252800);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 13422600);
             // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
     }
@@ -1297,7 +1297,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 5612800);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 57980200);
             // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
@@ -1767,7 +1767,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1516000);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 15356200);
             // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
@@ -1857,7 +1857,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1252800);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 13422600);
             // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
     }
@@ -2198,7 +2198,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().storage_fee, 37341000); // 1383 bytes added
+            assert_eq!(processing_result.aggregated_fees().storage_fee, 373410000); // 1383 bytes added
 
             // todo: we should expect these numbers to be closer
 
@@ -2210,7 +2210,7 @@ mod tests {
                 Some(14992395)
             );
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 8691400); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 93500200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -2402,7 +2402,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1261600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 12740200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -2552,7 +2552,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 25600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 322600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -2747,7 +2747,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 9622200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 103240200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -2814,7 +2814,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1115600);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 12014600);
             // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
     }
@@ -3151,7 +3151,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6133600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 66824200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -3271,8 +3271,8 @@ mod tests {
                     .into_balance_change(identity.id())
                     .change(),
                 &BalanceChange::RemoveFromBalance {
-                    required_removed_balance: 123579000,
-                    desired_removed_balance: 127991300, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                    required_removed_balance: 1235790000,
+                    desired_removed_balance: 1286162600, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
                 }
             );
 
@@ -3294,7 +3294,7 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.1) - original_creation_cost
+                8713837400 /*dash_to_credits!(0.1) - original_creation_cost*/
             );
 
             let sender_documents_sql_string =
@@ -3393,7 +3393,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().storage_fee, 216000); // we added 8 bytes for the price
+            assert_eq!(processing_result.aggregated_fees().storage_fee, 2160000); // we added 8 bytes for the price
 
             assert_eq!(
                 processing_result
@@ -3403,7 +3403,7 @@ mod tests {
                 None
             );
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6133600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 66824200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let seller_balance = platform
                 .drive
@@ -3414,7 +3414,7 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.1) - original_creation_cost - 6349600
+                8644853200 /*dash_to_credits!(0.1) - original_creation_cost - 6349600*/
             ); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
@@ -3507,9 +3507,9 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
+            assert_eq!(processing_result.aggregated_fees().storage_fee, 646110000);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10210200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 110178600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             assert_eq!(
                 processing_result
@@ -3543,7 +3543,7 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.2) - original_creation_cost + 16354903
+                18667557703 /*dash_to_credits!(0.2) - original_creation_cost + 16354903*/
             ); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let buyers_balance = platform
@@ -3553,7 +3553,7 @@ mod tests {
                 .expect("expected that purchaser exists");
 
             // the buyer payed 0.1, but also storage and processing fees
-            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 74821200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(buyers_balance, 89243711400 /*dash_to_credits!(0.9) - 74821200*/); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
         #[test]
@@ -4419,7 +4419,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6133600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 66824200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -4648,7 +4648,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 25600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 322600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());

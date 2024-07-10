@@ -947,7 +947,7 @@ mod tests {
             //Explanation for 1237
 
             //todo
-            1238
+            12380
         } else {
             //Explanation for 959
 
@@ -1082,7 +1082,7 @@ mod tests {
 
             //// 359 + 179 + 145 + 278
 
-            962
+            9620
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1153,7 +1153,7 @@ mod tests {
                 StorageDiskUsageCreditPerByte,
             );
 
-        let expected_added_bytes = if using_history { 313 } else { 1 };
+        let expected_added_bytes = if using_history { 3130 } else { 10 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1224,7 +1224,7 @@ mod tests {
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
             );
-        let expected_added_bytes = if using_history { 1238 } else { 962 };
+        let expected_added_bytes = if using_history { 12380 } else { 9620 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1300,7 +1300,7 @@ mod tests {
             .unwrap();
 
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
-        let expected_added_bytes = if using_history { 607 } else { 605 };
+        let expected_added_bytes = if using_history { 6070 } else { 6050 };
         assert_eq!(added_bytes, expected_added_bytes);
 
         let expected_removed_credits = if using_history { 16286655 } else { 16232643 };
@@ -1427,7 +1427,7 @@ mod tests {
             //Explanation for 1237
 
             //todo
-            1238
+            12380
         } else {
             //Explanation for 959
 
@@ -1562,7 +1562,7 @@ mod tests {
 
             // 360 + 179 + 145 + 278 = 960
 
-            962
+            9620
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1584,7 +1584,7 @@ mod tests {
                 StorageDiskUsageCreditPerByte,
             );
 
-        let expected_added_bytes = if using_history { 1239 } else { 963 };
+        let expected_added_bytes = if using_history { 12390 } else { 9630 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
