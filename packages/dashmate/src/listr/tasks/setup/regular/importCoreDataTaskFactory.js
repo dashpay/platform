@@ -94,7 +94,6 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
             disabled: 'No',
             initial: true,
           });
-          // TODO: Wording needs to be updated
 
           if (!doImport) {
             task.skip();
@@ -116,13 +115,13 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
           // Read configuration from dashd.conf
           const configPath = path.join(coreDataPath, 'dash.conf');
           const configFileContent = fs.readFileSync(configPath, 'utf8');
-          const masternodeOperatorPrivateKey = configFileContent.match(/^masternodeblsprivkey=([^ \n]+)/m)[1];
+          const masternodeOperatorPrivateKey = configFileContent.match(/^masternodeblsprivkey=([^ \n]+)/m)?.[1];
 
           if (masternodeOperatorPrivateKey) {
             ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
           }
 
-          const host = configFileContent.match(/^bind=([^ \n]+)/m)[1];
+          const host = configFileContent.match(/^bind=([^ \n]+)/m)?.[1];
 
           if (host) {
             ctx.config.set('core.p2p.host', host);
@@ -131,10 +130,10 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
           // Store values to fill in the configure node form
 
           // eslint-disable-next-line prefer-destructuring
-          ctx.importedP2pPort = configFileContent.match(/^port=([^ \n]+)/m)[1];
+          ctx.importedP2pPort = configFileContent.match(/^port=([^ \n]+)/m)?.[1];
 
           // eslint-disable-next-line prefer-destructuring
-          ctx.importedExternalIp = configFileContent.match(/^externalip=([^ \n]+)/m)[1];
+          ctx.importedExternalIp = configFileContent.match(/^externalip=([^ \n]+)/m)?.[1];
 
           // Copy data directory to docker a volume
 
