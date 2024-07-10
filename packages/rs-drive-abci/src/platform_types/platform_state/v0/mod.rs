@@ -42,9 +42,9 @@ pub struct PlatformStateV0 {
     pub current_validator_set_quorum_hash: QuorumHash,
     /// next quorum
     pub next_validator_set_quorum_hash: Option<QuorumHash>,
-    /// In case of emerge changes in code
-    /// a patched platform version will be placed here to fix a bug
-    /// which is not a part of normal upgrade process
+    /// This is a clone of current platform version based on
+    /// `current_protocol_version_in_consensus` with some function versions
+    /// modified to fix an urgent bug that is not a part of normal upgrade process
     pub patched_platform_version: Option<&'static PlatformVersion>,
     /// current validator set quorums
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
