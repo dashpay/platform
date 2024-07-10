@@ -154,7 +154,7 @@ where
         };
 
         let tx_result: ExecTxResult =
-            state_transition_execution_result.try_into_platform_versioned(&platform_version)?;
+            state_transition_execution_result.try_into_platform_versioned(platform_version)?;
 
         if tx_action != TxAction::Removed {
             tx_results.push(tx_result);
