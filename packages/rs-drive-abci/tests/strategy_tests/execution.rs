@@ -975,8 +975,9 @@ pub(crate) fn continue_chain_for_strategy(
         }
 
         let proposer = current_quorum_with_test_info
-            .validator_set
-            .get(i as usize)
+            .validator_map
+            .values()
+            .nth(i as usize)
             .unwrap();
         let (state_transitions, finalize_block_operations) = strategy.state_transitions_for_block(
             platform,

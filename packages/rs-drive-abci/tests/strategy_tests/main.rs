@@ -121,11 +121,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -166,7 +166,7 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -211,7 +211,7 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -353,7 +353,7 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -496,12 +496,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -562,11 +563,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -611,11 +612,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -668,12 +669,12 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: hour_in_s,
                 ..Default::default()
             },
             block_spacing_ms: three_mins_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -742,11 +743,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -838,11 +839,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -921,11 +922,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -999,11 +1000,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1096,7 +1097,7 @@ mod tests {
             instant_lock: InstantLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1150,12 +1151,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1185,7 +1187,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "2c1628cbe2b7f67b48078045146890fb4ac5498a2826201ce01f5c290d8be0ac".to_string()
+            "3a1756d12483a31c585d741281d2f882857943f1f7eb02d9bb47bc406a391c33".to_string()
         )
     }
 
@@ -1235,12 +1237,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1358,11 +1361,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1445,12 +1448,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1553,11 +1557,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1634,12 +1638,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1747,12 +1752,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1860,12 +1866,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1898,7 +1905,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "f86815bbe9f0596b0ebe5c5e093efcd7e768f1fdb3701955918d9b20f2c7d9ae".to_string()
+            "4437143051f651e86e0c279ef0ccc0adf3d36a42f9db03b76829681ddbca3e4a".to_string()
         )
     }
 
@@ -1991,12 +1998,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2028,7 +2036,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "2a3c97f0c35ee026715121f1c21c076f0adadfd59ab9ee7672c28f56724f8df3".to_string()
+            "bba2902bc71ce45f72b46661458203334e9ffd347347b0ccb252955011d6b355".to_string()
         )
     }
 
@@ -2121,11 +2129,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2236,11 +2244,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2351,13 +2359,14 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2485,13 +2494,14 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2635,13 +2645,14 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2710,11 +2721,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -2790,12 +2801,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2879,12 +2891,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2980,12 +2993,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -3581,11 +3595,10 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -3763,12 +3776,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform_a = TestPlatformBuilder::new()
@@ -3921,12 +3933,12 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -4021,8 +4033,8 @@ mod tests {
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        // we have a maximum 90 quorums, that could have been used, 6 were used twice
-        assert_eq!(balance_count, 84);
+        // we have a maximum 90 quorums, that could have been used, 7 were used twice
+        assert_eq!(balance_count, 83);
     }
 
     #[test]
@@ -4074,12 +4086,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let TempPlatform {
@@ -4227,12 +4238,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -4287,12 +4299,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
