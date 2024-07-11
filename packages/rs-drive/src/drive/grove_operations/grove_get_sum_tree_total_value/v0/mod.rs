@@ -9,6 +9,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, GroveDb, TransactionArg};
 use grovedb_costs::CostContext;
 use grovedb_path::SubtreePath;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Gets the element at the given path from groveDB.
@@ -20,6 +21,7 @@ impl Drive {
         query_type: DirectQueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<i64, Error> {
         match query_type {
             DirectQueryType::StatelessDirectQuery {
@@ -36,7 +38,8 @@ impl Drive {
                             flags_size,
                             is_sum_tree,
                             in_tree_using_sums,
-                        ))
+                            &drive_version.grove_version,
+                        )?)
                     }
                     _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                         "can not query a non tree",
@@ -47,7 +50,9 @@ impl Drive {
                 Ok(0)
             }
             DirectQueryType::StatefulDirectQuery => {
-                let CostContext { value, cost } = self.grove.get_raw(path, key, transaction);
+                let CostContext { value, cost } =
+                    self.grove
+                        .get_raw(path, key, transaction, &drive_version.grove_version);
                 drive_operations.push(CalculatedCostOperation(cost));
                 let element = value.map_err(Error::GroveDB)?;
                 match element {

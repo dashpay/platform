@@ -6,6 +6,7 @@ use crate::fee_pools::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
 use dpp::block::epoch::EpochIndex;
 
 use grovedb::{Element, TransactionArg};
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns the index of the unpaid Epoch.
@@ -13,10 +14,16 @@ impl Drive {
     pub(super) fn get_unpaid_epoch_index_v0(
         &self,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<EpochIndex, Error> {
         let element = self
             .grove
-            .get(&pools_path(), KEY_UNPAID_EPOCH_INDEX, transaction)
+            .get(
+                &pools_path(),
+                KEY_UNPAID_EPOCH_INDEX,
+                transaction,
+                &platform_version.drive.grove_version,
+            )
             .unwrap()
             .map_err(Error::GroveDB)?;
 

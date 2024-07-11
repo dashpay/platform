@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::query::{Query, QueryItem};
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
+use platform_version::version::PlatformVersion;
 use std::convert::TryInto;
 use std::ops::RangeFull;
 
@@ -19,6 +20,7 @@ impl Drive {
         limit: u16,
         transaction: TransactionArg,
         drive_operation_types: &mut Vec<DriveOperation>,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<WithdrawalTransactionIndexAndBytes>, Error> {
         let mut query = Query::new();
 
@@ -42,6 +44,7 @@ impl Drive {
                 true,
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?

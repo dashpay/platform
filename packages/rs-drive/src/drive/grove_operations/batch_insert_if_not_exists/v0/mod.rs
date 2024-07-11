@@ -94,9 +94,10 @@ impl Drive {
                             GroveDb::average_case_for_has_raw(
                                 &key_info_path,
                                 &key_info,
-                                element.serialized_size()? as u32,
+                                element.serialized_size(&drive_version.grove_version)? as u32,
                                 in_tree_using_sums,
-                            ),
+                                &drive_version.grove_version,
+                            )?,
                         ));
                         drive_operations.push(
                             LowLevelDriveOperation::insert_for_estimated_path_key_element(

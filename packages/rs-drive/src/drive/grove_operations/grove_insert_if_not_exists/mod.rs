@@ -41,6 +41,7 @@ impl Drive {
                 element,
                 transaction,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_insert_if_not_exists".to_string(),

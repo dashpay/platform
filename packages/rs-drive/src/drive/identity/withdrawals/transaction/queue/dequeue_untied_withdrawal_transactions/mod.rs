@@ -30,6 +30,7 @@ impl Drive {
                 limit,
                 transaction,
                 drive_operation_types,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "dequeue_untied_withdrawal_transactions".to_string(),

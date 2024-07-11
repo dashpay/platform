@@ -5,6 +5,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use grovedb::operations::insert::InsertOptions;
 use grovedb::{Element, TransactionArg};
 use grovedb_path::SubtreePath;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes the `OperationCost` of inserting an element in groveDB to `drive_operations`.
@@ -16,8 +17,16 @@ impl Drive {
         transaction: TransactionArg,
         options: Option<InsertOptions>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let cost_context = self.grove.insert(path, key, element, options, transaction);
+        let cost_context = self.grove.insert(
+            path,
+            key,
+            element,
+            options,
+            transaction,
+            &drive_version.grove_version,
+        );
         push_drive_operation_result(cost_context, drive_operations)
     }
 }

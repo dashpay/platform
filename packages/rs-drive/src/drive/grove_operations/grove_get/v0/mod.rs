@@ -8,6 +8,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, GroveDb, TransactionArg};
 use grovedb_costs::CostContext;
 use grovedb_path::SubtreePath;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Gets the element at the given path from groveDB.
@@ -19,6 +20,7 @@ impl Drive {
         query_type: QueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<Option<Element>, Error> {
         match query_type {
             QueryType::StatelessQuery {
@@ -36,6 +38,7 @@ impl Drive {
                             flags_size,
                             is_sum_tree,
                             in_tree_using_sums,
+                            &drive_version.grove_version,
                         )
                     }
                     QueryTarget::QueryTargetValue(estimated_value_size) => {
@@ -45,15 +48,18 @@ impl Drive {
                             in_tree_using_sums,
                             estimated_value_size,
                             estimated_reference_sizes,
+                            &drive_version.grove_version,
                         )
                     }
-                };
+                }?;
 
                 drive_operations.push(CalculatedCostOperation(cost));
                 Ok(None)
             }
             QueryType::StatefulQuery => {
-                let CostContext { value, cost } = self.grove.get(path, key, transaction);
+                let CostContext { value, cost } =
+                    self.grove
+                        .get(path, key, transaction, &drive_version.grove_version);
                 drive_operations.push(CalculatedCostOperation(cost));
                 Ok(Some(value.map_err(Error::GroveDB)?))
             }

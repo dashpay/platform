@@ -7,6 +7,7 @@ use crate::drive::verify::RootHash;
 
 use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use grovedb::{GroveDb, PathQuery};
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Verifies the balance of an identity by their identity ID.
@@ -40,14 +41,23 @@ impl Drive {
         proof: &[u8],
         balance_id: [u8; 32],
         verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<u64>), Error> {
         let balance_path = prefunded_specialized_balances_for_voting_path_vec();
         let mut path_query = PathQuery::new_single_key(balance_path.clone(), balance_id.to_vec());
         path_query.query.limit = Some(1);
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         } else {
-            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         };
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = &proved_key_values.remove(0);

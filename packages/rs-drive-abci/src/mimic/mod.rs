@@ -21,6 +21,7 @@ use dpp::platform_value::Value;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -95,6 +96,8 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
         state_transitions: Vec<StateTransition>,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
+        let platform_version = PlatformVersion::get(proposed_version)?;
+
         // This will be NONE, except on init chain
         let original_block_execution_context = self
             .block_execution_context
@@ -112,7 +115,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 self.platform
                     .drive
                     .grove
-                    .root_hash(Some(transaction))
+                    .root_hash(Some(transaction), &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             });
@@ -331,7 +334,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                     .platform
                     .drive
                     .grove
-                    .root_hash(Some(transaction))
+                    .root_hash(Some(transaction), &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap();
                 assert_eq!(start_root_hash, init_chain_root_hash);
@@ -374,7 +377,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 .platform
                 .drive
                 .grove
-                .root_hash(Some(transaction))
+                .root_hash(Some(transaction), &platform_version.drive.grove_version)
                 .unwrap()
                 .unwrap();
             assert_eq!(
@@ -574,7 +577,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             .platform
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .unwrap();
         assert_eq!(app_hash, root_hash_before_finalization);
@@ -590,8 +593,13 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                         block_info.height, round, block_info.time_ms, e
                     )
                 });
-            let root_hash_after_finalization =
-                self.platform.drive.grove.root_hash(None).unwrap().unwrap();
+            let root_hash_after_finalization = self
+                .platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .unwrap();
             assert_eq!(app_hash, root_hash_after_finalization);
         }
 

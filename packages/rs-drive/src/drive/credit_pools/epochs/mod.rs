@@ -35,6 +35,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 pub mod credit_distribution_pools;
 mod get_epochs_infos;
@@ -50,9 +51,15 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         self.grove
-            .has_raw(&pools_path(), &epoch_tree.key, transaction)
+            .has_raw(
+                &pools_path(),
+                &epoch_tree.key,
+                transaction,
+                &platform_version.drive.grove_version,
+            )
             .unwrap()
             .map_err(Error::GroveDB)
     }
@@ -78,7 +85,7 @@ mod tests {
             let epoch_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let is_exist = drive
-                .has_epoch_tree_exists(&epoch_tree, Some(&transaction))
+                .has_epoch_tree_exists(&epoch_tree, Some(&transaction), platform_version)
                 .expect("should check epoch tree existence");
 
             assert!(is_exist);
@@ -95,7 +102,7 @@ mod tests {
             let epoch_tree = Epoch::new(2000 + 1).unwrap();
 
             let is_exist = drive
-                .has_epoch_tree_exists(&epoch_tree, Some(&transaction))
+                .has_epoch_tree_exists(&epoch_tree, Some(&transaction), platform_version)
                 .expect("should check epoch tree existence");
 
             assert!(!is_exist);

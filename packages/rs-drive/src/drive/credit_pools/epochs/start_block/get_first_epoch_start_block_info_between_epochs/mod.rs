@@ -44,6 +44,7 @@ impl Drive {
                 from_epoch_index,
                 to_epoch_index,
                 transaction,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_first_epoch_start_block_info_between_epochs".to_string(),

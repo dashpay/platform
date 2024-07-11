@@ -13,7 +13,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let query = Self::full_identity_query(&identity_id)?;
+        let query = Self::full_identity_query(&identity_id, &drive_version.grove_version)?;
         self.grove_get_proved_path_query(&query, transaction, &mut drive_operations, drive_version)
     }
 }
@@ -36,6 +36,7 @@ mod tests {
 
     #[test]
     fn should_prove_full_identity_query_no_tx() {
+        let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
 
@@ -52,8 +53,11 @@ mod tests {
             )
             .expect("expected to insert identity");
 
-        let path_query = Drive::full_identity_query(identity.id().as_bytes())
-            .expect("expected to make the query");
+        let path_query = Drive::full_identity_query(
+            identity.id().as_bytes(),
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to make the query");
 
         // The query is querying
         //                     root

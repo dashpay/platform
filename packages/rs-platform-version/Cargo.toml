@@ -10,6 +10,7 @@ license = "MIT"
 [dependencies]
 thiserror = { version = "1.0.59" }
 versioned-feature-core = { git = "https://github.com/dashpay/versioned-feature-core", version = "1.0.0" }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "c68eeecaa4e21af6bd09281ecc755e202a526a7e"}
 
 [features]
 mock-versions = []

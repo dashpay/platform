@@ -46,7 +46,14 @@ impl Drive {
             .system
             .verify_epoch_infos
         {
-            0 => Drive::verify_epoch_infos_v0(proof, current_epoch, start_epoch, count, ascending),
+            0 => Drive::verify_epoch_infos_v0(
+                proof,
+                current_epoch,
+                start_epoch,
+                count,
+                ascending,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_epoch_infos".to_string(),
                 known_versions: vec![0],

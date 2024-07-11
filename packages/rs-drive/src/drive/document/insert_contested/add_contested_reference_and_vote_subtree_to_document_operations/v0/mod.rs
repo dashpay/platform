@@ -112,7 +112,11 @@ impl Drive {
                             unique_id,
                             max_size: DEFAULT_HASH_SIZE_U8,
                         },
-                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                        Element::required_item_space(
+                            *max_size,
+                            STORAGE_FLAGS_SIZE,
+                            &drive_version.grove_version,
+                        )?,
                     ))
                 }
             };

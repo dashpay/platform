@@ -136,7 +136,7 @@ pub fn create_test_masternode_share_identities_and_documents(
         Some(seed_value) => StdRng::seed_from_u64(seed_value),
     };
     let all_exist = drive
-        .verify_all_identities_exist(pro_tx_hashes, transaction)
+        .verify_all_identities_exist(pro_tx_hashes, transaction, platform_version)
         .expect("expected that all identities existed");
     if all_exist {
         pro_tx_hashes

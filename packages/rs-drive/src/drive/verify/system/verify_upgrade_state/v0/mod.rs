@@ -8,7 +8,9 @@ use dpp::util::deserializer::ProtocolVersion;
 use grovedb::{GroveDb, PathQuery};
 use integer_encoding::VarInt;
 use nohash_hasher::IntMap;
+use platform_version::version::PlatformVersion;
 use std::ops::RangeFull;
+
 impl Drive {
     /// Verifies a proof containing the current upgrade state.
     ///
@@ -31,13 +33,15 @@ impl Drive {
     #[inline(always)]
     pub(super) fn verify_upgrade_state_v0(
         proof: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, IntMap<ProtocolVersion, u64>), Error> {
         let path_query = PathQuery::new_unsized(
             versions_counter_path_vec(),
             Query::new_single_query_item(QueryItem::RangeFull(RangeFull)),
         );
 
-        let (root_hash, elements) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, elements) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let protocol_version_map = elements
             .into_iter()

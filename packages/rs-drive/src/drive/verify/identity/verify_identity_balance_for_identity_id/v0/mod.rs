@@ -8,6 +8,7 @@ use crate::error::Error;
 use crate::drive::verify::RootHash;
 
 use grovedb::GroveDb;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Verifies the balance of an identity by their identity ID.
@@ -41,13 +42,22 @@ impl Drive {
         proof: &[u8],
         identity_id: [u8; 32],
         verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<u64>), Error> {
         let mut path_query = Self::identity_balance_query(&identity_id);
         path_query.query.limit = Some(1);
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         } else {
-            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         };
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = &proved_key_values.remove(0);

@@ -4,10 +4,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use dpp::block::epoch::Epoch;
-
 use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;
+use dpp::block::epoch::Epoch;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Gets the Fee Multiplier for the Epoch.
@@ -15,6 +15,7 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<f64, Error> {
         let element = self
             .grove
@@ -22,6 +23,7 @@ impl Drive {
                 &epoch_tree.get_path(),
                 epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
@@ -124,7 +126,7 @@ mod tests {
             .expect("should apply batch");
 
         let stored_multiplier = drive
-            .get_epoch_fee_multiplier_v0(&epoch, Some(&transaction))
+            .get_epoch_fee_multiplier_v0(&epoch, Some(&transaction), platform_version)
             .expect("should get multiplier");
 
         assert_eq!(stored_multiplier, multiplier);

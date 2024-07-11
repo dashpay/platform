@@ -1,11 +1,11 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::block::epoch::Epoch;
-use grovedb::{Element, TransactionArg};
-
 use crate::fee_pools::epochs::epoch_key_constants::KEY_START_TIME;
 use crate::fee_pools::epochs::paths::EpochProposers;
+use dpp::block::epoch::Epoch;
+use grovedb::{Element, TransactionArg};
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns the start time of the given Epoch.
@@ -13,6 +13,7 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
         let element = self
             .grove
@@ -20,6 +21,7 @@ impl Drive {
                 &epoch_tree.get_path(),
                 KEY_START_TIME.as_slice(),
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;

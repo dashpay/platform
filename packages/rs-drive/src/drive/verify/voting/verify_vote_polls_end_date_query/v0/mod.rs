@@ -10,6 +10,7 @@ use crate::common::encode::decode_u64;
 use crate::error::drive::DriveError;
 use crate::query::VotePollsByEndDateDriveQuery;
 use dpp::voting::vote_polls::VotePoll;
+use platform_version::version::PlatformVersion;
 
 impl VotePollsByEndDateDriveQuery {
     /// Verifies a proof and extracts voting poll documents based on their end date.
@@ -45,12 +46,14 @@ impl VotePollsByEndDateDriveQuery {
     pub(super) fn verify_vote_polls_by_end_date_proof_v0<I>(
         &self,
         proof: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, I), Error>
     where
         I: FromIterator<(TimestampMillis, Vec<VotePoll>)>,
     {
         let path_query = self.construct_path_query();
-        let (root_hash, proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, proved_key_values) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
         let vote_polls_by_end_date = proved_key_values
             .into_iter()
             .filter_map(|(path, _, element)| Some((path, element?)))
