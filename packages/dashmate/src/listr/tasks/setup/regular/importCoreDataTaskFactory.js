@@ -68,13 +68,12 @@ function validateCoreDataDirectoryPathFactory(config) {
 }
 
 /**
- *
  * @param {Docker} docker
  * @param {dockerPull} dockerPull
  * @param {generateEnvs} generateEnvs
  * @return {importCoreDataTask}
  */
-export default function importCoreDataTaskFactory(docker, dockerPull, generateEnvs) {
+export default function importCoreDataTaskFactory({ docker, dockerPull, generateEnvs }) {
   /**
    * @typedef {function} importCoreDataTask
    * @returns {Listr}

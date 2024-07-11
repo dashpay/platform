@@ -10,7 +10,7 @@ import si from 'systeminformation';
  * @param {DockerCompose} dockerCompose
  * @return {verifySystemRequirementsTask}
  */
-export default function verifySystemRequirementsTaskFactory(docker, dockerCompose) {
+export default function verifySystemRequirementsTaskFactory({ docker, dockerCompose }) {
   /**
    * @typedef {function} verifySystemRequirementsTask
    * @returns {Listr}
