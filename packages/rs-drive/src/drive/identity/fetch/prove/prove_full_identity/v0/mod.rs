@@ -148,6 +148,7 @@ mod tests {
                 true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to run the path query");
@@ -157,8 +158,12 @@ mod tests {
             .prove_full_identity_v0(identity.id().to_buffer(), None, &platform_version.drive)
             .expect("should fetch an identity");
 
-        let (_hash, proof) = GroveDb::verify_query(fetched_identity.as_slice(), &path_query)
-            .expect("expected to verify query");
+        let (_hash, proof) = GroveDb::verify_query(
+            fetched_identity.as_slice(),
+            &path_query,
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to verify query");
 
         // We want to get a proof on the balance, the revision and 5 keys
         assert_eq!(proof.len(), 7);

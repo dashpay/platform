@@ -573,7 +573,7 @@ mod tests {
 
         let root_hash = drive
             .grove
-            .root_hash(Some(&db_transaction))
+            .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected a root hash calculation to succeed");
 
@@ -599,7 +599,7 @@ mod tests {
 
         let root_hash_after_fee = drive
             .grove
-            .root_hash(Some(&db_transaction))
+            .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected a root hash calculation to succeed");
 

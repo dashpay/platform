@@ -79,6 +79,7 @@ mod tests {
 
         #[test]
         fn test_return_true_if_tree_exists() {
+            let platform_version = PlatformVersion::latest();
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
@@ -93,6 +94,7 @@ mod tests {
 
         #[test]
         fn test_return_false_if_tree_doesnt_exist() {
+            let platform_version = PlatformVersion::latest();
             // default will be 40 epochs per era
             // 50 eras
             // = 2000

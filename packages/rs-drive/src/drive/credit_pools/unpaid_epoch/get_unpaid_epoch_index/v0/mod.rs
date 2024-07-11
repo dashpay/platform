@@ -56,10 +56,11 @@ mod tests {
 
         #[test]
         fn test_error_if_fee_pools_tree_is_not_initiated() {
+            let platform_version = PlatformVersion::latest();
             let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
-            let result = drive.get_unpaid_epoch_index_v0(Some(&transaction));
+            let result = drive.get_unpaid_epoch_index_v0(Some(&transaction), platform_version);
 
             assert!(matches!(
                 result,
@@ -69,6 +70,7 @@ mod tests {
 
         #[test]
         fn test_error_if_element_has_invalid_type() {
+            let platform_version = PlatformVersion::latest();
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
@@ -80,6 +82,7 @@ mod tests {
                     KEY_UNPAID_EPOCH_INDEX.as_slice(),
                     None,
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect("should delete old item");
@@ -92,11 +95,12 @@ mod tests {
                     Element::empty_tree(),
                     None,
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_unpaid_epoch_index_v0(Some(&transaction));
+            let result = drive.get_unpaid_epoch_index_v0(Some(&transaction), platform_version);
 
             assert!(matches!(
                 result,
@@ -106,6 +110,7 @@ mod tests {
 
         #[test]
         fn test_error_if_value_has_invalid_length() {
+            let platform_version = PlatformVersion::latest();
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
@@ -117,11 +122,12 @@ mod tests {
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_unpaid_epoch_index_v0(Some(&transaction));
+            let result = drive.get_unpaid_epoch_index_v0(Some(&transaction), platform_version);
 
             assert!(matches!(
                 result,

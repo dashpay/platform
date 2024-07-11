@@ -55,9 +55,9 @@ mod tests {
     use crate::fee_pools::epochs::paths::EpochProposers;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
-    use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
     use grovedb::Element;
+    use grovedb_version::version::GroveVersion;
 
     #[test]
     fn test_error_if_epoch_tree_is_not_initiated_v0() {
@@ -91,6 +91,7 @@ mod tests {
                 Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                 None,
                 Some(&transaction),
+                GroveVersion::latest(),
             )
             .unwrap()
             .expect("should insert invalid data");
@@ -106,7 +107,7 @@ mod tests {
     #[test]
     fn test_value_is_set_v0() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
         let epoch = Epoch::new(0).unwrap();
@@ -122,7 +123,7 @@ mod tests {
         epoch.add_init_current_operations(multiplier, 1, 1, 1, &mut batch);
 
         drive
-            .grove_apply_batch(batch, false, Some(&transaction), &drive_version)
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let stored_multiplier = drive
