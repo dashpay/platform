@@ -71,7 +71,14 @@ impl<C> Platform<C> {
                     "Next protocol version set to {}",
                     protocol_version
                 );
+
                 block_platform_state.set_next_epoch_protocol_version(protocol_version);
+            } else {
+                tracing::trace!(
+                    current_epoch_index = epoch_info.current_epoch_index(),
+                    "Non of the votes reached threshold. Next protocol version remains the same {}",
+                    block_platform_state.next_epoch_protocol_version()
+                );
             }
 
             // Since we are starting a new epoch we need to drop previously
