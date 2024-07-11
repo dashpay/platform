@@ -40,7 +40,6 @@ export default class SetupCommand extends BaseCommand {
    * @param {ConfigFile} configFile
    * @param {setupLocalPresetTask} setupLocalPresetTask
    * @param {setupRegularPresetTask} setupRegularPresetTask
-   * @param {DockerCompose} dockerCompose
    * @param {DefaultConfigs} defaultConfigs
    * @return {Promise<void>}
    */
@@ -57,7 +56,6 @@ export default class SetupCommand extends BaseCommand {
     configFile,
     setupLocalPresetTask,
     setupRegularPresetTask,
-    dockerCompose,
     defaultConfigs,
   }) {
     if (nodeCount !== null && (nodeCount < 3)) {
