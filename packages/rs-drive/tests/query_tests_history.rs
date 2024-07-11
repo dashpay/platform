@@ -285,7 +285,7 @@ fn test_query_historical() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
     assert_eq!(
@@ -1649,7 +1649,7 @@ fn test_query_historical() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
     assert_eq!(

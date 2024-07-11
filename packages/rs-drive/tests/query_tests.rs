@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Query Tests
 //!
 
@@ -893,7 +864,7 @@ fn test_reference_proof_single_index() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -941,7 +912,7 @@ fn test_non_existence_reference_proof_single_index() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -988,7 +959,7 @@ fn test_family_basic_queries() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -2298,7 +2269,7 @@ fn test_family_basic_queries() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -2447,7 +2418,7 @@ fn test_family_starts_at_queries() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -2889,7 +2860,7 @@ fn test_family_with_nulls_query() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3011,7 +2982,7 @@ fn test_query_with_cached_contract() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3161,7 +3132,7 @@ fn test_dpns_query() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3713,7 +3684,7 @@ fn test_dpns_query_start_at() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3807,7 +3778,7 @@ fn test_dpns_query_start_after() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3901,7 +3872,7 @@ fn test_dpns_query_start_at_desc() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3995,7 +3966,7 @@ fn test_dpns_query_start_after_desc() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -4187,7 +4158,7 @@ fn test_dpns_query_start_at_with_null_id() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -4388,7 +4359,7 @@ fn test_dpns_query_start_after_with_null_id() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -4593,7 +4564,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
