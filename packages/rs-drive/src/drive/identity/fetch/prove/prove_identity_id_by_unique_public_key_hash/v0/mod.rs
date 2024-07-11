@@ -14,13 +14,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
-        self.grove_get_proved_path_query(
-            &path_query,
-            false,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&path_query, transaction, &mut vec![], drive_version)
     }
 }
 
@@ -60,7 +54,7 @@ mod tests {
             .values()
             .find(|public_key| public_key.key_type().is_unique_key_type())
             .expect("expected a unique key")
-            .hash()
+            .public_key_hash()
             .expect("expected to hash data");
 
         let proof = drive

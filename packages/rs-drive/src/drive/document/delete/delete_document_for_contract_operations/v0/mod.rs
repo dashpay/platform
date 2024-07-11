@@ -6,7 +6,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 
 use std::collections::HashMap;
 
-use crate::drive::document::contract_documents_primary_key_path;
+use crate::drive::document::paths::contract_documents_primary_key_path;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,

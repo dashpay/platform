@@ -43,8 +43,8 @@ export default function stopNodeTaskFactory({
         task: async () => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
-            user: config.get('core.rpc.user'),
-            pass: config.get('core.rpc.password'),
+            user: 'dashmate',
+            pass: config.get('core.rpc.users.dashmate.password'),
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
@@ -62,8 +62,8 @@ export default function stopNodeTaskFactory({
         enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && ctx.isSafe,
         task: async () => waitForDKGWindowPass(createRpcClient({
           port: config.get('core.rpc.port'),
-          user: config.get('core.rpc.user'),
-          pass: config.get('core.rpc.password'),
+          user: 'dashmate',
+          pass: config.get('core.rpc.users.dashmate.password'),
           host: await getConnectionHost(config, 'core', 'core.rpc.host'),
         })),
       },
@@ -74,8 +74,8 @@ export default function stopNodeTaskFactory({
         task: async () => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
-            user: config.get('core.rpc.user'),
-            pass: config.get('core.rpc.password'),
+            user: 'dashmate',
+            pass: config.get('core.rpc.users.dashmate.password'),
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 

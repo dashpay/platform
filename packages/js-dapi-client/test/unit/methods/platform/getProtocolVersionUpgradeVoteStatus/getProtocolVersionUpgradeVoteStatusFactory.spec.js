@@ -75,7 +75,7 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
     };
   });
 
-  it('should return vote statuses', async () => {
+  it('should return votes statuses', async () => {
     const result = await getProtocolVersionUpgradeVoteStatus(startProTxHash, 1, options);
 
     const {

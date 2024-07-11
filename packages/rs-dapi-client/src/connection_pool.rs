@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use http::Uri;
+use dapi_grpc::tonic::transport::Uri;
 use lru::LruCache;
 
 use crate::{

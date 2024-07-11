@@ -1,0 +1,7 @@
+pub mod masternode_incorrect_voter_identity_id_error;
+pub mod masternode_incorrect_voting_address_error;
+pub mod masternode_not_found_error;
+pub mod masternode_vote_already_present_error;
+pub mod masternode_voted_too_many_times;
+pub mod vote_poll_not_available_for_voting_error;
+pub mod vote_poll_not_found_error;

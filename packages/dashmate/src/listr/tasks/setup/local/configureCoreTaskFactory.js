@@ -132,6 +132,7 @@ export default function configureCoreTaskFactory({
                 const walletPassphrase = '';
                 const avoidReuse = false;
                 const loadOnStartup = true;
+                const descriptors = false;
 
                 await ctx.coreService.getRpcClient().createWallet(
                   'main',
@@ -139,6 +140,7 @@ export default function configureCoreTaskFactory({
                   createBlankWallet,
                   walletPassphrase,
                   avoidReuse,
+                  descriptors,
                   loadOnStartup,
                 );
               },
@@ -264,6 +266,7 @@ export default function configureCoreTaskFactory({
                   'SPORK_9_SUPERBLOCKS_ENABLED',
                   'SPORK_17_QUORUM_DKG_ENABLED',
                   'SPORK_19_CHAINLOCKS_ENABLED',
+                  'SPORK_24_TEST_EHF',
                 ];
 
                 await Promise.all(

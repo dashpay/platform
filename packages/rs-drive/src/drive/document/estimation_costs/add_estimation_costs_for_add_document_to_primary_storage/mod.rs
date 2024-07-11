@@ -55,7 +55,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "Drive::add_estimation_costs_for_add_document_to_primary_storage_v0"
+                method: "Drive::add_estimation_costs_for_add_document_to_primary_storage"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,

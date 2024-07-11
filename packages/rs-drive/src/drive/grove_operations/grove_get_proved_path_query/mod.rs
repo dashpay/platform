@@ -27,7 +27,6 @@ impl Drive {
     pub fn grove_get_proved_path_query(
         &self,
         path_query: &PathQuery,
-        verbose: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
@@ -37,12 +36,7 @@ impl Drive {
             .basic
             .grove_get_proved_path_query
         {
-            0 => self.grove_get_proved_path_query_v0(
-                path_query,
-                verbose,
-                transaction,
-                drive_operations,
-            ),
+            0 => self.grove_get_proved_path_query_v0(path_query, transaction, drive_operations),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_proved_path_query".to_string(),
                 known_versions: vec![0],

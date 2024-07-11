@@ -38,42 +38,63 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
 
-/// Configuration for Dash Core RPC client
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CoreRpcConfig {
+/// Configuration for Dash Core RPC client used in consensus logic
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ConsensusCoreRpcConfig {
     /// Core RPC client hostname or IP address
-    #[serde(rename = "core_json_rpc_host")]
+    #[serde(rename = "core_consensus_json_rpc_host")]
     pub host: String,
 
-    // FIXME: fix error  Configuration(Custom("invalid type: string \"9998\", expected i16")) and change port to i16
     /// Core RPC client port number
-    #[serde(rename = "core_json_rpc_port")]
-    pub port: String,
+    #[serde(
+        rename = "core_consensus_json_rpc_port",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub port: u16,
 
     /// Core RPC client username
-    #[serde(rename = "core_json_rpc_username")]
+    #[serde(rename = "core_consensus_json_rpc_username")]
     pub username: String,
 
     /// Core RPC client password
-    #[serde(rename = "core_json_rpc_password")]
+    #[serde(rename = "core_consensus_json_rpc_password")]
     pub password: String,
 }
 
-impl CoreRpcConfig {
+impl ConsensusCoreRpcConfig {
     /// Return core address in the `host:port` format.
     pub fn url(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
 }
 
-impl Default for CoreRpcConfig {
-    fn default() -> Self {
-        Self {
-            host: String::from("127.0.0.1"),
-            port: String::from("1234"),
-            username: String::from(""),
-            password: String::from(""),
-        }
+/// Configuration for Dash Core RPC client used in check tx
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct CheckTxCoreRpcConfig {
+    /// Core RPC client hostname or IP address
+    #[serde(rename = "core_check_tx_json_rpc_host")]
+    pub host: String,
+
+    /// Core RPC client port number
+    #[serde(
+        rename = "core_check_tx_json_rpc_port",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub port: u16,
+
+    /// Core RPC client username
+    #[serde(rename = "core_check_tx_json_rpc_username")]
+    pub username: String,
+
+    /// Core RPC client password
+    #[serde(rename = "core_check_tx_json_rpc_password")]
+    pub password: String,
+}
+
+impl CheckTxCoreRpcConfig {
+    /// Return core address in the `host:port` format.
+    pub fn url(&self) -> String {
+        format!("{}:{}", self.host, self.port)
     }
 }
 
@@ -81,9 +102,12 @@ impl Default for CoreRpcConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CoreConfig {
-    /// Core RPC config
+    /// Core RPC config for consensus
     #[serde(flatten)]
-    pub rpc: CoreRpcConfig,
+    pub consensus_rpc: ConsensusCoreRpcConfig,
+    /// Core RPC config for check tx
+    #[serde(flatten)]
+    pub check_tx_rpc: CheckTxCoreRpcConfig,
 }
 
 /// Configuration of the execution part of Dash Platform.

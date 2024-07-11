@@ -201,7 +201,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         let drive_query: DriveQuery =
             (&request)
                 .try_into()
-                .map_err(|e| drive_proof_verifier::Error::RequestDecodeError {
+                .map_err(|e| drive_proof_verifier::Error::RequestError {
                     error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
                 })?;
 

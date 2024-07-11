@@ -16,7 +16,6 @@ impl Drive {
         let nonce_query = Self::identity_nonce_query(identity_id);
         self.grove_get_proved_path_query(
             &nonce_query,
-            false,
             transaction,
             &mut vec![],
             &platform_version.drive,

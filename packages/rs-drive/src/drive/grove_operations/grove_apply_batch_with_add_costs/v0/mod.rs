@@ -22,7 +22,9 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         if ops.is_empty() {
-            return Err(Error::Drive(DriveError::BatchIsEmpty()));
+            return Err(Error::Drive(DriveError::BatchIsEmpty(
+                "batch is empty when trying to apply batch with add costs".to_string(),
+            )));
         }
         // if ops.operations.len() < 500 {
         //     //no initialization

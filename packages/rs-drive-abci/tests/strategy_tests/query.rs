@@ -221,7 +221,7 @@ impl QueryStrategy {
                         let key_num = rng.gen_range(0..unique_public_keys.len());
                         let public_key = unique_public_keys[key_num].1;
                         Some((
-                            public_key.hash().unwrap(),
+                            public_key.public_key_hash().unwrap(),
                             identity.clone().into_partial_identity_info_no_balance(),
                         ))
                     }
@@ -389,7 +389,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -487,7 +487,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -586,7 +586,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances

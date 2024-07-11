@@ -31,3 +31,4 @@ mod entropy_generator;
 mod lodash;
 mod protocol_version;
 mod validation;
+mod voting;

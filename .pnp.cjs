@@ -3421,7 +3421,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
           ["@dashevo/dashcore-lib", "npm:0.21.2"],\
-          ["@dashevo/dashd-rpc", "npm:18.3.0"],\
+          ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -3593,10 +3593,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@dashevo/dashd-rpc", [\
-      ["npm:18.3.0", {\
-        "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-18.3.0-4f165136e8-b83fbdb149.zip/node_modules/@dashevo/dashd-rpc/",\
+      ["npm:19.0.0", {\
+        "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-19.0.0-54bb2a5dfc-2eab84af3e.zip/node_modules/@dashevo/dashd-rpc/",\
         "packageDependencies": [\
-          ["@dashevo/dashd-rpc", "npm:18.3.0"],\
+          ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["async", "npm:3.2.4"],\
           ["bluebird", "npm:3.7.2"]\
         ],\
@@ -9230,7 +9230,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dashcore-lib", "npm:0.21.2"],\
-          ["@dashevo/dashd-rpc", "npm:18.3.0"],\
+          ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
           ["@dashevo/docker-compose", "npm:0.24.4"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\

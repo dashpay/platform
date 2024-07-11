@@ -16,7 +16,6 @@ impl Drive {
         root_path: SubtreePath<B>,
         key: &[u8],
         path_query_resolver: &impl Fn(Option<Element>) -> PathQuery,
-        verbose: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<u8>, Error> {
@@ -27,7 +26,7 @@ impl Drive {
 
         let CostContext { value, cost } =
             self.grove
-                .get_proved_path_query(&path_query, verbose, transaction);
+                .get_proved_path_query(&path_query, None, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

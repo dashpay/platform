@@ -19,19 +19,17 @@ use std::io;
 #[cfg(feature = "server")]
 use std::io::BufRead;
 #[cfg(feature = "server")]
-use std::option::Option::None;
-#[cfg(feature = "server")]
 use std::path::Path;
 
-#[cfg(feature = "server")]
+#[cfg(feature = "fixtures-and-mocks")]
 use grovedb::TransactionArg;
 
-#[cfg(feature = "server")]
+#[cfg(feature = "fixtures-and-mocks")]
 use crate::drive::Drive;
-#[cfg(feature = "server")]
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contract::DataContract;
 
-#[cfg(feature = "server")]
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::prelude::Identifier;

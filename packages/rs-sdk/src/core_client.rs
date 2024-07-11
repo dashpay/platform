@@ -5,8 +5,11 @@
 
 use dashcore_rpc::{
     dashcore::{hashes::Hash, Amount, QuorumHash},
-    dashcore_rpc_json as json, Auth, Client, RpcApi,
+    dashcore_rpc_json as json,
+    json::{ProTxList, ProTxListType},
+    Auth, Client, RpcApi,
 };
+use dpp::dashcore::ProTxHash;
 use drive_proof_verifier::error::ContextProviderError;
 use std::{fmt::Debug, sync::Mutex};
 
@@ -125,5 +128,26 @@ impl CoreClient {
             )
         })?;
         Ok(pubkey)
+    }
+
+    /// Require list of validators from Core.
+    ///
+    /// See also [Dash Core documentation](https://docs.dash.org/projects/core/en/stable/docs/api/remote-procedure-calls-evo.html#protx-list)
+    #[allow(unused)]
+    pub fn protx_list(
+        &self,
+        height: Option<u32>,
+        protx_type: Option<ProTxListType>,
+    ) -> Result<Vec<ProTxHash>, Error> {
+        let core = self.core.lock().expect("Core lock poisoned");
+
+        let pro_tx_hashes =
+            core.get_protx_list(protx_type, Some(false), height)
+                .map(|x| match x {
+                    ProTxList::Hex(hex) => hex,
+                    ProTxList::Info(info) => info.into_iter().map(|v| v.pro_tx_hash).collect(),
+                })?;
+
+        Ok(pro_tx_hashes)
     }
 }

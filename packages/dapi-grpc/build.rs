@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs::{create_dir_all, remove_dir_all},
     path::PathBuf,
     process::exit,
@@ -46,7 +47,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 19] = [
+    const VERSIONED_REQUESTS: [&str; 25] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -66,10 +67,16 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetProtocolVersionUpgradeVoteStatusRequest",
         "GetPathElementsRequest",
         "GetIdentitiesContractKeysRequest",
+        "GetPrefundedSpecializedBalanceRequest",
+        "GetContestedResourcesRequest",
+        "GetContestedResourceVoteStateRequest",
+        "GetContestedResourceVotersForIdentityRequest",
+        "GetContestedResourceIdentityVotesRequest",
+        "GetVotePollsByEndDateRequest",
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 20] = [
+    const VERSIONED_RESPONSES: [&str; 26] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -90,7 +97,16 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetProtocolVersionUpgradeVoteStatusResponse",
         "GetPathElementsResponse",
         "GetIdentitiesContractKeysResponse",
+        "GetPrefundedSpecializedBalanceResponse",
+        "GetContestedResourcesResponse",
+        "GetContestedResourceVoteStateResponse",
+        "GetContestedResourceVotersForIdentityResponse",
+        "GetContestedResourceIdentityVotesResponse",
+        "GetVotePollsByEndDateResponse",
     ];
+
+    check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
+    check_unique(&VERSIONED_RESPONSES).expect("VERSIONED_RESPONSES");
 
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
@@ -144,6 +160,28 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
 
     #[allow(clippy::let_and_return)]
     platform
+}
+
+/// Check for duplicate messages in the list.
+fn check_unique(messages: &[&'static str]) -> Result<(), String> {
+    let mut hashset: HashSet<&'static str> = HashSet::new();
+    let mut duplicates = String::new();
+
+    for value in messages {
+        if !hashset.insert(*value) {
+            duplicates.push_str(value);
+            duplicates.push_str(", ");
+        }
+    }
+
+    if duplicates.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Duplicate messages found: {}",
+            duplicates.trim_end_matches(", ")
+        ))
+    }
 }
 
 fn configure_core(core: MappingConfig) -> MappingConfig {

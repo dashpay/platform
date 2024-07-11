@@ -58,7 +58,7 @@
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-client": "workspace:*",
     "@dashevo/dashcore-lib": "~0.21.2",
-    "@dashevo/dashd-rpc": "^18.3.0",
+    "@dashevo/dashd-rpc": "^19.0.0",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/docker-compose": "^0.24.4",
     "@dashevo/dpns-contract": "workspace:*",

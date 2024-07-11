@@ -1,0 +1,2 @@
+mod individual_vote;
+mod insert_stored_info_for_contested_resource_vote_poll;

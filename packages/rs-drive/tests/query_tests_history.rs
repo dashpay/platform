@@ -291,8 +291,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            163, 151, 181, 112, 234, 184, 171, 83, 83, 105, 116, 97, 25, 160, 197, 58, 81, 214,
-            243, 144, 11, 91, 223, 83, 71, 99, 170, 203, 145, 244, 137, 134,
+            205, 118, 170, 4, 239, 225, 106, 241, 143, 230, 171, 5, 197, 170, 225, 149, 239, 45,
+            35, 136, 84, 164, 166, 81, 187, 142, 122, 51, 132, 168, 39, 71,
         ]
     );
 
@@ -1615,7 +1615,7 @@ fn test_query_historical() {
         matches!(result, Err(Error::Query(QuerySyntaxError::StartDocumentNotFound(message))) if message == "startAt document not found")
     );
 
-    // using non existing document in startAfter
+    // using non-existing document in startAfter
 
     let query_value = json!({
         "where": [
@@ -1655,8 +1655,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            212, 52, 34, 33, 150, 181, 101, 7, 122, 203, 197, 177, 146, 225, 160, 186, 49, 229, 70,
-            206, 170, 180, 253, 90, 90, 188, 107, 108, 162, 216, 195, 81
+            244, 130, 19, 188, 172, 179, 227, 194, 92, 1, 134, 232, 193, 67, 100, 136, 45, 64, 180,
+            42, 178, 247, 49, 199, 194, 104, 96, 89, 146, 82, 46, 196
         ]
     );
 }

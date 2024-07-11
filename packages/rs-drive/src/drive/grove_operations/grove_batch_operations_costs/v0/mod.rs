@@ -31,7 +31,7 @@ impl Drive {
                 batch_pause_height: None,
             }),
             |_, _, _| Ok(false),
-            |_, _, _| Err(GroveError::InternalError("not implemented")),
+            |_, _, _| Err(GroveError::InternalError("not implemented".to_string())),
         );
         push_drive_operation_result(cost_context, drive_operations)
     }

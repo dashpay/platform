@@ -23,6 +23,7 @@ use crate::platform_types::state_transitions_processing_result::{
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
+#[derive(Debug)]
 struct StateTransitionAwareError<'t> {
     error: Error,
     raw_state_transition: &'t [u8],

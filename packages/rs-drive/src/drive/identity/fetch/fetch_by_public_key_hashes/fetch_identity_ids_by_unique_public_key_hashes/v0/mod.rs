@@ -49,6 +49,7 @@ impl Drive {
         let path_query = PathQuery::new(unique_key_hashes, sized_query);
         self.grove_get_raw_path_query_with_optional(
             &path_query,
+            true,
             transaction,
             drive_operations,
             &platform_version.drive,

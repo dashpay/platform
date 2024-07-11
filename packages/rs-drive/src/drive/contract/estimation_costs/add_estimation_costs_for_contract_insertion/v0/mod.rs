@@ -3,7 +3,7 @@ use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8,
     ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
 };
-use crate::drive::document::contract_document_type_path;
+use crate::drive::document::paths::contract_document_type_path;
 use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 

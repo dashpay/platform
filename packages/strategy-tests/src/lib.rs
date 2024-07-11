@@ -128,6 +128,7 @@ pub struct StartIdentities {
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
     pub extra_keys: KeyMaps,
+    pub hard_coded: Vec<(Identity, StateTransition)>,
 }
 
 /// Identities to register on the first block of the strategy
@@ -636,6 +637,7 @@ impl Strategy {
                                         .into(),
                                         entropy: entropy.to_buffer(),
                                         data: document.properties_consumed(),
+                                        prefunded_voting_balance: Default::default(),
                                     }
                                     .into();
 
@@ -746,6 +748,7 @@ impl Strategy {
                                         .into(),
                                         entropy: entropy.to_buffer(),
                                         data: document.properties_consumed(),
+                                        prefunded_voting_balance: Default::default(),
                                     }
                                     .into();
 
@@ -1889,6 +1892,7 @@ mod tests {
                 keys_per_identity: 3,
                 starting_balances: 100_000_000,
                 extra_keys: BTreeMap::new(),
+                hard_coded: vec![],
             },
             identity_inserts: Default::default(),
             identity_contract_nonce_gaps: None,

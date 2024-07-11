@@ -156,5 +156,9 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
 
     fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityNonce);
 
-    fn all_purchases_amount(&self) -> Option<Credits>;
+    fn all_conflicting_index_collateral_voting_funds(
+        &self,
+    ) -> Result<Option<Credits>, ProtocolError>;
+
+    fn all_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError>;
 }

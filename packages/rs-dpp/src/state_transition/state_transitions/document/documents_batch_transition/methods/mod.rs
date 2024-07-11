@@ -17,7 +17,6 @@ use crate::state_transition::documents_batch_transition::DocumentsBatchTransitio
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
-#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
@@ -27,9 +26,17 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 pub mod v0;
 
 impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
-    fn all_purchases_amount(&self) -> Option<Credits> {
+    fn all_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError> {
         match self {
             DocumentsBatchTransition::V0(v0) => v0.all_purchases_amount(),
+        }
+    }
+
+    fn all_conflicting_index_collateral_voting_funds(
+        &self,
+    ) -> Result<Option<Credits>, ProtocolError> {
+        match self {
+            DocumentsBatchTransition::V0(v0) => v0.all_conflicting_index_collateral_voting_funds(),
         }
     }
 

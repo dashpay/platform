@@ -1,7 +1,7 @@
 [package]
 name = "platform-version"
 authors = ["Samuel Westrich <sam@dash.org>"]
-description = "Bincode based serialization and deserialization"
+description = "Versioning library for Platform"
 version = "1.0.0-dev.16"
 edition = "2021"
 rust-version = "1.76"
@@ -9,6 +9,7 @@ license = "MIT"
 
 [dependencies]
 thiserror = { version = "1.0.59" }
+versioned-feature-core = { git = "https://github.com/dashpay/versioned-feature-core", version = "1.0.0" }
 
 [features]
 mock-versions = []
