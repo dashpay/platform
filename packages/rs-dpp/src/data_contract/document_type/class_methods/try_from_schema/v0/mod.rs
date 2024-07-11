@@ -26,8 +26,6 @@ use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumen
 #[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;
-#[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;

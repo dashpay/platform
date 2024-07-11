@@ -3082,7 +3082,7 @@ fn test_dpns_query_contract_verification() {
 
     let root_hash = drive
         .grove
-        .root_hash(None)
+        .root_hash(None, &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3114,7 +3114,7 @@ fn test_contract_keeps_history_fetch_and_verification() {
 
     let root_hash = drive
         .grove
-        .root_hash(None)
+        .root_hash(None, &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3637,7 +3637,7 @@ fn test_dpns_insertion_no_aliases() {
     assert_eq!(
         drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should get root hash"),
         proof_root_hash
@@ -3693,7 +3693,7 @@ fn test_dpns_insertion_with_aliases() {
     assert_eq!(
         drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should get root hash"),
         proof_root_hash

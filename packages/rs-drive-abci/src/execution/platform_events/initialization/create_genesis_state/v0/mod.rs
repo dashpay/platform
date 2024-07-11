@@ -268,9 +268,11 @@ mod tests {
         use crate::config::PlatformConfig;
         use crate::test::helpers::setup::TestPlatformBuilder;
         use drive::drive::config::DriveConfig;
+        use platform_version::version::PlatformVersion;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .with_config(PlatformConfig {
                     drive: DriveConfig {
@@ -285,7 +287,7 @@ mod tests {
             let root_hash = platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should obtain root hash");
 
