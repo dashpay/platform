@@ -364,6 +364,7 @@ where
             .set_app_hash(Some(root_hash));
 
         let validator_set_update = self.validator_set_update(
+            block_proposal.proposer_pro_tx_hash,
             last_committed_platform_state,
             &mut block_execution_context,
             platform_version,

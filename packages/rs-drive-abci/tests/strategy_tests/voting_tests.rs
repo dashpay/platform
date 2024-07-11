@@ -41,6 +41,7 @@ mod tests {
         let config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -49,7 +50,6 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -343,6 +343,7 @@ mod tests {
         let config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -351,7 +352,6 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -700,6 +700,7 @@ mod tests {
         let config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -708,7 +709,6 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1068,6 +1068,7 @@ mod tests {
         let config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1076,7 +1077,7 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1280,7 +1281,7 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
