@@ -171,6 +171,10 @@ impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
                         let saving_v0: PlatformStateForSavingV0 = v0.try_into()?;
                         Ok(saving_v0.into())
                     }
+                    1 => {
+                        let saving_v1: PlatformStateForSavingV1 = v0.try_into()?;
+                        Ok(saving_v1.into())
+                    }
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformStateForSaving::try_from_platform_versioned(PlatformState)"
