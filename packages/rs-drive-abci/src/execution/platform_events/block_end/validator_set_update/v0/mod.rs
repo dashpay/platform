@@ -64,34 +64,29 @@ where
             // and that the new proposer is on the same quorum and the last proposer but is before
             // them in the list of proposers.
             // This only works if Tenderdash goes through proposers properly
-            if &block_execution_context
-                .block_platform_state()
-                .last_committed_quorum_hash()
+            if &platform_state.last_committed_quorum_hash()
                 == platform_state
                     .current_validator_set_quorum_hash()
                     .as_byte_array()
+                && platform_state.last_committed_block_proposer_pro_tx_hash() > proposer_pro_tx_hash
+                && platform_state.validator_sets().len() > 1
             {
-                // we haven't changed quorums
-                if block_execution_context
-                    .block_platform_state()
-                    .last_committed_block_proposer_pro_tx_hash()
-                    > proposer_pro_tx_hash
-                {
-                    // The new proposer is before the old proposer
-                    tracing::debug!(
-                        method = "validator_set_update_v0",
-                    "rotation: quorum finished as we hit last an earlier member {} than last block proposer {} for quorum {}. All known quorums are: [{}]. quorum rotation expected",
-                    hex::encode(proposer_pro_tx_hash),
-                        hex::encode(block_execution_context.block_platform_state().last_committed_block_proposer_pro_tx_hash()),
-                        hex::encode(platform_state.current_validator_set_quorum_hash().as_byte_array()),
-                    block_execution_context
-                    .block_platform_state()
-                    .validator_sets()
-                    .keys()
-                    .map(hex::encode).collect::<Vec<_>>().join(" | "),
-                    );
-                    perform_rotation = true;
-                }
+                // 1 - We haven't changed quorums
+                // 2 - The new proposer is before the old proposer
+                // 3 - There are more than one quorum in the system
+                tracing::debug!(
+                    method = "validator_set_update_v0",
+                "rotation: quorum finished as we hit last an earlier member {} than last block proposer {} for quorum {}. All known quorums are: [{}]. quorum rotation expected",
+                hex::encode(proposer_pro_tx_hash),
+                    hex::encode(block_execution_context.block_platform_state().last_committed_block_proposer_pro_tx_hash()),
+                    hex::encode(platform_state.current_validator_set_quorum_hash().as_byte_array()),
+                block_execution_context
+                .block_platform_state()
+                .validator_sets()
+                .keys()
+                .map(hex::encode).collect::<Vec<_>>().join(" | "),
+                );
+                perform_rotation = true;
             }
         } else {
             // we also need to perform a rotation if the validator set is being removed
@@ -126,7 +121,7 @@ where
                 0 => Err(Error::Execution(ExecutionError::CorruptedCachedState(
                     "no current quorums".to_string(),
                 ))),
-                1 => Ok(None),
+                1 => Ok(None), // no rotation as we are the only quorum
                 count => {
                     let start_index = index;
                     index = (index + 1) % count;
