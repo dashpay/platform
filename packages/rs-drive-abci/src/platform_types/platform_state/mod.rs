@@ -103,11 +103,8 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
 
 impl PlatformState {
     /// Get the state fingerprint
-    pub fn fingerprint(&self) -> [u8; 32] {
-        hash_double(
-            self.serialize_to_bytes()
-                .expect("expected to serialize state"),
-        )
+    pub fn fingerprint(&self) -> Result<[u8; 32], Error> {
+        Ok(hash_double(self.serialize_to_bytes()?))
     }
     /// Get the current platform version
     pub fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
