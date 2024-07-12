@@ -526,7 +526,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864783600) // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(balance, 99864716400) // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 
     #[test]
@@ -1193,7 +1193,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "00b8bd1457467c08672b399a007f6d68102386413c5cbae53424a1c6cf3cb4ab".to_string()
+            "8183eede440c002da02009166bef1e624afdb796852c755fa9abb7c22526c6bf".to_string()
         )
     }
 
@@ -1914,7 +1914,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "75e4622f3c99e1f1efdd3bbd913587bb238791e967244a5e17fe942ec9cf6cb5".to_string()
+            "10aa07e5e7c2fbe521a8ddd937be9cb68e9abe0f69bac4fef1442d447a1b7c6a".to_string()
         )
     }
 
@@ -2049,7 +2049,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "539fc39067fcf0f7cb0e4fa3589d71376393e24c7046f51bd6410e2c2e3b7944".to_string()
+            "2ca45a7e73e8f7126b2192bb738c619746acdbef84ef3c3e1a1131be69e44f40".to_string()
         )
     }
 

@@ -1,5 +1,8 @@
+use bincode::{Decode, Encode};
+use crate::version::fee::storage::FeeStorageVersion;
+
 pub mod v1;
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Encode, Decode, Default)]
 pub struct VoteResolutionFundFees {
     /// This is the amount that will be deducted from an identity and used to pay for voting
     pub contested_document_vote_resolution_fund_required_amount: u64,
@@ -7,4 +10,36 @@ pub struct VoteResolutionFundFees {
     pub contested_document_vote_resolution_unlock_fund_required_amount: u64,
     /// This is the amount that a single vote will cost
     pub contested_document_single_vote_cost: u64,
+}
+
+impl PartialEq for VoteResolutionFundFees {
+    fn eq(&self, other: &Self) -> bool {
+        self.contested_document_vote_resolution_fund_required_amount == other.contested_document_vote_resolution_fund_required_amount
+            && self.contested_document_vote_resolution_unlock_fund_required_amount == other.contested_document_vote_resolution_unlock_fund_required_amount
+            && self.contested_document_single_vote_cost == other.contested_document_single_vote_cost
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VoteResolutionFundFees;
+
+    #[test]
+    // If this test failed, then a new field was added in VoteResolutionFundFees. And the corresponding eq needs to be updated as well
+    fn test_fee_storage_version_equality() {
+        let version1 = VoteResolutionFundFees {
+            contested_document_vote_resolution_fund_required_amount: 1,
+            contested_document_vote_resolution_unlock_fund_required_amount: 2,
+            contested_document_single_vote_cost: 3,
+        };
+
+        let version2 = VoteResolutionFundFees {
+            contested_document_vote_resolution_fund_required_amount: 1,
+            contested_document_vote_resolution_unlock_fund_required_amount: 2,
+            contested_document_single_vote_cost: 3,
+        };
+
+        // This assertion will check if all fields are considered in the equality comparison
+        assert_eq!(version1, version2, "VoteResolutionFundFees equality test failed. If a field was added or removed, update the Eq implementation.");
+    }
 }

@@ -42,6 +42,7 @@ mod tests {
             fetch_identity_cost_per_look_up_key_by_id: 4,
             fetch_single_identity_key_processing_cost: 5,
             validate_key_structure: 6,
+            fetch_prefunded_specialized_balance_processing_cost: 7,
         };
 
         let version2 = FeeProcessingVersion {
@@ -51,6 +52,7 @@ mod tests {
             fetch_identity_cost_per_look_up_key_by_id: 4,
             fetch_single_identity_key_processing_cost: 5,
             validate_key_structure: 6,
+            fetch_prefunded_specialized_balance_processing_cost: 7,
         };
 
         // This assertion will check if all fields are considered in the equality comparison

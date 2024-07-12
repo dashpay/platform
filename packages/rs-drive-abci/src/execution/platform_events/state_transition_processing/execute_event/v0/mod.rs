@@ -173,6 +173,7 @@ where
                             block_info,
                             Some(transaction),
                             platform_version,
+                            Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
 

@@ -47,6 +47,7 @@ mod tests {
     use crate::version::fee::signature::FeeSignatureVersion;
     use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
     use crate::version::fee::storage::FeeStorageVersion;
+    use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
     use super::FeeVersion;
 
     #[test]
@@ -81,6 +82,7 @@ mod tests {
                 fetch_identity_cost_per_look_up_key_by_id: 4,
                 fetch_single_identity_key_processing_cost: 5,
                 validate_key_structure: 6,
+                fetch_prefunded_specialized_balance_processing_cost: 7,
             },
             data_contract: FeeDataContractValidationVersion {
                 document_type_base_fee: 1,
@@ -98,7 +100,13 @@ mod tests {
                 document_batch_sub_transition: 4,
                 contract_create: 5,
                 contract_update: 6,
-            }
+                masternode_vote: 7,
+            },
+            vote_resolution_fund_fees: VoteResolutionFundFees {
+                contested_document_vote_resolution_fund_required_amount: 1,
+                contested_document_vote_resolution_unlock_fund_required_amount: 2,
+                contested_document_single_vote_cost: 3,
+            },
         };
 
         let version2 = FeeVersion {
@@ -130,6 +138,7 @@ mod tests {
                 fetch_identity_cost_per_look_up_key_by_id: 4,
                 fetch_single_identity_key_processing_cost: 5,
                 validate_key_structure: 6,
+                fetch_prefunded_specialized_balance_processing_cost: 7,
             },
             data_contract: FeeDataContractValidationVersion {
                 document_type_base_fee: 1,
@@ -147,7 +156,13 @@ mod tests {
                 document_batch_sub_transition: 4,
                 contract_create: 5,
                 contract_update: 6,
-            }
+                masternode_vote: 7,
+            },
+            vote_resolution_fund_fees: VoteResolutionFundFees {
+                contested_document_vote_resolution_fund_required_amount: 1,
+                contested_document_vote_resolution_unlock_fund_required_amount: 2,
+                contested_document_single_vote_cost: 3,
+            },
         };
 
         // This assertion will check if all fields are considered in the equality comparison

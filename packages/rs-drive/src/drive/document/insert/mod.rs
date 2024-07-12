@@ -83,12 +83,8 @@ mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::fee::op::LowLevelDriveOperation;
-    use dpp::block::block_info::BlockInfo;
     use once_cell::sync::Lazy;
-    use rand::{random, Rng};
-    use std::borrow::Cow;
     use std::collections::BTreeMap;
-    use std::option::Option::None;
 
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -482,7 +478,7 @@ mod tests {
                 StorageDiskUsageCreditPerByte,
             );
         assert_eq!(1305, added_bytes);
-        assert_eq!(143011600, processing_fee); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(144859600, processing_fee); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 
     #[test]

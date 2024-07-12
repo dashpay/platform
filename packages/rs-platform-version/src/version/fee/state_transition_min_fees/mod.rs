@@ -37,6 +37,7 @@ mod tests {
             document_batch_sub_transition: 4,
             contract_create: 5,
             contract_update: 6,
+            masternode_vote: 7,
         };
 
         let version2 = StateTransitionMinFees {
@@ -46,6 +47,7 @@ mod tests {
             document_batch_sub_transition: 4,
             contract_create: 5,
             contract_update: 6,
+            masternode_vote: 7,
         };
 
         // This assertion will check if all fields are considered in the equality comparison

@@ -736,6 +736,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     /// Returns a mutable reference to the previous feeversions
     fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
         &mut self.previous_fee_versions
+    }
 
     fn full_masternode_list_changes(&self, previous: &PlatformStateV0) -> MasternodeListChanges {
         let mut new_masternodes = Vec::new();

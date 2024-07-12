@@ -178,7 +178,7 @@ where
                 platform_ref.state.last_block_info(),
                 None,
                 platform_version,
-                platform_state.previous_fee_versions(),
+                platform_ref.state.previous_fee_versions(),
             )?;
 
             let (estimated_fee_result, errors) = validation_result.into_data_and_errors()?;
