@@ -340,7 +340,8 @@ mod tests {
                 storage_fee: 3058
                     * Epoch::new(0).unwrap().cost_for_known_cost_item(
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
-                        StorageDiskUsageCreditPerByte
+                        StorageDiskUsageCreditPerByte,
+                        None
                     ),
                 processing_fee: 2356200, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
                 ..Default::default()
@@ -405,7 +406,8 @@ mod tests {
                 storage_fee: 1305
                     * Epoch::new(0).unwrap().cost_for_known_cost_item(
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
-                        StorageDiskUsageCreditPerByte
+                        StorageDiskUsageCreditPerByte,
+                        None
                     ),
                 processing_fee: 1500200, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
                 ..Default::default()
@@ -473,6 +475,7 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
+                None
             );
         assert_eq!(1305, added_bytes);
         assert_eq!(144859600, processing_fee); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
@@ -703,7 +706,8 @@ mod tests {
                 storage_fee: 1761
                     * Epoch::new(0).unwrap().cost_for_known_cost_item(
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
-                        StorageDiskUsageCreditPerByte
+                        StorageDiskUsageCreditPerByte,
+                        None
                     ),
                 processing_fee: 2095400, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
                 ..Default::default()

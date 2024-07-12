@@ -78,7 +78,7 @@ pub enum KnownCostItem {
 
 impl KnownCostItem {
     #[inline]
-    pub fn lookup_cost(&self, fee_version: &FeeVersion) -> Credits {
+    pub fn lookup_cost(&self, fee_version: &FeeVersion, size: Option<usize>) -> Credits {
         match self {
             KnownCostItem::StorageDiskUsageCreditPerByte => {
                 fee_version.storage.storage_disk_usage_credit_per_byte
@@ -104,12 +104,10 @@ impl KnownCostItem {
                     .fetch_single_identity_key_processing_cost
             }
             KnownCostItem::Blake3 => {
-                //TODO: blake3_base or blake3_per_block?
-                fee_version.hashing.blake3_base
+                fee_version.hashing.blake3_base + fee_version.hashing.blake3_per_block * size.unwrap_or(0) as u64
             }
             KnownCostItem::SingleSHA256 => {
-                //TODO: single_sha256_base or single_sha256_per_block?
-                fee_version.hashing.single_sha256_base
+                fee_version.hashing.single_sha256_base + fee_version.hashing.sha256_per_block * size.unwrap_or(0) as u64
             }
             KnownCostItem::VerifySignatureEcdsaSecp256k1 => {
                 fee_version.signature.verify_signature_ecdsa_secp256k1
@@ -133,9 +131,10 @@ impl KnownCostItem {
         &self,
         epoch: &T,
         cached_fee_version: &CachedEpochIndexFeeVersions,
+        size: Option<usize>,
     ) -> Credits {
         let version = epoch.active_fee_version(cached_fee_version);
-        self.lookup_cost(&version)
+        self.lookup_cost(&version, size)
     }
 }
 
@@ -149,6 +148,7 @@ pub trait EpochCosts {
         &self,
         cached_fee_version: &CachedEpochIndexFeeVersions,
         cost_item: KnownCostItem,
+        size: Option<usize>,
     ) -> Credits;
 }
 
@@ -173,7 +173,8 @@ impl EpochCosts for Epoch {
         &self,
         cached_fee_version: &CachedEpochIndexFeeVersions,
         cost_item: KnownCostItem,
+        size: Option<usize>,
     ) -> Credits {
-        cost_item.lookup_cost_on_epoch(self, cached_fee_version)
+        cost_item.lookup_cost_on_epoch(self, cached_fee_version, size)
     }
 }
