@@ -650,7 +650,6 @@ impl IdentityKeysRequest {
     #[cfg(feature = "server")]
     /// Gets the processing cost of an identity keys request
     pub fn processing_cost(&self, platform_version: &PlatformVersion) -> Result<Credits, Error> {
-        // Good
         match &self.request_type {
             AllKeys => Err(Error::Fee(FeeError::OperationNotAllowed(
                 "You can not get costs for requesting all keys",

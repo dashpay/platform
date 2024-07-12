@@ -71,9 +71,8 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::Document;
-    use dpp::fee::default_costs::EpochCosts;
+    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-    use dpp::prelude::CachedEpochIndexFeeVersions;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;

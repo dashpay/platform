@@ -16,7 +16,7 @@ pub mod storage;
 pub mod v1;
 pub mod vote_resolution_fund_fees;
 
-#[derive(Clone, Debug, Encode, Decode, Default)]
+#[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct FeeVersion {
     pub storage: FeeStorageVersion,
     pub signature: FeeSignatureVersion,
@@ -25,17 +25,6 @@ pub struct FeeVersion {
     pub data_contract: FeeDataContractValidationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
-}
-
-impl PartialEq for FeeVersion {
-    fn eq(&self, other: &Self) -> bool {
-        self.storage == other.storage
-            && self.signature == other.signature
-            && self.hashing == other.hashing
-            && self.processing == other.processing
-            && self.data_contract == other.data_contract
-            && self.state_transition_min_fees == other.state_transition_min_fees
-    }
 }
 
 

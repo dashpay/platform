@@ -68,8 +68,6 @@ pub mod prelude {
     pub use crate::identity::IdentityPublicKey;
     #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
-    use platform_version::version::fee::FeeVersion;
-    use std::collections::BTreeMap;
 
     pub type BlockHeight = u64;
 
@@ -83,8 +81,6 @@ pub mod prelude {
     /// UserFeeIncrease is the additional percentage of the processing fee.
     /// A 1 here means we pay 1% more in processing fees. A 100 means we pay 100% more.
     pub type UserFeeIncrease = u16;
-
-    pub type CachedEpochIndexFeeVersions = BTreeMap<EpochIndex, FeeVersion>;
 }
 
 pub use bincode;

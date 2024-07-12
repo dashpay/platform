@@ -9,9 +9,9 @@ use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Adds a document to a contract.

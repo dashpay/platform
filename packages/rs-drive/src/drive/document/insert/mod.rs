@@ -91,12 +91,9 @@ mod tests {
 
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::fee::default_costs::EpochCosts;
+    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::fee_result::FeeResult;
-    use dpp::prelude::CachedEpochIndexFeeVersions;
-    use dpp::platform_value::{platform_value, BinaryData, Identifier};
-    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
 

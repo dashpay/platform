@@ -6,11 +6,11 @@ use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::identifier::Identifier;
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.

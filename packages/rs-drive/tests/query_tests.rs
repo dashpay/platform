@@ -69,11 +69,10 @@ use dpp::document::serialization_traits::{
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value;
-use dpp::prelude::CachedEpochIndexFeeVersions;
 #[cfg(feature = "server")]
 use dpp::prelude::DataContract;
 use once_cell::sync::Lazy;
-
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;

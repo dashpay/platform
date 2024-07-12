@@ -7,9 +7,10 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::prelude::{CachedEpochIndexFeeVersions, ConsensusValidationResult};
+use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 use drive::grovedb::TransactionArg;

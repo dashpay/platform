@@ -28,7 +28,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<ExtendedEpochInfo>, Error> {
-        // TODO: We should avoid magic numbers. For now we are good since count refers to the number of epochs to fetch. With 40 epochs/year, this value is way safe atm.
+        // TODO: We should avoid magic numbers. For now we are good since count refers to the number of epochs to fetch and 16383 is large enough.
         if count > 16383 {
             return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
                 "get_epochs_infos_v0 count too high {}",

@@ -16,11 +16,11 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Updates a data contract.

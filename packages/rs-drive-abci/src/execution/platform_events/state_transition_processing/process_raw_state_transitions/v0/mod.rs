@@ -14,11 +14,10 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::metrics::state_transition_execution_histogram;
 use crate::platform_types::event_execution_result::EventExecutionResult;
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_single;
 use dpp::validation::ConsensusValidationResult;
 use std::time::Instant;
-
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::{
     StateTransitionExecutionResult, StateTransitionsProcessingResult,

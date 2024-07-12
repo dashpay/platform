@@ -12,9 +12,9 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
 
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use grovedb::TransactionArg;
 use std::borrow::Cow;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Updates a serialized document given a contract id and returns the associated fee.

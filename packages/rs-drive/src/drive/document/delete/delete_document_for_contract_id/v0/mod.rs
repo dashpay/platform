@@ -5,7 +5,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 use dpp::block::block_info::BlockInfo;
-
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 
@@ -14,7 +14,6 @@ use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 
 impl Drive {

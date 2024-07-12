@@ -83,7 +83,7 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
 use dpp::document::DocumentV0Getters;
-use dpp::prelude::CachedEpochIndexFeeVersions;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;

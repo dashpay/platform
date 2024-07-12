@@ -32,13 +32,15 @@
 //! Fee costs for Known Platform operations
 //!
 
-use crate::block::epoch::Epoch;
+use std::collections::BTreeMap;
+use crate::block::epoch::{Epoch, EpochIndex};
 use crate::fee::Credits;
-use crate::prelude::CachedEpochIndexFeeVersions;
 use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
 
 pub mod constants;
+
+pub type CachedEpochIndexFeeVersions = BTreeMap<EpochIndex, FeeVersion>;
 
 /// A Known Cost Item is an item that changes costs depending on the Epoch
 #[derive(Eq, PartialEq, Copy, Clone, Hash)]

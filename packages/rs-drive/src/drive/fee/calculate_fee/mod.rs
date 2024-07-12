@@ -4,9 +4,9 @@ use crate::error::Error;
 use crate::fee::op::{BaseOp, LowLevelDriveOperation};
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use enum_map::EnumMap;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 mod v0;
 

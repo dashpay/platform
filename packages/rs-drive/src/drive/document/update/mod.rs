@@ -89,11 +89,10 @@ mod tests {
     };
     use dpp::document::specialized_document_factory::SpecializedDocumentFactory;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-    use dpp::fee::default_costs::EpochCosts;
+    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value;
-    use dpp::prelude::CachedEpochIndexFeeVersions;
     use dpp::tests::json_document::json_document_to_document;
     use once_cell::sync::Lazy;
     use platform_version::version::PlatformVersion;

@@ -3,7 +3,7 @@ mod v0;
 use grovedb::TransactionArg;
 
 use dpp::block::block_info::BlockInfo;
-
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use crate::drive::Drive;
 
 use crate::error::drive::DriveError;
@@ -12,7 +12,6 @@ use crate::error::Error;
 
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 
 impl Drive {

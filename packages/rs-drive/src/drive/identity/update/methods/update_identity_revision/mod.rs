@@ -7,13 +7,14 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::prelude::{CachedEpochIndexFeeVersions, Revision};
+use dpp::prelude::Revision;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use std::collections::HashMap;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Updates the revision for a specific identity. This function is version controlled.

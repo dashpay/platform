@@ -25,7 +25,7 @@ use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
-use dpp::prelude::CachedEpochIndexFeeVersions;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use platform_version::version::fee::FeeVersion;
 
 /// Base ops

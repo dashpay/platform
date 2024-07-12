@@ -16,8 +16,8 @@ use grovedb::batch::KeyInfoPath;
 use crate::drive::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
-use dpp::prelude::CachedEpochIndexFeeVersions;
 use std::collections::HashMap;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.

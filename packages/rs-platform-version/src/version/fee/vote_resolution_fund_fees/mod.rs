@@ -2,7 +2,7 @@ use bincode::{Decode, Encode};
 use crate::version::fee::storage::FeeStorageVersion;
 
 pub mod v1;
-#[derive(Clone, Debug, Encode, Decode, Default)]
+#[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct VoteResolutionFundFees {
     /// This is the amount that will be deducted from an identity and used to pay for voting
     pub contested_document_vote_resolution_fund_required_amount: u64,
@@ -10,14 +10,6 @@ pub struct VoteResolutionFundFees {
     pub contested_document_vote_resolution_unlock_fund_required_amount: u64,
     /// This is the amount that a single vote will cost
     pub contested_document_single_vote_cost: u64,
-}
-
-impl PartialEq for VoteResolutionFundFees {
-    fn eq(&self, other: &Self) -> bool {
-        self.contested_document_vote_resolution_fund_required_amount == other.contested_document_vote_resolution_fund_required_amount
-            && self.contested_document_vote_resolution_unlock_fund_required_amount == other.contested_document_vote_resolution_unlock_fund_required_amount
-            && self.contested_document_single_vote_cost == other.contested_document_single_vote_cost
-    }
 }
 
 #[cfg(test)]

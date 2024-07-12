@@ -4,7 +4,7 @@
 //!
 
 use crate::block::epoch::{Epoch, EpochIndex};
-use crate::fee::default_costs::EpochCosts;
+use crate::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
@@ -12,7 +12,6 @@ use crate::fee::Credits;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 
-use crate::prelude::CachedEpochIndexFeeVersions;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;
