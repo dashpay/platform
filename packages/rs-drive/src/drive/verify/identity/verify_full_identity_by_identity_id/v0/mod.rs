@@ -45,13 +45,14 @@ impl Drive {
         proof: &[u8],
         is_proof_subset: bool,
         identity_id: [u8; 32],
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Identity>), Error> {
-        let path_query = Self::full_identity_query(&identity_id)?;
+        let path_query =
+            Self::full_identity_query(&identity_id, &platform_version.drive.grove_version)?;
         let (root_hash, proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
         let mut balance = None;
         let mut revision = None;

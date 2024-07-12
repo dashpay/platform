@@ -5,6 +5,7 @@ use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
 use grovedb::operations::QueryItemOrSumReturnType;
 use grovedb::{PathQuery, TransactionArg};
 use grovedb_costs::CostContext;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Gets the return value and the cost of a groveDB path query.
@@ -14,6 +15,7 @@ impl Drive {
         path_query: &PathQuery,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(Vec<QueryItemOrSumReturnType>, u16), Error> {
         let CostContext { value, cost } = self.grove.query_item_value_or_sum(
             path_query,
@@ -21,6 +23,7 @@ impl Drive {
             true,
             true,
             transaction,
+            &drive_version.grove_version,
         );
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)

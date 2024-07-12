@@ -44,6 +44,7 @@ impl Drive {
                 transaction,
                 options,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_insert_empty_sum_tree".to_string(),

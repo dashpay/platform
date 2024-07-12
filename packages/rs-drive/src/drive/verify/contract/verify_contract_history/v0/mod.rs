@@ -48,7 +48,8 @@ impl Drive {
         let path_query =
             Self::fetch_contract_history_query(contract_id, start_at_date, limit, offset)?;
 
-        let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, mut proved_key_values) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let mut contracts: BTreeMap<u64, DataContract> = BTreeMap::new();
         for (path, key, maybe_element) in proved_key_values.drain(..) {

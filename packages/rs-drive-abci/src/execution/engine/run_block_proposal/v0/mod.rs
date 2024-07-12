@@ -355,7 +355,7 @@ where
         let root_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 

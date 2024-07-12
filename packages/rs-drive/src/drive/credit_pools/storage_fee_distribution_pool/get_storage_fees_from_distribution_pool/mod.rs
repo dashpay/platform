@@ -39,7 +39,7 @@ impl Drive {
             .storage_fee_distribution_pool
             .get_storage_fees_from_distribution_pool
         {
-            0 => self.get_storage_fees_from_distribution_pool_v0(transaction),
+            0 => self.get_storage_fees_from_distribution_pool_v0(transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_storage_fees_from_distribution_pool".to_string(),
                 known_versions: vec![0],

@@ -6,12 +6,12 @@ use crate::error::Error;
 use crate::fee_pools::epochs::paths;
 use dpp::block::epoch::EpochIndex;
 
-use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
-
 use crate::fee_pools::epochs::epoch_key_constants::{
     KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
 };
+use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
+use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns the index and start block platform and core heights of the first epoch between
@@ -21,6 +21,7 @@ impl Drive {
         from_epoch_index: EpochIndex,
         to_epoch_index: EpochIndex,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<StartBlockInfo>, Error> {
         let mut start_block_height_query = Query::new();
         start_block_height_query.insert_key(KEY_START_BLOCK_HEIGHT.to_vec());
@@ -48,6 +49,7 @@ impl Drive {
                 true,
                 QueryPathKeyElementTrioResultType,
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;

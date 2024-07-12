@@ -32,7 +32,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version.grove_methods.basic.grove_delete {
-            0 => self.grove_delete_v0(path, key, transaction, drive_operations),
+            0 => self.grove_delete_v0(path, key, transaction, drive_operations, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_delete".to_string(),
                 known_versions: vec![0],

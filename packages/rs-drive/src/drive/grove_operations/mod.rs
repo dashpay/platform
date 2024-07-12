@@ -189,7 +189,9 @@ pub enum BatchDeleteApplyType {
     StatelessBatchDelete {
         /// Are we deleting in a sum tree
         is_sum_tree: bool,
-        /// What is the estimatated value size
+        /// What is the estimated value size
+        estimated_key_size: u32,
+        /// What is the estimated value size
         estimated_value_size: u32,
     },
     /// Stateful batch delete
@@ -415,6 +417,7 @@ impl From<BatchDeleteApplyType> for QueryType {
             BatchDeleteApplyType::StatelessBatchDelete {
                 is_sum_tree,
                 estimated_value_size,
+                ..
             } => QueryType::StatelessQuery {
                 in_tree_using_sums: is_sum_tree,
                 query_target: QueryTarget::QueryTargetValue(estimated_value_size),
@@ -431,6 +434,7 @@ impl From<&BatchDeleteApplyType> for QueryType {
             BatchDeleteApplyType::StatelessBatchDelete {
                 is_sum_tree,
                 estimated_value_size,
+                ..
             } => QueryType::StatelessQuery {
                 in_tree_using_sums: *is_sum_tree,
                 query_target: QueryTarget::QueryTargetValue(*estimated_value_size),
@@ -447,6 +451,7 @@ impl From<BatchDeleteApplyType> for DirectQueryType {
             BatchDeleteApplyType::StatelessBatchDelete {
                 is_sum_tree,
                 estimated_value_size,
+                ..
             } => DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums: is_sum_tree,
                 query_target: QueryTarget::QueryTargetValue(estimated_value_size),
@@ -464,6 +469,7 @@ impl From<&BatchDeleteApplyType> for DirectQueryType {
             BatchDeleteApplyType::StatelessBatchDelete {
                 is_sum_tree,
                 estimated_value_size,
+                ..
             } => DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums: *is_sum_tree,
                 query_target: QueryTarget::QueryTargetValue(*estimated_value_size),

@@ -293,6 +293,7 @@ mod tests {
                 &contract_root_path(&contract.id().to_buffer()),
                 &[0],
                 Some(&db_transaction),
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to get contract back");
@@ -522,6 +523,7 @@ mod tests {
                 &contract_root_path(&contract.id().to_buffer()),
                 &[0],
                 Some(&db_transaction),
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to get contract back");

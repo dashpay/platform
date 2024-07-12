@@ -43,7 +43,7 @@ impl SingleDocumentDriveQuery {
             .single_document
             .verify_proof_keep_serialized
         {
-            0 => self.verify_proof_keep_serialized_v0(is_subset, proof),
+            0 => self.verify_proof_keep_serialized_v0(is_subset, proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "SingleDocumentDriveQuery::verify_proof_keep_serialized".to_string(),
                 known_versions: vec![0],

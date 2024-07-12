@@ -1422,6 +1422,9 @@ mod tests {
 
         let mut platform_state = (**platform_state).clone();
 
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
         let block_info = BlockInfo {
             time_ms, //less than 2 weeks
             height,
@@ -1432,7 +1435,12 @@ mod tests {
         platform_state.set_last_committed_block_info(Some(
             ExtendedBlockInfoV0 {
                 basic_info: block_info,
-                app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                app_hash: platform
+                    .drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
                 quorum_hash: [0u8; 32],
                 block_id_hash: [0u8; 32],
                 proposer_pro_tx_hash: [0u8; 32],

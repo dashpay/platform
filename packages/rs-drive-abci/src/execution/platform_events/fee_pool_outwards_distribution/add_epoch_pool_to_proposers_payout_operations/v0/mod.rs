@@ -300,7 +300,7 @@ mod tests {
             // check we paid 500 to every mn identity
             let paid_mn_identities_balances = platform
                 .drive
-                .fetch_identities_balances(&pro_tx_hashes, Some(&transaction))
+                .fetch_identities_balances(&pro_tx_hashes, Some(&transaction), platform_version)
                 .expect("expected to get identities");
 
             let total_fees = Decimal::from(storage_fees + processing_fees);
@@ -330,7 +330,7 @@ mod tests {
 
             let refetched_share_identities_balances = platform
                 .drive
-                .fetch_identities_balances(&share_identities, Some(&transaction))
+                .fetch_identities_balances(&share_identities, Some(&transaction), platform_version)
                 .expect("expected to get identities");
 
             for (_, balance) in refetched_share_identities_balances {

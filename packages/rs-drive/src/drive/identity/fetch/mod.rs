@@ -29,6 +29,7 @@ use grovedb::TransactionArg;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::{PathQuery, SizedQuery};
 
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "server")]
 use std::collections::BTreeMap;
 
@@ -74,6 +75,7 @@ impl Drive {
         &self,
         ids: &Vec<[u8; 32]>,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         let mut query = Query::new();
         for id in ids {
@@ -96,6 +98,7 @@ impl Drive {
                 true,
                 QueryElementResultType,
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
@@ -109,6 +112,7 @@ impl Drive {
         &self,
         ids: &Vec<[u8; 32]>,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], u64>, Error> {
         let mut query = Query::new();
         for id in ids {
@@ -131,6 +135,7 @@ impl Drive {
                 true,
                 QueryKeyElementPairResultType,
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;

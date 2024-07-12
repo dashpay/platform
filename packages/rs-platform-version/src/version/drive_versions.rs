@@ -1,10 +1,12 @@
 use crate::version::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
+use grovedb_version::version::GroveVersion;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {
     pub structure: DriveStructureVersion,
     pub methods: DriveMethodVersions,
     pub grove_methods: DriveGroveMethodVersions,
+    pub grove_version: GroveVersion,
 }
 
 impl DriveVersion {

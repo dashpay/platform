@@ -51,7 +51,7 @@ impl VotePollsByEndDateDriveQuery {
             .voting
             .verify_vote_polls_by_end_date_proof
         {
-            0 => self.verify_vote_polls_by_end_date_proof_v0(proof),
+            0 => self.verify_vote_polls_by_end_date_proof_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_vote_polls_by_end_date_proof".to_string(),
                 known_versions: vec![0],

@@ -50,6 +50,7 @@ impl Drive {
                 proof,
                 is_proof_subset,
                 public_key_hash,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_identity_id_by_public_key_hash".to_string(),

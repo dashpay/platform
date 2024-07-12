@@ -245,20 +245,20 @@ mod tests {
             &mut None,
         );
 
-        let known_root_hash = abci_app
-            .platform
-            .drive
-            .grove
-            .root_hash(None)
-            .unwrap()
-            .expect("expected root hash");
-
         let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
 
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
 
         abci_app
             .platform
@@ -387,20 +387,20 @@ mod tests {
             &mut None,
         );
 
-        let known_root_hash = abci_app
-            .platform
-            .drive
-            .grove
-            .root_hash(None)
-            .unwrap()
-            .expect("expected root hash");
-
         let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
 
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
 
         abci_app
             .platform
@@ -1176,6 +1176,12 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         assert_eq!(
             hex::encode(
                 outcome
@@ -1183,7 +1189,7 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
@@ -1893,7 +1899,10 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
-
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         assert_eq!(
             hex::encode(
                 outcome
@@ -1901,7 +1910,7 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
@@ -2025,6 +2034,10 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         assert_eq!(
             hex::encode(
                 outcome
@@ -2032,7 +2045,7 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
@@ -2677,6 +2690,7 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
+        let platform_version = PlatformVersion::latest();
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 
         let strategy = NetworkStrategy {
@@ -2746,6 +2760,7 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -3695,12 +3710,17 @@ mod tests {
             first_validator_set_fingerprint == last_validator_set_fingerprint
         }));
 
+        let state = outcomes[0].abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let first_last_app_hash = outcomes[0]
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3710,7 +3730,7 @@ mod tests {
                 .platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -3846,12 +3866,17 @@ mod tests {
             "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3860,7 +3885,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -4008,12 +4033,17 @@ mod tests {
             "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -4022,7 +4052,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -4128,7 +4158,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected root hash");
 
@@ -4190,6 +4220,7 @@ mod tests {
 
     #[test]
     fn run_chain_transfer_between_identities() {
+        let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -4268,6 +4299,7 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 

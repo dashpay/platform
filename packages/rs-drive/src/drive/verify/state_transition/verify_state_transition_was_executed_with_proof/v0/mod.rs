@@ -273,6 +273,7 @@ impl Drive {
                         proof,
                         identity_id.into_buffer(),
                         false,
+                        platform_version,
                     )?
                 else {
                     return Err(Error::Proof(ProofError::IncorrectProof(

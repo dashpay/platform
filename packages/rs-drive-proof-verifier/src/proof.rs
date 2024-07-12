@@ -611,7 +611,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
 
         provider: &'a dyn ContextProvider,
     ) -> Result<(Option<Self>, ResponseMetadata), Error>
@@ -640,6 +640,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
                 &proof.grovedb_proof,
                 id.into_buffer(),
                 false,
+                platform_version,
             )
             .map_err(|e| Error::DriveError {
                 error: e.to_string(),
