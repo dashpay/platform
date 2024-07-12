@@ -1,5 +1,4 @@
 use bincode::{Decode, Encode};
-use crate::version::fee::storage::FeeStorageVersion;
 
 pub mod v1;
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]

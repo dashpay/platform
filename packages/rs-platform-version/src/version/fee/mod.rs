@@ -4,8 +4,8 @@ use crate::version::fee::processing::FeeProcessingVersion;
 use crate::version::fee::signature::FeeSignatureVersion;
 use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
 use crate::version::fee::storage::FeeStorageVersion;
-use bincode::{Decode, Encode};
 use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
+use bincode::{Decode, Encode};
 
 mod data_contract;
 mod hashing;
@@ -27,9 +27,9 @@ pub struct FeeVersion {
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
 }
 
-
 #[cfg(test)]
 mod tests {
+    use super::FeeVersion;
     use crate::version::fee::data_contract::FeeDataContractValidationVersion;
     use crate::version::fee::hashing::FeeHashingVersion;
     use crate::version::fee::processing::FeeProcessingVersion;
@@ -37,7 +37,6 @@ mod tests {
     use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
     use crate::version::fee::storage::FeeStorageVersion;
     use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
-    use super::FeeVersion;
 
     #[test]
     // If this test failed, then a new field was added in FeeVersion. And the corresponding eq needs to be updated as well
@@ -64,7 +63,7 @@ mod tests {
                 sha256_per_block: 4,
                 blake3_per_block: 5,
             },
-            processing:FeeProcessingVersion {
+            processing: FeeProcessingVersion {
                 fetch_identity_balance_processing_cost: 1,
                 fetch_identity_revision_processing_cost: 2,
                 fetch_identity_balance_and_revision_processing_cost: 3,
@@ -120,7 +119,7 @@ mod tests {
                 sha256_per_block: 4,
                 blake3_per_block: 5,
             },
-            processing:FeeProcessingVersion {
+            processing: FeeProcessingVersion {
                 fetch_identity_balance_processing_cost: 1,
                 fetch_identity_revision_processing_cost: 2,
                 fetch_identity_balance_and_revision_processing_cost: 3,
@@ -158,4 +157,3 @@ mod tests {
         assert_eq!(version1, version2, "FeeVersion equality test failed. If a field was added or removed, update the Eq implementation.");
     }
 }
-

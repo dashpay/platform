@@ -24,9 +24,9 @@ use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 /// Platform state
 #[derive(Clone, Debug, From)]

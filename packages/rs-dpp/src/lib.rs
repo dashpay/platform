@@ -57,7 +57,7 @@ pub use async_trait;
 pub use bls::*;
 
 pub mod prelude {
-    use crate::block::epoch::EpochIndex;
+
     pub use crate::data_contract::DataContract;
     #[cfg(feature = "extended-document")]
     pub use crate::document::ExtendedDocument;

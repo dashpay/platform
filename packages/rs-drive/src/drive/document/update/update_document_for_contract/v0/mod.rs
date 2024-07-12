@@ -8,13 +8,13 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 impl Drive {
     /// Updates a document and returns the associated fee.

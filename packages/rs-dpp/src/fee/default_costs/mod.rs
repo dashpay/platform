@@ -32,11 +32,11 @@
 //! Fee costs for Known Platform operations
 //!
 
-use std::collections::BTreeMap;
 use crate::block::epoch::{Epoch, EpochIndex};
 use crate::fee::Credits;
 use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 pub mod constants;
 
@@ -104,10 +104,12 @@ impl KnownCostItem {
                     .fetch_single_identity_key_processing_cost
             }
             KnownCostItem::Blake3 => {
-                fee_version.hashing.blake3_base + fee_version.hashing.blake3_per_block * size.unwrap_or(0) as u64
+                fee_version.hashing.blake3_base
+                    + fee_version.hashing.blake3_per_block * size.unwrap_or(0) as u64
             }
             KnownCostItem::SingleSHA256 => {
-                fee_version.hashing.single_sha256_base + fee_version.hashing.sha256_per_block * size.unwrap_or(0) as u64
+                fee_version.hashing.single_sha256_base
+                    + fee_version.hashing.sha256_per_block * size.unwrap_or(0) as u64
             }
             KnownCostItem::VerifySignatureEcdsaSecp256k1 => {
                 fee_version.signature.verify_signature_ecdsa_secp256k1

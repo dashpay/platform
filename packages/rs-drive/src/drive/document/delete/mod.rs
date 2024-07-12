@@ -71,8 +71,8 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::Document;
-    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
@@ -829,7 +829,7 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None
+                None,
             );
         // We added 1559 bytes
         assert_eq!(added_bytes, 1559);
@@ -867,7 +867,7 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None
+                None,
             );
 
         assert!(added_bytes > refund_equivalent_bytes);
@@ -931,7 +931,7 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None
+                None,
             );
         // We added 1558 bytes
         assert_eq!(added_bytes, 1559);

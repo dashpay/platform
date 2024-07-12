@@ -23,10 +23,10 @@ use crate::config::PlatformConfig;
 use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
 };
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 /// Platform state
 #[derive(Clone)]

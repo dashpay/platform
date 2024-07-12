@@ -91,8 +91,8 @@ mod tests {
 
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
@@ -475,7 +475,7 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None
+                None,
             );
         assert_eq!(1305, added_bytes);
         assert_eq!(144859600, processing_fee); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
