@@ -7,6 +7,7 @@ use crate::query::GroveError;
 use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{BatchApplyOptions, KeyInfoPath};
 use grovedb::{EstimatedLayerInformation, GroveDb};
+use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
 impl Drive {
@@ -17,6 +18,7 @@ impl Drive {
         estimated_layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation>,
         validate: bool,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let cost_context = GroveDb::estimated_case_operations_for_batch(
             AverageCaseCostsType(estimated_layer_info),
@@ -31,7 +33,8 @@ impl Drive {
                 batch_pause_height: None,
             }),
             |_, _, _| Ok(false),
-            |_, _, _| Err(GroveError::InternalError("not implemented")),
+            |_, _, _| Err(GroveError::InternalError("not implemented".to_string())),
+            &drive_version.grove_version,
         );
         push_drive_operation_result(cost_context, drive_operations)
     }

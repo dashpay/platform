@@ -7,4 +7,5 @@ pub const STATE_TRANSITION_MIN_FEES_VERSION1: StateTransitionMinFees = StateTran
     document_batch_sub_transition: 100000,
     contract_create: 100000,
     contract_update: 100000,
+    masternode_vote: 100000,
 };

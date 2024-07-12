@@ -194,9 +194,9 @@ mod test {
         };
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None, document_create_transition, &BlockInfo::default(), |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
-            }).expect("expected to create action").into(),
+            }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )
@@ -207,6 +207,7 @@ mod test {
 
     #[test]
     fn should_return_invalid_result_if_owner_id_equals_to_user_id() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -224,9 +225,15 @@ mod test {
                     core_height: 42,
                     epoch: Default::default(),
                 },
-                app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                app_hash: platform
+                    .drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
                 quorum_hash: [0u8; 32],
                 block_id_hash: [0u8; 32],
+                proposer_pro_tx_hash: [0u8; 32],
                 signature: [0u8; 96],
                 round: 0,
             }
@@ -305,9 +312,9 @@ mod test {
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None, document_create_transition, &BlockInfo::default(), |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
-            }).expect("expected to create action").into(),
+            }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )
@@ -325,6 +332,7 @@ mod test {
 
     #[test]
     fn should_return_invalid_result_if_id_not_exists() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -342,9 +350,15 @@ mod test {
                     core_height: 42,
                     epoch: Default::default(),
                 },
-                app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                app_hash: platform
+                    .drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
                 quorum_hash: [0u8; 32],
                 block_id_hash: [0u8; 32],
+                proposer_pro_tx_hash: [0u8; 32],
                 signature: [0u8; 96],
                 round: 0,
             }
@@ -411,9 +425,9 @@ mod test {
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None, document_create_transition, &BlockInfo::default(), |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
-            }).expect("expected to create action").into(),
+            }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )

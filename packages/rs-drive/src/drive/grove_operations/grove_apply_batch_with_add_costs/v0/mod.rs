@@ -11,6 +11,7 @@ use grovedb::batch::{BatchApplyOptions, GroveDbOp};
 use grovedb::TransactionArg;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use grovedb_costs::storage_cost::transition::OperationStorageTransitionType;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Applies the given groveDB operations batch and gets and passes the costs to `push_drive_operation_result`.
@@ -20,9 +21,12 @@ impl Drive {
         validate: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         if ops.is_empty() {
-            return Err(Error::Drive(DriveError::BatchIsEmpty()));
+            return Err(Error::Drive(DriveError::BatchIsEmpty(
+                "batch is empty when trying to apply batch with add costs".to_string(),
+            )));
         }
         // if ops.operations.len() < 500 {
         //     //no initialization
@@ -48,7 +52,7 @@ impl Drive {
         {
             let root_hash = self
                 .grove
-                .root_hash(transaction)
+                .root_hash(transaction, &drive_version.grove_version)
                 .unwrap()
                 .map_err(Error::GroveDB)?;
 
@@ -160,6 +164,7 @@ impl Drive {
                 }
             },
             transaction,
+            &drive_version.grove_version,
         );
 
         #[cfg(feature = "grovedb_operations_logging")]
@@ -168,7 +173,7 @@ impl Drive {
         {
             let root_hash = self
                 .grove
-                .root_hash(transaction)
+                .root_hash(transaction, &drive_version.grove_version)
                 .unwrap()
                 .map_err(Error::GroveDB)?;
 

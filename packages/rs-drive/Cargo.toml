@@ -14,6 +14,7 @@ license = "MIT"
 resolver = "2"
 
 [dependencies]
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 platform-version = { path = "../rs-platform-version" }
 # used to convert integers to bytes, needed in verifier
 integer-encoding = { version = "4.0.0" }
@@ -25,10 +26,12 @@ indexmap = { version = "2.0.2" }
 sqlparser = { version = "0.38.0" }
 # used for int maps and needed in the verifier
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = ["state-transitions"], default-features = false, optional = true }
+dpp = { path = "../rs-dpp", features = [
+  "state-transitions",
+], default-features = false, optional = true }
 thiserror = { version = "1.0.59" }
 tracing = { version = "0.1.37", default-features = false, features = [] }
-derive_more = { version = "0.99.17", optional = true}
+derive_more = { version = "0.99.17" }
 hex = { version = "0.4.3" }
 
 # optional dependencies
@@ -37,18 +40,22 @@ ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-nul
 arc-swap = { version = "1.7.0", optional = true }
 serde = { version = "1.0.197", features = ["derive"], optional = true }
 rand = { version = "0.8.4", features = ["small_rng"], optional = true }
-moka = { version = "0.11.1", features = ["future", "futures-util"], optional = true }
+moka = { version = "0.11.1", features = [
+  "future",
+  "futures-util",
+], optional = true }
 bs58 = { version = "0.5.0", optional = true }
-base64 = { version = "0.21.0", optional = true }
+base64 = { version = "0.22.1", optional = true }
 tempfile = { version = "3", optional = true }
 enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "2.0.0", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.11.0", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "d9292aa20bd8f3bda7c5d25d62db06ac341b0677", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "d9292aa20bd8f3bda7c5d25d62db06ac341b0677", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "d9292aa20bd8f3bda7c5d25d62db06ac341b0677" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "d9292aa20bd8f3bda7c5d25d62db06ac341b0677", optional = true }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "8ada131a1079c763e83d2b11ab1f6abbd5d82e06", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "8ada131a1079c763e83d2b11ab1f6abbd5d82e06", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "8ada131a1079c763e83d2b11ab1f6abbd5d82e06" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "8ada131a1079c763e83d2b11ab1f6abbd5d82e06", optional = true }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "8ada131a1079c763e83d2b11ab1f6abbd5d82e06" }
 
 [dev-dependencies]
 criterion = "0.3.5"
@@ -77,7 +84,13 @@ harness = false
 [features]
 default = ["full", "verify", "fixtures-and-mocks", "cbor_query"]
 fee-distribution = ["dpp/fee-distribution"]
-fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify", "dpp/data-contract-json-conversion", "dpp/random-public-keys"]
+fixtures-and-mocks = [
+  "full",
+  "dpp/fixtures-and-mocks",
+  "verify",
+  "dpp/data-contract-json-conversion",
+  "dpp/random-public-keys",
+]
 server = [
   "serde",
   "parking_lot",
@@ -92,20 +105,11 @@ server = [
   "grovedb-storage",
   "grovedb-costs",
   "itertools",
-  "rand", #todo: this should be removed eventually
-  "derive_more",
+  "rand",                    #todo: this should be removed eventually
   "enum-map",
   "intmap",
 ]
-full = [
-  "server",
-  "ciborium",
-  "serde",
-  "bs58",
-  "tempfile",
-  "base64",
-  "chrono",
-]
+full = ["server", "ciborium", "serde", "bs58", "tempfile", "base64", "chrono"]
 cbor_query = ["ciborium", "dpp/platform-value-cbor", "dpp/cbor"]
 grovedb_operations_logging = []
 verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions"]

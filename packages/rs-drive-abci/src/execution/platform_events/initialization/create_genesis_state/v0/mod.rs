@@ -1,31 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
@@ -297,9 +269,11 @@ mod tests {
         use crate::config::PlatformConfig;
         use crate::test::helpers::setup::TestPlatformBuilder;
         use drive::drive::config::DriveConfig;
+        use platform_version::version::PlatformVersion;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .with_config(PlatformConfig {
                     drive: DriveConfig {
@@ -314,15 +288,15 @@ mod tests {
             let root_hash = platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should obtain root hash");
 
             assert_eq!(
                 root_hash,
                 [
-                    243, 253, 220, 159, 6, 122, 148, 242, 254, 248, 127, 236, 104, 250, 241, 71,
-                    217, 215, 31, 252, 101, 183, 148, 205, 222, 183, 255, 98, 218, 252, 126, 0
+                    37, 162, 178, 238, 218, 180, 162, 24, 34, 199, 191, 38, 43, 39, 197, 101, 133,
+                    229, 130, 128, 20, 135, 168, 126, 219, 15, 235, 112, 139, 89, 187, 115
                 ]
             )
         }

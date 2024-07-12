@@ -23,7 +23,7 @@ impl Drive {
             .index
             .fetch_next_withdrawal_transaction_index
         {
-            0 => self.fetch_next_withdrawal_transaction_index_v0(transaction),
+            0 => self.fetch_next_withdrawal_transaction_index_v0(transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_next_withdrawal_transaction_index".to_string(),
                 known_versions: vec![0],

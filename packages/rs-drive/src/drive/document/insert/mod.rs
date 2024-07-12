@@ -72,7 +72,6 @@ use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Date, NaiveDate};
     use std::borrow::Cow;
     use std::option::Option::None;
 
@@ -93,11 +92,9 @@ mod tests {
 
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::document::{Document, DocumentV0};
 
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::document::serialization_traits::DocumentCborMethodsV0;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::fee_result::FeeResult;
@@ -106,7 +103,6 @@ mod tests {
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
-    use dpp::ProtocolError;
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
@@ -603,7 +599,7 @@ mod tests {
 
         let root_hash = drive
             .grove
-            .root_hash(Some(&db_transaction))
+            .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected a root hash calculation to succeed");
 
@@ -629,7 +625,7 @@ mod tests {
 
         let root_hash_after_fee = drive
             .grove
-            .root_hash(Some(&db_transaction))
+            .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected a root hash calculation to succeed");
 
@@ -732,7 +728,7 @@ mod tests {
     fn test_add_dashpay_many_non_conflicting_documents() {
         let (drive, dashpay) = setup_dashpay("add_no_conflict", true);
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let platform_version = PlatformVersion::first();
 
@@ -839,7 +835,7 @@ mod tests {
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
         let platform_version = PlatformVersion::first();
 

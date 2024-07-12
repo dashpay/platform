@@ -2,6 +2,7 @@ use crate::{
     drive::{verify::RootHash, Drive},
     error::{proof::ProofError, Error},
 };
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Verifies the balance and the reviof an identity by their identity ID.
@@ -34,12 +35,21 @@ impl Drive {
         proof: &[u8],
         identity_id: [u8; 32],
         _verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<(u64, u64)>), Error> {
-        let (root_hash_0, signed_balance) =
-            Self::verify_identity_balance_for_identity_id_v0(proof, identity_id, true)?;
+        let (root_hash_0, signed_balance) = Self::verify_identity_balance_for_identity_id_v0(
+            proof,
+            identity_id,
+            true,
+            platform_version,
+        )?;
 
-        let (root_hash_1, revision) =
-            Self::verify_identity_revision_for_identity_id_v0(proof, identity_id, true)?;
+        let (root_hash_1, revision) = Self::verify_identity_revision_for_identity_id_v0(
+            proof,
+            identity_id,
+            true,
+            platform_version,
+        )?;
 
         if root_hash_0 != root_hash_1 {
             return Err(Error::Proof(ProofError::CorruptedProof(

@@ -120,7 +120,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 impl DocumentTypeV0 {
@@ -238,11 +238,13 @@ impl DocumentTypeV0 {
             .cloned()
             .collect_vec();
 
-        let mut indices = Vec::with_capacity(index_count as usize);
+        let mut indices = BTreeMap::new();
 
         for _ in 0..index_count {
-            match Index::random(&ten_field_names, &indices, rng) {
-                Ok(index) => indices.push(index),
+            match Index::random(&ten_field_names, indices.values(), rng) {
+                Ok(index) => {
+                    indices.insert(index.name.clone(), index);
+                }
                 Err(_) => break,
             }
         }
@@ -254,7 +256,7 @@ impl DocumentTypeV0 {
         let name = format!("doc_type_{}", rng.gen::<u16>());
 
         let index_structure =
-            IndexLevel::try_from_indices(indices.as_slice(), name.as_str(), platform_version)?;
+            IndexLevel::try_from_indices(indices.values(), name.as_str(), platform_version)?;
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &properties,
             &PlatformVersion::latest()
@@ -391,7 +393,7 @@ impl DocumentTypeV0 {
         // Generate indices
         let indices_json_schema = indices
             .iter()
-            .map(|index| {
+            .map(|(_, index)| {
                 let properties_schema = index
                     .properties
                     .iter()
@@ -559,11 +561,13 @@ impl DocumentTypeV0 {
             .cloned()
             .collect_vec();
 
-        let mut indices = Vec::with_capacity(index_count as usize);
+        let mut indices = BTreeMap::new();
 
         for _ in 0..index_count {
-            match Index::random(&ten_field_names, &indices, rng) {
-                Ok(index) => indices.push(index),
+            match Index::random(&ten_field_names, indices.values(), rng) {
+                Ok(index) => {
+                    indices.insert(index.name.clone(), index);
+                }
                 Err(_) => break,
             }
         }
@@ -575,7 +579,7 @@ impl DocumentTypeV0 {
         let name = format!("doc_type_{}", rng.gen::<u16>());
 
         let index_structure =
-            IndexLevel::try_from_indices(indices.as_slice(), name.as_str(), platform_version)?;
+            IndexLevel::try_from_indices(indices.values(), name.as_str(), platform_version)?;
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &properties,
             &PlatformVersion::latest()

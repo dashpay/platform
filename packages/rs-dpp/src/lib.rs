@@ -40,6 +40,7 @@ pub mod balances;
 pub mod block;
 pub mod fee;
 pub mod nft;
+pub mod prefunded_specialized_balance;
 pub mod serialization;
 #[cfg(any(
     feature = "message-signing",
@@ -48,6 +49,7 @@ pub mod serialization;
 pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
+pub mod voting;
 pub mod withdrawal;
 
 pub use async_trait;
@@ -73,6 +75,8 @@ pub mod prelude {
 
     pub type CoreBlockHeight = u32;
     pub type TimestampMillis = u64;
+
+    pub type TimestampIncluded = bool;
     pub type Revision = u64;
     pub type IdentityNonce = u64;
 

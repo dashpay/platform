@@ -28,7 +28,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
-        let hash_vec = identity_key.hash()?;
+        let hash_vec = identity_key.public_key_hash()?;
         let key_hash = hash_vec.as_slice().try_into().map_err(|_| {
             Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes"))
         })?;

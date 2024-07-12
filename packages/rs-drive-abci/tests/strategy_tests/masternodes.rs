@@ -3,9 +3,13 @@ use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash, Txid};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
+use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
+use dpp::identity::IdentityPublicKey;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
+use platform_version::version::PlatformVersion;
 use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
+use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
@@ -33,6 +37,7 @@ pub fn generate_test_masternodes(
     hpmn_count: u16,
     updates: Option<GenerateTestMasternodeUpdates>,
     rng: &mut StdRng,
+    add_voting_keys_to_signer: &mut Option<SimpleSigner>,
 ) -> (
     Vec<MasternodeListItemWithUpdates>,
     Vec<MasternodeListItemWithUpdates>,
@@ -188,6 +193,21 @@ pub fn generate_test_masternodes(
     let hpmn_number_to_heights_http_port_changes =
         invert_btreemap(block_height_to_list_hpmn_http_port_changes);
 
+    fn generate_voting_address(
+        rng: &mut StdRng,
+        add_voting_keys_to_signer: &mut Option<SimpleSigner>,
+    ) -> [u8; 20] {
+        if let Some(simple_signer) = add_voting_keys_to_signer {
+            let (identity_public_key, private_key) =
+                IdentityPublicKey::random_voting_key_with_rng(0, rng, PlatformVersion::latest())
+                    .expect("expected a random voting key");
+            simple_signer.add_key(identity_public_key.clone(), private_key);
+            identity_public_key.public_key_hash().unwrap()
+        } else {
+            rng.gen()
+        }
+    }
+
     for i in 0..masternode_count {
         let private_key_operator =
             BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
@@ -212,7 +232,7 @@ pub fn generate_test_masternodes(
                 pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
-                voting_address: rng.gen::<[u8; 20]>(),
+                voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
                 payout_address: rng.gen::<[u8; 20]>(),
                 pub_key_operator,
                 operator_payout_address: None,
@@ -347,7 +367,7 @@ pub fn generate_test_masternodes(
                 pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
-                voting_address: rng.gen::<[u8; 20]>(),
+                voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
                 payout_address: rng.gen::<[u8; 20]>(),
                 pub_key_operator,
                 operator_payout_address: None,
@@ -582,9 +602,9 @@ mod tests {
         let mut rng2 = StdRng::seed_from_u64(12345);
 
         let (masternodes1, hpmn1) =
-            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1);
+            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1, &mut None);
         let (masternodes2, hpmn2) =
-            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2);
+            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2, &mut None);
 
         assert_eq!(masternodes1, masternodes2);
         assert_eq!(hpmn1, hpmn2);
@@ -641,10 +661,20 @@ mod tests {
         let mut rng1 = StdRng::seed_from_u64(12345);
         let mut rng2 = StdRng::seed_from_u64(12345);
 
-        let (masternodes1, hpmn1) =
-            generate_test_masternodes(masternode_count, hpmn_count, updates.clone(), &mut rng1);
-        let (masternodes2, hpmn2) =
-            generate_test_masternodes(masternode_count, hpmn_count, updates.clone(), &mut rng2);
+        let (masternodes1, hpmn1) = generate_test_masternodes(
+            masternode_count,
+            hpmn_count,
+            updates.clone(),
+            &mut rng1,
+            &mut None,
+        );
+        let (masternodes2, hpmn2) = generate_test_masternodes(
+            masternode_count,
+            hpmn_count,
+            updates.clone(),
+            &mut rng2,
+            &mut None,
+        );
 
         assert_eq!(masternodes1, masternodes2);
         assert_eq!(hpmn1, hpmn2);
@@ -667,9 +697,9 @@ mod tests {
             let hpmn_count = rng.gen_range(50..=150);
 
             let (masternodes1, hpmn1) =
-                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1);
+                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1, &mut None);
             let (masternodes2, hpmn2) =
-                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2);
+                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2, &mut None);
 
             assert_eq!(masternodes1, masternodes2);
             assert_eq!(hpmn1, hpmn2);
@@ -737,10 +767,20 @@ mod tests {
                 },
             });
 
-            let (masternodes1, hpmn1) =
-                generate_test_masternodes(masternode_count, hpmn_count, updates.clone(), &mut rng1);
-            let (masternodes2, hpmn2) =
-                generate_test_masternodes(masternode_count, hpmn_count, updates.clone(), &mut rng2);
+            let (masternodes1, hpmn1) = generate_test_masternodes(
+                masternode_count,
+                hpmn_count,
+                updates.clone(),
+                &mut rng1,
+                &mut None,
+            );
+            let (masternodes2, hpmn2) = generate_test_masternodes(
+                masternode_count,
+                hpmn_count,
+                updates.clone(),
+                &mut rng2,
+                &mut None,
+            );
 
             assert_eq!(masternodes1, masternodes2);
             assert_eq!(hpmn1, hpmn2);

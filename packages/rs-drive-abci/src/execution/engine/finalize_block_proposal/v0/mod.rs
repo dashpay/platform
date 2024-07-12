@@ -46,7 +46,7 @@ where
     ///
     /// This function first retrieves the block execution context and decomposes the request. It then checks
     /// if the received block matches the expected block information (height, round, hash, etc.). If everything
-    /// matches, the function verifies the commit signature (if enabled) and the vote extensions. If all checks
+    /// matches, the function verifies the commit signature (if enabled) and the votes extensions. If all checks
     /// pass, the block is committed to the state.
     ///
     /// # Arguments
@@ -136,8 +136,8 @@ where
             return Ok(validation_result.into());
         }
 
-        // Verify vote extensions
-        // We don't need to verify vote extension signatures once again after tenderdash
+        // Verify votes extensions
+        // We don't need to verify votes extension signatures once again after tenderdash
         // here, because we will do it bellow broadcasting withdrawal transactions.
         // The sendrawtransaction RPC method returns an error if quorum signature is invalid
         let expected_withdrawal_transactions =
@@ -218,7 +218,7 @@ where
                     let signature_bytes: [u8; 96] =
                         vote_extension.signature.try_into().map_err(|e| {
                             AbciError::BadRequestDataSize(format!(
-                                "invalid vote extension signature size: {}",
+                                "invalid votes extension signature size: {}",
                                 hex::encode(e)
                             ))
                         })?;
@@ -241,6 +241,7 @@ where
             app_hash: block_header.app_hash,
             quorum_hash: current_quorum_hash,
             block_id_hash,
+            proposer_pro_tx_hash: block_header.proposer_pro_tx_hash,
             signature: commit_info.block_signature,
             round,
         }

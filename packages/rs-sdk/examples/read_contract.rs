@@ -66,7 +66,7 @@ fn setup_sdk(config: &Config) -> Sdk {
     // We'll first provide `None` Sdk, and then update it later.
     //
     // To modify context provider, we need locks and Arc to overcome ownership rules.
-    let mut context_provider = GrpcContextProvider::new(
+    let context_provider = GrpcContextProvider::new(
         None,
         &config.server_address,
         config.core_port,

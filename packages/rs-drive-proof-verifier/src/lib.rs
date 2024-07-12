@@ -9,7 +9,12 @@ mod provider;
 pub mod types;
 mod verify;
 pub use error::Error;
-pub use proof::FromProof;
-pub use provider::ContextProvider;
+pub use proof::{FromProof, Length};
 #[cfg(feature = "mocks")]
 pub use provider::MockContextProvider;
+pub use provider::{ContextProvider, DataContractProvider};
+pub mod from_request;
+
+// Needed for #[derive(PlatformSerialize, PlatformDeserialize)]
+#[cfg(feature = "mocks")]
+use dpp::serialization;

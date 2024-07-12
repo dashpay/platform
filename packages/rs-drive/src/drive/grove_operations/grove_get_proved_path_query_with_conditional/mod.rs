@@ -30,7 +30,6 @@ impl Drive {
         root_path: SubtreePath<'_, B>,
         key: &[u8],
         path_query_resolver: &impl Fn(Option<Element>) -> PathQuery,
-        verbose: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
@@ -44,9 +43,9 @@ impl Drive {
                 root_path,
                 key,
                 path_query_resolver,
-                verbose,
                 transaction,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_proved_path_query_with_conditional".to_string(),

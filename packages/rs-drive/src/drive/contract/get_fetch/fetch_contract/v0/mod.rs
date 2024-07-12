@@ -60,6 +60,7 @@ impl Drive {
                 &[0],
                 false,
                 transaction,
+                &platform_version.drive.grove_version,
             );
             (value, cost)
         } else {
@@ -68,6 +69,7 @@ impl Drive {
                 &[0],
                 false,
                 transaction,
+                &platform_version.drive.grove_version,
             );
             (value, cost)
         };
@@ -123,6 +125,7 @@ impl Drive {
                     &[0],
                     false,
                     transaction,
+                    &platform_version.drive.grove_version,
                 );
 
                 cost.add_assign(secondary_cost);

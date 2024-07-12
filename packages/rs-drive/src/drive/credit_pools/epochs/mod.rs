@@ -35,6 +35,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 pub mod credit_distribution_pools;
 mod get_epochs_infos;
@@ -51,9 +52,15 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         self.grove
-            .has_raw(&pools_path(), &epoch_tree.key, transaction)
+            .has_raw(
+                &pools_path(),
+                &epoch_tree.key,
+                transaction,
+                &platform_version.drive.grove_version,
+            )
             .unwrap()
             .map_err(Error::GroveDB)
     }
@@ -73,13 +80,14 @@ mod tests {
 
         #[test]
         fn test_return_true_if_tree_exists() {
+            let platform_version = PlatformVersion::latest();
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
             let epoch_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let is_exist = drive
-                .has_epoch_tree_exists(&epoch_tree, Some(&transaction))
+                .has_epoch_tree_exists(&epoch_tree, Some(&transaction), platform_version)
                 .expect("should check epoch tree existence");
 
             assert!(is_exist);
@@ -87,6 +95,7 @@ mod tests {
 
         #[test]
         fn test_return_false_if_tree_doesnt_exist() {
+            let platform_version = PlatformVersion::latest();
             // default will be 40 epochs per era
             // 50 eras
             // = 2000
@@ -96,7 +105,7 @@ mod tests {
             let epoch_tree = Epoch::new(2000 + 1).unwrap();
 
             let is_exist = drive
-                .has_epoch_tree_exists(&epoch_tree, Some(&transaction))
+                .has_epoch_tree_exists(&epoch_tree, Some(&transaction), platform_version)
                 .expect("should check epoch tree existence");
 
             assert!(!is_exist);

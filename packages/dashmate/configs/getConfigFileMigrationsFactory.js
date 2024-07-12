@@ -630,6 +630,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-dev.16': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
+            // Update Drive's quorum configuration
             if (name === 'base') {
               options.network = NETWORK_MAINNET;
             }
@@ -664,15 +665,25 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 rotation: networkConfig.get('platform.drive.abci.instantLock.quorum.rotation'),
               },
             };
-
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
           });
+
         return configFile;
       },
       '1.0.0-dev.17': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
+          .forEach(([name, options]) => {
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
+            // Update Core image
+            options.core.docker.image = getDefaultConfigByNameOrGroup(name, options.group)
+              .get('core.docker.image');
+
+            // Update Core RPC auth configuration
+            options.core.rpc.users = base.get('core.rpc.users');
+            options.core.rpc.users.dashmate.password = options.core.rpc.password;
+
+            delete options.core.rpc.user;
+            delete options.core.rpc.password;
           });
         return configFile;
       },

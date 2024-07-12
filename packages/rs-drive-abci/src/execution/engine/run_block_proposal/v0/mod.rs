@@ -294,6 +294,17 @@ where
                 platform_version,
             )?;
 
+        // Run all dao platform events, such as vote tallying and distribution of contested documents
+        // This must be done before state transition processing
+        // Otherwise we would expect a proof after a successful vote that has since been cleaned up.
+        self.run_dao_platform_events(
+            &block_info,
+            last_committed_platform_state,
+            &block_platform_state,
+            Some(transaction),
+            platform_version,
+        )?;
+
         // Process transactions
         let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
@@ -347,7 +358,7 @@ where
         let root_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
@@ -356,6 +367,7 @@ where
             .set_app_hash(Some(root_hash));
 
         let validator_set_update = self.validator_set_update(
+            block_proposal.proposer_pro_tx_hash,
             last_committed_platform_state,
             &mut block_execution_context,
             platform_version,

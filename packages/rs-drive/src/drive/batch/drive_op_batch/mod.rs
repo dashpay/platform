@@ -3,6 +3,7 @@ mod document;
 mod drive_methods;
 mod finalize_task;
 mod identity;
+mod prefunded_specialized_balance;
 mod system;
 mod withdrawals;
 
@@ -19,6 +20,7 @@ pub use document::DocumentOperationType;
 pub use document::DocumentOperationsForContractDocumentType;
 pub use document::UpdateOperationInfo;
 pub use identity::IdentityOperationType;
+pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
 pub use system::SystemOperationType;
 pub use withdrawals::WithdrawalOperationType;
 
@@ -71,6 +73,8 @@ pub enum DriveOperation<'a> {
     WithdrawalOperation(WithdrawalOperationType),
     /// An identity operation
     IdentityOperation(IdentityOperationType),
+    /// An operation on prefunded balances
+    PrefundedSpecializedBalanceOperation(PrefundedSpecializedBalanceOperationType),
     /// A system operation
     SystemOperation(SystemOperationType),
     /// A single low level groveDB operation
@@ -125,6 +129,15 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     transaction,
                     platform_version,
                 ),
+            DriveOperation::PrefundedSpecializedBalanceOperation(
+                prefunded_balance_operation_type,
+            ) => prefunded_balance_operation_type.into_low_level_drive_operations(
+                drive,
+                estimated_costs_only_with_layer_info,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             DriveOperation::SystemOperation(system_operation_type) => system_operation_type
                 .into_low_level_drive_operations(
                     drive,
@@ -282,6 +295,7 @@ mod tests {
                 &contract_root_path(&contract.id().to_buffer()),
                 &[0],
                 Some(&db_transaction),
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to get contract back");
@@ -513,6 +527,7 @@ mod tests {
                 &contract_root_path(&contract.id().to_buffer()),
                 &[0],
                 Some(&db_transaction),
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to get contract back");

@@ -111,7 +111,7 @@ impl GrpcContextProvider {
             None => return,
         };
 
-        let encoded = serde_json::to_vec(public_key).expect("encode quorum hash to json");
+        let encoded = hex::encode(public_key);
 
         let file = path.join(format!(
             "quorum_pubkey-{}-{}.json",
@@ -119,6 +119,32 @@ impl GrpcContextProvider {
             quorum_hash.encode_hex::<String>()
         ));
 
+        if let Err(e) = std::fs::write(file, encoded) {
+            tracing::warn!("Unable to write dump file {:?}: {}", path, e);
+        }
+    }
+
+    /// Save data contract to disk.
+    ///
+    /// Files are named: `quorum_pubkey-<int_quorum_type>-<hex_quorum_hash>.json`
+    ///
+    /// Note that this will overwrite files with the same quorum type and quorum hash.
+    ///
+    /// Any errors are logged on `warn` level and ignored.
+    #[cfg(feature = "mocks")]
+    fn dump_data_contract(&self, data_contract: &DataContract) {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use hex::ToHex;
+
+        let path = match &self.dump_dir {
+            Some(p) => p,
+            None => return,
+        };
+        let id = data_contract.id();
+
+        let file = path.join(format!("data_contract-{}.json", id.encode_hex::<String>()));
+
+        let encoded = serde_json::to_vec(data_contract).expect("serialize data contract");
         if let Err(e) = std::fs::write(file, encoded) {
             tracing::warn!("Unable to write dump file {:?}: {}", path, e);
         }
@@ -157,7 +183,6 @@ impl ContextProvider for GrpcContextProvider {
         if let Some(contract) = self.data_contracts_cache.get(data_contract_id) {
             return Ok(Some(contract));
         };
-        // let sdk_guard = self.sdk.read().expect("lock poisoned");
         let sdk_guard = self.sdk.load();
 
         let sdk = match sdk_guard.as_ref() {
@@ -169,15 +194,21 @@ impl ContextProvider for GrpcContextProvider {
         };
 
         let contract_id = *data_contract_id;
+
         let sdk_cloned = sdk.clone();
 
         let data_contract: Option<DataContract> = DataContract::fetch(&sdk_cloned, contract_id)
             .block_on()
-            .map_err(|e| ContextProviderError::InvalidDataContract(e.to_string()))?;
+            .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
 
         if let Some(ref dc) = data_contract {
             self.data_contracts_cache.put(*data_contract_id, dc.clone());
         };
+
+        #[cfg(feature = "mocks")]
+        if let Some(ref dc) = data_contract {
+            self.dump_data_contract(dc);
+        }
 
         Ok(data_contract.map(Arc::new))
     }

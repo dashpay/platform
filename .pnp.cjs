@@ -2590,7 +2590,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
           ["@dashevo/dashcore-lib", "npm:0.21.2"],\
-          ["@dashevo/dashd-rpc", "npm:18.3.0"],\
+          ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -2774,10 +2774,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@dashevo/dashd-rpc", [\
-      ["npm:18.3.0", {\
-        "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-18.3.0-4f165136e8-b83fbdb149.zip/node_modules/@dashevo/dashd-rpc/",\
+      ["npm:19.0.0", {\
+        "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-19.0.0-54bb2a5dfc-2eab84af3e.zip/node_modules/@dashevo/dashd-rpc/",\
         "packageDependencies": [\
-          ["@dashevo/dashd-rpc", "npm:18.3.0"],\
+          ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["async", "npm:3.2.4"],\
           ["bluebird", "npm:3.7.2"]\
         ],\
@@ -8458,7 +8458,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dashcore-lib", "npm:0.21.2"],\
-          ["@dashevo/dashd-rpc", "npm:18.3.0"],\
+          ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
           ["@dashevo/docker-compose", "npm:0.24.4"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
@@ -8478,6 +8478,7 @@ const RAW_RUNTIME_STATE =
           ["chalk", "npm:4.1.2"],\
           ["cron", "npm:2.1.0"],\
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
+          ["diskusage", "npm:1.2.0"],\
           ["dockerode", "npm:3.3.5"],\
           ["dot", "npm:1.1.3"],\
           ["dotenv", "npm:8.6.0"],\
@@ -8507,6 +8508,7 @@ const RAW_RUNTIME_STATE =
           ["semver", "npm:7.5.3"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
+          ["systeminformation", "npm:5.22.11"],\
           ["table", "npm:6.8.1"],\
           ["wrap-ansi", "npm:7.0.0"]\
         ],\
@@ -8995,6 +8997,18 @@ const RAW_RUNTIME_STATE =
         "packagePeers": [\
           "@types/chai",\
           "chai"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["diskusage", [\
+      ["npm:1.2.0", {\
+        "packageLocation": "./.yarn/unplugged/diskusage-npm-1.2.0-3d0577ad86/node_modules/diskusage/",\
+        "packageDependencies": [\
+          ["diskusage", "npm:1.2.0"],\
+          ["es6-promise", "npm:4.2.8"],\
+          ["nan", "npm:2.20.0"],\
+          ["node-gyp", "npm:10.0.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -14294,6 +14308,14 @@ const RAW_RUNTIME_STATE =
           ["node-gyp", "npm:10.0.1"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:2.20.0", {\
+        "packageLocation": "./.yarn/unplugged/nan-npm-2.20.0-5b5be83e88/node_modules/nan/",\
+        "packageDependencies": [\
+          ["nan", "npm:2.20.0"],\
+          ["node-gyp", "npm:10.0.1"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["nanoid", [\
@@ -17886,6 +17908,15 @@ const RAW_RUNTIME_STATE =
           ["openapi-types", "npm:1.3.5"],\
           ["swagger-methods", "npm:2.0.2"],\
           ["z-schema", "npm:4.2.4"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["systeminformation", [\
+      ["npm:5.22.11", {\
+        "packageLocation": "./.yarn/unplugged/systeminformation-npm-5.22.11-e704a1605b/node_modules/systeminformation/",\
+        "packageDependencies": [\
+          ["systeminformation", "npm:5.22.11"]\
         ],\
         "linkType": "HARD"\
       }]\

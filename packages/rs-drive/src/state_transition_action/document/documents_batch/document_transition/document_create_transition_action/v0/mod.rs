@@ -4,6 +4,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::document::{Document, DocumentV0};
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
+use std::vec;
 
 use dpp::ProtocolError;
 
@@ -15,10 +16,13 @@ use dpp::document::property_names::{
     TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
+use dpp::fee::Credits;
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 
 /// document create transition action v0
 #[derive(Debug, Clone)]
@@ -29,6 +33,14 @@ pub struct DocumentCreateTransitionActionV0 {
     pub block_info: BlockInfo,
     /// Document properties
     pub data: BTreeMap<String, Value>,
+    /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
+    /// aside that will be used by voters to vote)
+    pub prefunded_voting_balance:
+        Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)>,
+    /// We store contest info only in the case of a new contested document that creates a new contest
+    pub current_store_contest_info: Option<ContestedDocumentVotePollStoredInfo>,
+    /// We store contest info only in the case of a new contested document that creates a new contest
+    pub should_store_contest_info: Option<ContestedDocumentVotePollStoredInfo>,
 }
 
 /// document create transition action accessors v0
@@ -45,6 +57,29 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     fn data_mut(&mut self) -> &mut BTreeMap<String, Value>;
     /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
+
+    /// Take the prefunded voting balance vec (and replace it with an empty vec).
+    fn take_prefunded_voting_balance(
+        &mut self,
+    ) -> Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)>;
+
+    /// pre funded balance (for unique index conflict resolution voting - the identity will put money
+    /// aside that will be used by voters to vote)
+    fn prefunded_voting_balance(
+        &self,
+    ) -> &Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)>;
+
+    /// Get the should store contest info (if it should be stored)
+    fn should_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo>;
+
+    /// Take the should store contest info (if it should be stored) and replace it with None.
+    fn take_should_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo>;
+
+    /// Get the current store contest info (if it should be stored)
+    fn current_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo>;
+
+    /// Take the current store contest info (if it should be stored) and replace it with None.
+    fn take_current_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo>;
 }
 
 /// documents from create transition v0
@@ -95,6 +130,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
             base,
             block_info,
             data,
+            ..
         } = v0;
 
         match base {
@@ -207,6 +243,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
             base,
             block_info,
             data,
+            ..
         } = v0;
 
         match base {

@@ -1,4 +1,4 @@
-use json_schema_compatibility_validator::validate_schemas_compatibility;
+use json_schema_compatibility_validator::{validate_schemas_compatibility, Options};
 use serde_json::json;
 
 #[test]
@@ -31,7 +31,7 @@ fn test_properties_reordering() {
         }
     });
 
-    let result = validate_schemas_compatibility(&original_schema, &new_schema)
+    let result = validate_schemas_compatibility(&original_schema, &new_schema, Options::default())
         .expect("schema compatibility validation error");
 
     assert!(
@@ -77,7 +77,7 @@ fn test_reordering_from_string() {
     let new_schema = serde_json::from_str(new_schema_string)
         .expect("failed to decode from string to json value");
 
-    let result = validate_schemas_compatibility(&original_schema, &new_schema)
+    let result = validate_schemas_compatibility(&original_schema, &new_schema, Options::default())
         .expect("schema compatibility validation error");
 
     assert!(
@@ -115,7 +115,7 @@ fn test_keywords_reordering() {
         "items": false,
     });
 
-    let result = validate_schemas_compatibility(&original_schema, &new_schema)
+    let result = validate_schemas_compatibility(&original_schema, &new_schema, Options::default())
         .expect("schema compatibility validation error");
 
     assert!(
@@ -159,7 +159,7 @@ fn test_inner_keywords_reordering() {
         ]
     });
 
-    let result = validate_schemas_compatibility(&original_schema, &new_schema)
+    let result = validate_schemas_compatibility(&original_schema, &new_schema, Options::default())
         .expect("schema compatibility validation error");
 
     assert!(

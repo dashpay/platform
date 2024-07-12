@@ -16,7 +16,14 @@ use crate::errors::consensus::basic::BasicError;
 // TODO It must be versioned as all other serializable types
 
 #[derive(
-    thiserror::Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+    thiserror::Error,
+    Debug,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Clone,
+    PartialEq,
 )]
 #[platform_serialize(limit = 2000)]
 #[error(transparent)]

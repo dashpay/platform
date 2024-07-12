@@ -299,7 +299,7 @@ mod tests {
 
             let has_epoch_tree_exists = platform
                 .drive
-                .has_epoch_tree_exists(&next_thousandth_epoch, Some(transaction))
+                .has_epoch_tree_exists(&next_thousandth_epoch, Some(transaction), platform_version)
                 .expect("should check epoch tree existence");
 
             assert!(has_epoch_tree_exists);

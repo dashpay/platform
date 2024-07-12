@@ -63,6 +63,7 @@ where
                 )?)
             }
             ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
+            | ExecutionEvent::PaidFixedCost { .. }
             | ExecutionEvent::Free { .. } => None,
         };
 
@@ -158,6 +159,29 @@ where
                         FeeResult::default_with_fees(0, processing_fees),
                         consensus_errors,
                     ))
+                }
+            }
+            ExecutionEvent::PaidFixedCost {
+                operations,
+                fees_to_add_to_pool,
+            } => {
+                if consensus_errors.is_empty() {
+                    self.drive
+                        .apply_drive_operations(
+                            operations,
+                            true,
+                            block_info,
+                            Some(transaction),
+                            platform_version,
+                        )
+                        .map_err(Error::Drive)?;
+
+                    Ok(SuccessfulPaidExecution(
+                        None,
+                        FeeResult::default_with_fees(0, fees_to_add_to_pool),
+                    ))
+                } else {
+                    Ok(UnpaidConsensusExecutionError(consensus_errors))
                 }
             }
             ExecutionEvent::Free { operations } => {

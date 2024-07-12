@@ -13,7 +13,7 @@ use dapi_grpc::platform::v0::{
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C> {
-    /// Querying of version upgrade vote status
+    /// Querying of version upgrade votes status
     pub fn query_version_upgrade_vote_status(
         &self,
         GetProtocolVersionUpgradeVoteStatusRequest { version } : GetProtocolVersionUpgradeVoteStatusRequest,

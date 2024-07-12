@@ -342,6 +342,29 @@ impl IdentityPublicKey {
         }
     }
 
+    pub fn random_voting_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_structure_version
+        {
+            0 => {
+                let (key, private_key) =
+                    IdentityPublicKeyV0::random_voting_key_with_rng(id, rng, platform_version)?;
+                Ok((key.into(), private_key))
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityPublicKey::random_voting_key_with_rng".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
     /// Generates a random ECDSA master-level authentication public key along with its corresponding private key.
     ///
     /// This method constructs a random ECDSA (using the secp256k1 curve) high-level authentication public key

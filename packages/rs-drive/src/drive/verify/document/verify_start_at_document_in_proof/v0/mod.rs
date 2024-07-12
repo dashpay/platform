@@ -44,9 +44,9 @@ impl<'a> DriveQuery<'a> {
             start_at_document_key.clone(),
         );
         let (root_hash, mut proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
         match proved_key_values.len() {
             1 => {

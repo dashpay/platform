@@ -3,6 +3,7 @@
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
 
 use clap::{Parser, Subcommand};
+use dpp::version::PlatformVersion;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
@@ -100,9 +101,9 @@ impl Cli {
                 verify_grovedb(&config.db_path, false)?;
 
                 let core_rpc = DefaultCoreRPC::open(
-                    config.core.rpc.url().as_str(),
-                    config.core.rpc.username.clone(),
-                    config.core.rpc.password.clone(),
+                    config.core.consensus_rpc.url().as_str(),
+                    config.core.consensus_rpc.username.clone(),
+                    config.core.consensus_rpc.password.clone(),
                 )
                 .unwrap();
 
@@ -329,8 +330,9 @@ fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
     }
 
     let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
+    //todo: get platform version instead of taking latest
     let result = grovedb
-        .visualize_verify_grovedb()
+        .visualize_verify_grovedb(&PlatformVersion::latest().drive.grove_version)
         .map_err(|e| e.to_string());
 
     match result {
@@ -455,6 +457,7 @@ mod test {
                 Element::Item((i as u128).to_be_bytes().to_vec(), None),
                 None,
                 Some(&transaction),
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("should insert data");

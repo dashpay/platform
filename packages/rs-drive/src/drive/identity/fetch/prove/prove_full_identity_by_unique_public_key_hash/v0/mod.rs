@@ -20,11 +20,13 @@ impl Drive {
             platform_version,
         )?;
         if let Some(identity_id) = identity_id {
-            let query =
-                Self::full_identity_with_public_key_hash_query(public_key_hash, identity_id)?;
+            let query = Self::full_identity_with_public_key_hash_query(
+                public_key_hash,
+                identity_id,
+                &platform_version.drive.grove_version,
+            )?;
             self.grove_get_proved_path_query(
                 &query,
-                true,
                 transaction,
                 &mut vec![],
                 &platform_version.drive,
@@ -34,7 +36,6 @@ impl Drive {
             let query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
             self.grove_get_proved_path_query(
                 &query,
-                false,
                 transaction,
                 &mut vec![],
                 &platform_version.drive,
@@ -79,7 +80,7 @@ mod tests {
             .values()
             .find(|public_key| public_key.key_type().is_unique_key_type())
             .expect("expected a unique key")
-            .hash()
+            .public_key_hash()
             .expect("expected to hash data");
 
         let proof = drive

@@ -1,5 +1,7 @@
 use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
-use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation};
+use crate::drive::batch::DriveOperation::{
+    DocumentOperation, IdentityOperation, PrefundedSpecializedBalanceOperation,
+};
 use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
@@ -13,11 +15,12 @@ use std::borrow::Cow;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use dpp::version::PlatformVersion;
+use crate::drive::batch::drive_op_batch::PrefundedSpecializedBalanceOperationType;
 use crate::drive::object_size_info::DataContractInfo::DataContractFetchInfo;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
-        self,
+        mut self,
         epoch: &Epoch,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -30,18 +33,67 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
 
         let identity_contract_nonce = self.base().identity_contract_nonce();
 
+        let maybe_prefunded_voting_balance = self.take_prefunded_voting_balance();
+
+        let also_insert_vote_poll_stored_info = self.take_should_store_contest_info();
+
         let document =
             Document::try_from_owned_create_transition_action(self, owner_id, platform_version)?;
 
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 
-        Ok(vec![
-            IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
+        let mut ops = vec![IdentityOperation(
+            IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id: owner_id.into_buffer(),
                 contract_id: data_contract_id.into_buffer(),
                 nonce: identity_contract_nonce,
-            }),
-            DocumentOperation(DocumentOperationType::AddDocument {
+            },
+        )];
+
+        if let Some((contested_document_resource_vote_poll, credits)) =
+            maybe_prefunded_voting_balance
+        {
+            let prefunded_specialized_balance_id =
+                contested_document_resource_vote_poll.specialized_balance_id()?;
+            // We are in the situation of a contested document
+            // We prefund the voting balances first
+            ops.push(PrefundedSpecializedBalanceOperation(
+                PrefundedSpecializedBalanceOperationType::CreateNewPrefundedBalance {
+                    prefunded_specialized_balance_id,
+                    add_balance: credits,
+                },
+            ));
+
+            // We remove from the identity balance an equal amount
+            ops.push(IdentityOperation(
+                IdentityOperationType::RemoveFromIdentityBalance {
+                    identity_id: owner_id.into_buffer(),
+                    balance_to_remove: credits,
+                },
+            ));
+
+            // We add the contested document
+            // The contested document resides in a special location in grovedb until a time where the
+            // resolution expires, at that point it either will be moved to
+            ops.push(DocumentOperation(
+                DocumentOperationType::AddContestedDocument {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentOwnedInfo((
+                            document,
+                            Some(Cow::Owned(storage_flags)),
+                        )),
+                        owner_id: Some(owner_id.into_buffer()),
+                    },
+                    contested_document_resource_vote_poll,
+                    contract_info: DataContractFetchInfo(contract_fetch_info),
+                    document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
+                    insert_without_check: false, //todo: consider setting to true
+                    also_insert_vote_poll_stored_info,
+                },
+            ));
+        } else {
+            // Just add the document
+            ops.push(DocumentOperation(DocumentOperationType::AddDocument {
                 owned_document_info: OwnedDocumentInfo {
                     document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
                     owner_id: Some(owner_id.into_buffer()),
@@ -49,7 +101,9 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                 contract_info: DataContractFetchInfo(contract_fetch_info),
                 document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
                 override_document: false,
-            }),
-        ])
+            }));
+        }
+
+        Ok(ops)
     }
 }

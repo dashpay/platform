@@ -121,11 +121,12 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
             "$createdAtCoreBlockHeight"
             | "$updatedAtCoreBlockHeight"
             | "$transferredAtCoreBlockHeight" => Ok(U32_SIZE_U16),
-            _ => {
+            key_path => {
                 let property = document_type.flattened_properties().get(key_path).ok_or({
-                    Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
-                        "incorrect key path for document type for estimated sizes",
-                    ))
+                    Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(format!(
+                        "incorrect key path [{}] for document type for estimated sizes",
+                        key_path
+                    )))
                 })?;
                 let estimated_size = property.property_type.middle_byte_size_ceil().ok_or({
                     Error::Drive(DriveError::CorruptedCodeExecution(
@@ -208,11 +209,11 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                             .to_vec(),
                         max_size: U32_SIZE_U8,
                     }))),
-                    _ => {
+                    key_path => {
                         let property =
                             document_type.flattened_properties().get(key_path).ok_or({
                                 Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
-                                    "incorrect key path for document type",
+                                    format!("incorrect key path [{}] for document type for get_raw_for_document_type", key_path)
                                 ))
                             })?;
 

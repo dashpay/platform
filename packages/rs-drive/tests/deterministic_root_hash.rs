@@ -199,13 +199,14 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             None,
             Some(db_transaction),
+            &platform_version.drive.grove_version,
         )
         .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
-        .root_hash(Some(db_transaction))
+        .root_hash(Some(db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("should return app hash");
 
@@ -233,13 +234,14 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             None,
             Some(db_transaction),
+            &platform_version.drive.grove_version,
         )
         .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
-        .root_hash(Some(db_transaction))
+        .root_hash(Some(db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("should return app hash");
 
@@ -267,13 +269,14 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             None,
             Some(db_transaction),
+            &platform_version.drive.grove_version,
         )
         .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
-        .root_hash(Some(db_transaction))
+        .root_hash(Some(db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("should return app hash");
 
@@ -301,13 +304,14 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             None,
             Some(db_transaction),
+            &platform_version.drive.grove_version,
         )
         .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
-        .root_hash(Some(db_transaction))
+        .root_hash(Some(db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("should return app hash");
 
@@ -337,13 +341,14 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
             Element::empty_tree(),
             None,
             Some(db_transaction),
+            &platform_version.drive.grove_version,
         )
         .unwrap()
         .expect("should insert tree");
 
     let app_hash = drive
         .grove
-        .root_hash(Some(db_transaction))
+        .root_hash(Some(db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("should return app hash");
 
@@ -371,11 +376,12 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         Element::new_item(hex::decode("01a46269645820f00100b0c1e3762b8bc1421e113c76b2a635c5930b9abf2b336583be5987a7156762616c616e636500687265766973696f6e006a7075626c69634b65797381a662696400646461746158210328f474ce2d61d6fdb45c1fb437ddbf167924e6af3303c167f64d8c8857e39ca564747970650067707572706f73650068726561644f6e6c79f76d73656375726974794c6576656c00").unwrap()),
         None,
         Some(db_transaction),
+        &platform_version.drive.grove_version,
     ).unwrap().expect("should insert");
 
     let app_hash = drive
         .grove
-        .root_hash(Some(db_transaction))
+        .root_hash(Some(db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("should return app hash");
 
@@ -412,13 +418,14 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
             ),
             None,
             Some(db_transaction),
+            &platform_version.drive.grove_version,
         )
         .unwrap()
         .expect("should insert");
 
     let app_hash = drive
         .grove
-        .root_hash(Some(db_transaction))
+        .root_hash(Some(db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("should return app hash");
 
@@ -427,12 +434,12 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         "e34e316e84c4639f44c512c5e602ee7d674d33ce69f02237de87af5f6151cdf6"
     );
 
-    let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+    let dashpay_contract = load_system_data_contract(SystemDataContract::Dashpay, platform_version)
         .expect("should load dpns contract");
 
     drive
         .apply_contract(
-            &dpns_contract,
+            &dashpay_contract,
             BlockInfo::genesis(),
             true,
             StorageFlags::optional_default_as_cow(),
@@ -443,11 +450,11 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
 
     let app_hash = drive
         .grove
-        .root_hash(Some(db_transaction))
+        .root_hash(Some(db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("should return app hash");
 
-    let expected_app_hash = "f42ce4305a18501b020d58ae1c2bc6153049dbfe1397754c9c9f1f6daa4cb420";
+    let expected_app_hash = "d4adde72efa33c20ba41ae2c6b34255060bea5f51592e4e9977dd41e893bd21e";
 
     assert_eq!(hex::encode(app_hash), expected_app_hash);
 }

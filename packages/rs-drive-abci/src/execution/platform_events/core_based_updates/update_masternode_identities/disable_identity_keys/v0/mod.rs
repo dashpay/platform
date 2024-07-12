@@ -40,14 +40,14 @@ where
             Self::get_voter_identifier_from_masternode_list_item(old_masternode, platform_version)?;
 
         let operator_key_request = IdentityKeysRequest {
-            identity_id: operator_identifier,
+            identity_id: operator_identifier.into_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,
         };
 
         let voter_key_request = IdentityKeysRequest {
-            identity_id: voter_identifier,
+            identity_id: voter_identifier.into_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,
@@ -95,7 +95,7 @@ where
         );
 
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
-            identity_id: operator_identifier,
+            identity_id: operator_identifier.into_buffer(),
             keys_ids: operator_identity_keys,
         }));
 
@@ -108,7 +108,7 @@ where
         );
 
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
-            identity_id: voter_identifier,
+            identity_id: voter_identifier.into_buffer(),
             keys_ids: voter_identity_keys,
         }));
 

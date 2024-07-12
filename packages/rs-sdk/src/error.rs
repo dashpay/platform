@@ -2,6 +2,7 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
+use dapi_grpc::mock::Mockable;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
@@ -65,7 +66,7 @@ pub enum Error {
     Cancelled(String),
 }
 
-impl<T: Debug> From<DapiClientError<T>> for Error {
+impl<T: Debug + Mockable> From<DapiClientError<T>> for Error {
     fn from(value: DapiClientError<T>) -> Self {
         Self::DapiClientError(format!("{:?}", value))
     }

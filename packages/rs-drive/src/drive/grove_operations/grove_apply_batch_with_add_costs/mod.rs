@@ -38,6 +38,7 @@ impl Drive {
                 validate,
                 transaction,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_apply_batch_with_add_costs".to_string(),

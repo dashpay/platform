@@ -8,6 +8,8 @@ use dapi_grpc::tonic::Code;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};
+use drive_proof_verifier::error::ContextProviderError;
+use drive_proof_verifier::DataContractProvider;
 
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -103,12 +105,17 @@ impl<S: Signer> PutIdentity<S> for Identity {
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
         let proof = response.proof_owned()?;
+        let context_provider =
+            sdk.context_provider()
+                .ok_or(Error::from(ContextProviderError::Config(
+                    "Context provider not initialized".to_string(),
+                )))?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
             &block_info,
             proof.grovedb_proof.as_slice(),
-            &|_| Ok(None),
+            &context_provider.as_contract_lookup_fn(),
             sdk.version(),
         )?;
 

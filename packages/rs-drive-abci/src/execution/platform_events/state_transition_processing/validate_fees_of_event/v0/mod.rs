@@ -52,7 +52,7 @@ where
                 user_fee_increase,
             } => {
                 let previous_balance = identity.balance.ok_or(Error::Execution(
-                    ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
+                    ExecutionError::CorruptedCodeExecution("partial identity info with no balance in paid from asset lock execution event"),
                 ))?;
                 let previous_balance_with_top_up = previous_balance + added_balance;
                 let mut estimated_fee_result = self
@@ -103,7 +103,9 @@ where
                 user_fee_increase,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
-                    ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
+                    ExecutionError::CorruptedCodeExecution(
+                        "partial identity info with no balance in paid execution event",
+                    ),
                 ))?;
                 let balance_after_principal_operation =
                     balance.saturating_sub(removed_balance.unwrap_or_default());
@@ -147,7 +149,8 @@ where
                     ))
                 }
             }
-            ExecutionEvent::Free { .. }
+            ExecutionEvent::PaidFixedCost { .. }
+            | ExecutionEvent::Free { .. }
             | ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. } => Ok(
                 ConsensusValidationResult::new_with_data(FeeResult::default()),
             ),

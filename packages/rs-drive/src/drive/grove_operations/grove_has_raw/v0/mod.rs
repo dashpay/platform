@@ -9,6 +9,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{GroveDb, TransactionArg};
 use grovedb_costs::CostContext;
 use grovedb_path::SubtreePath;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Gets the return value and the cost of a groveDB `has_raw` operation.
@@ -20,6 +21,7 @@ impl Drive {
         query_type: DirectQueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
         let CostContext { value, cost } = match query_type {
             DirectQueryType::StatelessDirectQuery {
@@ -36,7 +38,8 @@ impl Drive {
                             flags_len,
                             is_sum_tree,
                             in_tree_using_sums,
-                        )
+                            &drive_version.grove_version,
+                        )?
                     }
                     QueryTarget::QueryTargetValue(estimated_value_size) => {
                         GroveDb::average_case_for_has_raw(
@@ -44,7 +47,8 @@ impl Drive {
                             &key_info,
                             estimated_value_size,
                             in_tree_using_sums,
-                        )
+                            &drive_version.grove_version,
+                        )?
                     }
                 };
 
@@ -55,15 +59,18 @@ impl Drive {
             }
             DirectQueryType::StatefulDirectQuery => {
                 if self.config.has_raw_enabled {
-                    self.grove.has_raw(path, key, transaction)
+                    self.grove
+                        .has_raw(path, key, transaction, &drive_version.grove_version)
                 } else {
-                    self.grove.get_raw(path, key, transaction).map(|r| match r {
-                        Err(GroveError::PathKeyNotFound(_))
-                        | Err(GroveError::PathNotFound(_))
-                        | Err(GroveError::PathParentLayerNotFound(_)) => Ok(false),
-                        Err(e) => Err(e),
-                        Ok(_) => Ok(true),
-                    })
+                    self.grove
+                        .get_raw(path, key, transaction, &drive_version.grove_version)
+                        .map(|r| match r {
+                            Err(GroveError::PathKeyNotFound(_))
+                            | Err(GroveError::PathNotFound(_))
+                            | Err(GroveError::PathParentLayerNotFound(_)) => Ok(false),
+                            Err(e) => Err(e),
+                            Ok(_) => Ok(true),
+                        })
                 }
             }
         };

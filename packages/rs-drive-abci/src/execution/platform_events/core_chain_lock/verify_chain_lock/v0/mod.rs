@@ -71,7 +71,14 @@ where
                                 }),
                             }
                         }
-                        Err(Error::CoreRpc(..)) => {
+                        Err(Error::CoreRpc(error)) => {
+                            tracing::error!(
+                                ?chain_lock,
+                                ?error,
+                                "Failed to submit chain lock: {}",
+                                error
+                            );
+
                             //ToDO (important), separate errors from core, connection Errors -> Err, others should be part of the result
                             Ok(VerifyChainLockResult {
                                 chain_lock_signature_is_deserializable: true,

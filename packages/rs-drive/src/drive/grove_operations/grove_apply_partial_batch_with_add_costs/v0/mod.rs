@@ -12,6 +12,7 @@ use grovedb::TransactionArg;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use grovedb_costs::storage_cost::transition::OperationStorageTransitionType;
 use grovedb_costs::OperationCost;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Applies the given groveDB operations batch and gets and passes the costs to `push_drive_operation_result`.
@@ -25,9 +26,12 @@ impl Drive {
             &Option<OpsByLevelPath>,
         ) -> Result<Vec<GroveDbOp>, GroveError>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         if ops.is_empty() {
-            return Err(Error::Drive(DriveError::BatchIsEmpty()));
+            return Err(Error::Drive(DriveError::BatchIsEmpty(
+                "batch is empty when trying to apply partial batch with add costs".to_string(),
+            )));
         }
         // println!("batch {:#?}", ops);
         if self.config.batching_consistency_verification {
@@ -140,6 +144,7 @@ impl Drive {
             },
             add_on_operations,
             transaction,
+            &drive_version.grove_version
         );
         push_drive_operation_result(cost_context, drive_operations)
     }

@@ -179,11 +179,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let platform = TestPlatformBuilder::new()
@@ -207,7 +207,6 @@ mod tests {
 
         use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
-        use dpp::block::epoch::Epoch;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
@@ -294,7 +293,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
-                    &Epoch::new(0).unwrap(),
+                    &BlockInfo::default(),
                     &mut execution_context,
                     None,
                 )
@@ -388,7 +387,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
-                    &Epoch::new(0).unwrap(),
+                    &BlockInfo::default(),
                     &mut execution_context,
                     None,
                 )
@@ -546,7 +545,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
-                    &Epoch::new(0).unwrap(),
+                    &BlockInfo::default(),
                     &mut execution_context,
                     None,
                 )

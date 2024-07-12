@@ -4,6 +4,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
 use grovedb::{PathQuery, TransactionArg};
 use grovedb_costs::CostContext;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Gets the return value and the cost of a groveDB path query.
@@ -13,10 +14,16 @@ impl Drive {
         path_query: &PathQuery,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let CostContext { value, cost } =
-            self.grove
-                .query_item_value(path_query, transaction.is_some(), true, true, transaction);
+        let CostContext { value, cost } = self.grove.query_item_value(
+            path_query,
+            transaction.is_some(),
+            true,
+            true,
+            transaction,
+            &drive_version.grove_version,
+        );
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

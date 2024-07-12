@@ -7,8 +7,10 @@ use crate::query::{Query, QueryItem};
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::{GroveDb, PathQuery, SizedQuery};
 use integer_encoding::VarInt;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 use std::ops::RangeFull;
+
 impl Drive {
     /// Verifies a proof containing the current upgrade state.
     ///
@@ -34,6 +36,7 @@ impl Drive {
         proof: &[u8],
         start_protx_hash: Option<[u8; 32]>,
         count: u16,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<[u8; 32], ProtocolVersion>), Error> {
         let path = desired_version_for_validators_path_vec();
 
@@ -48,7 +51,8 @@ impl Drive {
             SizedQuery::new(Query::new_single_query_item(query_item), Some(count), None),
         );
 
-        let (root_hash, elements) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, elements) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let protocol_version_map = elements
             .into_iter()
