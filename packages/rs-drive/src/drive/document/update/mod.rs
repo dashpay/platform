@@ -941,7 +941,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
         let expected_added_bytes = if using_history {
             //Explanation for 1237
@@ -1110,7 +1109,6 @@ mod tests {
                 / Epoch::new(0).unwrap().cost_for_known_cost_item(
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
-                    None,
                 );
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
@@ -1131,7 +1129,6 @@ mod tests {
                 / Epoch::new(0).unwrap().cost_for_known_cost_item(
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
-                    None,
                 );
 
             assert_eq!(original_bytes, expected_added_bytes);
@@ -1153,7 +1150,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
 
         let expected_added_bytes = if using_history { 313 } else { 1 };
@@ -1226,7 +1222,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
         let expected_added_bytes = if using_history { 1238 } else { 962 };
         assert_eq!(original_bytes, expected_added_bytes);
@@ -1253,7 +1248,6 @@ mod tests {
                 / Epoch::new(0).unwrap().cost_for_known_cost_item(
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
-                    None,
                 );
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
@@ -1274,7 +1268,6 @@ mod tests {
                 / Epoch::new(0).unwrap().cost_for_known_cost_item(
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
-                    None,
                 );
 
             assert_eq!(original_bytes, expected_added_bytes);
@@ -1296,7 +1289,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
 
         let removed_credits = update_fees
@@ -1316,7 +1308,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
 
         assert!(expected_added_bytes > refund_equivalent_bytes);
@@ -1430,7 +1421,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
         let expected_added_bytes = if using_history {
             //Explanation for 1237
@@ -1591,7 +1581,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
 
         let expected_added_bytes = if using_history { 1239 } else { 963 };

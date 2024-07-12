@@ -60,10 +60,10 @@ pub enum KnownCostItem {
     FetchIdentityBalanceProcessingCost,
     /// The cost for fetching an identity key
     FetchSingleIdentityKeyProcessingCost,
-    /// The cost for a Single SHA256 operation
-    SingleSHA256,
-    /// The cost for a Blake3 operation
-    Blake3,
+    /// The cost for a Single SHA256 operation, with a specific size
+    SingleSHA256(usize),
+    /// The cost for a Blake3 operation, with a specific size
+    Blake3(usize),
     /// The cost for a EcdsaSecp256k1 signature verification
     VerifySignatureEcdsaSecp256k1,
     /// The cost for a BLS12_381 signature verification
@@ -78,7 +78,7 @@ pub enum KnownCostItem {
 
 impl KnownCostItem {
     #[inline]
-    pub fn lookup_cost(&self, fee_version: &FeeVersion, size: Option<usize>) -> Credits {
+    pub fn lookup_cost(&self, fee_version: &FeeVersion) -> Credits {
         match self {
             KnownCostItem::StorageDiskUsageCreditPerByte => {
                 fee_version.storage.storage_disk_usage_credit_per_byte
@@ -103,13 +103,13 @@ impl KnownCostItem {
                     .processing
                     .fetch_single_identity_key_processing_cost
             }
-            KnownCostItem::Blake3 => {
+            KnownCostItem::Blake3(size) => {
                 fee_version.hashing.blake3_base
-                    + fee_version.hashing.blake3_per_block * size.unwrap_or(0) as u64
+                    + fee_version.hashing.blake3_per_block * *size as u64
             }
-            KnownCostItem::SingleSHA256 => {
+            KnownCostItem::SingleSHA256(size) => {
                 fee_version.hashing.single_sha256_base
-                    + fee_version.hashing.sha256_per_block * size.unwrap_or(0) as u64
+                    + fee_version.hashing.sha256_per_block * *size as u64
             }
             KnownCostItem::VerifySignatureEcdsaSecp256k1 => {
                 fee_version.signature.verify_signature_ecdsa_secp256k1
@@ -133,10 +133,9 @@ impl KnownCostItem {
         &self,
         epoch: &T,
         cached_fee_version: &CachedEpochIndexFeeVersions,
-        size: Option<usize>,
     ) -> Credits {
         let version = epoch.active_fee_version(cached_fee_version);
-        self.lookup_cost(&version, size)
+        self.lookup_cost(&version)
     }
 }
 
@@ -150,7 +149,6 @@ pub trait EpochCosts {
         &self,
         cached_fee_version: &CachedEpochIndexFeeVersions,
         cost_item: KnownCostItem,
-        size: Option<usize>,
     ) -> Credits;
 }
 
@@ -175,8 +173,7 @@ impl EpochCosts for Epoch {
         &self,
         cached_fee_version: &CachedEpochIndexFeeVersions,
         cost_item: KnownCostItem,
-        size: Option<usize>,
     ) -> Credits {
-        cost_item.lookup_cost_on_epoch(self, cached_fee_version, size)
+        cost_item.lookup_cost_on_epoch(self, cached_fee_version)
     }
 }

@@ -829,7 +829,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
         // We added 1559 bytes
         assert_eq!(added_bytes, 1559);
@@ -867,7 +866,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
 
         assert!(added_bytes > refund_equivalent_bytes);
@@ -931,7 +929,6 @@ mod tests {
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
-                None,
             );
         // We added 1558 bytes
         assert_eq!(added_bytes, 1559);
