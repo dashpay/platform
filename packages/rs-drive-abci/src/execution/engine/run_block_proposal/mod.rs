@@ -61,10 +61,13 @@ where
             last_committed_platform_version,
         )?;
 
-        // Determine a protocol version for this block
-        let platform_version = if epoch_info.is_epoch_change_but_not_genesis() {
+        // Determine a platform version for this block
+        let block_platform_version = if epoch_info.is_epoch_change_but_not_genesis()
+            && platform_state.next_epoch_protocol_version()
+                != platform_state.current_protocol_version_in_consensus()
+        {
             // Switch to next proposed platform version if we are on the first block of the new epoch
-            // This version must be set to the state as current one during block processing
+            // This version will be set to the block state and we decide on next version during block processing
             let next_protocol_version = platform_state.next_epoch_protocol_version();
 
             // We should panic if this node is not supported a new protocol version
@@ -82,11 +85,31 @@ Your software version: {}, latest supported protocol version: {}."#,
 
             next_platform_version
         } else {
-            // Stay on the last committed platform version
+            // Stay on the last committed plat version
             last_committed_platform_version
         };
 
-        match platform_version
+        // Create a bock state from previous committed state
+        let mut block_platform_state = platform_state.clone();
+
+        // Set current protocol version to the block platform state
+        block_platform_state
+            .set_current_protocol_version_in_consensus(block_platform_version.protocol_version);
+
+        // Patch platform version and run migrations
+        // It modifies the protocol version to function version mapping to apply hotfixes
+        // Also it performs migrations to fix corrupted state or prepare it for new features
+        let block_platform_version = if let Some(patched_platform_version) = self.patch_platform(
+            block_proposal.height,
+            &mut block_platform_state,
+            transaction,
+        )? {
+            patched_platform_version
+        } else {
+            block_platform_version
+        };
+
+        match block_platform_version
             .drive_abci
             .methods
             .engine
@@ -98,7 +121,8 @@ Your software version: {}, latest supported protocol version: {}."#,
                 epoch_info,
                 transaction,
                 platform_state,
-                platform_version,
+                block_platform_state,
+                block_platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "run_block_proposal".to_string(),

@@ -10,7 +10,6 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::execution::platform_events::block_start::patch_platform_version::patch_platform_version;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
 };
@@ -66,6 +65,7 @@ where
         epoch_info: EpochInfo,
         transaction: &Transaction,
         last_committed_platform_state: &PlatformState,
+        mut block_platform_state: PlatformState,
         platform_version: &'static PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
@@ -103,9 +103,6 @@ where
         let last_block_core_height = last_committed_platform_state
             .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
 
-        // Create a bock state from previous committed state
-        let mut block_platform_state = last_committed_platform_state.clone();
-
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
             &block_proposal,
@@ -139,12 +136,6 @@ where
             Epoch::new(epoch_info.current_epoch_index())
                 .expect("current epoch index should be in range"),
         );
-
-        // Patch platform version to fix chain halt bugs
-        patch_platform_version(&block_info, platform_version, &mut block_platform_state)?;
-
-        // Perform state migration to fix bugs or support new features
-        self.migrate_state(&block_info, &mut block_platform_state)?;
 
         if epoch_info.is_epoch_change_but_not_genesis() {
             tracing::info!(

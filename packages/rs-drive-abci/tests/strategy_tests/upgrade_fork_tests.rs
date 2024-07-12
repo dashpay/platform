@@ -531,6 +531,7 @@ mod tests {
             (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 4;
 
         let mut test_platform_v4 = PLATFORM_V1.clone();
+        test_platform_v4.protocol_version = TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE;
         test_platform_v4
             .drive_abci
             .methods

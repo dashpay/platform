@@ -99,7 +99,7 @@ dpp = { path = "../rs-dpp", features = [
 drive = { path = "../rs-drive" }
 strategy-tests = { path = "../strategy-tests" }
 assert_matches = "1.5.0"
-drive-abci = { path = ".", features = ["testing-config"] }
+drive-abci = { path = ".", features = ["testing-config", "test-patch-platform"] }
 
 # For tests of grovedb verify
 rocksdb = { version = "0.22.0" }
@@ -111,6 +111,7 @@ default = ["mocks", "console"]
 mocks = ["mockall", "drive/fixtures-and-mocks"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
+test-patch-platform = []
 
 [[bin]]
 name = "drive-abci"

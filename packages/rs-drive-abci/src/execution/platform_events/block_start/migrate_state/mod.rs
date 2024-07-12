@@ -1,24 +1,26 @@
-mod migration_42_example;
+#[cfg(feature = "test-patch-platform")]
+mod migration_30_test;
 
 use crate::error::Error;
 
-use dpp::block::block_info::BlockInfo;
+use dpp::prelude::BlockHeight;
+use drive::grovedb::Transaction;
 
 use crate::platform_types::platform::Platform;
 
 use crate::platform_types::platform_state::PlatformState;
 
 impl<C> Platform<C> {
-    /// Perform state migration based on block information
+    /// Perform state migration based on block height
     pub fn migrate_state(
         &self,
-        block_info: &BlockInfo,
+        height: BlockHeight,
         block_platform_state: &mut PlatformState,
+        transaction: &Transaction,
     ) -> Result<(), Error> {
-        // Implement functions in a separate modules with meaningful names and block height
-        match block_info.height {
-            42 => self.migration_42_example(block_info, block_platform_state),
-            52 => self.migration_42_example(block_info, block_platform_state),
+        match height {
+            #[cfg(feature = "test-patch-platform")]
+            30 => self.migration_30_test(block_platform_state, transaction)?,
             _ => {}
         }
 
