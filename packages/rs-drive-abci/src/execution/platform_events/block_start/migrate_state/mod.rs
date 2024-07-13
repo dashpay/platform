@@ -1,6 +1,3 @@
-#[cfg(feature = "test-patch-platform")]
-mod migration_30_test;
-
 use crate::error::Error;
 
 use dpp::prelude::BlockHeight;
@@ -15,12 +12,12 @@ impl<C> Platform<C> {
     pub fn migrate_state(
         &self,
         height: BlockHeight,
-        block_platform_state: &mut PlatformState,
-        transaction: &Transaction,
+        _block_platform_state: &mut PlatformState,
+        _transaction: &Transaction,
     ) -> Result<(), Error> {
+        #[allow(clippy::match_single_binding)]
         match height {
-            #[cfg(feature = "test-patch-platform")]
-            30 => self.migration_30_test(block_platform_state, transaction)?,
+            // 30 => self.migration_30_test(block_platform_state, transaction)?,
             _ => {}
         }
 

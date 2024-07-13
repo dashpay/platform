@@ -1,61 +1,18 @@
-#[cfg(feature = "test-patch-platform")]
-mod patch_1_10_test;
-#[cfg(feature = "test-patch-platform")]
-mod patch_1_5_test;
-#[cfg(feature = "test-patch-platform")]
-mod patch_2_30_test;
-
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-#[cfg(feature = "test-patch-platform")]
-use crate::platform_types::platform_state::patch_platform_version::patch_1_10_test::patch_1_10_test;
-#[cfg(feature = "test-patch-platform")]
-use crate::platform_types::platform_state::patch_platform_version::patch_1_5_test::patch_1_5_test;
-#[cfg(feature = "test-patch-platform")]
-use crate::platform_types::platform_state::patch_platform_version::patch_2_30_test::patch_2_30_test;
 use dpp::prelude::BlockHeight;
-use dpp::util::deserializer::ProtocolVersion;
-#[cfg(feature = "test-patch-platform")]
-use dpp::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
-use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use dpp::version::patches::PATCHES;
+use dpp::version::PlatformVersion;
 use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
-use once_cell::sync::Lazy;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::RwLock;
 
 use crate::platform_types::platform_state::v0::{
     PlatformStateV0Methods, PlatformStateV0PrivateMethods,
 };
 use crate::platform_types::platform_state::PlatformState;
 
-type PatchFn = fn(PlatformVersion) -> PlatformVersion;
-
-type HeightToPatchRanges = BTreeMap<BlockHeight, PatchFn>;
-
 static PATCHED_PROTOCOL_VERSION: AtomicU32 = AtomicU32::new(INITIAL_PROTOCOL_VERSION);
-
-static PATCHES: Lazy<HashMap<ProtocolVersion, HeightToPatchRanges>> = Lazy::new(|| {
-    HashMap::from_iter(vec![
-        #[cfg(feature = "test-patch-platform")]
-        {
-            (
-                1,
-                BTreeMap::from_iter(vec![
-                    (5, patch_1_5_test as PatchFn),
-                    (10, patch_1_10_test as PatchFn),
-                ]),
-            )
-        },
-        #[cfg(feature = "test-patch-platform")]
-        {
-            (
-                TEST_PROTOCOL_VERSION_2,
-                BTreeMap::from_iter(vec![(30, patch_2_30_test as PatchFn)]),
-            )
-        },
-    ])
-});
 
 impl PlatformState {
     /// Apply all patches to platform version up to specified height
@@ -75,8 +32,10 @@ impl PlatformState {
 
         let protocol_version = self.current_protocol_version_in_consensus();
 
+        let patches = PATCHES.read().unwrap();
+
         // Find a patch that matches protocol version first
-        let Some(patches_per_heights) = PATCHES.get(&protocol_version) else {
+        let Some(patches_per_heights) = patches.get(&protocol_version) else {
             return Ok(None);
         };
 
@@ -111,8 +70,6 @@ impl PlatformState {
         // instead of the current version
         self.set_patched_platform_version(Some(static_patched_version));
 
-        PlatformVersion::set_current(static_patched_version);
-
         Ok(Some(static_patched_version))
     }
 
@@ -144,8 +101,10 @@ impl PlatformState {
             }
         }
 
+        let patches = PATCHES.read().unwrap();
+
         // Find a patch that matches protocol version first
-        let Some(patches_per_heights) = PATCHES.get(&protocol_version) else {
+        let Some(patches_per_heights) = patches.get(&protocol_version) else {
             return Ok(None);
         };
 

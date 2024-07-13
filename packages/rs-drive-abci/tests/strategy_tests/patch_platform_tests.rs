@@ -2,7 +2,8 @@
 mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use drive::drive::config::DriveConfig;
-    use std::collections::BTreeMap;
+    use std::any::Any;
+    use std::collections::{BTreeMap, HashMap};
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
@@ -15,10 +16,13 @@ mod tests {
     };
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use platform_version::version;
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
+    use platform_version::version::patches::PatchFn;
+    use platform_version::version::PlatformVersion;
 
     #[test]
-    fn test_example_patch_version_and_migrate_state() {
+    fn test_patch_version() {
         // Define the desired stack size
         let stack_size = 4 * 1024 * 1024; // Let's set the stack size to be higher than the default 2MB
 
@@ -26,9 +30,54 @@ mod tests {
             .stack_size(stack_size)
             .name("custom_stack_size_thread".into());
 
+        pub fn patch_1_5_test(mut platform_version: PlatformVersion) -> PlatformVersion {
+            platform_version
+                .drive_abci
+                .query
+                .document_query
+                .default_current_version = 5;
+
+            platform_version
+        }
+
+        pub fn patch_1_10_test(mut platform_version: PlatformVersion) -> PlatformVersion {
+            platform_version.drive_abci.query.document_query.max_version = 10;
+
+            platform_version
+        }
+
+        pub fn patch_2_30_test(mut platform_version: PlatformVersion) -> PlatformVersion {
+            platform_version.drive_abci.query.document_query.min_version = 30;
+
+            platform_version
+        }
+
+        let mut patches = version::patches::PATCHES.write().unwrap();
+
+        *patches = HashMap::from_iter(vec![
+            {
+                (
+                    1,
+                    BTreeMap::from_iter(vec![
+                        (5, patch_1_5_test as PatchFn),
+                        (10, patch_1_10_test as PatchFn),
+                    ]),
+                )
+            },
+            {
+                (
+                    TEST_PROTOCOL_VERSION_2,
+                    BTreeMap::from_iter(vec![(30, patch_2_30_test as PatchFn)]),
+                )
+            },
+        ]);
+
+        drop(patches);
+
         let handler = builder
             .spawn(|| {
                 let strategy = NetworkStrategy {
+                    total_hpmns: 4,
                     upgrading_info: Some(UpgradingInfo {
                         current_protocol_version: 1,
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
@@ -38,7 +87,10 @@ mod tests {
                 };
 
                 let config = PlatformConfig {
-                    validator_set: ValidatorSetConfig::default_100_67(),
+                    validator_set: ValidatorSetConfig {
+                        quorum_size: 4,
+                        ..Default::default()
+                    },
                     chain_lock: ChainLockConfig::default_100_67(),
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
@@ -157,14 +209,6 @@ mod tests {
                         .default_current_version,
                     5
                 );
-                assert_eq!(
-                    platform_version
-                        .drive_abci
-                        .methods
-                        .protocol_upgrade
-                        .protocol_version_upgrade_percentage_needed,
-                    1
-                );
 
                 // Run chain for 9 more blocks to apply patch 1 15
 
@@ -228,14 +272,6 @@ mod tests {
                         .document_query
                         .default_current_version,
                     5
-                );
-                assert_eq!(
-                    platform_version
-                        .drive_abci
-                        .methods
-                        .protocol_upgrade
-                        .protocol_version_upgrade_percentage_needed,
-                    1
                 );
 
                 // Run chain for 10 more blocks to upgrade to version 2
@@ -308,14 +344,6 @@ mod tests {
                     platform_version.drive_abci.query.document_query.max_version,
                     0
                 );
-                assert_eq!(
-                    platform_version
-                        .drive_abci
-                        .methods
-                        .protocol_upgrade
-                        .protocol_version_upgrade_percentage_needed,
-                    75
-                );
 
                 dbg!(
                     state
@@ -384,27 +412,27 @@ mod tests {
                     platform_version.drive_abci.query.document_query.max_version,
                     0
                 );
-                assert_eq!(
-                    platform_version
-                        .drive_abci
-                        .methods
-                        .protocol_upgrade
-                        .protocol_version_upgrade_percentage_needed,
-                    75
-                );
-
-                let test_value = platform
-                    .drive
-                    .grove
-                    .get_aux("migration_42_example", None)
-                    .unwrap()
-                    .expect("migration_42_example should exist");
-
-                assert_eq!(test_value, Some(b"migration_42_example".to_vec()));
             })
             .expect("Failed to create thread with custom stack size");
 
+        fn cleanup_version_patches() {
+            let mut patches = version::patches::PATCHES.write().unwrap();
+            patches.clear();
+        }
+
         // Wait for the thread to finish and assert that it didn't panic.
-        handler.join().expect("Thread has panicked");
+        handler
+            .join()
+            .map(|result| {
+                cleanup_version_patches();
+
+                result
+            })
+            .map_err(|e| {
+                cleanup_version_patches();
+
+                e
+            })
+            .expect("Thread has panicked");
     }
 }

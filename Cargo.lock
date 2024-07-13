@@ -3716,6 +3716,7 @@ dependencies = [
 name = "platform-version"
 version = "1.0.0-dev.16"
 dependencies = [
+ "once_cell",
  "thiserror",
  "versioned-feature-core",
 ]

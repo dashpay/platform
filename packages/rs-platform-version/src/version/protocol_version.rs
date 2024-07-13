@@ -14,6 +14,7 @@ use crate::version::v1::PLATFORM_V1;
 #[cfg(feature = "mock-versions")]
 use std::sync::OnceLock;
 
+use crate::version::ProtocolVersion;
 pub use versioned_feature_core::*;
 
 #[derive(Clone, Debug, Default)]
@@ -29,7 +30,7 @@ pub struct PlatformArchitectureVersion {
 
 #[derive(Clone, Debug)]
 pub struct PlatformVersion {
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     pub identity: FeatureVersionBounds,
     pub proofs: FeatureVersionBounds,
     pub dpp: DPPVersion,
@@ -52,7 +53,7 @@ const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, T
 pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V1;
 
 impl PlatformVersion {
-    pub fn get<'a>(version: u32) -> Result<&'a Self, PlatformVersionError> {
+    pub fn get<'a>(version: ProtocolVersion) -> Result<&'a Self, PlatformVersionError> {
         if version > 0 {
             #[cfg(feature = "mock-versions")]
             {
@@ -81,7 +82,7 @@ impl PlatformVersion {
     }
 
     pub fn get_version_or_latest<'a>(
-        version: Option<u32>,
+        version: Option<ProtocolVersion>,
     ) -> Result<&'a Self, PlatformVersionError> {
         if let Some(version) = version {
             if version > 0 {
