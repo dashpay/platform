@@ -345,15 +345,6 @@ mod tests {
                     0
                 );
 
-                dbg!(
-                    state
-                        .last_committed_block_info()
-                        .as_ref()
-                        .unwrap()
-                        .basic_info()
-                        .height
-                );
-
                 // Run chain for 10 more blocks to apply 2 45 patch
 
                 let block_start = state
