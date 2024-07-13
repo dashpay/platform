@@ -6,9 +6,11 @@ jobs:
     name: Build JS
     runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
     steps:
-      - name: Configure AWS credentials and bucket region
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
       # TODO: Use upload artifacts action instead
