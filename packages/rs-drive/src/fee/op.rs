@@ -210,13 +210,13 @@ pub enum LowLevelDriveOperation {
 impl LowLevelDriveOperation {
     /// Returns a list of the costs of the Drive operations.
     pub fn consume_to_fees(
-        drive_operation: Vec<LowLevelDriveOperation>,
+        drive_operations: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
         epochs_per_era: u16,
         fee_version: &FeeVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<Vec<FeeResult>, Error> {
-        drive_operation
+        drive_operations
             .into_iter()
             .map(|operation| match operation {
                 PreCalculatedFeeResult(f) => Ok(f),
