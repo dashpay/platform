@@ -94,7 +94,7 @@ Your software version: {}, latest supported protocol version: {}."#,
 
             next_platform_version
         } else {
-            // Stay on the last committed plat version
+            // Stay on the last committed platform version
             last_committed_platform_version
         };
 
