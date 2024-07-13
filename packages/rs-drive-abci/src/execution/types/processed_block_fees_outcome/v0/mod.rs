@@ -1,3 +1,4 @@
+use std::fmt;
 use crate::execution::types::{fees_in_pools, proposer_payouts};
 
 /// Holds info relevant fees and a processed block
@@ -9,4 +10,20 @@ pub struct ProcessedBlockFeesOutcome {
     pub payouts: Option<proposer_payouts::v0::ProposersPayouts>,
     /// A number of epochs which had refunded
     pub refunded_epochs_count: Option<u16>,
+}
+
+impl fmt::Display for ProcessedBlockFeesOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "ProcessedBlockFeesOutcome {{")?;
+        writeln!(f, "    fees_in_pools: {},", self.fees_in_pools)?;
+        writeln!(f, "    payouts: {},", match &self.payouts {
+            Some(payouts) => format!("{}", payouts),
+            None => "None".to_string(),
+        })?;
+        writeln!(f, "    refunded_epochs_count: {}", match self.refunded_epochs_count {
+            Some(count) => count.to_string(),
+            None => "None".to_string(),
+        })?;
+        write!(f, "}}")
+    }
 }

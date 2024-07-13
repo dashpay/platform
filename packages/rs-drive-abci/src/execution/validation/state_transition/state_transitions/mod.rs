@@ -51,7 +51,7 @@ impl ValidationMode {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::block_info::BlockInfo;
@@ -84,6 +84,7 @@ mod tests {
     use dpp::data_contract::document_type::random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType};
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::fee::fee_result::FeeResult;
     use dpp::identifier::MasternodeIdentifiers;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
@@ -93,6 +94,7 @@ mod tests {
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
+    use dpp::state_transition::StateTransition;
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use dpp::voting::contender_structs::{Contender, ContenderV0};
@@ -107,12 +109,33 @@ mod tests {
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
     use drive::query::vote_poll_vote_state_query::{ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery};
+    use crate::execution::types::block_execution_context::BlockExecutionContext;
+    use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
+    use crate::expect_match;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use crate::platform_types::state_transitions_processing_result::{StateTransitionExecutionResult, StateTransitionsProcessingResult};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{SuccessfulExecution, UnpaidConsensusError};
+    use dpp::block::extended_block_info::ExtendedBlockInfo;
+    use crate::execution::types::block_state_info::BlockStateInfo;
+    use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+    use crate::platform_types::epoch_info::EpochInfo;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
+    use crate::execution::types::block_fees::v0::BlockFeesV0;
+    use crate::execution::types::processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome;
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn setup_identity(
+    /// We add an identity, but we also add the same amount to system credits
+    pub(crate) fn setup_identity_with_system_credits(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+        credits: Credits,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
+        let platform_version = PlatformVersion::latest();
+        platform.drive.add_to_system_credits(credits, None, platform_version).expect("expected to add to system credits");
+        setup_identity(platform, seed, credits)
+    }
+
+    pub(crate) fn setup_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         credits: Credits,
@@ -169,8 +192,83 @@ mod tests {
 
         (identity, signer, critical_public_key)
     }
+    
+    pub(crate) fn process_state_transitions(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        state_transitions: &[StateTransition],
+        block_info: BlockInfo,
+        platform_state: &PlatformState,
+    ) -> (Vec<FeeResult>, ProcessedBlockFeesOutcome) {
+        let platform_version = PlatformVersion::latest();
+        
+        let raw_state_transitions = state_transitions.iter().map(|a| a.serialize_to_bytes().expect("expected to serialize")).collect();
+        
+        let transaction = platform.drive.grove.start_transaction();
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn setup_masternode_identity(
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &raw_state_transitions,
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        let fee_results = processing_result.execution_results().iter().map(|result| {
+            let fee_result = expect_match!(result, StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => fee_result);
+            fee_result.clone()
+        }).collect();
+
+        // while we have the state transitions executed, we now need to process the block fees
+        let block_fees_v0: BlockFeesV0 = processing_result.aggregated_fees().clone().into();
+        
+        let block_execution_context = BlockExecutionContext::V0(BlockExecutionContextV0 {
+            block_state_info: BlockStateInfo::V0(BlockStateInfoV0 {
+                height: block_info.height,
+                round: 0,
+                block_time_ms: block_info.time_ms,
+                previous_block_time_ms: platform_state.last_committed_block_time_ms(),
+                proposer_pro_tx_hash: Default::default(),
+                core_chain_locked_height: 0,
+                block_hash: None,
+                app_hash: None,
+            }),
+            epoch_info: EpochInfo::V0(EpochInfoV0::default()),
+            hpmn_count: 0,
+            unsigned_withdrawal_transactions: Default::default(),
+            block_platform_state: platform_state.clone(),
+            proposer_results: None,
+        });
+
+        // Process fees
+        let processed_block_fees = platform.process_block_fees(
+            &block_execution_context,
+            block_fees_v0.into(),
+            &transaction,
+            platform_version,
+        ).expect("expected to process block fees");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        (fee_results, processed_block_fees)
+    }
+
+    pub(crate) fn fetch_expected_identity_balance(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+        expected_balance: Credits
+    ) {
+        assert_eq!(expected_balance, platform.drive.fetch_identity_balance(identity_id.to_buffer(), None, platform_version).expect("expected to be able to fetch balance").expect("expected a balance"));
+    }
+    pub(crate) fn setup_masternode_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         platform_version: &PlatformVersion,
@@ -259,7 +357,7 @@ mod tests {
         (pro_tx_hash_bytes.into(), identity, signer, voting_key)
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn take_down_masternode_identities(
+    pub(crate) fn take_down_masternode_identities(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         masternode_identities: &Vec<Identifier>,
     ) {
@@ -276,7 +374,7 @@ mod tests {
         platform.state.store(Arc::new(platform_state));
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn create_dpns_name_contest_give_key_info(
+    pub(crate) fn create_dpns_name_contest_give_key_info(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -347,7 +445,7 @@ mod tests {
         )
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn create_dpns_name_contest(
+    pub(crate) fn create_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -652,7 +750,7 @@ mod tests {
         )
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn add_contender_to_dpns_name_contest(
+    pub(crate) fn add_contender_to_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -829,7 +927,7 @@ mod tests {
         identity_1
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn verify_dpns_name_contest(
+    pub(crate) fn verify_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &Guard<Arc<PlatformState>>,
         dpns_contract: &DataContract,
@@ -1037,7 +1135,7 @@ mod tests {
         assert_eq!(second_contender.vote_tally(), Some(0));
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn perform_vote(
+    pub(crate) fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &Guard<Arc<PlatformState>>,
         dpns_contract: &DataContract,
@@ -1114,7 +1212,7 @@ mod tests {
         }
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn perform_votes(
+    pub(crate) fn perform_votes(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
         resource_vote_choice: ResourceVoteChoice,
@@ -1149,7 +1247,7 @@ mod tests {
         masternode_infos
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn perform_votes_multi(
+    pub(crate) fn perform_votes_multi(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
         resource_vote_choices: Vec<(ResourceVoteChoice, u64)>,
@@ -1176,7 +1274,7 @@ mod tests {
         masternodes_by_vote_choice
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn get_vote_states(
+    pub(crate) fn get_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         dpns_contract: &DataContract,
@@ -1282,7 +1380,7 @@ mod tests {
         )
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn get_proved_vote_states(
+    pub(crate) fn get_proved_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         dpns_contract: &DataContract,
@@ -1413,7 +1511,7 @@ mod tests {
         )
     }
 
-    pub(in crate::execution::validation::state_transition::state_transitions) fn fast_forward_to_block(
+    pub(crate) fn fast_forward_to_block(
         platform: &TempPlatform<MockCoreRPCLike>,
         time_ms: u64,
         height: u64,

@@ -8,6 +8,9 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults, KeyInfoPath, Op};
 use grovedb::Element;
 use std::borrow::Cow;
+use std::fmt;
+use grovedb::operations::proof::util::hex_to_ascii;
+use crate::drive::RootTree;
 
 /// A batch of GroveDB operations as a vector.
 // TODO move to GroveDB
@@ -16,6 +19,46 @@ pub struct GroveDbOpBatch {
     /// Operations
     pub(crate) operations: Vec<GroveDbOp>,
 }
+
+fn readable_key_info(position: u32, key_info: &KeyInfo) -> String {
+
+        match key_info {
+            KeyInfo::KnownKey(key) => {
+                match position {
+                    0 if key.len() == 1 => {
+                        if let Ok(root_tree) = RootTree::try_from(key[0]) {
+                            root_tree.to_string()
+                        } else {
+                            hex_to_ascii(key)
+                        }
+
+                    }
+                    _ => hex_to_ascii(key)
+                }
+
+            }
+            KeyInfo::MaxKeySize { unique_id, max_size } => {
+                format!("MaxKeySize(unique_id: {:?}, max_size: {})", unique_id, max_size)
+            }
+}
+
+fn readable_path(path: &KeyInfoPath) -> String {
+    path.0.iter().enumerate().map(|(pos, key_info)| {
+        readable_key_info(pos as u32, key_info)
+    }).collect::<Vec<_>>().join("/")
+}
+
+impl fmt::Display for GroveDbOpBatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for op in &self.operations {
+            writeln!(f, "Path: {}", readable_path(&op.path))?;
+            writeln!(f, "Key: {}", readable_key_info(op.path.len(), &op.key))?;
+            writeln!(f, "Operation: {:?}", op.op)?;
+        }
+        Ok(())
+    }
+}
+
 
 /// Trait defining a batch of GroveDB operations.
 pub trait GroveDbOpBatchV0Methods {
