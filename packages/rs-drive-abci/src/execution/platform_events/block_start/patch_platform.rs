@@ -21,7 +21,7 @@ impl<C> Platform<C> {
         let patched_platform_version =
             platform_state.apply_platform_version_patch_for_height(height)?;
 
-        self.migrate_state(height, platform_state, transaction)?;
+        self.migrate_state_for_height(height, platform_state, transaction)?;
 
         Ok(patched_platform_version)
     }
