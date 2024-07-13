@@ -13,7 +13,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let query = Self::full_identity_query(&identity_id)?;
+        let query = Self::full_identity_query(&identity_id, &drive_version.grove_version)?;
         self.grove_get_proved_path_query(&query, transaction, &mut drive_operations, drive_version)
     }
 }
@@ -36,8 +36,8 @@ mod tests {
 
     #[test]
     fn should_prove_full_identity_query_no_tx() {
-        let drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure();
 
         let identity = Identity::random_identity(5, Some(14), platform_version)
             .expect("expected a random identity");
@@ -52,8 +52,11 @@ mod tests {
             )
             .expect("expected to insert identity");
 
-        let path_query = Drive::full_identity_query(identity.id().as_bytes())
-            .expect("expected to make the query");
+        let path_query = Drive::full_identity_query(
+            identity.id().as_bytes(),
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to make the query");
 
         // The query is querying
         //                     root
@@ -144,6 +147,7 @@ mod tests {
                 true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to run the path query");
@@ -153,8 +157,12 @@ mod tests {
             .prove_full_identity_v0(identity.id().to_buffer(), None, &platform_version.drive)
             .expect("should fetch an identity");
 
-        let (_hash, proof) = GroveDb::verify_query(fetched_identity.as_slice(), &path_query)
-            .expect("expected to verify query");
+        let (_hash, proof) = GroveDb::verify_query(
+            fetched_identity.as_slice(),
+            &path_query,
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to verify query");
 
         // We want to get a proof on the balance, the revision and 5 keys
         assert_eq!(proof.len(), 7);

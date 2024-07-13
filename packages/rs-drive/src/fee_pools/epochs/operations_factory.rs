@@ -591,6 +591,7 @@ mod tests {
                     &epoch.get_path(),
                     KEY_PROPOSERS.as_slice(),
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap();
 
@@ -879,6 +880,7 @@ mod tests {
                     &epoch.get_path(),
                     KEY_PROPOSERS.as_slice(),
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect_err("expect tree not exists");

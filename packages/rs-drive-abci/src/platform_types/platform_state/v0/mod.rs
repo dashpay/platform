@@ -305,6 +305,8 @@ pub trait PlatformStateV0Methods: PlatformStateV0PrivateMethods {
     fn last_committed_block_time_ms(&self) -> Option<u64>;
     /// The last quorum hash
     fn last_committed_quorum_hash(&self) -> [u8; 32];
+    /// The last block proposer pro tx hash
+    fn last_committed_block_proposer_pro_tx_hash(&self) -> [u8; 32];
     /// The last block signature
     fn last_committed_block_signature(&self) -> [u8; 96];
     /// The last block app hash
@@ -510,6 +512,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| *block_info.quorum_hash())
+            .unwrap_or_default()
+    }
+
+    /// The last committed block proposer's pro tx hash
+    fn last_committed_block_proposer_pro_tx_hash(&self) -> [u8; 32] {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| *block_info.proposer_pro_tx_hash())
             .unwrap_or_default()
     }
 

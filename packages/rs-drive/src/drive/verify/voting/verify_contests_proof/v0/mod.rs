@@ -39,7 +39,8 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
     ) -> Result<(RootHash, Vec<Value>), Error> {
         let index = self.index()?;
         let path_query = self.construct_path_query_with_known_index(index, platform_version)?;
-        let (root_hash, proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, proved_key_values) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let result_is_in_key = self.result_is_in_key();
         let result_path_index = if result_is_in_key {

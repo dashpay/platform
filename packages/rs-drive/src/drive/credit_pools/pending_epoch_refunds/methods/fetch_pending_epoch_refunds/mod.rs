@@ -29,7 +29,7 @@ impl Drive {
             .pending_epoch_refunds
             .fetch_pending_epoch_refunds
         {
-            0 => self.fetch_pending_epoch_refunds_v0(transaction),
+            0 => self.fetch_pending_epoch_refunds_v0(transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_pending_epoch_refunds".to_string(),
                 known_versions: vec![0],

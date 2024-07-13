@@ -78,6 +78,7 @@ use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
+use grovedb_version::version::v1::GROVE_V1;
 
 pub const TEST_PROTOCOL_VERSION_3: u32 = (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 3;
 
@@ -555,6 +556,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 grove_batch_operations_costs: 0,
             },
         },
+        grove_version: GROVE_V1,
     },
     abci_structure: AbciStructureVersion {
         extended_block_info: FeatureVersionBounds {

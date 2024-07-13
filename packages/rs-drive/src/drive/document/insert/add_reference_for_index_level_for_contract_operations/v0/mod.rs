@@ -44,7 +44,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         // unique indexes will be stored under key "0"
-        // non unique indices should have a tree at key "0" that has all elements based off of primary key
+        // non-unique indices should have a tree at key "0" that has all elements based off of primary key
         if !index_type.is_unique() || any_fields_null {
             // Tree generation, this happens for both non unique indexes, unique indexes with a null inside
             // a member of the path
@@ -128,7 +128,11 @@ impl Drive {
                                 .to_vec(),
                             max_size: DEFAULT_HASH_SIZE_U8,
                         },
-                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                        Element::required_item_space(
+                            *max_size,
+                            STORAGE_FLAGS_SIZE,
+                            &drive_version.grove_version,
+                        )?,
                     )),
                 };
 
@@ -168,7 +172,11 @@ impl Drive {
                                 .to_vec(),
                             max_size: 1,
                         },
-                        Element::required_item_space(*estimated_size, STORAGE_FLAGS_SIZE),
+                        Element::required_item_space(
+                            *estimated_size,
+                            STORAGE_FLAGS_SIZE,
+                            &drive_version.grove_version,
+                        )?,
                     )),
                 };
 

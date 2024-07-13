@@ -38,6 +38,7 @@ impl Drive {
                 path_query,
                 transaction,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_path_query_with_optional".to_string(),

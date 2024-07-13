@@ -940,8 +940,11 @@ impl<'a> DriveQuery<'a> {
 
         if let Some(start_at_path_query) = start_at_path_query {
             let limit = main_path_query.query.limit.take();
-            let mut merged =
-                PathQuery::merge(vec![&start_at_path_query, &main_path_query]).map_err(GroveDB)?;
+            let mut merged = PathQuery::merge(
+                vec![&start_at_path_query, &main_path_query],
+                &platform_version.drive.grove_version,
+            )
+            .map_err(GroveDB)?;
             merged.query.limit = limit.map(|a| a.saturating_add(1));
             Ok(merged)
         } else {

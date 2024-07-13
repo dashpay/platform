@@ -221,6 +221,12 @@ impl PlatformStateV0PrivateMethods for PlatformState {
 }
 
 impl PlatformStateV0Methods for PlatformState {
+    fn last_committed_block_height(&self) -> u64 {
+        match self {
+            PlatformState::V0(v0) => v0.last_committed_block_height(),
+        }
+    }
+
     fn last_committed_known_block_height_or(&self, default: u64) -> u64 {
         match self {
             PlatformState::V0(v0) => v0.last_committed_known_block_height_or(default),
@@ -251,6 +257,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn last_committed_block_proposer_pro_tx_hash(&self) -> [u8; 32] {
+        match self {
+            PlatformState::V0(v0) => v0.last_committed_block_proposer_pro_tx_hash(),
+        }
+    }
+
     fn last_committed_block_signature(&self) -> [u8; 96] {
         match self {
             PlatformState::V0(v0) => v0.last_committed_block_signature(),
@@ -260,12 +272,6 @@ impl PlatformStateV0Methods for PlatformState {
     fn last_committed_block_app_hash(&self) -> Option<[u8; 32]> {
         match self {
             PlatformState::V0(v0) => v0.last_committed_block_app_hash(),
-        }
-    }
-
-    fn last_committed_block_height(&self) -> u64 {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_height(),
         }
     }
 
@@ -338,6 +344,12 @@ impl PlatformStateV0Methods for PlatformState {
     fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
+        }
+    }
+
+    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
+        match self {
+            PlatformState::V0(v0) => v0.instant_lock_validating_quorums(),
         }
     }
 
@@ -473,6 +485,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
+        match self {
+            PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
+        }
+    }
+
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
         match self {
             PlatformState::V0(v0) => v0.full_masternode_list_mut(),
@@ -510,18 +528,6 @@ impl PlatformStateV0Methods for PlatformState {
             (PlatformState::V0(v0), PlatformState::V0(v0_previous)) => {
                 v0.hpmn_masternode_list_changes(v0_previous)
             }
-        }
-    }
-
-    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
-        match self {
-            PlatformState::V0(v0) => v0.instant_lock_validating_quorums(),
-        }
-    }
-
-    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
-        match self {
-            PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
         }
     }
 }

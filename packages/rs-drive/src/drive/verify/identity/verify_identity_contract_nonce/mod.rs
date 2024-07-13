@@ -52,6 +52,7 @@ impl Drive {
                 identity_id,
                 contract_id,
                 verify_subset_of_proof,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_identity_contract_nonce".to_string(),

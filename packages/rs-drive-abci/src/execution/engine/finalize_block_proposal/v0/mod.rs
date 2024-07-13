@@ -241,6 +241,7 @@ where
             app_hash: block_header.app_hash,
             quorum_hash: current_quorum_hash,
             block_id_hash,
+            proposer_pro_tx_hash: block_header.proposer_pro_tx_hash,
             signature: commit_info.block_signature,
             round,
         }

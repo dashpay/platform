@@ -975,8 +975,9 @@ pub(crate) fn continue_chain_for_strategy(
         }
 
         let proposer = current_quorum_with_test_info
-            .validator_set
-            .get(i as usize)
+            .validator_map
+            .values()
+            .nth(i as usize)
             .unwrap();
         let (state_transitions, finalize_block_operations) = strategy.state_transitions_for_block(
             platform,
@@ -1156,6 +1157,8 @@ pub(crate) fn continue_chain_for_strategy(
     let masternode_identity_balances = if strategy.dont_finalize_block() && i == 0 {
         BTreeMap::new()
     } else {
+        let platform_state = platform.state.load();
+        let platform_version = platform_state.current_platform_version().unwrap();
         platform
             .drive
             .fetch_identities_balances(
@@ -1164,6 +1167,7 @@ pub(crate) fn continue_chain_for_strategy(
                     .map(|proposer| proposer.pro_tx_hash().into())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to get balances")
     };

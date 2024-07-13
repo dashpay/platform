@@ -390,13 +390,6 @@ mod tests {
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
-        let platform_ref = PlatformRef {
-            drive: &platform.drive,
-            state: &platform_state,
-            config: &platform.config,
-            core_rpc: &platform.core_rpc,
-        };
-
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
             Some(1),
@@ -537,13 +530,6 @@ mod tests {
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
-
-        let platform_ref = PlatformRef {
-            drive: &platform.drive,
-            state: &platform_state,
-            config: &platform.config,
-            core_rpc: &platform.core_rpc,
-        };
 
         let platform_ref = PlatformRef {
             drive: &platform.drive,

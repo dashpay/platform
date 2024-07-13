@@ -9,6 +9,7 @@ use grovedb::operations::delete::DeleteOptions;
 use grovedb::{GroveDb, TransactionArg};
 use grovedb_path::SubtreePath;
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes a "delete element" operation to `drive_operations`.
@@ -19,6 +20,7 @@ impl Drive {
         apply_type: BatchDeleteApplyType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let current_batch_operations =
             LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
@@ -31,15 +33,17 @@ impl Drive {
         let delete_operation = match apply_type {
             BatchDeleteApplyType::StatelessBatchDelete {
                 is_sum_tree,
+                estimated_key_size,
                 estimated_value_size,
-            } => GroveDb::worst_case_delete_operation_for_delete_internal::<RocksDbStorage>(
+            } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
                 &KeyInfoPath::from_known_owned_path(path.to_vec()),
                 &KeyInfo::KnownKey(key.to_vec()),
                 is_sum_tree,
                 false,
                 true,
                 0,
-                estimated_value_size,
+                (estimated_key_size, estimated_value_size),
+                &drive_version.grove_version,
             )
             .map(|r| r.map(Some)),
             BatchDeleteApplyType::StatefulBatchDelete {
@@ -51,6 +55,7 @@ impl Drive {
                 is_known_to_be_subtree_with_sum,
                 &current_batch_operations.operations,
                 transaction,
+                &drive_version.grove_version,
             ),
         };
 

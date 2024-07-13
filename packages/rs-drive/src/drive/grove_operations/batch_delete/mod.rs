@@ -35,7 +35,14 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version.grove_methods.batch.batch_delete {
-            0 => self.batch_delete_v0(path, key, apply_type, transaction, drive_operations),
+            0 => self.batch_delete_v0(
+                path,
+                key,
+                apply_type,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "batch_delete".to_string(),
                 known_versions: vec![0],

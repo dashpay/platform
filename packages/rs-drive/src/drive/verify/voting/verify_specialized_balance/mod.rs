@@ -51,6 +51,7 @@ impl Drive {
                 proof,
                 specialized_balance_id,
                 verify_subset_of_proof,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_specialized_balance".to_string(),

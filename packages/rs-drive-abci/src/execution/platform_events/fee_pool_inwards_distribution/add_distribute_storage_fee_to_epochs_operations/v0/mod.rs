@@ -59,6 +59,7 @@ impl<C> Platform<C> {
                 batch,
                 credits_per_epochs,
                 transaction,
+                platform_version,
             )?;
 
         Ok(

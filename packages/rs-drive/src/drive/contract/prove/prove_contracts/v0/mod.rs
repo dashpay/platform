@@ -85,6 +85,7 @@ impl Drive {
         let contracts_query = Self::fetch_contracts_query(
             non_historical_contracts.as_slice(),
             historical_contracts.as_slice(),
+            platform_version,
         )?;
 
         self.grove_get_proved_path_query(
