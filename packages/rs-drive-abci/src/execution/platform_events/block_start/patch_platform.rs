@@ -12,7 +12,7 @@ impl<C> Platform<C> {
     ///
     /// This function appends the patch to PlatformState, potentially alter Drive and Platform execution state
     /// and returns patched version
-    pub fn patch_platform(
+    pub fn apply_platform_version_patch_and_migrate_state_for_height(
         &self,
         height: BlockHeight,
         platform_state: &mut PlatformState,
