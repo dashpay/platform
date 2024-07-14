@@ -28,10 +28,10 @@ impl Drive {
                 "batch is empty when trying to apply batch with add costs".to_string(),
             )));
         }
-        if ops.operations.len() < 500 {
-            //no initialization
-            println!("batch {}", &ops);
-        }
+        // if ops.operations.len() < 500 {
+        //     //no initialization
+        //     println!("batch {}", &ops);
+        // }
 
         if self.config.batching_consistency_verification {
             let consistency_results = GroveDbOp::verify_consistency_of_operations(&ops.operations);
