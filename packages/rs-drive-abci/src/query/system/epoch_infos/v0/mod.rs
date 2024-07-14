@@ -81,7 +81,7 @@ impl<C> Platform<C> {
                     first_block_height: epoch_info.first_block_height(),
                     first_core_block_height: epoch_info.first_core_block_height(),
                     start_time: epoch_info.first_block_time(),
-                    fee_multiplier: epoch_info.fee_multiplier(),
+                    fee_multiplier: epoch_info.fee_multiplier_permille() as f64 / 1000.0,
                     protocol_version: epoch_info.protocol_version(),
                 })
                 .collect();

@@ -860,7 +860,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 500_000_000, 900); //less than a week
+            fast_forward_to_block(&platform, 500_000_000, 900, 0); //less than a week
 
             let platform_state = platform.state.load();
 
@@ -873,7 +873,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 1_000_000_000, 900); //more than a week, less than 2 weeks
+            fast_forward_to_block(&platform, 1_000_000_000, 900, 0); //more than a week, less than 2 weeks
 
             let platform_state = platform.state.load();
 
@@ -1006,7 +1006,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 200_000_000, 900); //less than a week
+            fast_forward_to_block(&platform, 200_000_000, 900, 0); //less than a week
 
             let platform_state = platform.state.load();
 
@@ -1019,7 +1019,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 2_000_000_000, 900); //more than two weeks
+            fast_forward_to_block(&platform, 2_000_000_000, 900, 0); //more than two weeks
 
             let platform_state = platform.state.load();
 

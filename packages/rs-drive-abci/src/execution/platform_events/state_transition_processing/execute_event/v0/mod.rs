@@ -43,6 +43,7 @@ where
     ///
     /// This function may return an `Error` variant if there is a problem with the drive operations or
     /// an internal error occurs.
+    #[inline(always)]
     pub(super) fn execute_event_v0(
         &self,
         event: ExecutionEvent,

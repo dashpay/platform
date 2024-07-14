@@ -405,8 +405,8 @@ impl StateTransition {
     }
 
     /// set fee multiplier
-    pub fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
-        call_method!(self, set_user_fee_increase, fee_multiplier)
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+        call_method!(self, set_user_fee_increase, user_fee_increase)
     }
 
     /// set a new signature
