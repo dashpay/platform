@@ -54,7 +54,7 @@ impl FeeRefunds {
                     .map(|(encoded_epoch_index, bytes)| {
                         let epoch_index : u16 = encoded_epoch_index.try_into().map_err(|_| ProtocolError::Overflow("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
 
-                        // TODO We should use multipliers
+                        // TODO Add in multipliers once they have been made
 
                         let credits: Credits = (bytes as Credits)
                             .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(previous_fee_versions, StorageDiskUsageCreditPerByte))
