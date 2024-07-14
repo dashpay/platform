@@ -6,3 +6,6 @@ mod state_transitions;
 pub mod transformer;
 
 pub use state_transitions::*;
+
+#[cfg(test)]
+pub(crate) use state_transitions::tests;

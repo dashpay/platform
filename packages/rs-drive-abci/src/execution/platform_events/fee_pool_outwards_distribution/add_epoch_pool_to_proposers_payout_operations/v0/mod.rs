@@ -218,7 +218,16 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            unpaid_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
+            unpaid_epoch_tree.add_init_current_operations(
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
+                1,
+                1,
+                1,
+                &mut batch,
+            );
 
             batch.push(
                 unpaid_epoch_tree
@@ -233,7 +242,10 @@ mod tests {
             );
 
             next_epoch_tree.add_init_current_operations(
-                1.0,
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
                 proposers_count as u64 + 1,
                 1,
                 10,
