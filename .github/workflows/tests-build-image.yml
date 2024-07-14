@@ -38,7 +38,6 @@ jobs:
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
           echo "RUSTC_WRAPPER=/home/ubuntu/.cargo/bin/sccache" >> $GITHUB_ENV
-          echo "/home/ubuntu/.cargo/bin" >> $GITHUB_PATH
 
       - name: Verify sccache installation
         run: sccache --version
@@ -61,3 +60,9 @@ jobs:
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           region: ${{ secrets.AWS_REGION }}
+          build-args: |
+            AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            SCCACHE_BUCKET=${{ secrets.SCCACHE_BUCKET }}
+            SCCACHE_REGION=${{ secrets.SCCACHE_REGION }}
+            RUSTC_WRAPPER=/home/ubuntu/.cargo/bin/sccache
