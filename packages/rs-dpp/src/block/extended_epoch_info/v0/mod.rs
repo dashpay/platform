@@ -14,7 +14,7 @@ pub struct ExtendedEpochInfoV0 {
     pub first_block_height: u64,
     /// First core block height
     pub first_core_block_height: u32,
-    /// Fee multiplier that you would devise by 1000 to get float value
+    /// Fee multiplier that you would divide by 1000 to get float value
     pub fee_multiplier_permille: u64,
     /// Protocol version
     pub protocol_version: u32,
