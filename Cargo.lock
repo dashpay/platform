@@ -3332,7 +3332,7 @@ dependencies = [
 name = "platform-version"
 version = "1.0.0-dev.16"
 dependencies = [
- "bincode 2.0.0-rc.3",
+ "bincode",
  "grovedb-version",
  "thiserror",
  "versioned-feature-core",

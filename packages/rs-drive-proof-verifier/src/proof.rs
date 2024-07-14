@@ -2,8 +2,6 @@ use crate::from_request::TryFromRequest;
 use crate::provider::DataContractProvider;
 use crate::{types, types::*, ContextProvider, Error};
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
-use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
-use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
@@ -26,17 +24,13 @@ use dapi_grpc::platform::{
     VersionedGrpcResponse,
 };
 use dpp::block::block_info::BlockInfo;
-use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
-use dpp::identity::Purpose;
-use dpp::platform_value;
 use dpp::platform_value::{self};
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
